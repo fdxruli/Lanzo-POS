@@ -11,7 +11,8 @@ import {
 import {
   beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime,
-  lockActorRuntime
+  lockActorRuntime,
+  refreshAuthenticatedStaffSession
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { resolveStaffAuthRoutingDecision } from '../../../services/deviceModePolicy';
 
@@ -31,6 +32,12 @@ import {
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
 
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { isAuthoritativeSessionDenial } from '../../../services/auth/sessionVerification';
+import { captureLicenseValidationContext, assertLicenseValidationContextCurrent,
+  persistWithinLicenseValidationContext } from './licenseValidationContext';
+import Logger from '../../../services/Logger';
+
 export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => {
   const routingDecision = resolveStaffAuthRoutingDecision(state, licenseDetails);
   if (routingDecision !== null) return routingDecision;
@@ -40,7 +47,76 @@ export const hasStaffValidationContext = async (state = {}, licenseDetails = {})
 export const createLicenseStaffActions = ({
   set,
   get
-}) => ({
+}) => {
+  let pending = null;
+  let pendingKey = null;
+  let queued = false;
+  let lastKey = null;
+  let lastAttempt = 0;
+  let deferred = null;
+  return ({
+  _stopStaffPermissionRefresh: () => { clearTimeout(deferred); deferred = null; queued = false; },
+  refreshStaffSessionPermissions: (reason = 'manual') => {
+    const state = get();
+    const actor = actorRuntimeController.getState();
+    if (state.appStatus !== 'ready' || state._isInitializing || actor.status !== 'granted' ||
+        actor.actorType !== 'staff' || !state.licenseDetails?.license_key || !navigator.onLine) return Promise.resolve(false);
+    let context;
+    try { context = captureLicenseValidationContext(state, null, { trackPermissions: false }); }
+    catch { return Promise.resolve(false); }
+    const key = JSON.stringify(context.actorBinding) + context.licenseKey;
+    if (pending) {
+      queued ||= reason === 'realtime_event' || key !== pendingKey;
+      return pending;
+    }
+    const remaining = 90_000 - (Date.now() - lastAttempt);
+    if (reason !== 'realtime_event' && key === lastKey && remaining > 0) {
+      // One bounded trailing check covers an online/focus event lost to the
+      // cooldown. No polling loop or extra browser listeners are introduced.
+      deferred ||= setTimeout(() => { deferred = null; get().refreshStaffSessionPermissions('resume_deferred'); }, remaining);
+      return Promise.resolve(false);
+    }
+    clearTimeout(deferred); deferred = null;
+    pendingKey = key; lastKey = key; lastAttempt = Date.now();
+    const assertContext = () => {
+      assertLicenseValidationContextCurrent(context, get());
+      if (queued) throw Object.assign(new Error('Staff verification superseded by a newer signal'), {
+        code: 'SESSION_VERIFICATION_CONTEXT_STALE'
+      });
+      if (get().appStatus !== 'ready') throw new Error('STAFF_REFRESH_CONTEXT_STALE');
+    };
+    pending = (async () => {
+      try {
+        const verified = await refreshAuthenticatedStaffSession({ licenseKey: context.licenseKey,
+          handle: context.actorHandle, assertContext,
+          beforeApply: staff => persistWithinLicenseValidationContext(context, get, () => saveLicenseToStorage({
+            ...get().licenseDetails, device_role: 'staff', staff_user: staff, admin_user: null
+          }))
+        });
+        assertContext();
+        if (isAuthoritativeSessionDenial(verified)) {
+          await get()._requireStaffLogin(get().licenseDetails, verified);
+          return false;
+        }
+        if (verified.verificationStatus !== 'verified' || verified.valid !== true) {
+          Logger.warn('[StaffPermissions] Verificación no concluyente:', verified.verificationStatus, verified.code);
+          return false;
+        }
+        Logger.log('[StaffPermissions] Permisos verificados para la sesión Staff activa.');
+        set({ currentDeviceRole: 'staff', currentStaffUser: verified.staff_user,
+          licenseDetails: { ...get().licenseDetails, device_role: 'staff', staff_user: verified.staff_user, admin_user: null } });
+        return true;
+      } catch (error) {
+        Logger.warn('[StaffPermissions] Respuesta descartada o verificación no disponible:', error?.code || error?.message);
+        return false;
+      }
+    })().then(result => {
+      pending = null;
+      if (queued) { queued = false; return get().refreshStaffSessionPermissions('realtime_event'); }
+      return result;
+    });
+    return pending;
+  },
   _requireStaffLogin: async (licenseSource = null, validation = {}) => {
     const state = get();
     const sourceLicense = licenseSource || state.licenseDetails || {};
@@ -282,3 +358,4 @@ export const createLicenseStaffActions = ({
     });
   }
 });
+};

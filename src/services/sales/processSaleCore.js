@@ -1,3 +1,4 @@
+import { restoreAbortedCheckoutCancellation, forgetPrepaymentCheckout } from '../auth/actorOperationalHandoff';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { validateStockBeforeSale } from './stockValidation';
 import { normalizeAndValidatePricing } from './priceSecurity';
@@ -641,7 +642,14 @@ export const processSaleCore = async ({
             sale.localCommitBinding = localBinding;
             sale.localCheckoutAttemptId = attemptId;
         }
+        const restoreCancellationIfAborted = persisted => {
+            if (localBinding && persisted?.status === SALE_STATUS.OPEN && persisted.isLockedForCheckout === true &&
+                persisted.checkoutAttemptId === attemptId && persisted.checkoutActorKey === localBinding.actorKey) {
+                restoreAbortedCheckoutCancellation({ orderId: sale.id, checkoutAttemptId: attemptId, handle: actorContext });
+            }
+        };
         let transactionResult;
+        forgetPrepaymentCheckout(sale.id, attemptId);
         try {
             transactionResult = actorContext
                 ? await executeSaleTransactionSafe(sale, batchesToDeduct, {
@@ -656,6 +664,7 @@ export const processSaleCore = async ({
             try { persisted = await loadData(STORES.SALES, sale.id); }
             catch { return uncertainLocalCommit(sale.id); }
             if (sameLocalCommit(persisted, localBinding, attemptId)) return localCommitResult(persisted);
+            restoreCancellationIfAborted(persisted);
             throw error;
         }
         if (!transactionResult.success && localBinding) {
@@ -663,6 +672,7 @@ export const processSaleCore = async ({
             try { persisted = await loadData(STORES.SALES, sale.id); }
             catch { return uncertainLocalCommit(sale.id); }
             if (sameLocalCommit(persisted, localBinding, attemptId)) return localCommitResult(persisted);
+            restoreCancellationIfAborted(persisted);
         }
         if (transactionResult.success && actorContext) {
             try { actorContext.assertCurrent('pos'); }

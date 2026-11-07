@@ -1169,7 +1169,6 @@ export function usePosCheckout({
     const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
         const snapshot = checkoutSnapshotRef.current;
         if (snapshot?.cancellationOnly) return getPosCheckoutSnapshotStaleResult();
-        if (snapshot) forgetPrepaymentCheckout(snapshot.orderId, snapshot.checkoutAttemptId);
         const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
         if (initialSnapshotError) return initialSnapshotError;
 

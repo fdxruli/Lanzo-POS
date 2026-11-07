@@ -95,6 +95,7 @@ vi.mock('../../supabase', () => ({
   }
 }));
 
+import { createActorRuntimeController } from '../../auth/actorRuntimeController';
 import { recoverFinancialIntent } from '../financialIntentRecovery';
 import {
   FINANCIAL_INTENT_STATUS,
@@ -428,4 +429,25 @@ it('carries a late confirmation through the real cashier, repository, protocol a
     expect(executeCalls()).toHaveLength(1);
     expect((await getFinancialIntent(result.financialIntentId)).status).toBe('DISPATCHING');
   } finally { vi.unstubAllEnvs(); }
+});
+
+
+it('recognizes Cloud confirmation when a real same-session refresh removes POS', async () => {
+  const tenant = runtime.handle.tenant;
+  const authority = createActorRuntimeController({ getTenantAuthority: () => tenant });
+  authority.beginAuthentication({ actorType: 'staff' });
+  authority.grant({ actorType: 'staff', actorId: 'actor-a', sessionId: 'session-a', deviceRef: 'device-a', permissions: ['pos'] });
+  runtime.handle = authority.capture();
+  runtime.execute.mockImplementation(async () => {
+    authority.refreshStaffPermissions({ captured: runtime.handle, actorId: 'actor-a', permissions: [] });
+    return { success: true, sale: { id: 'confirmed-sale' } };
+  });
+  const options = { operationType: SALE_OPERATION, request: saleRequest(), licenseKey: 'fixture-license',
+    idempotencyKey: 'same-session-refresh', cashSessionId: 'session-a', actorHandle: runtime.handle, projectionRequired: false };
+  const result = await executeNewFinancialIntent(options);
+  expect(result.response.success).toBe(true);
+  expect((await getFinancialIntent(result.intentId)).status).toBe('COMPLETED');
+  await expect(executeNewFinancialIntent({ ...options, idempotencyKey: 'new-operation' }))
+    .rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+  expect(executeCalls()).toHaveLength(1);
 });

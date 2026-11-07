@@ -1,7 +1,7 @@
 import { resolveStableActorId, getExplicitActorPermissions } from './actorIdentity';
 export { resolveStableActorId, getExplicitActorPermissions } from './actorIdentity';
 import { db as tenantRuntimeDb, getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
-import { getAdminOfflineAuthorization, getStableDeviceId } from '../supabase';
+import { getAdminOfflineAuthorization, getStableDeviceId, verifyStaffSession } from '../supabase';
 import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
 import {
   activateActorScopedStorage,
@@ -266,6 +266,35 @@ export const assertAuthenticatedActorSessionCurrent = async ({ handle, actorType
     throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
   }
   return handle;
+};
+
+/** Only the existing session verifier can supply this same-binding refresh. */
+export const refreshAuthenticatedStaffSession = async ({ licenseKey, handle, assertContext, beforeApply }) => {
+  const assertBinding = async () => {
+    handle.assertCurrent();
+    assertContext();
+    const binding = await readActorSessionBinding('staff');
+    const deviceRef = await resolveCanonicalDeviceRef();
+    handle.assertCurrent();
+    assertContext();
+    if (handle.actorType !== 'staff' || binding.sessionId !== handle.sessionId || deviceRef !== handle.deviceRef) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+    }
+  };
+  await assertBinding();
+  const verified = await verifyStaffSession(licenseKey, { beforeLocalPersistence: assertBinding });
+  handle.assertCurrent();
+  assertContext();
+  if (verified.verificationStatus !== 'verified' || verified.valid !== true) return verified;
+  if (resolveStableActorId('staff', verified.staff_user) !== handle.actorId) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+  }
+  await assertBinding();
+  await beforeApply(verified.staff_user);
+  await assertBinding();
+  actorRuntimeController.refreshStaffPermissions({ captured: handle, actorId: handle.actorId,
+    permissions: getExplicitActorPermissions('staff', verified.staff_user) });
+  return verified;
 };
 
 /** Refresh an existing Admin Actor Runtime deadline after positive server verification. */

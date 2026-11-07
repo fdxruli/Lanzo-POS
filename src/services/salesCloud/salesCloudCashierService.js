@@ -1,3 +1,5 @@
+import { markCheckoutFinancialDispatch, restoreAbortedCheckoutCancellation } from '../auth/actorOperationalHandoff';
+import { getFinancialIntentByIdempotencyKey } from '../financial/financialIntentLedger';
 import Logger from '../Logger';
 import { getStableDeviceId } from '../supabase';
 import { useAppStore } from '../../store/useAppStore';
@@ -1073,6 +1075,7 @@ export const salesCloudCashierService = {
       deviceId: context.deviceId
     });
 
+    let checkoutAttemptId = null;
     try {
       let restaurantSettlement = null;
       const cloudRestaurantAuthority = Boolean(
@@ -1122,6 +1125,7 @@ export const salesCloudCashierService = {
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
 
       actorHandle.assertCurrent('pos');
+      checkoutAttemptId = markCheckoutFinancialDispatch({ orderId: sale.id, handle: actorHandle });
       const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
         ...payload,
@@ -1164,6 +1168,14 @@ export const salesCloudCashierService = {
         atomicRestaurantSettlement: response?.restaurant_settlement?.success === true
       };
     } catch (error) {
+      if (checkoutAttemptId && ['ACTOR_PERMISSION_DENIED', 'FINANCIAL_PREFLIGHT_TIMEOUT'].includes(error.code) && !error.isFinancialOperationAmbiguous) {
+        try {
+          // Only a failed preparation with no durable financial owner can
+          // return to cancellation. Existing/ambiguous intents stay fenced.
+          const intent = await getFinancialIntentByIdempotencyKey({ idempotencyKey, actorHandle });
+          if (!intent) restoreAbortedCheckoutCancellation({ orderId: sale.id, checkoutAttemptId, handle: actorHandle });
+        } catch { /* Keep the operation fenced when its outcome cannot be read. */ }
+      }
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       const mapped = friendlyCloudCashierError(error);
       if (error.isFinancialOperationAmbiguous) Object.assign(mapped, {

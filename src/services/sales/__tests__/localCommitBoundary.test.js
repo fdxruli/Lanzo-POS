@@ -147,3 +147,23 @@ it('rejects another owner of an open checkout before any financial write', async
   expect((await db.table('menu').get('p')).stock).toBe(10);
   expect(await db.table('transaction_log').count()).toBe(0);
 });
+
+
+it.each(['before', 'after'])('preserves the local boundary with a real same-session permission refresh: %s', async moment => {
+  const binding = authority.getState();
+  const revoke = () => authority.refreshStaffPermissions({ captured: handle, actorId: handle.actorId, permissions: [] });
+  const hook = () => { if (moment === 'before') revoke(); };
+  db.table('sales').hook('updating', hook);
+  try {
+    const result = await run(async (...args) => {
+      const committed = await execute(...args);
+      if (moment === 'after') revoke();
+      return committed;
+    });
+    expect(result.success).toBe(moment === 'after');
+    expect((await db.table('menu').get('p')).stock).toBe(moment === 'after' ? 9 : 10);
+    expect(await db.table('transaction_log').count()).toBe(moment === 'after' ? 1 : 0);
+    expect(authority.getState()).toMatchObject({ generation: binding.generation, sessionId: binding.sessionId, permissions: [] });
+    expect(() => authority.capture('pos')).toThrow();
+  } finally { db.table('sales').hook('updating').unsubscribe(hook); }
+});

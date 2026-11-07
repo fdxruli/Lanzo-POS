@@ -7,8 +7,10 @@ import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTest
 vi.mock('../../../services/db/dexie', async () => {
   const { default: Dexie } = await import('dexie');
   const db = new Dexie('checkout-unmount-recovery');
-  db.version(1).stores({ sales: 'id,status', menu: 'id', product_batches: 'id,productId' });
-  return { db, STORES: { SALES: 'sales', MENU: 'menu', PRODUCT_BATCHES: 'product_batches' } };
+  db.version(1).stores({ sales: 'id,status', menu: 'id', product_batches: 'id,productId',
+    transaction_log: 'id', inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id' });
+  return { db, STORES: { SALES: 'sales', MENU: 'menu', PRODUCT_BATCHES: 'product_batches',
+    TRANSACTION_LOG: 'transaction_log', INVENTORY_EVENTS: 'inventory_events', SEQUENCES: 'sequences', COMPANY: 'company' } };
 });
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({
   licenseDetails: { valid: true }, enableMultipleOrders: true
@@ -32,17 +34,17 @@ import { getActorCheckoutOwnerships, registerActorOperationalActiveOrders, insta
 
 const order = { id: 'order-a', items: [{ id: 'p', quantity: 1, price: 20 }], total: 20,
   isSaved: true, createdAt: '2026-08-30T00:00:00.000Z' };
-const mount = () => {
+const mount = (verifySessionIntegrity = async () => true) => {
   const modal = { openModal: vi.fn(), closeModal: vi.fn() };
   return { modal, ...renderHook(() => usePosCheckout({
-    pos: { activeOrderId: order.id, order: order.items, verifySessionIntegrity: async () => true },
-    posSearch: { menuVisual: [], refreshOutOfStock: vi.fn() }, modal,
+    pos: { activeOrderId: order.id, order: order.items, verifySessionIntegrity },
+    posSearch: { menuVisual: [{ id: 'p', price: 20, cost: 8, stock: 10, trackStock: false }], refreshOutOfStock: vi.fn() }, modal,
     mobileCart: { closeCart: vi.fn() }, prescription: { setTempPrescriptionData: vi.fn() }, features: {}, fetchActiveTablesCount: vi.fn()
   })) };
 };
 beforeEach(async () => {
   await db.table('sales').clear();
-  await db.table('menu').put({ id: 'p', stock: 10, trackStock: false });
+  await db.table('menu').put({ id: 'p', name: 'Producto', price: 20, cost: 8, stock: 10, trackStock: false });
   await db.table('sales').put({ ...order, status: 'open' });
   grantTestActor({ permissions: ['pos'] });
   useActiveOrders.setState({ activeOrders: new Map([[order.id, { ...order }]]),
@@ -68,12 +70,8 @@ it('recovers only cancellation of the same prepayment attempt after POS unmount'
   const second = mount();
   // Simulate a permission-only revocation, preserving the real session binding.
   // No production permission-refresh implementation is introduced in this scope.
-  const capture = actorRuntimeController.capture.bind(actorRuntimeController);
-  const denied = () => { throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' }); };
-  const denial = vi.spyOn(actorRuntimeController, 'capture').mockImplementation(permission => {
-    if (permission === 'pos') return denied();
-    return capture(permission);
-  });
+  const binding = actorRuntimeController.capture();
+  actorRuntimeController.refreshStaffPermissions({ captured: binding, actorId: binding.actorId, permissions: [] });
   await act(async () => {
     expect(await second.result.current.handleInitiateCheckout()).toMatchObject({ success: false, code: 'ACTOR_PERMISSION_DENIED' });
     expect(await second.result.current.handleProcessOrder({ paymentMethod: 'card' })).toMatchObject({ success: false, code: 'ACTOR_PERMISSION_DENIED' });
@@ -83,7 +81,7 @@ it('recovers only cancellation of the same prepayment attempt after POS unmount'
   expect((await db.table('sales').get(order.id)).isLockedForCheckout).toBe(true);
   // A valid verification would restore POS on this same binding. Its delivery
   // is simulated here; granting/revalidating Staff is explicitly out of scope.
-  denial.mockRestore();
+  actorRuntimeController.refreshStaffPermissions({ captured: binding, actorId: binding.actorId, permissions: ['pos'] });
   await act(async () => {
     expect(await second.result.current.handleInitiateCheckout()).toMatchObject({ code: 'CHECKOUT_RECOVERY_CANCEL_REQUIRED' });
     expect(await second.result.current.handleProcessOrder({ paymentMethod: 'card' })).toMatchObject({ success: false });
@@ -140,5 +138,31 @@ it('does not let an already recovered cancellation release an attempt after prep
     .toMatchObject({ success: false, released: false }); });
   expect((await db.table('sales').get(order.id)).isLockedForCheckout).toBe(true);
   expect((await db.table('sales').get(order.id)).status).toBe('open');
+  second.unmount();
+});
+
+
+it.each(['preflight', 'transaction'])('recovers cancellation after live POS revocation during %s and unmount', async moment => {
+  const first = mount(async () => { if (moment === 'preflight') revoke(); return true; });
+  await act(async () => { expect(await first.result.current.handleInitiateCheckout()).toMatchObject({ success: true }); });
+  const attempt = (await db.table('sales').get(order.id)).checkoutAttemptId;
+  const binding = actorRuntimeController.capture();
+  const revoke = () => { actorRuntimeController.refreshStaffPermissions({ captured: binding, actorId: binding.actorId, permissions: [] }); };
+  const hook = () => { if (moment === 'transaction') revoke(); };
+  db.table('sales').hook('updating', hook);
+  try {
+    await act(async () => { expect((await first.result.current.handleProcessOrder({ paymentMethod: 'tarjeta', amountPaid: 20 })).success).toBe(false); });
+  } finally { db.table('sales').hook('updating').unsubscribe(hook); }
+  first.unmount();
+  expect((await db.table('sales').get(order.id)).status).toBe('open');
+  expect((await db.table('sales').get(order.id)).checkoutAttemptId).toBe(attempt);
+  expect((await db.table('sales').get(order.id)).isLockedForCheckout).toBe(true);
+  actorRuntimeController.refreshStaffPermissions({ captured: binding, actorId: binding.actorId, permissions: ['pos'] });
+  const second = mount();
+  await act(async () => { expect(await second.result.current.handleInitiateCheckout()).toMatchObject({ code: 'CHECKOUT_RECOVERY_CANCEL_REQUIRED' }); });
+  await act(async () => { expect(await second.result.current.handlePaymentModalClose()).toMatchObject({ success: true }); });
+  expect((await db.table('sales').get(order.id)).isLockedForCheckout).toBe(false);
+  expect(await db.table('transaction_log').count()).toBe(0);
+  expect((await db.table('menu').get('p')).stock).toBe(10);
   second.unmount();
 });

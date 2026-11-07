@@ -271,19 +271,44 @@ export const rememberPrepaymentCheckout = (orderId, checkoutAttemptId) => {
   if (!ownership) return null;
   const handle = actorRuntimeController.capture('pos');
   ownership.handle.assertCurrent('pos');
-  ownership.prepayment = { checkoutAttemptId, handle };
+  ownership.prepayment = { checkoutAttemptId, handle, active: true };
   return handle;
 };
 
 export const forgetPrepaymentCheckout = (orderId, checkoutAttemptId) => {
   const ownership = checkoutOwnership.get(orderId);
-  if (ownership?.prepayment?.checkoutAttemptId === checkoutAttemptId) delete ownership.prepayment;
+  if (ownership?.prepayment?.checkoutAttemptId === checkoutAttemptId) ownership.prepayment.active = false;
+};
+
+// Called before Cloud preparation hands ownership to FIN-01. An in-flight
+// or ambiguous financial intent cannot return to prepayment cancellation.
+export const markCheckoutFinancialDispatch = ({ orderId, handle }) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership?.prepayment) return null;
+  handle.assertCurrent('pos');
+  ownership.handle.assertCurrent(null);
+  ownership.prepayment.handle.assertCurrent(null);
+  ownership.prepayment.active = false;
+  return ownership.prepayment.checkoutAttemptId;
+};
+
+// Restore cancellation identity after a proven local abort or preparation
+// without a durable financial owner. Never grant, unlock or execute a payment.
+export const restoreAbortedCheckoutCancellation = ({ orderId, checkoutAttemptId, handle }) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership?.prepayment || ownership.prepayment.checkoutAttemptId !== checkoutAttemptId) return;
+  handle.assertCurrent(null);
+  ownership.handle.assertCurrent(null);
+  ownership.prepayment.handle.assertCurrent(null);
+  ownership.prepayment.active = true;
 };
 
 export const recoverPrepaymentCheckout = (orderId) => {
   const ownership = checkoutOwnership.get(orderId);
   const attempt = ownership?.prepayment;
-  if (!attempt) return null;
+  if (!attempt?.active || getPendingActorOperations().some(operation =>
+    operation.label === 'sales.processSale' && operation.actorKey === ownership.actorKey &&
+    operation.tenantOpaqueId === ownership.tenantOpaqueId)) return null;
   attempt.handle.assertCurrent('pos');
   ownership.handle.assertCurrent('pos');
   return { orderId, checkoutAttemptId: attempt.checkoutAttemptId,
