@@ -40,6 +40,7 @@ before(() => {
     'private.require_active_admin_session', 'public.enforce_pos_rpc_rate_limit_v2',
     'public.build_pos_rpc_rate_limited_response', 'public.admin_login_on_device']) sql(latestFunction(name));
   sql(readFileSync(new URL(migrationName, directory), 'utf8'));
+  sql(readFileSync(new URL('20261107004310_account_recovery_support_v2.sql', directory), 'utf8'));
 });
 after(() => sql(`drop database ${database} with (force);`, base.href));
 
@@ -211,4 +212,239 @@ test('concurrent issuance returns one code and rate-limits the other', async () 
   const results=await Promise.all([concurrentSql(statement),concurrentSql(statement)]);
   assert.equal(results.filter(r=>r.success).length,1);
   expectCode(results.find(r=>!r.success),'RECOVERY_RATE_LIMITED');
+});
+
+// V2: real database state machine; external evidence is explicitly a human
+// attestation, not a mock of a payment provider or an identity verification API.
+const evidence = [
+  { kind:'provider_payment', reference:'TEST payment original receipt reference', checked_against:'TEST original merchant settlement ledger', independently_checked:true },
+  { kind:'prior_contract', reference:'TEST signed prior contract archive', checked_against:'TEST historical vendor original contract', independently_checked:true }
+];
+const openSql = (f, entries=evidence, email='new-owner@example.com') => `select private.support_open_recovery_case(${quote(f.license)},${quote(email)},'reviewer-one','TEST case request independent checks',${quote(JSON.stringify(entries))}::jsonb);`;
+const actionSql = (id, action, operator='reviewer-two', code=null) => `select private.support_recovery_case_action(${quote(id)},${quote(action)},${quote(operator)},'TEST independent review and delivery reference',${quote(code)});`;
+const action = (...args) => json(actionSql(...args));
+const caseIssue = (id,target='new') => json(`select private.support_issue_recovery_case_code(${quote(id)},${quote(target)},'reviewer-two','TEST mailbox delivery verified destination');`);
+const requestChange = (f,password='Original123') => json(`select public.admin_request_recovery_contact_change(${auth(f)},${quote(password)},'changed@example.com');`);
+const waitBudget = (f) => sql(`update private.admin_recovery_audit set created_at=created_at-interval '61 seconds' where license_id=${quote(f.license)};`);
+const passSafetyWait = (id) => sql(`update private.admin_recovery_cases set not_before=now()-interval '1 second' where id=${quote(id)};`);
+
+test('V2 evidence fails closed for declarations, missing checks, repeated types, and missing original owner', () => {
+  const f=fixture();
+  for(const entries of [[],{},null,[evidence[0]], [evidence[0],evidence[0]],
+    [evidence[0],{...evidence[1],independently_checked:false}],
+    [evidence[0],{kind:'prior_contract',reference:'TEST enough text',checked_against:'TEST enough text'}],
+    [evidence[0],{...evidence[1],kind:'license_key'}]]) {
+    expectCode(json(openSql(f,entries)),'RECOVERY_INDEPENDENT_EVIDENCE_REQUIRED');
+  }
+  sql(`update public.license_admin_users set is_active=false where id=${quote(f.owner)};`);
+  expectCode(json(openSql(f)),'RECOVERY_OWNER_UNAVAILABLE');
+  assert.equal(sql(`select count(*) from private.admin_recovery_cases where license_id=${quote(f.license)};`),'0');
+});
+
+for (const plan of ['free_trial','pro_monthly']) test(`V2 ${plan}: exceptional recovery preserves owner and device/plan; enforces approval, mailbox, delay, and v1 reset`, () => {
+  const f=fixture(plan); const originalOwner=f.owner;
+  const originalLicense=sql(`select to_jsonb(l) from public.licenses l where id=${quote(f.license)};`);
+  const originalDevices=sql(`select jsonb_agg(d) from public.license_devices d where license_id=${quote(f.license)};`);
+  const opened=json(openSql(f)); assert.equal(opened.success,true); const id=opened.case_id;
+  expectCode(json(openSql(f)),'RECOVERY_CASE_ACTIVE');
+  expectCode(issue(f),'RECOVERY_SUPPORT_HOLD');
+  expectCode(action(id,'approve','reviewer-one'),'RECOVERY_SECOND_REVIEW_REQUIRED');
+  expectCode(caseIssue(id),'RECOVERY_SECOND_REVIEW_REQUIRED');
+  assert.equal(action(id,'approve').success,true);
+  const approvedAt=sql(`select not_before from private.admin_recovery_cases where id=${quote(id)};`);
+  assert.equal(action(id,'approve').already_approved,true);
+  assert.equal(sql(`select not_before from private.admin_recovery_cases where id=${quote(id)};`),approvedAt);
+  expectCode(action(id,'complete'),'RECOVERY_NEW_MAILBOX_REQUIRED');
+  const c=caseIssue(id); assert.equal(c.delivery_email,'new-owner@example.com');
+  assert.equal(action(id,'verify_new','reviewer-two',c.code).success,true);
+  expectCode(action(id,'verify_new','reviewer-two',c.code),'RECOVERY_CODE_USED');
+  expectCode(action(id,'complete'),'RECOVERY_SAFETY_WAIT');
+  passSafetyWait(id);
+  assert.equal(action(id,'complete').success,true);
+  assert.equal(action(id,'complete').already_completed,true);
+  assert.equal(sql(`select email from private.admin_recovery_contacts where license_id=${quote(f.license)};`),'new-owner@example.com');
+  assert.equal(sql(`select id from public.license_admin_users where license_id=${quote(f.license)} and is_owner;`),originalOwner);
+  assert.equal(sql(`select to_jsonb(l) from public.licenses l where id=${quote(f.license)};`),originalLicense);
+  assert.equal(sql(`select jsonb_agg(d) from public.license_devices d where license_id=${quote(f.license)};`),originalDevices);
+  assert.equal(sql(`select count(*) from public.license_admin_sessions where license_id=${quote(f.license)} and revoked_at is null;`),'0');
+  waitBudget(f); const reset=issue(f); assert.equal(reset.delivery_email,'new-owner@example.com');
+  assert.equal(redeem(f,reset.code).username,'original-owner');
+  const diagnosis=json(`select private.support_recovery_status(${quote(f.license)});`);
+  const serialized=JSON.stringify(diagnosis);
+  for(const secret of ['code_hash','code_ref','password_hash','session_token_hash','security_token',c.code,reset.code]) assert.ok(!serialized.includes(secret));
+  assert.equal(diagnosis.cases[0].state,'completed');
+  assert.ok(diagnosis.history.some(e=>e.action==='password_recovered_sessions_revoked'));
+});
+
+test('V2 authenticated change requires password, shows reference after reload, verifies both mailboxes and revokes sessions', () => {
+  const f=verifiedFixture();
+  expectCode(requestChange(f,'wrong'),'RECOVERY_REAUTH_REQUIRED');
+  const r=requestChange(f); assert.equal(r.success,true); const id=r.case_id;
+  const status=json(`select public.admin_recovery_contact_status(${auth(f)});`);
+  assert.equal(status.contact.email,f.email); assert.equal(status.pending_change.case_id,id);
+  const newCode=caseIssue(id); assert.equal(action(id,'verify_new','operator',newCode.code).success,true);
+  expectCode(action(id,'complete'),'RECOVERY_OLD_NOTICE_REQUIRED');
+  assert.equal(action(id,'notice').success,true);
+  expectCode(action(id,'complete'),'RECOVERY_SAFETY_WAIT');
+  waitBudget(f); const oldCode=caseIssue(id,'old'); assert.equal(oldCode.delivery_email,f.email);
+  assert.equal(action(id,'verify_old','operator',oldCode.code).success,true);
+  assert.equal(action(id,'complete').success,true);
+  assert.equal(sql(`select email from private.admin_recovery_contacts where license_id=${quote(f.license)};`),'changed@example.com');
+  expectCode(json(`select private.require_active_admin_session(${auth(f)});`),'ADMIN_SESSION_INVALID');
+  // Password stays unchanged for authenticated contact replacement.
+  const login=json(`select public.admin_login_on_device(${quote(f.key)},'original-owner','Original123','device','Test','{}');`);
+  assert.equal(login.success,true);
+});
+
+test('V2 lost old mailbox: delay starts at notice, expired original session cannot finish; cancel invalidates codes', () => {
+  const f=verifiedFixture(); const {case_id:id}=requestChange(f); const c=caseIssue(id);
+  action(id,'verify_new','operator',c.code); passSafetyWait(id); action(id,'notice');
+  expectCode(action(id,'complete'),'RECOVERY_SAFETY_WAIT');
+  passSafetyWait(id);
+  sql(`update public.license_admin_sessions set expires_at=now()-interval '1 second' where id=${quote(f.session)};`);
+  expectCode(action(id,'complete'),'RECOVERY_REQUEST_SESSION_REQUIRED');
+  assert.equal(action(id,'cancel').success,true);
+  assert.equal(sql(`select email from private.admin_recovery_contacts where license_id=${quote(f.license)};`),f.email);
+});
+
+test('V2 blocked suspicious case freezes issued v1 codes, revokes owner sessions, and requires explicit cancellation', () => {
+  const f=verifiedFixture(); const code=issue(f); const id=json(openSql(f)).case_id;
+  expectCode(redeem(f,code.code),'RECOVERY_SUPPORT_HOLD');
+  assert.equal(action(id,'block').success,true);
+  expectCode(action(id,'approve'),'RECOVERY_CASE_NOT_ACTIONABLE');
+  expectCode(caseIssue(id),'RECOVERY_CASE_NOT_ACTIONABLE');
+  assert.equal(sql(`select revoked_at is not null from public.license_admin_sessions where id=${quote(f.session)};`),'t');
+  assert.equal(action(id,'cancel').success,true);
+  expectCode(redeem(f,code.code),'RECOVERY_CODE_INVALID');
+});
+
+test('V2 codes isolate cases/licenses; reissue, five attempts and expiry retain v1 guarantees', () => {
+  const f=fixture(),other=fixture(); const a=json(openSql(f)).case_id,b=json(openSql(other)).case_id;
+  action(a,'approve'); action(b,'approve');
+  const first=caseIssue(a); expectCode(action(b,'verify_new','operator',first.code),'RECOVERY_CODE_INVALID');
+  waitBudget(f); const second=caseIssue(a); expectCode(action(a,'verify_new','operator',first.code),'RECOVERY_CODE_INVALID');
+  const wrong=second.code.slice(0,13)+(second.code[13]==='a'?'b':'a')+second.code.slice(14);
+  for(let i=0;i<5;i++) expectCode(action(a,'verify_new','operator',wrong),i===4?'RECOVERY_ATTEMPTS_EXHAUSTED':'RECOVERY_CODE_INVALID');
+  expectCode(action(a,'verify_new','operator',second.code),'RECOVERY_ATTEMPTS_EXHAUSTED');
+  const otherCode=caseIssue(b);
+  sql(`update private.admin_recovery_challenges set expires_at=now()-interval '1 second' where id=(select new_challenge_id from private.admin_recovery_cases where id=${quote(b)});`);
+  expectCode(action(b,'verify_new','operator',otherCode.code),'RECOVERY_CODE_EXPIRED');
+});
+
+test('V2 concurrent operators create one case, consume once, and complete once with idempotent result', async () => {
+  const f=fixture(); const opened=await Promise.all([concurrentSql(openSql(f)),concurrentSql(openSql(f))]);
+  assert.equal(opened.filter(r=>r.success).length,1); expectCode(opened.find(r=>!r.success),'RECOVERY_CASE_ACTIVE');
+  const id=opened.find(r=>r.success).case_id; action(id,'approve'); const c=caseIssue(id);
+  const verified=await Promise.all([concurrentSql(actionSql(id,'verify_new','operator',c.code)),concurrentSql(actionSql(id,'verify_new','operator',c.code))]);
+  assert.equal(verified.filter(r=>r.success).length,1); expectCode(verified.find(r=>!r.success),'RECOVERY_CODE_USED');
+  passSafetyWait(id);
+  const completed=await Promise.all([concurrentSql(actionSql(id,'complete')),concurrentSql(actionSql(id,'complete'))]);
+  assert.ok(completed.every(r=>r.success)); assert.equal(completed.filter(r=>r.already_completed).length,1);
+  assert.equal(sql(`select count(*) from private.admin_recovery_audit where case_id=${quote(id)} and action='case_complete';`),'1');
+});
+
+test('V2 audit failure rolls contact, case completion and sessions back together', () => {
+  const f=verifiedFixture(); const id=json(openSql(f)).case_id;
+  action(id,'approve'); action(id,'notice'); const c=caseIssue(id); action(id,'verify_new','operator',c.code); passSafetyWait(id);
+  sql(`create function private.recovery_test_fail_case_audit() returns trigger language plpgsql as $$ begin
+    if new.action='case_complete' then raise exception 'fixture failure'; end if; return new; end $$;
+    create trigger recovery_case_audit_failure before insert on private.admin_recovery_audit for each row execute function private.recovery_test_fail_case_audit();`);
+  try { assert.throws(()=>action(id,'complete')); }
+  finally { sql('drop trigger recovery_case_audit_failure on private.admin_recovery_audit; drop function private.recovery_test_fail_case_audit();'); }
+  assert.equal(sql(`select email from private.admin_recovery_contacts where license_id=${quote(f.license)};`),f.email);
+  assert.equal(sql(`select state from private.admin_recovery_cases where id=${quote(id)};`),'approved');
+  assert.equal(sql(`select revoked_at is null from public.license_admin_sessions where id=${quote(f.session)};`),'t');
+  assert.equal(action(id,'complete').success,true);
+});
+
+test('V2 ACL denies every private helper and table to PUBLIC/API roles; Staff device/session cannot request changes', () => {
+  for(const role of ['anon','authenticated','service_role']) {
+    const accessible=sql(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='private' and (p.proname like '%recovery%' or p.proname='check_admin_recovery_code')
+      and has_function_privilege(${quote(role)},p.oid,'execute');`);
+    assert.equal(accessible,'0',role);
+    assert.equal(sql(`select has_table_privilege(${quote(role)},'private.admin_recovery_cases','select,insert,update,delete');`),'f');
+    assert.throws(()=>sql(`set role ${role}; select private.support_recovery_case_action('${randomUUID()}','complete','operator','TEST attempted role escalation');`));
+  }
+  assert.equal(sql(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace, lateral aclexplode(p.proacl) a
+    where n.nspname='private' and p.proname like '%recovery%' and a.grantee=0;`),'0');
+  const f=verifiedFixture();
+  expectCode(json(`select public.admin_request_recovery_contact_change(${auth(f,'staff-token')},'Original123','new@example.com');`),'ADMIN_SESSION_INVALID');
+  sql(`update public.license_devices set device_mode='staff_only' where id=${quote(f.device)};`);
+  assert.equal(requestChange(f).success,false);
+});
+
+test('V2 discovery distinguishes equal names, repeated contacts, historical unverified mail and ownerless licenses', () => {
+  const f=verifiedFixture(),g=verifiedFixture();
+  sql(`update private.admin_recovery_contacts set email='shared@example.com' where license_id in (${quote(f.license)},${quote(g.license)});
+    update public.licenses set owner_email='history@example.com' where id=${quote(g.license)};
+    update public.license_admin_users set is_active=false where id=${quote(g.owner)};`);
+  const shared=json(`select jsonb_agg(a) from private.support_find_recovery_accounts('shared@example.com') a;`);
+  assert.ok(shared.some(r=>r.license_id===f.license));
+  const historical=json(`select jsonb_agg(a) from private.support_find_recovery_accounts('history@example.com') a;`);
+  assert.equal(historical[0].owner_id,null); assert.equal(historical[0].verified_at,null);
+  const byId=json(`select to_jsonb(a) from private.support_find_recovery_accounts(${quote(f.license)}) a;`);
+  assert.equal(byId.license_id,f.license);
+  assert.equal(sql("select count(*) from private.support_find_recovery_accounts('');"),'0');
+});
+
+test('V2 authenticated lost-mailbox route completes after notice delay; stale contact, expiry, and unknown code remain safe', () => {
+  const f=verifiedFixture(); const c0=issue(f); const id=requestChange(f).case_id;
+  // Unknown random references must not disclose an account's support hold.
+  expectCode(redeem(f,'000000000000-00000000000000000000000000000000'),'RECOVERY_CODE_INVALID');
+  expectCode(redeem(f,c0.code),'RECOVERY_SUPPORT_HOLD');
+  waitBudget(f); const c=caseIssue(id); action(id,'verify_new','operator',c.code); action(id,'notice');
+  expectCode(action(id,'complete'),'RECOVERY_SAFETY_WAIT'); passSafetyWait(id);
+  assert.equal(action(id,'complete').success,true);
+  const g=verifiedFixture(); const another=json(openSql(g)).case_id;
+  action(another,'approve'); action(another,'notice'); const cc=caseIssue(another); action(another,'verify_new','operator',cc.code); passSafetyWait(another);
+  sql(`update private.admin_recovery_contacts set verified_at=verified_at+interval '1 second' where license_id=${quote(g.license)};`);
+  expectCode(action(another,'complete'),'RECOVERY_CONTACT_CHANGED');
+  sql(`update private.admin_recovery_cases set expires_at=now()-interval '1 second' where id=${quote(another)};`);
+  expectCode(action(another,'complete'),'RECOVERY_CASE_NOT_ACTIONABLE');
+  assert.equal(action(another,'cancel').success,true);
+});
+
+test('V2 recovery never activates expired/suspended licenses; SQL templates use real interfaces', () => {
+  const f=verifiedFixture(); sql(`update public.licenses set status='suspended',expires_at=now()-interval '1 day' where id=${quote(f.license)};`);
+  const beforeLicense=sql(`select to_jsonb(l) from public.licenses l where id=${quote(f.license)};`);
+  const code=issue(f); assert.equal(redeem(f,code.code).success,true);
+  assert.equal(sql(`select to_jsonb(l) from public.licenses l where id=${quote(f.license)};`),beforeLicense);
+  const login=json(`select public.admin_login_on_device(${quote(f.key)},'original-owner','Recovered123','device','Test','{}');`);
+  assert.equal(login.success,false);
+  const template=readFileSync(new URL('../support/account-recovery/01-buscar.sql',import.meta.url),'utf8').replace('BUSQUEDA',f.license);
+  const found=sql(template); assert.ok(found.includes(f.license)); assert.ok(!found.includes('password_hash'));
+  const statusTemplate=readFileSync(new URL('../support/account-recovery/02-diagnosticar.sql',import.meta.url),'utf8').replace('UUID_LICENCIA',f.license);
+  assert.equal(JSON.parse(sql(statusTemplate)).account.license_id,f.license);
+});
+
+test('V2 evidence-free security freeze cannot become account recovery, invalidates outstanding code and is idempotent', () => {
+  const f=verifiedFixture(); const oldCode=issue(f);
+  const block=`select private.support_block_admin_recovery(${quote(f.license)},'security-reviewer','TEST confirmed suspicious recovery incident');`;
+  const r=json(block); assert.equal(r.state,'blocked'); assert.equal(json(block).already_blocked,true);
+  const state=json(`select to_jsonb(c) from private.admin_recovery_cases c where id=${quote(r.case_id)};`);
+  assert.equal(state.kind,'security_hold'); assert.equal(state.new_email,null); assert.deepEqual(state.evidence,[]);
+  for(const a of ['approve','notice','verify_new','verify_old','complete']) expectCode(action(r.case_id,a),'RECOVERY_CASE_NOT_ACTIONABLE');
+  expectCode(caseIssue(r.case_id),'RECOVERY_CASE_NOT_ACTIONABLE');
+  expectCode(issue(f),'RECOVERY_SUPPORT_HOLD'); expectCode(redeem(f,oldCode.code),'RECOVERY_CODE_INVALID');
+  assert.equal(sql(`select count(*) from public.license_admin_sessions where license_id=${quote(f.license)} and revoked_at is null;`),'0');
+  assert.equal(sql(`select email from private.admin_recovery_contacts where license_id=${quote(f.license)};`),f.email);
+  assert.equal(action(r.case_id,'cancel').success,true);
+  assert.equal(json(openSql(f)).success,true);
+});
+
+test('V2 discovery finds previous verified mailboxes and unverified subscription mail without changing delivery authority', () => {
+  const f=verifiedFixture(); const enrollment=request(f);
+  // A prior valid contact-verification record is historical context, not current delivery authority.
+  sql(`insert into private.admin_recovery_challenges(license_id,admin_user_id,purpose,email,request_session_id,consumed_at)
+    values (${quote(f.license)},${quote(f.owner)},'contact','previous@example.com',${quote(f.session)},now());
+    insert into public.subscriptions values(${quote(f.license)},'TEST','TEST historical reference','billing@example.com','inactive');`);
+  assert.equal(enrollment.code,'RECOVERY_CONTACT_ALREADY_VERIFIED');
+  for(const search of ['previous@example.com','billing@example.com']) {
+    const found=json(`select jsonb_agg(a) from private.support_find_recovery_accounts(${quote(search)}) a;`);
+    assert.equal(found[0].license_id,f.license); assert.equal(found[0].recovery_email,f.email);
+    const template=readFileSync(new URL('../support/account-recovery/01-buscar.sql',import.meta.url),'utf8').replace('BUSQUEDA',search);
+    assert.ok(sql(template).includes(f.license));
+  }
+  assert.equal(issue(f).delivery_email,f.email);
 });

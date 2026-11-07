@@ -6,7 +6,7 @@ vi.mock('../../supabase', () => ({ supabaseClient: { rpc: mocks.rpc } }));
 vi.mock('../../sync/posSyncClient', () => ({ buildPosSyncAuthContext: mocks.auth }));
 vi.mock('../actorRuntimeController', () => ({ actorRuntimeController: { capture: mocks.capture } }));
 vi.mock('../actorAuthorityRecovery', () => ({ reportActorAuthorityError: mocks.report }));
-import { confirmRecoveryContact, getRecoveryContact, redeemPasswordRecovery, requestRecoveryContact, validRecoveryPassword } from '../adminRecoveryService';
+import { confirmRecoveryContact, getRecoveryContact, redeemPasswordRecovery, requestRecoveryContact, requestRecoveryContactChange, validRecoveryPassword } from '../adminRecoveryService';
 
 const respond = (response) => mocks.rpc.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue(response) });
 beforeEach(() => {
@@ -78,4 +78,13 @@ describe('admin recovery transport and authority', () => {
     expect(validRecoveryPassword('a1' + 'á'.repeat(36))).toBe(false);
     expect(validRecoveryPassword('a1' + 'á'.repeat(35))).toBe(true);
   });
+});
+
+it('uses the existing Admin authority and reauthentication transport for replacement, rejects Staff', async () => {
+  await requestRecoveryContactChange('PRO',' new@example.com ','Current123');
+  expect(mocks.rpc).toHaveBeenCalledWith('admin_request_recovery_contact_change', expect.objectContaining({ p_current_password:'Current123',p_email:'new@example.com',p_admin_session_token:'admin-token' }));
+  mocks.rpc.mockClear();
+  mocks.capture.mockReturnValue({ actorType:'staff',assertCurrent:mocks.current });
+  expect(await requestRecoveryContactChange('PRO','new@example.com','Current123')).toMatchObject({ success:false,code:'ADMIN_SESSION_REQUIRED' });
+  expect(mocks.rpc).not.toHaveBeenCalled();
 });

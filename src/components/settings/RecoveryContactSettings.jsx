@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PasswordField from '../common/PasswordField';
 import PreloginSupportAccess from '../common/PreloginSupportAccess';
 import { useSettingsAccess, useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
-import { confirmRecoveryContact, getRecoveryContact, requestRecoveryContact, recoveryErrorMessage } from '../../services/auth/adminRecoveryService';
+import { confirmRecoveryContact, getRecoveryContact, requestRecoveryContact, requestRecoveryContactChange, recoveryErrorMessage } from '../../services/auth/adminRecoveryService';
 import '../common/AdminAccountRecovery.css';
 
 export default function RecoveryContactSettings({ licenseKey }) {
@@ -57,10 +57,17 @@ export default function RecoveryContactSettings({ licenseKey }) {
     <section className="license-panel admin-account-recovery" aria-labelledby="recovery-contact-title" aria-busy={loading}>
       <h3 id="recovery-contact-title">Correo de recuperación</h3>
       <p>Vincula un correo que controles para recuperar tu usuario y contraseña con ayuda de soporte. Disponible en Lanzo Local y Lanzo Nube.</p>
-      {status?.contact ? <>
-        <p role="status">Correo verificado: <strong>{status.contact.email}</strong></p>
-        <p>Para cambiar este contacto, solicita ayuda a soporte. No se sustituye desde esta pantalla.</p>
-      </> : status && <>
+      {status?.contact && <p role="status">Correo verificado: <strong>{status.contact.email}</strong></p>}
+      {status?.pending_change ? <>
+        <p>Hay un caso de revisión de recuperación. Estado: {status.pending_change.state}.</p>
+        {status.pending_change.email && <p>Correo propuesto: <strong>{status.pending_change.email}</strong>.</p>}
+        <p>Comparte esta referencia con soporte:</p>
+        <p className="recovery-request-reference">{status.pending_change.case_id}</p>
+        <p>Soporte revisará el caso, verificará los buzones por correo manual y explicará el plazo de seguridad. El contacto actual se conserva hasta completar la verificación. Un bloqueo requiere resolver la revisión antes de continuar.</p>
+      </> : status?.contact ? <details><summary>Cambiar correo con ayuda de soporte</summary>
+        <p>Confirma tu contraseña actual y solicita el cambio. Después contacta a soporte con la referencia del caso. Si controlas el correo anterior podrás confirmarlo; en caso contrario habrá aviso y una espera mínima de 24 horas. Al finalizar tendrás que iniciar sesión otra vez. Nunca compartas tu contraseña.</p>
+        <ContactRequestForm {...{ email, setEmail, password, setPassword, loading, run, licenseKey }} change />
+      </details> : status && <>
         {status.pending ? <>
           <p>Solicitud pendiente para <strong>{status.pending.email}</strong>. Contacta con soporte e indica esta referencia:</p>
           <p className="recovery-request-reference">{status.pending.request_id}</p>
@@ -86,13 +93,13 @@ export default function RecoveryContactSettings({ licenseKey }) {
   );
 }
 
-function ContactRequestForm({ email, setEmail, password, setPassword, loading, run, licenseKey }) {
-  return <form onSubmit={(event) => { event.preventDefault(); void run(() => requestRecoveryContact(licenseKey, email, password)); }}>
+function ContactRequestForm({ email, setEmail, password, setPassword, loading, run, licenseKey, change = false }) {
+  return <form onSubmit={(event) => { event.preventDefault(); void run(() => (change ? requestRecoveryContactChange : requestRecoveryContact)(licenseKey, email, password)); }}>
     <label htmlFor="recovery-contact-email">Correo que quieres verificar</label>
     <input id="recovery-contact-email" type="email" inputMode="email" className="form-input" autoComplete="email"
       value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required disabled={loading} />
     <PasswordField id="recovery-current-password" label="Contraseña administrativa actual" value={password}
       onChange={(event) => setPassword(event.target.value)} disabled={loading} />
-    <button className="ui-button ui-button--primary" disabled={loading || !email.trim() || !password}>Solicitar vinculación</button>
+    <button className="ui-button ui-button--primary" disabled={loading || !email.trim() || !password}>{change ? 'Solicitar cambio de correo' : 'Solicitar vinculación'}</button>
   </form>;
 }

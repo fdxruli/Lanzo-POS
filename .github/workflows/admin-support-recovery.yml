@@ -12,6 +12,8 @@ on:
       - 'src/components/settings/__tests__/RecoveryContactSettings.test.jsx'
       - 'src/components/settings/LicenseSettings.jsx'
       - 'supabase/migrations/20261106201326_admin_support_account_recovery_v1.sql'
+      - 'supabase/migrations/20261107004310_account_recovery_support_v2.sql'
+      - 'scripts/support/account-recovery/**'
       - 'supabase/tests/fixtures/admin-support-recovery.sql'
       - 'scripts/supabase/admin-support-recovery.node-test.mjs'
       - '.github/workflows/admin-support-recovery.yml'
