@@ -1,9 +1,13 @@
 # Manual operativo de recuperación de cuentas — LANZO POS
 
-**Manual vigente.** Versión candidata V2. La recuperación normal V1 del PR #407
-está instalada y fue comprobada manualmente por el propietario. V2 está preparada
-para revisión: **no usar sus funciones en Production hasta instalar exactamente
-la migración autorizada**. El reporte de esta entrega registra los estados por separado.
+**Manual vigente. SQL V2 instalado con autorización del propietario.** La versión
+`20261107004310` quedó registrada una sola vez en Production el 6 de noviembre de
+2026, hora de Ciudad de México, con el archivo canónico y SHA-256 aprobados.
+La recuperación V1 del PR #407 conserva su validación manual histórica.
+**El QA manual V2 con el propietario sigue pendiente.** Instalación, pruebas
+automatizadas y demostración funcional son estados distintos. Consultar el
+[reporte de instalación y primer QA](LANZO_ACCOUNT_RECOVERY_V2_PRODUCTION_INSTALL_REPORT.md).
+El PR #410 sigue en Draft; la integración a main requiere autorización aparte.
 
 ## Guía rápida
 
@@ -25,9 +29,10 @@ Abrir el archivo, copiarlo al SQL Editor, sustituir sus marcadores y ejecutar
 | Falta identidad original o evidencia | Detener; registrar negativa en expediente restringido externo | No existe prueba fiable | Cuenta bloqueada; no crear propietario sustituto |
 | Perdió dispositivo FREE | Recuperar cuenta si procede; procedimiento de dispositivos separado | ¿Existe respaldo o sincronización real? | Acceso no equivale a recuperar IndexedDB perdida |
 
-01 y 03 funcionan con V1. Los demás scripts requieren V2. Durante la preparación
-se permite ejecutar solo consultas de lectura en Production. Toda operación real
-sobre contactos, credenciales o sesiones exige el caso y autorización correspondientes.
+01 y 03 funcionan con V1. Los demás scripts requieren V2, ahora instalada.
+La instalación no ejecutó ninguno de estos procedimientos sobre cuentas reales.
+Toda atención o QA que cambie contactos, credenciales o sesiones exige el caso y
+la autorización correspondientes; la autorización de instalación no los ejecuta.
 
 ## 1. Qué recupera y qué necesita soporte
 

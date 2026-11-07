@@ -1,5 +1,11 @@
 # LANZO_ACCOUNT_RECOVERY_SUPPORT_V2_REPORT
 
+> **Antecedente de preparación.** Este documento conserva el estado anterior a la
+> autorización de instalación. V2 ya está instalada con el SQL y SHA-256 aprobados.
+> El estado vigente, postflight y primer QA están en
+> [LANZO_ACCOUNT_RECOVERY_V2_PRODUCTION_INSTALL_REPORT](LANZO_ACCOUNT_RECOVERY_V2_PRODUCTION_INSTALL_REPORT.md).
+> El QA manual continúa pendiente; el PR no se ha fusionado.
+
 Fecha de revisión: 6 de noviembre de 2026, hora de Ciudad de México.
 **Candidato preparado y probado. SQL V2 sin instalar. QA manual V2 pendiente.**
 

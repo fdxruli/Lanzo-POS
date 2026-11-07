@@ -14,7 +14,9 @@ anterior, login nuevo, revocación y conservación de datos/permisos con El Bal�
 
 Esto reemplaza las antiguas notas que todavía indicaban instalación/QA V1 pendientes.
 No repetir esa migración. El estado de V2 se registra separadamente en
-[LANZO_ACCOUNT_RECOVERY_SUPPORT_V2_REPORT.md](LANZO_ACCOUNT_RECOVERY_SUPPORT_V2_REPORT.md).
+[LANZO_ACCOUNT_RECOVERY_V2_PRODUCTION_INSTALL_REPORT.md](LANZO_ACCOUNT_RECOVERY_V2_PRODUCTION_INSTALL_REPORT.md).
+V2 está instalada con autorización y hash canónico; su QA manual sigue pendiente.
+El reporte de preparación V2 se conserva como antecedente histórico.
 
 ## Contratos conservados
 
