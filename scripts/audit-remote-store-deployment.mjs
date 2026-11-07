@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { inflateSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateStoreSlug } from '../store/api/_socialMetadata.js';
@@ -22,6 +23,14 @@ const MISSING_SLUG = 'slug-inexistente-controlado';
 const TRACKING_TOKEN = 'token-ficticio';
 const DEFAULT_PRODUCTION_HOSTS = Object.freeze(['lanzo-store.vercel.app']);
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_CRC_TABLE = Object.freeze(Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+  }
+  return value >>> 0;
+}));
 const FORBIDDEN_PUBLIC_RUNTIME_MARKERS = Object.freeze([
   'invalid-for-local-build',
   'supabase.invalid',
@@ -31,11 +40,23 @@ const FORBIDDEN_PUBLIC_RUNTIME_MARKERS = Object.freeze([
 
 export function parseCacheControl(value) {
   const directives = new Map();
+  const duplicateDirectives = new Set();
+  let malformed = false;
   for (const part of String(value || '').split(',')) {
-    const [rawName, ...rawValue] = part.trim().split('=');
-    const name = rawName.toLowerCase();
-    if (!name) continue;
-    directives.set(name, rawValue.join('=').replace(/^"|"$/gu, '').trim() || true);
+    const token = part.trim();
+    if (!token) {
+      malformed = true;
+      continue;
+    }
+    const separator = token.indexOf('=');
+    const name = (separator < 0 ? token : token.slice(0, separator)).trim().toLowerCase();
+    const directiveValue = separator < 0
+      ? true
+      : token.slice(separator + 1).trim().replace(/^"|"$/gu, '');
+    if (!/^[!#$%&'*+.^_A-Za-z0-9|~-]+$/u.test(name)) malformed = true;
+    if (separator >= 0 && (!directiveValue || /["\r\n]/u.test(directiveValue))) malformed = true;
+    if (directives.has(name)) duplicateDirectives.add(name);
+    directives.set(name, directiveValue);
   }
   const integer = (name) => {
     const candidate = directives.get(name);
@@ -47,40 +68,74 @@ export function parseCacheControl(value) {
     public: directives.has('public'),
     private: directives.has('private'),
     noStore: directives.has('no-store'),
+    noCache: directives.has('no-cache'),
     immutable: directives.has('immutable'),
     staleWhileRevalidate: directives.has('stale-while-revalidate'),
+    staleWhileRevalidateSeconds: integer('stale-while-revalidate'),
     maxAge: integer('max-age'),
     sharedMaxAge: integer('s-maxage'),
+    duplicateDirectives: Object.freeze([...duplicateDirectives]),
+    malformed,
   });
 }
 
 export function validateCacheControl(value, policy) {
   const cache = parseCacheControl(value);
+  const safePublic = cache.public
+    && !cache.private
+    && !cache.noStore
+    && !cache.noCache
+    && !cache.malformed
+    && cache.duplicateDirectives.length === 0;
+  if (!safePublic) return false;
   if (policy === 'og-unversioned') {
-    return cache.public
-      && !cache.private
-      && !cache.noStore
-      && !cache.immutable
+    return !cache.immutable
       && cache.maxAge === 0
       && cache.sharedMaxAge === 300
-      && cache.staleWhileRevalidate;
+      && cache.staleWhileRevalidateSeconds === 86_400;
   }
   if (policy === 'og-versioned' || policy === 'hashed-asset') {
-    return cache.public
-      && !cache.private
-      && !cache.noStore
-      && cache.immutable
+    return cache.immutable
       && cache.maxAge === 31_536_000
-      && cache.sharedMaxAge !== 300;
+      && cache.sharedMaxAge === null
+      && !cache.staleWhileRevalidate;
   }
   if (policy === 'dynamic-html') {
-    return cache.public
-      && !cache.private
-      && !cache.noStore
-      && !cache.immutable
-      && cache.sharedMaxAge === 300;
+    return !cache.immutable
+      && cache.maxAge === 0
+      && cache.sharedMaxAge === 300
+      && (!cache.staleWhileRevalidate || cache.staleWhileRevalidateSeconds === 86_400);
   }
   throw new Error(`Unknown cache policy: ${policy}.`);
+}
+
+export function validateEdgeCacheControl(value, policy) {
+  const cache = parseCacheControl(value);
+  const safePublic = cache.public
+    && !cache.private
+    && !cache.noStore
+    && !cache.noCache
+    && !cache.malformed
+    && cache.duplicateDirectives.length === 0;
+  if (!safePublic) return false;
+
+  if (policy === 'dynamic-html' || policy === 'og-unversioned') {
+    return !cache.immutable
+      && cache.maxAge === 0
+      && cache.sharedMaxAge === null
+      && !cache.staleWhileRevalidate;
+  }
+  if (policy === 'og-versioned' || policy === 'hashed-asset') {
+    return validateCacheControl(value, policy);
+  }
+  throw new Error('Unknown edge cache policy: ' + policy + '.');
+}
+
+export function validateVercelCacheEvidence(headers = {}) {
+  const status = String(headers.xVercelCache || headers['x-vercel-cache'] || '').toUpperCase();
+  const age = headers.age;
+  return ['HIT', 'STALE'].includes(status)
+    && (age == null || age === '' || (/^\d+$/u.test(String(age)) && Number.isSafeInteger(Number(age))));
 }
 
 const REQUIRED_METADATA = Object.freeze({
@@ -866,6 +921,23 @@ export function inspectSocialHtml(html) {
   ].map((match) => match[1]);
   const canonicalPath = metadata.canonical ? new URL(metadata.canonical).pathname : null;
   const canonicalSlug = /^\/([^/]+)$/u.exec(canonicalPath || '')?.[1] || null;
+  let ogImageVersion = null;
+  let ogImagePath = null;
+  let ogImageSlug = null;
+  try {
+    // Attribute values contain HTML-escaped query separators (for example &amp;v=6).
+    const imageUrl = new URL(metadata.ogImage.replace(/&amp;/giu, '&'));
+    ogImagePath = imageUrl.pathname;
+    const imageSlugValues = imageUrl.searchParams.getAll('slug');
+    if (imageSlugValues.length === 1) ogImageSlug = imageSlugValues[0];
+    const versionValues = imageUrl.searchParams.getAll('v');
+    if (versionValues.length === 1 && /^\d+$/u.test(versionValues[0])) {
+      const version = Number(versionValues[0]);
+      if (Number.isSafeInteger(version) && version > 0) ogImageVersion = version;
+    }
+  } catch {
+    // Invalid or absent image metadata is reported by the metadata checks.
+  }
   return Object.freeze({
     bytes: Buffer.byteLength(html),
     sha256: sha256(html),
@@ -881,6 +953,9 @@ export function inspectSocialHtml(html) {
     )),
     canonicalHost: safeUrlHost(metadata.canonical),
     ogImageHost: safeUrlHost(metadata.ogImage),
+    ogImagePath,
+    ogImageSlug,
+    ogImageVersion,
     canonicalPath,
     ogUrlPath: metadata.ogUrl ? new URL(metadata.ogUrl).pathname : null,
     effectiveSlug: canonicalSlug,
@@ -931,18 +1006,152 @@ export function inspectSecurityMarkers(source, relativeRoute) {
   return [...findings, ...serviceRoleJwtMarkers(source, relativeRoute)];
 }
 
+function pngCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = PNG_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 export function inspectPng(bytes) {
   const data = Buffer.from(bytes);
-  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  const png = data.length >= 24 && data.subarray(0, 8).equals(signature);
   const looksLikeHtml = /^\s*<(?:!doctype|html|head|body)\b/iu.test(
     data.subarray(0, 128).toString('utf8'),
   );
+  let width = null;
+  let height = null;
+  let complete = false;
+  let png = false;
+  let hasTextMetadata = false;
+  const idatChunks = [];
+  let idatBytes = 0;
+  let hasHeader = false;
+  let hasPalette = false;
+  let hasImageData = false;
+  let imageDataClosed = false;
+
+  try {
+    if (data.length < PNG_SIGNATURE.length || !data.subarray(0, 8).equals(PNG_SIGNATURE)) {
+      throw new Error('Invalid PNG signature.');
+    }
+    let offset = PNG_SIGNATURE.length;
+    let colorType = null;
+    let bitDepth = null;
+    while (offset < data.length) {
+      if (offset + 12 > data.length) throw new Error('Truncated PNG chunk.');
+      const chunkLength = data.readUInt32BE(offset);
+      if (chunkLength > MAX_RESPONSE_BYTES || offset + chunkLength + 12 > data.length) {
+        throw new Error('Truncated or oversized PNG chunk.');
+      }
+      const chunkType = data.subarray(offset + 4, offset + 8).toString('ascii');
+      if (!/^[A-Za-z]{4}$/u.test(chunkType)) throw new Error('Invalid PNG chunk type.');
+      const chunkStart = offset + 8;
+      const chunkEnd = chunkStart + chunkLength;
+      const crcOffset = chunkEnd;
+      if (pngCrc32(data.subarray(offset + 4, chunkEnd)) !== data.readUInt32BE(crcOffset)) {
+        throw new Error('Invalid PNG chunk CRC.');
+      }
+      const chunkData = data.subarray(chunkStart, chunkEnd);
+      if (!hasHeader && chunkType !== 'IHDR') throw new Error('PNG IHDR must be first.');
+
+      if (chunkType === 'IHDR') {
+        if (hasHeader || offset !== PNG_SIGNATURE.length || chunkLength !== 13) {
+          throw new Error('Invalid PNG IHDR.');
+        }
+        hasHeader = true;
+        width = chunkData.readUInt32BE(0);
+        height = chunkData.readUInt32BE(4);
+        bitDepth = chunkData[8];
+        colorType = chunkData[9];
+        const validDepths = {
+          0: [1, 2, 4, 8, 16],
+          2: [8, 16],
+          3: [1, 2, 4, 8],
+          4: [8, 16],
+          6: [8, 16],
+        };
+        if (
+          width === 0
+          || height === 0
+          || width * height > 16_000_000
+          || !validDepths[colorType]?.includes(bitDepth)
+          || chunkData[10] !== 0
+          || chunkData[11] !== 0
+          || chunkData[12] !== 0
+        ) {
+          throw new Error('Unsupported or invalid PNG IHDR values.');
+        }
+      } else if (chunkType === 'PLTE') {
+        if (
+          !hasHeader
+          || hasImageData
+          || hasPalette
+          || chunkLength === 0
+          || chunkLength > 768
+          || chunkLength % 3 !== 0
+          || colorType === 0
+          || colorType === 4
+        ) {
+          throw new Error('Invalid PNG palette.');
+        }
+        hasPalette = true;
+      } else if (chunkType === 'IDAT') {
+        if (imageDataClosed) throw new Error('PNG IDAT chunks must be consecutive.');
+        hasImageData = true;
+        idatChunks.push(chunkData);
+        idatBytes += chunkLength;
+      } else if (chunkType === 'IEND') {
+        if (
+          chunkLength !== 0
+          || !hasImageData
+          || (colorType === 3 && !hasPalette)
+          || crcOffset + 4 !== data.length
+        ) {
+          throw new Error('Invalid or incomplete PNG IEND.');
+        }
+        complete = true;
+      } else {
+        if (hasImageData) imageDataClosed = true;
+        if (chunkType === 'tEXt' || chunkType === 'zTXt' || chunkType === 'iTXt') {
+          hasTextMetadata = true;
+        }
+        if (/^[A-Z]/u.test(chunkType)) throw new Error('Unknown critical PNG chunk.');
+      }
+
+      offset = crcOffset + 4;
+      if (chunkType === 'IEND') break;
+    }
+    if (!complete || !hasHeader || !hasImageData || idatBytes === 0) {
+      throw new Error('PNG is incomplete.');
+    }
+    const channelCounts = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+    const bitsPerPixel = bitDepth * channelCounts[colorType];
+    const rowBytes = Math.ceil((width * bitsPerPixel) / 8);
+    const rowLength = rowBytes + 1;
+    const expectedBytes = rowLength * height;
+    if (!Number.isSafeInteger(expectedBytes) || expectedBytes > 64 * 1024 * 1024) {
+      throw new Error('PNG decoded size exceeds the audit limit.');
+    }
+    const decoded = inflateSync(Buffer.concat(idatChunks, idatBytes), {
+      maxOutputLength: expectedBytes + 1,
+    });
+    if (decoded.length !== expectedBytes) throw new Error('PNG image data is truncated.');
+    for (let row = 0; row < height; row += 1) {
+      if (decoded[row * rowLength] > 4) throw new Error('Invalid PNG row filter.');
+    }
+    png = true;
+  } catch {
+    // Invalid or incomplete binary data is reported without preserving it.
+  }
+
   return Object.freeze({
     png,
+    complete,
     looksLikeHtml,
-    width: png ? data.readUInt32BE(16) : null,
-    height: png ? data.readUInt32BE(20) : null,
+    hasTextMetadata,
+    width,
+    height,
     bytes: data.length,
     sha256: sha256(data),
   });
@@ -950,6 +1159,9 @@ export function inspectPng(bytes) {
 
 function sanitizedHeaders(headers) {
   const location = headers.get('location') || '';
+  const cacheControl = headers.get('cache-control') || '';
+  const parsedCacheControl = parseCacheControl(cacheControl);
+  const age = headers.get('age');
   let locationPath = '';
   try {
     const parsed = new URL(location, 'https://preview.invalid');
@@ -959,15 +1171,12 @@ function sanitizedHeaders(headers) {
   }
   return Object.freeze({
     contentType: headers.get('content-type') || '',
-    cacheControl: headers.get('cache-control') || '',
+    cacheControl,
     duplicateContentType: (headers.get('content-type') || '').includes(','),
-    duplicateCacheControl: (() => {
-      const directives = (headers.get('cache-control') || '')
-        .split(',')
-        .map((item) => item.trim().split('=')[0].toLowerCase())
-        .filter(Boolean);
-      return new Set(directives).size !== directives.length;
-    })(),
+    duplicateCacheControl: parsedCacheControl.duplicateDirectives.length > 0 || parsedCacheControl.malformed,
+    xVercelCache: headers.get('x-vercel-cache') || '',
+    age,
+    validAge: age == null || /^\d+$/u.test(age),
     xRobotsTag: headers.get('x-robots-tag') || '',
     locationHost: safeUrlHost(location),
     locationPath,
@@ -1016,6 +1225,10 @@ function metadataPass(inspection, slug) {
     && Object.values(inspection.counts).every((count) => count === 1)
     && inspection.canonicalPath === `/${slug}`
     && inspection.ogUrlPath === `/${slug}`
+    && inspection.ogImagePath === '/api/og/store'
+    && inspection.ogImageSlug === slug
+    && Number.isSafeInteger(inspection.ogImageVersion)
+    && inspection.ogImageVersion > 0
     && inspection.canonicalHost
     && inspection.canonicalHost === inspection.ogImageHost
     && inspection.assetPaths.some((item) => item.endsWith('.js'))
@@ -1106,15 +1319,23 @@ export async function auditRemoteStoreDeployment({
 
   const store = await request('store', paths.store);
   const storeHtml = inspectSocialHtml(store.text || '');
+  const versionedOgPath = storeHtml.ogImageVersion === null
+    ? paths.ogVersioned
+    : paths.og + '&v=' + storeHtml.ogImageVersion;
   addCheck(checks, 'store:metadata', store.status === 200
     && store.contentType === 'text/html'
     && store.headers.xRobotsTag === NOINDEX
-    && validateCacheControl(store.headers.cacheControl, 'dynamic-html')
+    && validateEdgeCacheControl(store.headers.cacheControl, 'dynamic-html')
     && metadataPass(storeHtml, slug));
   const storeHead = await request('store-head', paths.store, 'HEAD');
   addCheck(checks, 'store:head', storeHead.status === 200
     && storeHead.contentType === 'text/html'
-    && validateCacheControl(storeHead.headers.cacheControl, 'dynamic-html'));
+    && validateEdgeCacheControl(storeHead.headers.cacheControl, 'dynamic-html'));
+  const storeCacheEvidence = await request('store-cache-evidence', paths.store);
+  addCheck(checks, 'store:edge-cache-evidence', storeCacheEvidence.status === 200
+    && storeCacheEvidence.bodySha256 === store.bodySha256
+    && validateEdgeCacheControl(storeCacheEvidence.headers.cacheControl, 'dynamic-html')
+    && validateVercelCacheEvidence(storeCacheEvidence.headers));
 
   const storeSlash = await request('store-slash', paths.storeSlash);
   addCheck(checks, 'store:trailing-slash', storeSlash.status === 308
@@ -1183,7 +1404,7 @@ export async function auditRemoteStoreDeployment({
       && inspection.counts.title === 1
       && inspection.counts.canonical === 0
       && !inspection.stackTrace
-      && validateCacheControl(item.headers.cacheControl, 'dynamic-html'));
+      && validateEdgeCacheControl(item.headers.cacheControl, 'dynamic-html'));
   }
 
   const invalidApi = await request('invalid-api', paths.invalidApi);
@@ -1192,23 +1413,46 @@ export async function auditRemoteStoreDeployment({
     && !/Error:|node:internal|supabase/iu.test(invalidApi.text || ''));
 
   let ogInspection = null;
-  for (const [name, requestPath] of [['og', paths.og], ['og-versioned', paths.ogVersioned]]) {
+  let ogVersionedInspection = null;
+  let ogItem = null;
+  let ogVersionedItem = null;
+  for (const [name, requestPath] of [['og', paths.og], ['og-versioned', versionedOgPath]]) {
     const item = await request(name, requestPath);
     const inspection = inspectPng(item.rawBytes);
-    if (name === 'og') ogInspection = inspection;
+    if (name === 'og') {
+      ogInspection = inspection;
+      ogItem = item;
+    } else {
+      ogVersionedInspection = inspection;
+      ogVersionedItem = item;
+    }
     addCheck(checks, `${name}:png`, item.status === 200
       && item.contentType === 'image/png'
       && !item.headers.duplicateContentType
       && !item.headers.duplicateCacheControl
       && inspection.png
+      && inspection.complete
+      && !inspection.hasTextMetadata
       && inspection.width === 1200
       && inspection.height === 630
       && inspection.bytes > 1_000
       && !item.headers.locationHost
-      && validateCacheControl(
+      && validateEdgeCacheControl(
         item.headers.cacheControl,
         name === 'og' ? 'og-unversioned' : 'og-versioned',
       ));
+  }
+  const ogCacheEvidence = await request('og-cache-evidence', paths.og);
+  const ogVersionedCacheEvidence = await request('og-versioned-cache-evidence', versionedOgPath);
+  for (const [name, original, repeated, policy] of [
+    ['og', ogItem, ogCacheEvidence, 'og-unversioned'],
+    ['og-versioned', ogVersionedItem, ogVersionedCacheEvidence, 'og-versioned'],
+  ]) {
+    addCheck(checks, name + ':edge-cache-evidence', repeated.status === 200
+      && repeated.bodySha256 === original?.bodySha256
+      && repeated.contentType === 'image/png'
+      && validateEdgeCacheControl(repeated.headers.cacheControl, policy)
+      && validateVercelCacheEvidence(repeated.headers));
   }
   const ogHead = await request('og-head', paths.og, 'HEAD');
   addCheck(checks, 'og:head', ogHead.status === 200
@@ -1238,8 +1482,15 @@ export async function auditRemoteStoreDeployment({
     && apiHtml.valueHashes.canonical === storeHtml.valueHashes.canonical
     && !(store.text || '').includes('No se pudo cargar la tienda');
   const ogRuntimePassed = checks.find((item) => item.name === 'og:png')?.passed === true
+    && checks.find((item) => item.name === 'og-versioned:png')?.passed === true
     && ogInspection?.png === true
-    && ogInspection.bytes > 1_000;
+    && ogInspection.complete
+    && !ogInspection.hasTextMetadata
+    && ogInspection.bytes > 1_000
+    && ogVersionedInspection?.png === true
+    && ogVersionedInspection.complete
+    && !ogVersionedInspection.hasTextMetadata
+    && ogVersionedInspection.bytes > 1_000;
   addCheck(checks, 'store:client-configuration', clientConfigurationPassed);
   addCheck(checks, 'store:client-load', clientStoreLoadPassed);
   addCheck(checks, 'og:runtime', ogRuntimePassed);
@@ -1287,6 +1538,7 @@ export async function auditRemoteStoreDeployment({
       slugValues: inspection.slugValues,
     })),
     ogImage: ogInspection,
+    ogVersionedImage: ogVersionedInspection,
     security: {
       passed: securityFindings.length === 0,
       findings: securityFindings,
@@ -1424,11 +1676,20 @@ export function buildEvidenceReport({
     && remote.metadata.ogUrlPath === remote.metadata.canonicalPath;
   const ogImagePassed = passed('og:png', 'og-versioned:png', 'og:head')
     && remote.ogImage?.png === true
+    && remote.ogImage?.complete === true
+    && remote.ogImage?.hasTextMetadata === false
     && remote.ogImage?.width === 1200
     && remote.ogImage?.height === 630
     && Number.isSafeInteger(remote.ogImage?.bytes)
     && remote.ogImage.bytes > 0
-    && /^[a-f0-9]{64}$/u.test(remote.ogImage?.sha256 || '');
+    && /^[a-f0-9]{64}$/u.test(remote.ogImage?.sha256 || '')
+    && remote.ogVersionedImage?.png === true
+    && remote.ogVersionedImage?.complete === true
+    && remote.ogVersionedImage?.hasTextMetadata === false
+    && remote.ogVersionedImage?.width === 1200
+    && remote.ogVersionedImage?.height === 630
+    && Number.isSafeInteger(remote.ogVersionedImage?.bytes)
+    && /^[a-f0-9]{64}$/u.test(remote.ogVersionedImage?.sha256 || '');
   const checks = Object.freeze({
     serverHtmlPassed: remote.serverHtmlPassed === true,
     clientConfigurationPassed: remote.clientConfigurationPassed === true,
@@ -1450,8 +1711,11 @@ export function buildEvidenceReport({
       'tienda:static',
       'store:metadata',
       'store:head',
+      'store:edge-cache-evidence',
       'og:png',
+      'og:edge-cache-evidence',
       'og-versioned:png',
+      'og-versioned:edge-cache-evidence',
       'tracking:static-fallback',
       'nested:static-fallback',
       'asset:immutable',
@@ -1502,6 +1766,8 @@ export function buildEvidenceReport({
       headers: {
         contentType: headers.contentType,
         cacheControl: headers.cacheControl,
+        xVercelCache: headers.xVercelCache,
+        age: headers.age,
         xRobotsTag: headers.xRobotsTag,
         locationHost: headers.locationHost,
       },
@@ -1514,6 +1780,12 @@ export function buildEvidenceReport({
       width: remote.ogImage.width,
       height: remote.ogImage.height,
       bytes: remote.ogImage.bytes,
+    },
+    ogVersionedImage: {
+      passed: ogImagePassed,
+      width: remote.ogVersionedImage.width,
+      height: remote.ogVersionedImage.height,
+      bytes: remote.ogVersionedImage.bytes,
     },
     ogImageSha256: remote.ogImage.sha256,
     checks,
@@ -1585,6 +1857,7 @@ async function main() {
     requests: remote.requests,
     metadata: remote.metadata,
     ogImage: remote.ogImage,
+    ogVersionedImage: remote.ogVersionedImage,
     security: remote.security,
     failedChecks: remote.failedChecks,
     evidenceWritten,
