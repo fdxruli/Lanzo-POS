@@ -36,6 +36,7 @@ const submitLicense = async (outcome) => {
   }
 
   render(<WelcomeModal />);
+  fireEvent.click(screen.getByRole('button', { name: /ya tengo una licencia/i }));
   fireEvent.change(screen.getByLabelText(/clave de licencia/i), {
     target: { value: 'LANZO-TEST' }
   });

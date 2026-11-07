@@ -1,19 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAppStore } from '../../store/useAppStore';
 import {
-  Wifi,
-  WifiOff,
-  Package,
+  BarChart3,
+  ChevronDown,
   ChevronRight,
-  CheckCircle2,
-  Zap,
-  Rocket
+  KeyRound,
+  Package,
+  ShoppingCart,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
+import { PUBLIC_STORE_ORIGIN, buildPublicLandingUrl } from '../../config/publicOrigins';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import PreloginSupportAccess from './PreloginSupportAccess';
 import { mapLicenseActivationResult, mapFreeLicenseCreationResult } from './licenseActivationErrorMapper';
 
+const DESKTOP_LAYOUT_QUERY = '(min-width: 960px)';
+const PUBLIC_LANDING_URL = buildPublicLandingUrl();
+const PUBLIC_STORE_URL = new URL('/', PUBLIC_STORE_ORIGIN).toString();
+
+const getIsDesktopLayout = () => (
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia(DESKTOP_LAYOUT_QUERY).matches
+);
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
@@ -21,8 +32,11 @@ export default function WelcomeModal() {
   const [errorMessage, setErrorMessage] = useState('');
   const [errorTitle, setErrorTitle] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(getIsDesktopLayout);
+  const [isLicenseExpanded, setIsLicenseExpanded] = useState(false);
   const actionInFlight = useRef(false);
   const isLoading = loadingAction !== null;
+  const isLicenseFormVisible = isDesktopLayout || isLicenseExpanded;
 
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
@@ -36,6 +50,27 @@ export default function WelcomeModal() {
     setErrorTitle(title);
     setErrorMessage(message);
   };
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.(DESKTOP_LAYOUT_QUERY);
+    if (!mediaQuery) return undefined;
+
+    const updateLayout = (event) => setIsDesktopLayout(event.matches);
+    setIsDesktopLayout(mediaQuery.matches);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', updateLayout);
+    } else {
+      mediaQuery.addListener?.(updateLayout);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', updateLayout);
+      } else {
+        mediaQuery.removeListener?.(updateLayout);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -58,8 +93,47 @@ export default function WelcomeModal() {
     };
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    const input = document.getElementById('license-key');
+    const overlay = document.querySelector('.welcome-modal-overlay');
+    if (!input || !overlay) return undefined;
+
+    const scrollFocusedInputIntoView = () => {
+      if (document.activeElement !== input) return;
+
+      const viewport = window.visualViewport;
+      const visibleTop = viewport?.offsetTop ?? 0;
+      const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
+      const inputBounds = input.getBoundingClientRect();
+
+      if (inputBounds.bottom > visibleBottom) {
+        overlay.scrollTop += inputBounds.bottom - visibleBottom + 16;
+      } else if (inputBounds.top < visibleTop + 12) {
+        overlay.scrollTop -= visibleTop + 12 - inputBounds.top;
+      }
+    };
+
+    let focusTimeout;
+    const handleFocus = () => {
+      window.requestAnimationFrame(scrollFocusedInputIntoView);
+      focusTimeout = window.setTimeout(scrollFocusedInputIntoView, 250);
+    };
+    const viewport = window.visualViewport;
+
+    input.addEventListener('focus', handleFocus);
+    window.addEventListener('resize', scrollFocusedInputIntoView);
+    viewport?.addEventListener('resize', scrollFocusedInputIntoView);
+
+    return () => {
+      input.removeEventListener('focus', handleFocus);
+      window.removeEventListener('resize', scrollFocusedInputIntoView);
+      viewport?.removeEventListener('resize', scrollFocusedInputIntoView);
+      window.clearTimeout(focusTimeout);
+    };
+  }, []);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
     if (!isOnline) {
       const feedback = mapLicenseActivationResult({ code: 'OFFLINE_PRECHECK' }, { isOnline: false });
@@ -90,7 +164,7 @@ export default function WelcomeModal() {
         }
       }
     } catch (error) {
-      Logger.error("Error crítico al validar licencia:", error);
+      Logger.error('Error crítico al validar licencia:', error);
       const feedback = mapLicenseActivationResult(error, { isOnline });
       showError(feedback.message, feedback.title);
     } finally {
@@ -118,7 +192,7 @@ export default function WelcomeModal() {
         showError(feedback.message, feedback.title);
       }
     } catch (error) {
-      Logger.error("Error al crear licencia Lanzo Local:", error);
+      Logger.error('Error al crear licencia LANZO Local:', error);
 
       const feedback = mapFreeLicenseCreationResult(error, { isOnline });
       showError(feedback.message, feedback.title);
@@ -137,146 +211,140 @@ export default function WelcomeModal() {
       aria-describedby="welcome-description"
     >
       <div className="welcome-modal-content">
-
-        {/* SECCIÓN HERO */}
-        <div className="welcome-hero-section">
+        <section className="welcome-hero-section" aria-label="Presentación de LANZO POS">
           <div className="hero-brand">
             <span className="brand-icon-shell">
               <img src="/logIcon.svg" alt="" className="brand-icon" />
             </span>
             <div className="brand-copy">
-              <span className="brand-name">Lanzo POS</span>
+              <span className="brand-name">LANZO POS</span>
               <span className="brand-tagline">Tu negocio, bajo control</span>
             </div>
           </div>
 
           <div className="hero-text-content">
-            <h1 id="welcome-title">Impulsa tu negocio hoy</h1>
+            <h1 id="welcome-title">Vende, organiza y controla tu negocio.</h1>
             <p className="hero-subtitle" id="welcome-description">
-              Gestiona ventas, inventario y clientes desde un solo lugar.
+              Gestiona ventas, caja, inventario, clientes y reportes desde un solo lugar.
             </p>
           </div>
 
-          {/* Carrusel de características en móvil, Grid en Desktop */}
-          <div className="hero-features-grid">
-            <div className="feature-card">
-              <div className="feature-icon-wrapper">
-                <Zap size={20} aria-hidden="true" />
-              </div>
-              <div className="feature-card-text">
-                <h3>Punto de Venta Ágil</h3>
-                <p>Registra ventas en segundos con una interfaz intuitiva y muy fácil de usar.</p>
-              </div>
-            </div>
+          <ul className="hero-capabilities" aria-label="Capacidades principales">
+            <li className="capability-item">
+              <span className="capability-icon"><ShoppingCart size={18} aria-hidden="true" /></span>
+              <span className="capability-copy">
+                <strong>Ventas</strong>
+                <small>Registra y administra</small>
+              </span>
+            </li>
+            <li className="capability-item">
+              <span className="capability-icon"><Package size={18} aria-hidden="true" /></span>
+              <span className="capability-copy">
+                <strong>Inventario</strong>
+                <small>Productos y existencias</small>
+              </span>
+            </li>
+            <li className="capability-item">
+              <span className="capability-icon"><BarChart3 size={18} aria-hidden="true" /></span>
+              <span className="capability-copy">
+                <strong>Reportes</strong>
+                <small>Información del negocio</small>
+              </span>
+            </li>
+          </ul>
+        </section>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrapper">
-                <Rocket size={20} aria-hidden="true" />
-              </div>
-              <div className="feature-card-text">
-                <h3>Ideal para Emprender</h3>
-                <p>Potencia tu negocio sin pagar las altas suscripciones de otras aplicaciones.</p>
-              </div>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon-wrapper">
-                <WifiOff size={20} aria-hidden="true" />
-              </div>
-              <div className="feature-card-text">
-                <h3>Siempre Disponible</h3>
-                <p>Tus datos son tuyos y se guardan en tu equipo. Sigue operando aunque no tengas internet.</p>
-              </div>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon-wrapper">
-                <Package size={20} aria-hidden="true" />
-              </div>
-              <div className="feature-card-text">
-                <h3>Control Total</h3>
-                <p>Administra tu inventario, cuentas de clientes y reportes desde un solo lugar.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* SECCIÓN FORMULARIO (Bottom Sheet en Móviles) */}
-        <div className="welcome-form-section">
-
-          <div className="form-header">
-            <h2>Comienza ahora</h2>
-            <p>Ingresa tu licencia o crea una gratis</p>
-          </div>
+        <section className="welcome-form-section" aria-labelledby="welcome-actions-title">
+          <header className="form-header">
+            <h2 id="welcome-actions-title">Comienza ahora</h2>
+            <p>Elige cómo quieres continuar.</p>
+          </header>
 
           {!isOnline && (
             <div className="connection-alert offline" role="status">
               <WifiOff size={18} aria-hidden="true" />
               <div className="alert-text">
                 <strong>Sin conexión a internet</strong>
-                <span>Requerida para iniciar sesión o crear licencia gratuita</span>
+                <span>Necesitas conexión para activar o crear una licencia.</span>
               </div>
             </div>
           )}
 
           {isOnline && isLoading && (
             <div className="connection-alert loading" role="status">
-              <Wifi size={18} className="pulse-anim" aria-hidden="true" />
-              <span>{loadingAction === 'free' ? 'Creando licencia Lanzo Local...' : 'Verificando licencia...'}</span>
+              <Wifi size={18} aria-hidden="true" />
+              <span>{loadingAction === 'free' ? 'Creando licencia LANZO Local...' : 'Verificando licencia...'}</span>
             </div>
           )}
 
-          <form id="welcome-form" onSubmit={handleSubmit} aria-busy={isLoading}>
-            <div className="input-group">
-              <label htmlFor="license-key">Clave de Licencia</label>
-              <div className="input-wrapper">
-                <input
-                  id="license-key"
-                  type="text"
-                  required
-                  placeholder="LANZO-XXXX-XXXX-XXXX-XXXX"
-                  value={licenseKey}
-                  onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                  disabled={isLoading || !isOnline}
-                  maxLength={64}
-                  className={licenseKey ? 'has-value' : ''}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="btn-submit-license"
-              disabled={isLoading || !isOnline || !licenseKey.trim()}
-            >
-              <span>{loadingAction === 'license' ? 'Verificando...' : 'Acceder con Licencia'}</span>
-              {loadingAction !== 'license' && <ChevronRight size={18} aria-hidden="true" />}
-            </button>
-
-            <div className="divider">
-              <span>¿No tienes licencia?</span>
-            </div>
-
-            <div className="trial-zone">
-              <ul className="trial-benefits">
-                <li><CheckCircle2 size={16} aria-hidden="true" /> Sin tarjeta de crédito</li>
-                <li><CheckCircle2 size={16} aria-hidden="true" /> 1 dispositivo local</li>
-                <li><CheckCircle2 size={16} aria-hidden="true" /> Uso local gratuito</li>
-              </ul>
-
+          <div className="welcome-actions">
+            <div className="free-license-action">
               <button
                 type="button"
                 className="btn-start-trial"
                 onClick={handleTrialClick}
                 disabled={isLoading || !isOnline}
               >
-                {loadingAction === 'free' ? 'Creando licencia...' : 'Crear licencia Lanzo Local'}
+                <span>{loadingAction === 'free' ? 'Creando licencia...' : 'Crear mi licencia gratuita'}</span>
+                {loadingAction !== 'free' && <ChevronRight size={19} aria-hidden="true" />}
               </button>
+              <p className="free-license-note">LANZO Local es gratis para usar en un dispositivo.</p>
             </div>
-          </form>
+
+            <div className="license-entry">
+              <button
+                type="button"
+                className="license-entry-toggle"
+                aria-expanded={isLicenseFormVisible}
+                aria-controls="welcome-license-panel"
+                onClick={() => setIsLicenseExpanded((expanded) => !expanded)}
+              >
+                <KeyRound size={18} aria-hidden="true" />
+                <span>Ya tengo una licencia</span>
+                <ChevronDown className="license-entry-chevron" size={18} aria-hidden="true" />
+              </button>
+
+              <div
+                id="welcome-license-panel"
+                className="license-entry-panel"
+                hidden={!isLicenseFormVisible}
+              >
+                <h3 className="license-entry-heading">Ya tengo una licencia</h3>
+                <form id="welcome-form" onSubmit={handleSubmit} aria-busy={isLoading}>
+                  <div className="input-group">
+                    <label htmlFor="license-key">Clave de licencia</label>
+                    <input
+                      id="license-key"
+                      type="text"
+                      required
+                      placeholder="LANZO-XXXX-XXXX-XXXX-XXXX"
+                      value={licenseKey}
+                      onChange={(event) => setLicenseKey(event.target.value.toUpperCase())}
+                      disabled={isLoading || !isOnline}
+                      maxLength={64}
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck="false"
+                      enterKeyHint="go"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-submit-license"
+                    disabled={isLoading || !isOnline || !licenseKey.trim()}
+                  >
+                    <span>{loadingAction === 'license' ? 'Verificando...' : 'Acceder con licencia'}</span>
+                    {loadingAction !== 'license' && <ChevronRight size={18} aria-hidden="true" />}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
 
           {errorMessage && (
-            <div className="error-toast" role="alert">
+            <div className="error-toast" role="alert" aria-atomic="true">
               <span className="error-icon" aria-hidden="true">!</span>
               <div className="error-toast-content">
                 {errorTitle && <strong>{errorTitle}</strong>}
@@ -285,11 +353,14 @@ export default function WelcomeModal() {
             </div>
           )}
 
-          <div className="support-footer">
+          <footer className="welcome-secondary">
+            <nav className="welcome-public-links" aria-label="Información pública de LANZO">
+              <a href={PUBLIC_LANDING_URL} target="_blank" rel="noopener noreferrer">Conoce LANZO</a>
+              <a href={PUBLIC_STORE_URL} target="_blank" rel="noopener noreferrer">Tienda en línea</a>
+            </nav>
             <PreloginSupportAccess screen="Bienvenida" />
-          </div>
-        </div>
-
+          </footer>
+        </section>
       </div>
     </div>
   );
