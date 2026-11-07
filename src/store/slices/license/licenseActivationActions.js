@@ -95,6 +95,7 @@ export const createLicenseActivationActions = ({
                 result.staff_login_required ||
                 result.access_choice_required ||
                 result.admin_enrollment_required ||
+                result.initial_setup_required ||
                 isLicensePlanBlockFailure(result)
             );
 
@@ -228,6 +229,22 @@ export const createLicenseActivationActions = ({
                     adminEnrollmentRequired: true
                 });
                 return preserveActivationFailure(result, { adminEnrollmentRequired: true });
+            }
+
+            if (result.initial_setup_required) {
+                set({
+                    pendingAdminSessionResult: null,
+                    appStatus: 'admin_initial_setup_required',
+                    licenseDetails: { license_key: licenseKey, valid: false, device_role: 'admin' },
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: null,
+                    currentStaffUser: null,
+                    adminLoginLicenseKey: licenseKey,
+                    adminLoginMessage: result.message,
+                    adminLoginError: null,
+                    adminEnrollmentRequired: false
+                });
+                return preserveActivationFailure(result, { initialSetupRequired: true });
             }
 
             if (
