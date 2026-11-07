@@ -57,6 +57,14 @@ function latestFunction(name) {
 
 let databaseCreated = false;
 before(() => {
+  // GitHub's PostgreSQL service is disposable. Disable query logging and
+  // error-statement logging there so test credentials never reach job logs.
+  if (process.env.CI === 'true') {
+    sql("alter system set log_statement = 'none';", base.href);
+    sql("alter system set log_min_error_statement = 'panic';", base.href);
+    assert.equal(sql('select pg_reload_conf();', base.href), 't');
+    assert.equal(sql("select current_setting('log_statement') || ':' || current_setting('log_min_error_statement');", base.href), 'none:panic');
+  }
   sql(`create database ${database};`, base.href);
   databaseCreated = true;
   sql(readFileSync(new URL('../../supabase/tests/fixtures/license-admin-onboarding.sql', import.meta.url), 'utf8'));
@@ -98,6 +106,27 @@ function enrollSql(f, code, { username = 'owner.qa', fingerprint = `device-${ran
     ${quote(f.key)}, ${quote(code)}, ${quote(fingerprint)}, 'QA Android', '{}'::jsonb,
     ${quote(username)}, 'OwnerPass123', 'Owner QA'
   );`;
+}
+
+function rollbackProbeSql(f, code) {
+  return `create temp table onboarding_rollback_probe (outcome text);
+    do $$
+    declare v_message text;
+    begin
+      begin
+        perform public.admin_enroll_owner_with_invitation(
+          ${quote(f.key)}, ${quote(code)}, ${quote(`rollback-${randomUUID()}`)}, 'QA Android', '{}'::jsonb,
+          'owner.qa', 'OwnerPass123', 'Owner QA'
+        );
+        insert into pg_temp.onboarding_rollback_probe values ('not_triggered');
+      exception when others then
+        get stacked diagnostics v_message = message_text;
+        insert into pg_temp.onboarding_rollback_probe
+          values (case when v_message = 'injected rollback test' then 'expected_rollback' else 'unexpected_error' end);
+      end;
+    end $$;
+    select outcome from pg_temp.onboarding_rollback_probe;
+    drop table pg_temp.onboarding_rollback_probe;`;
 }
 
 function enroll(f, code, options) { return json(enrollSql(f, code, options)); }
@@ -186,7 +215,7 @@ test('valid invitation creates exactly one owner, admin-only device and verified
     and event_type='ADMIN_OWNER_ENROLLED' and metadata::text not like '%'||${quote(issued.invitation_code)}||'%'
     and metadata::text not like '%OwnerPass123%' and metadata::text not like '%'||${quote(result.admin_session_token)}||'%'
     and metadata::text not like '%'||${quote(result.device_security_token)}||'%';`), '1');
-  assertFailure(enroll(f, issued.invitation_code, { fingerprint: `other-${randomUUID()}`, username: 'owner.two' }), 'ADMIN_OWNER_ALREADY_ENROLLED');
+  assertFailure(enroll(f, issued.invitation_code, { fingerprint: `other-${randomUUID()}`, username: 'owner.two' }), 'ADMIN_ONBOARDING_INVALID');
   assert.equal(sql(`select count(*) from public.license_admin_users where license_id=${quote(f.id)} and is_owner;`), '1');
   assert.equal(sql(`select count(*) from public.license_devices where license_id=${quote(f.id)} and is_active;`), '1');
   assert.equal(sql(`select count(*) from public.license_admin_sessions where license_id=${quote(f.id)} and revoked_at is null;`), '1');
@@ -254,7 +283,7 @@ test('transaction rollback leaves invitation reusable when an intermediate audit
     begin if new.event_type='ADMIN_OWNER_ENROLLED' then raise exception 'injected rollback test'; end if; return new; end $$;
     create trigger fail_onboarding_audit before insert on public.license_events
       for each row execute function private.fail_onboarding_audit();`);
-  await assert.rejects(sqlAsync(enrollSql(f, issued.invitation_code)));
+  assert.equal(await sqlAsync(rollbackProbeSql(f, issued.invitation_code)), 'expected_rollback');
   assert.equal(sql(`select (select count(*) from public.license_admin_users where license_id=${quote(f.id)})||':'||
     (select count(*) from public.license_devices where license_id=${quote(f.id)})||':'||
     (select count(*) from public.license_admin_sessions where license_id=${quote(f.id)})||':'||

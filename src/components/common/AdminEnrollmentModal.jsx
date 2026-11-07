@@ -58,9 +58,11 @@ export default function AdminEnrollmentModal({
     } catch (err) {
       setError(err.message || 'No se pudo crear la cuenta propietaria. Intenta de nuevo.');
     } finally {
-      if (requiresInvitation) setInvitationCode('');
-      setPassword('');
-      setConfirmation('');
+      if (requiresInvitation) {
+        setInvitationCode('');
+        setPassword('');
+        setConfirmation('');
+      }
       setLoading(false);
       onBusyChange?.(false);
     }
