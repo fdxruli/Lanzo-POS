@@ -6,6 +6,23 @@ import { useAppStore } from '../../store/useAppStore';
 import WelcomeModal from './WelcomeModal';
 
 describe('WelcomeModal mobile-first welcome', () => {
+  const nativeShowModal = HTMLDialogElement.prototype.showModal;
+  const nativeClose = HTMLDialogElement.prototype.close;
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+  });
+  afterEach(() => {
+    if (nativeShowModal) HTMLDialogElement.prototype.showModal = nativeShowModal;
+    else delete HTMLDialogElement.prototype.showModal;
+    if (nativeClose) HTMLDialogElement.prototype.close = nativeClose;
+    else delete HTMLDialogElement.prototype.close;
+  });
   beforeEach(() => {
     Object.defineProperty(window.navigator, 'onLine', {
       configurable: true,
@@ -111,6 +128,23 @@ describe('WelcomeModal mobile-first welcome', () => {
     const actions = footer.querySelector('.prelogin-support__actions');
     expect(actions.querySelectorAll('a')).toHaveLength(2);
     expect(actions.querySelector('button')).toHaveTextContent('Soporte');
+  });
+
+  it('opens support in a modal without moving the footer or losing license text', () => {
+    render(<WelcomeModal />);
+    const toggle = screen.getByRole('button', { name: /ya tengo una licencia/i });
+    fireEvent.click(toggle);
+    const license = screen.getByRole('textbox', { name: 'Clave de licencia' });
+    fireEvent.change(license, { target: { value: 'lanzo-demo-456' } });
+    const footer = document.querySelector('.welcome-secondary');
+    const trigger = screen.getByRole('button', { name: 'Soporte' });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    expect(footer).not.toContainElement(dialog);
+    expect(license).toHaveValue('LANZO-DEMO-456');
+    expect(dialog).toContainElement(screen.getByRole('region', { name: 'Soporte oficial de LANZO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
+    expect(license).toHaveValue('LANZO-DEMO-456');
   });
 
   it('keeps initial activation and free creation blocked while offline', () => {

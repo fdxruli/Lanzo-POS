@@ -15,6 +15,26 @@ import AdminLoginModal from '../AdminLoginModal';
 import StaffLoginModal from '../StaffLoginModal';
 import AdminEnrollmentModal from '../AdminEnrollmentModal';
 
+// jsdom does not implement the native top-layer dialog methods.
+const originalShowModal = HTMLDialogElement.prototype.showModal;
+const originalClose = HTMLDialogElement.prototype.close;
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.setAttribute('open', '');
+    this.querySelector('button')?.focus();
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
+});
+afterEach(() => {
+  if (originalShowModal) HTMLDialogElement.prototype.showModal = originalShowModal;
+  else delete HTMLDialogElement.prototype.showModal;
+  if (originalClose) HTMLDialogElement.prototype.close = originalClose;
+  else delete HTMLDialogElement.prototype.close;
+});
+
 beforeEach(() => {
   Object.keys(state).forEach((key) => delete state[key]);
   Object.assign(state, {
@@ -31,6 +51,9 @@ const toggle = () => {
   expect(screen.getAllByRole('button', { name: 'Soporte' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
   expect(screen.getByRole('region', { name: 'Soporte oficial de LANZO' })).toBeVisible();
+  if (document.querySelector('.prelogin-support__dialog')) {
+    expect(screen.getByRole('dialog', { name: 'Soporte LANZO' })).toHaveAttribute('open');
+  }
   const url = new URL(screen.getByRole('link', { name: 'Abrir borrador de correo' }).href);
   expect(url.href).not.toMatch(/SECRET|password|token|tenant|userAgent/i);
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
@@ -105,5 +128,32 @@ describe('support integration without changing access state', () => {
   it('leaves support to Setup when owner enrollment is embedded', () => {
     render(<AdminEnrollmentModal embedded />);
     expect(screen.queryByRole('button', { name: 'Soporte' })).not.toBeInTheDocument();
+  });
+});
+
+describe('welcome support as modal', () => {
+  it('opens outside the welcome layout and restores keyboard focus on close', () => {
+    render(<WelcomeModal />);
+    const trigger = screen.getByRole('button', { name: 'Soporte' });
+    const footer = document.querySelector('.welcome-secondary');
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    expect(dialog).toHaveAttribute('open');
+    expect(footer.contains(dialog)).toBe(false);
+    expect(dialog).toContainElement(screen.getByRole('region', { name: 'Soporte oficial de LANZO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
+    expect(screen.queryByRole('dialog', { name: 'Soporte LANZO' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    noMutations();
+  });
+
+  it('closes with Escape and does not change the license workflow', () => {
+    render(<WelcomeModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    fireEvent.cancel(dialog);
+    expect(screen.queryByRole('dialog', { name: 'Soporte LANZO' })).not.toBeInTheDocument();
+    noMutations();
   });
 });

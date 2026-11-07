@@ -356,7 +356,7 @@ export default function WelcomeModal() {
           )}
 
           <footer className="welcome-secondary">
-            <PreloginSupportAccess screen="Bienvenida">
+            <PreloginSupportAccess screen="Bienvenida" modal>
               <nav className="welcome-public-links" aria-label="Información pública de LANZO">
                 <a href={PUBLIC_LANDING_URL} target="_blank" rel="noopener noreferrer">Conoce LANZO</a>
                 <a href={PUBLIC_STORE_URL} target="_blank" rel="noopener noreferrer">Tienda en línea</a>
