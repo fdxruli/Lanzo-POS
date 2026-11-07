@@ -60,7 +60,7 @@ describe('Settings direct-route authorization', () => {
     products.unmount();
 
     renderDirectUrl('/configuracion');
-    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByText('Configuracion permitida')).not.toBeInTheDocument();
   });
 

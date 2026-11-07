@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../../../store/useAppStore', () => ({ useAppStore: (selector) => selector({}) }));
 import NoPermission from '../NoPermission';
 
 afterEach(cleanup);
@@ -14,10 +15,11 @@ describe('NoPermission', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByRole('heading', { name: /no tienes permiso para acceder a esta sección/i }))
+    expect(screen.getByRole('heading', { name: /no tienes acceso a esta sección/i }))
       .toBeInTheDocument();
-    expect(screen.getByText('Tu sesión actual no tiene acceso a este módulo.'))
+    expect(screen.getByText(/No pudimos confirmar el acceso de tu sesión/))
       .toBeInTheDocument();
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
     expect(screen.queryByText(/tu usuario staff/i)).not.toBeInTheDocument();
   });
 });

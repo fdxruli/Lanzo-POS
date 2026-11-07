@@ -1,3 +1,5 @@
+import { useActorAccess } from '../../services/auth/useActorAccess';
+import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey } from '../../services/notifications/notificationAccess';
 import { useCallback, useEffect, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -15,9 +17,6 @@ import {
 import {
   canStaffAccessEcommerceOperationalAlert,
   canStaffAccessLocalInventoryOperationalAlerts,
-  canStaffAccessNotifications,
-  isCloudNotificationsEnabled,
-  isNotificationCenterEnabled,
   shouldUseLocalInventoryOperationalBell
 } from '../../services/notifications/notificationCapabilities';
 import EcommercePublishedStockOperationalAlert from './EcommercePublishedStockOperationalAlert';
@@ -33,11 +32,17 @@ export default function NotificationBell({
   localOnly = false
 }) {
   const navigate = useNavigate();
+  const actorAccess = useActorAccess();
   const [isLocalOpen, setIsLocalOpen] = useState(false);
   const closeLocal = useCallback(() => setIsLocalOpen(false), []);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const syncNotificationRuntime = useAppStore((state) => state.syncNotificationRuntime);
+  const notificationAuthorizationKey = getNotificationAuthorizationKey({ licenseDetails }, actorAccess);
+  const storedAuthorizationKey = useAppStore((state) => state.notificationAuthorizationKey);
+  const notificationsAccessDenied = useAppStore((state) => state.notificationsAccessDenied);
+  useEffect(() => { syncNotificationRuntime?.(); }, [notificationAuthorizationKey, syncNotificationRuntime]);
   const isOpen = useAppStore((state) => state.isNotificationCenterOpen);
   const unreadCount = useAppStore((state) => state.notificationsUnreadCount);
   const unseenCount = useAppStore((state) => state.notificationsUnseenCount);
@@ -49,11 +54,7 @@ export default function NotificationBell({
   const [cashAttentionRecord, setCashAttentionRecord] = useState(null);
   const staffSession = { currentDeviceRole, currentStaffUser };
 
-  const cloudEnabled = (
-    isNotificationCenterEnabled(licenseDetails) &&
-    isCloudNotificationsEnabled(licenseDetails) &&
-    canStaffAccessNotifications(licenseDetails, staffSession)
-  );
+  const cloudEnabled = canAccessCloudNotificationCenter(licenseDetails, actorAccess);
   const localInventoryEnabled = (
     shouldUseLocalInventoryOperationalBell(licenseDetails) &&
     canStaffAccessLocalInventoryOperationalAlerts(licenseDetails, staffSession)
@@ -120,7 +121,8 @@ export default function NotificationBell({
   const canShowLocalOperationalAlert = (
     !localOnly
     && cloudEnabled
-    && canStaffAccessEcommerceOperationalAlert(licenseDetails, staffSession)
+    && !notificationsAccessDenied
+    && canStaffAccessEcommerceOperationalAlert(licenseDetails, actorAccess.permissionSession)
   );
   const { snapshot } = useEcommercePublishedStockAlerts({
     enabled: canShowLocalOperationalAlert,
@@ -206,15 +208,20 @@ export default function NotificationBell({
     );
   }
 
-  if (localOnly || !cloudEnabled) return null;
+  if (localOnly) return null;
+  if (!cloudEnabled || notificationsAccessDenied) {
+    const restrictedDrawer = <NotificationCenterDrawer isOpen={isOpen} onClose={closeNotificationCenter} />;
+    return typeof document === 'undefined' ? restrictedDrawer : createPortal(restrictedDrawer, document.body);
+  }
 
   const buttonClassName = [
     'notification-bell',
     hasLocalOperationalWarning ? 'has-local-operational-warning' : '',
     className
   ].filter(Boolean).join(' ');
-  const safeUnreadCount = Number(unreadCount || 0);
-  const safeUnseenCount = Number(unseenCount || 0);
+  const runtimeCurrent = storedAuthorizationKey === notificationAuthorizationKey;
+  const safeUnreadCount = runtimeCurrent ? Number(unreadCount || 0) : 0;
+  const safeUnseenCount = runtimeCurrent ? Number(unseenCount || 0) : 0;
   const drawer = (
     <>
       <NotificationCenterDrawer

@@ -1,3 +1,6 @@
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
+import { evaluateActorAccess } from '../../../services/auth/actorAccessPolicy';
+import { getNotificationAuthorizationKey } from '../../../services/notifications/notificationAccess';
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -11,13 +14,10 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(store.state)
 }));
 
-vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
-  useActorRuntimeSnapshot: () => runtime.value
-}));
-
 import NotificationCenterDrawer from '../NotificationCenterDrawer';
 
 const cloudLicense = {
+  license_key: 'license-a',
   features: {
     notification_center: true,
     cloud_notifications: true,
@@ -51,6 +51,7 @@ const cash = {
 const createState = (overrides = {}) => ({
   licenseDetails: cloudLicense,
   currentDeviceRole: 'admin',
+  currentAdminUser: { id: 'admin-1' },
   currentStaffUser: null,
   notifications: [inventory, { ...inventory, id: 'inventory-2', title: 'Producto vencido' }, cash],
   notificationsLoading: false,
@@ -92,11 +93,15 @@ const createState = (overrides = {}) => ({
   ...overrides
 });
 
-const renderDrawer = () => render(
+const renderDrawer = () => {
+  const snapshot = grantTestActor({ actorType: runtime.value.actorType, actorId: runtime.value.actorId, permissions: runtime.value.permissions });
+  store.state.notificationAuthorizationKey = getNotificationAuthorizationKey(store.state, evaluateActorAccess({ ...store.state, runtimeSnapshot: snapshot }));
+  return render(
   <MemoryRouter>
     <NotificationCenterDrawer isOpen onClose={vi.fn()} unreadCount={3} />
   </MemoryRouter>
 );
+};
 
 afterEach(cleanup);
 

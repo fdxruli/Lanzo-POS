@@ -157,3 +157,50 @@ describe('direct URLs and protected component mounting', () => {
     expect(mounted).not.toHaveBeenCalled();
   });
 });
+
+
+describe('safe access-denied destinations', () => {
+  it.each([
+    [{ pos: true }, '/', 'Ir al punto de venta'],
+    [{ products: true }, '/productos', 'Ir a Productos'],
+    [{ inventory: true }, '/productos', 'Ir a Productos'],
+    [{ customers: true }, '/clientes', 'Ir a Clientes'],
+    [{ reports: true }, '/ventas', 'Ir a Ventas'],
+    [{ sync: true }, '/configuracion', 'Ir a Configuración'],
+    [{ ecommerce: true }, '/pedidos-online', 'Ir a Pedidos Online'],
+    [{}, '/acerca-de', 'Ir a Acerca de']
+  ])('uses effective permissions %j to offer %s', (permissions, to, label) => {
+    signInStaff(permissions);
+    render(route('/caja'));
+    expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', to);
+    expect(mounted).not.toHaveBeenCalled();
+  });
+
+  it('does not infer a destination from historical permissions or an unconfirmed identity', () => {
+    actorRuntimeController.lock();
+    render(route('/caja'));
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
+  });
+
+  it('changes its destination immediately on permission revocation and identity handoff', () => {
+    const view = render(route('/caja'));
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/');
+    app.state.currentStaffUser = { ...app.state.currentStaffUser, permissions: { products: true } };
+    view.rerender(route('/caja'));
+    // Products is stored, but the current runtime has only POS.
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
+    act(() => signInStaff({ products: true }));
+    view.rerender(route('/caja'));
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/productos');
+    app.state.currentStaffUser = { id: 'staff-b', permissions: { pos: true } };
+    view.rerender(route('/caja'));
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
+  });
+
+  it('does not select online orders if the license capability is disabled', () => {
+    signInStaff({ ecommerce: true });
+    app.state.licenseDetails.features.ecommerce_order_inbox = false;
+    render(route('/caja'));
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
+  });
+});

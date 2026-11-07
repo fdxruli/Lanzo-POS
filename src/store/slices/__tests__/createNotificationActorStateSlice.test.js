@@ -1,3 +1,5 @@
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,11 +51,19 @@ const license = (key = 'license-a') => ({
 });
 
 const createHarness = (initialState = {}) => {
+  const grantState = (value) => grantTestActor({
+    actorType: value.currentDeviceRole,
+    actorId: (value.currentDeviceRole === 'admin' ? value.currentAdminUser : value.currentStaffUser)?.id,
+    permissions: value.currentStaffUser?.permissions || []
+  });
+  grantState(initialState);
   let state = { ...initialState };
   const get = () => state;
   const set = (patch) => {
     const next = typeof patch === 'function' ? patch(state) : patch;
+    const identityChanged = ['currentDeviceRole', 'currentAdminUser', 'currentStaffUser'].some((key) => key in next);
     state = { ...state, ...next };
+    if (identityChanged) grantState(state);
   };
 
   const slice = createNotificationSlice(set, get);
@@ -61,13 +71,13 @@ const createHarness = (initialState = {}) => {
   return { get, set };
 };
 
-const adminState = (adminId = 'admin-a') => ({
+const adminState = (adminId = 'admin-a') => (grantTestActor({ actorType: 'admin', actorId: adminId }), {
   licenseDetails: license(),
   currentDeviceRole: 'admin',
   currentAdminUser: { id: adminId }
 });
 
-const staffState = (staffId = 'staff-a') => ({
+const staffState = (staffId = 'staff-a') => (grantTestActor({ actorId: staffId, permissions: { notifications: true } }), {
   licenseDetails: license(),
   currentDeviceRole: 'staff',
   currentStaffUser: { id: staffId, permissions: { notifications: true } }
@@ -188,7 +198,7 @@ describe('createNotificationActorStateSlice', () => {
     rejectActorBLoad(new Error('actor-b-first-load-failed'));
     await expect(failedLoad).resolves.toMatchObject({
       success: false,
-      message: 'actor-b-first-load-failed'
+      message: 'No pudimos cargar tus notificaciones. Revisa tu conexión e inténtalo de nuevo.'
     });
 
     expect(harness.get().notificationRuntimeOwner).toBe('license-a|admin:admin-b');
@@ -314,5 +324,104 @@ describe('createNotificationActorStateSlice', () => {
       code: 'STALE_NOTIFICATION_RUNTIME'
     });
     expect(harness.get().notificationRuntimeOwner).toBe('license-a|admin:admin-b');
+  });
+});
+
+
+describe('notification permission boundaries', () => {
+  it('does not open or call Cloud services without effective authority', async () => {
+    const harness = createHarness(staffState());
+    actorRuntimeController.lock('expired');
+    harness.get().openNotificationCenter();
+    await harness.get().loadNotifications();
+    await harness.get().markNotificationsSeen();
+    await harness.get().markNotificationRead('private');
+    expect(harness.get().isNotificationCenterOpen).toBe(false);
+    expect(cloudMocks.listCloudNotifications).not.toHaveBeenCalled();
+    expect(cloudMocks.markCloudNotificationsSeen).not.toHaveBeenCalled();
+    expect(cloudMocks.markCloudNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('does not open Cloud for a Staff with an explicit denial', () => {
+    const initial = staffState();
+    initial.currentStaffUser.permissions.notifications = false;
+    const harness = createHarness(initial);
+    harness.get().openNotificationCenter();
+    expect(harness.get().isNotificationCenterOpen).toBe(false);
+  });
+
+  it.each([
+    ['loadNotifications', 'listCloudNotifications', []],
+    ['markNotificationRead', 'markCloudNotificationRead', ['private']],
+    ['markAllNotificationsRead', 'markAllCloudNotificationsRead', []],
+    ['archiveNotification', 'archiveCloudNotification', ['private']],
+    ['markNotificationsSeen', 'markCloudNotificationsSeen', []],
+    ['refreshOperationalNotificationsIfNeeded', 'refreshOperationalNotifications', []]
+  ])('clears protected state and stops retries on permanent rejection in %s', async (action, service, args) => {
+    const harness = createHarness(staffState());
+    harness.get().syncNotificationRuntime();
+    harness.set({ notifications: [{ id: 'private' }], supportTickets: [{ id: 'private-ticket' }], notificationsUnreadCount: 1, notificationsUnseenCount: 1 });
+    harness.get().openNotificationCenter();
+    cloudMocks[service].mockResolvedValue({ success: false, code: 'STAFF_NOTIFICATIONS_DISABLED' });
+    await harness.get()[action](...args);
+    expect(harness.get().notificationsAccessDenied).toBe(true);
+    expect(harness.get().notifications).toEqual([]);
+    expect(harness.get().supportTickets).toEqual([]);
+    expect(harness.get().notificationsUnseenCount).toBe(0);
+    const calls = cloudMocks[service].mock.calls.length;
+    await harness.get()[action](...args);
+    expect(cloudMocks[service]).toHaveBeenCalledTimes(calls);
+    // A new confirmed session can recover the entry; the rejection is not permanent storage.
+    grantTestActor({ permissions: { notifications: true } });
+    harness.get().syncNotificationRuntime();
+    expect(harness.get().notificationsAccessDenied).toBe(false);
+  });
+
+  it('clears state for a thrown authorization error and retries a temporary error', async () => {
+    const harness = createHarness(staffState());
+    cloudMocks.listCloudNotifications.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce({ success: true, notifications: [{ id: 'restored' }] });
+    await harness.get().loadNotifications({ refreshOperational: false });
+    expect(harness.get().notificationsAccessDenied).toBe(false);
+    await harness.get().loadNotifications({ force: true, refreshOperational: false });
+    expect(harness.get().notifications[0].id).toBe('restored');
+    cloudMocks.listCloudNotifications.mockRejectedValueOnce({ code: '42501' });
+    await harness.get().loadNotifications({ force: true, refreshOperational: false });
+    expect(harness.get().notificationsAccessDenied).toBe(true);
+    expect(harness.get().notifications).toEqual([]);
+  });
+
+  it('discards a pending response after revocation in the same session', async () => {
+    let finish;
+    cloudMocks.listCloudNotifications.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const harness = createHarness(staffState());
+    const pending = harness.get().loadNotifications({ refreshOperational: false });
+    harness.set({ currentStaffUser: { id: 'staff-a', permissions: { notifications: false } } });
+    harness.get().syncNotificationRuntime();
+    finish({ success: true, notifications: [{ id: 'stale-private' }], unread_count: 8, unseen_count: 8 });
+    const result = await pending;
+    expect(result.stale).toBe(true);
+    expect(harness.get().notifications).toEqual([]);
+    expect(harness.get().notificationsUnseenCount).toBe(0);
+  });
+});
+
+
+describe('notification identity handoffs', () => {
+  it.each([
+    ['admin', 'staff', 'staff-a'],
+    ['staff', 'admin', 'admin-a'],
+    ['staff', 'staff', 'staff-b']
+  ])('clears data across %s → %s', async (from, to, id) => {
+    const harness = createHarness(from === 'admin' ? adminState() : staffState());
+    cloudMocks.listCloudNotifications.mockResolvedValue({ success: true, notifications: [{ id: 'previous-session' }], unread_count: 1, unseen_count: 1 });
+    await harness.get().loadNotifications({ refreshOperational: false });
+    const next = to === 'admin'
+      ? { currentDeviceRole: to, currentAdminUser: { id }, currentStaffUser: null }
+      : { currentDeviceRole: to, currentAdminUser: null, currentStaffUser: { id, permissions: { notifications: true } } };
+    harness.set(next);
+    harness.get().syncNotificationRuntime();
+    expect(harness.get().notifications).toEqual([]);
+    expect(harness.get().notificationsUnseenCount).toBe(0);
+    expect(harness.get().isNotificationCenterOpen).toBe(false);
   });
 });

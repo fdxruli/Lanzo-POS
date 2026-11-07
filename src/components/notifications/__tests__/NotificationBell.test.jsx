@@ -1,6 +1,10 @@
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { evaluateActorAccess } from '../../../services/auth/actorAccessPolicy';
+import { getNotificationAuthorizationKey } from '../../../services/notifications/notificationAccess';
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,16 +51,6 @@ vi.mock('../../../services/localInventoryOperationalAlerts', () => ({
   refreshLocalInventoryOperationalAlertsSnapshot: local.refresh
 }));
 
-vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
-  useActorRuntimeSnapshot: () => ({
-    status: 'granted',
-    actorType: 'admin',
-    actorId: 'admin-1',
-    sessionId: 'admin-session-1',
-    permissions: ['*']
-  })
-}));
-
 import NotificationBell from '../NotificationBell';
 
 const emptyLocalSnapshot = () => ({
@@ -86,6 +80,7 @@ const createState = () => ({
     }
   },
   currentDeviceRole: 'admin',
+  currentAdminUser: { id: 'admin-1' },
   currentStaffUser: null,
   deviceFingerprint: 'device-a',
   notifications: [],
@@ -148,11 +143,19 @@ const cloudLicense = () => ({
   }
 });
 
-const renderBell = (props = {}) => render(
+const renderBell = (props = {}) => {
+  const snapshot = grantTestActor({
+    actorType: store.state.currentDeviceRole,
+    actorId: store.state.currentDeviceRole === 'staff' ? store.state.currentStaffUser?.id || 'staff-local' : 'admin-1',
+    permissions: store.state.currentStaffUser?.permissions || []
+  });
+  store.state.notificationAuthorizationKey = getNotificationAuthorizationKey(store.state, evaluateActorAccess({ ...store.state, runtimeSnapshot: snapshot }));
+  return render(
   <MemoryRouter>
     <NotificationBell {...props} />
   </MemoryRouter>
 );
+};
 
 afterEach(() => {
   cleanup();
@@ -551,5 +554,70 @@ describe('NotificationBell', () => {
     expect(store.state.closeNotificationCenter).toHaveBeenCalledTimes(1);
     expect(store.state.markNotificationRead).not.toHaveBeenCalled();
     expect(store.state.archiveNotification).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('Cloud notification authority and recovery UX', () => {
+  it('hides the Cloud entry for Staff without notifications permission', () => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), currentDeviceRole: 'staff', currentStaffUser: { id: 'staff-a', permissions: { pos: true, notifications: false } } };
+    renderBell();
+    expect(screen.queryByRole('button', { name: /Abrir centro/ })).not.toBeInTheDocument();
+    expect(store.state.openNotificationCenter).not.toHaveBeenCalled();
+    expect(store.state.loadNotifications).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Cloud entry for a confirmed authorized Staff', () => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), currentDeviceRole: 'staff', currentStaffUser: { id: 'staff-a', permissions: { notifications: true } } };
+    renderBell();
+    fireEvent.click(screen.getByRole('button', { name: /Abrir centro/ }));
+    expect(store.state.openNotificationCenter).toHaveBeenCalledOnce();
+  });
+
+  it('removes protected content and controls when an open actor is locked', async () => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), isNotificationCenterOpen: true, notifications: [{ id: 'private', title: 'Aviso privado', body: 'Información del negocio' }] };
+    renderBell();
+    expect(screen.getByText('Aviso privado')).toBeInTheDocument();
+    act(() => actorRuntimeController.lock('revoked'));
+    expect(screen.queryByText('Aviso privado')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actualizar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Preferencias' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Abrir centro/ })).not.toBeInTheDocument();
+  });
+
+  it('renders a permanent server rejection with close and no retry', () => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), isNotificationCenterOpen: true, notificationsAccessDenied: true };
+    renderBell();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(store.state.closeNotificationCenter).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+    expect(store.state.loadNotifications).not.toHaveBeenCalled();
+  });
+
+  it('retries a temporary connection failure and contains keyboard focus', async () => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), isNotificationCenterOpen: true, notificationsError: 'No pudimos conectar. Intenta de nuevo.' };
+    renderBell();
+    const retry = screen.getByRole('button', { name: 'Reintentar' });
+    fireEvent.click(retry);
+    expect(store.state.loadNotifications).toHaveBeenCalledWith({ force: true });
+    const close = within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar centro de notificaciones' });
+    await waitFor(() => expect(close).toHaveFocus());
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(retry).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(close).toHaveFocus();
+  });
+
+  it.each(['identity', 'business'])('never renders previous content on a %s change before effects reset the store', (change) => {
+    store.state = { ...createState(), licenseDetails: cloudLicense(), isNotificationCenterOpen: true, notifications: [{ id: 'private', title: 'Información anterior' }] };
+    const view = renderBell();
+    expect(screen.getByText('Información anterior')).toBeInTheDocument();
+    if (change === 'identity') store.state.currentAdminUser = { id: 'other-admin' };
+    else store.state.licenseDetails = { ...cloudLicense(), license_key: 'other-business' };
+    view.rerender(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    expect(screen.queryByText('Información anterior')).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,10 @@
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
+import {
+  getNotificationAuthorizationKey,
+  getNotificationLicenseIdentity,
+  isNotificationAccessDenied,
+  NOTIFICATION_ACCESS_MESSAGE
+} from '../../services/notifications/notificationAccess';
 import {
   archiveCloudNotification,
   listCloudNotifications,
@@ -65,11 +72,12 @@ const logNotificationDebug = (...args) => {
 };
 
 const getStaffSessionContext = (state = {}) => ({
-  currentDeviceRole: state.currentDeviceRole,
-  currentStaffUser: state.currentStaffUser
+  ...readActorAccess(state).permissionSession,
+  notificationsAccessDenied: state.notificationsAccessDenied === true
 });
 
 const canUseCloudNotifications = (licenseDetails = {}, staffSession = {}) => (
+  !staffSession.notificationsAccessDenied &&
   isNotificationCenterEnabled(licenseDetails) &&
   isCloudNotificationsEnabled(licenseDetails) &&
   canStaffAccessNotifications(licenseDetails, staffSession)
@@ -79,6 +87,7 @@ const canUseSupportTickets = (licenseDetails = {}, staffSession = {}) => {
   const capabilities = getNotificationCapabilities(licenseDetails);
 
   return (
+    !staffSession.notificationsAccessDenied &&
     isSupportCenterEnabled(licenseDetails) &&
     getSupportChannel(licenseDetails) === 'in_app' &&
     capabilities.support_tickets === true &&
@@ -99,7 +108,7 @@ const getNotificationErrorMessage = (error) => {
     return 'No se pudo confirmar este dispositivo. Vuelve a validar la licencia.';
   }
 
-  return error?.message || 'No pudimos cargar tus notificaciones. Intenta de nuevo.';
+  return 'No pudimos cargar tus notificaciones. Revisa tu conexión e inténtalo de nuevo.';
 };
 
 const getSupportErrorMessage = (error) => {
@@ -124,6 +133,7 @@ const resetNotificationState = {
   notificationsUnseenCount: 0,
   notificationsLoading: false,
   notificationsError: null,
+  notificationsAccessDenied: false,
   notificationsLoaded: false,
   lastNotificationsLoadedAt: null,
   lastOperationalRefreshAt: null,
@@ -154,36 +164,11 @@ const resetSupportState = {
   isRefreshingSupport: false
 };
 
-const getLicenseRuntimeIdentity = (licenseDetails = {}) => (
-  licenseDetails?.license_id ||
-  licenseDetails?.id ||
-  licenseDetails?.details?.license_id ||
-  licenseDetails?.details?.id ||
-  licenseDetails?.license_key ||
-  licenseDetails?.licenseKey ||
-  licenseDetails?.details?.license_key ||
-  licenseDetails?.details?.licenseKey ||
-  null
-);
-
-const getActorRuntimeIdentity = (state = {}) => {
-  if (state.currentDeviceRole === 'staff') {
-    const staffIdentity = state.currentStaffUser?.id || state.currentStaffUser?.username || 'pending';
-    return `staff:${staffIdentity}`;
-  }
-
-  if (state.currentDeviceRole === 'admin') {
-    const adminIdentity = state.currentAdminUser?.id || state.currentAdminUser?.username || 'pending';
-    return `admin:${adminIdentity}`;
-  }
-
-  return `role:${state.currentDeviceRole || 'unknown'}`;
-};
-
 export const getNotificationRuntimeOwner = (state = {}) => {
-  const licenseIdentity = getLicenseRuntimeIdentity(state.licenseDetails);
-  if (!licenseIdentity) return null;
-  return `${licenseIdentity}|${getActorRuntimeIdentity(state)}`;
+  const licenseIdentity = getNotificationLicenseIdentity(state.licenseDetails);
+  const access = readActorAccess(state);
+  if (!licenseIdentity || !access.isAuthorizedActor) return null;
+  return `${licenseIdentity}|${access.actorType}:${access.actorId}`;
 };
 
 const clearRealtimeTimerHandle = () => {
@@ -208,7 +193,7 @@ const invalidateNotificationRuntimeBookkeeping = () => {
   return notificationRuntimeGeneration;
 };
 
-const buildRuntimeToken = (owner, generation) => ({ owner, generation });
+const buildRuntimeToken = (owner, generation, authorizationKey) => ({ owner, generation, authorizationKey });
 const runtimeRequestKey = (token) => `${token.owner || 'none'}@${token.generation}`;
 
 const isRuntimeTokenCurrent = (get, token) => {
@@ -218,17 +203,20 @@ const isRuntimeTokenCurrent = (get, token) => {
     state.notificationRuntimeOwner === token.owner
     && state.notificationRuntimeGeneration === token.generation
     && getNotificationRuntimeOwner(state) === token.owner
+    && getNotificationAuthorizationKey(state) === token.authorizationKey
   );
 };
 
 const ensureNotificationRuntime = (set, get) => {
   const state = get();
   const owner = getNotificationRuntimeOwner(state);
+  const authorizationKey = getNotificationAuthorizationKey(state);
 
-  if (state.notificationRuntimeOwner === owner && owner) {
-    return buildRuntimeToken(owner, state.notificationRuntimeGeneration);
+  if (state.notificationRuntimeOwner === owner && state.notificationAuthorizationKey === authorizationKey) {
+    return buildRuntimeToken(owner, state.notificationRuntimeGeneration, authorizationKey);
   }
 
+  void get().stopNotificationRealtime?.();
   const generation = invalidateNotificationRuntimeBookkeeping();
   const notificationPreferences = getNotificationPreferences(owner);
 
@@ -236,14 +224,17 @@ const ensureNotificationRuntime = (set, get) => {
     ...resetNotificationState,
     ...resetSupportState,
     isNotificationCenterOpen: false,
+    notificationRealtimeSubscription: null,
+    notificationRealtimeTopic: null,
     notificationRuntimeOwner: owner,
+    notificationAuthorizationKey: authorizationKey,
     notificationRuntimeGeneration: generation,
     notificationPreferences,
     notificationCenterRequestedTab: null,
     notificationCenterRequestedTicketId: null
   });
 
-  return buildRuntimeToken(owner, generation);
+  return buildRuntimeToken(owner, generation, authorizationKey);
 };
 
 const setIfRuntimeCurrent = (set, get, token, patch) => {
@@ -263,8 +254,28 @@ export const createNotificationSlice = (set, get) => ({
   notificationRealtimeSubscription: null,
   notificationRealtimeTopic: null,
   notificationRuntimeOwner: null,
+  notificationAuthorizationKey: null,
   notificationRuntimeGeneration: notificationRuntimeGeneration,
   notificationPreferences: getNotificationPreferences(),
+
+  syncNotificationRuntime: () => ensureNotificationRuntime(set, get),
+
+  handleNotificationAccessError: (error, token = null) => {
+    if (!isNotificationAccessDenied(error) || (token && !isRuntimeTokenCurrent(get, token))) return false;
+    const generation = invalidateNotificationRuntimeBookkeeping();
+    set({
+      ...resetNotificationState,
+      ...resetSupportState,
+      notificationRuntimeGeneration: generation,
+      notificationsAccessDenied: true,
+      notificationsError: NOTIFICATION_ACCESS_MESSAGE,
+      notificationPreferences: getNotificationPreferences(),
+      notificationCenterRequestedTab: null,
+      notificationCenterRequestedTicketId: null
+    });
+    void get().stopNotificationRealtime?.();
+    return true;
+  },
 
   resetNotificationRuntime: () => {
     const generation = invalidateNotificationRuntimeBookkeeping();
@@ -277,6 +288,7 @@ export const createNotificationSlice = (set, get) => ({
       notificationRealtimeSubscription: null,
       notificationRealtimeTopic: null,
       notificationRuntimeOwner: null,
+      notificationAuthorizationKey: null,
       notificationRuntimeGeneration: generation,
       notificationPreferences: getNotificationPreferences()
     });
@@ -354,6 +366,7 @@ export const createNotificationSlice = (set, get) => ({
     ticketId = null
   } = {}) => {
     const token = ensureNotificationRuntime(set, get);
+    if (!token.owner || !canUseCloudNotifications(get().licenseDetails, getStaffSessionContext(get()))) return false;
     setIfRuntimeCurrent(set, get, token, {
       isNotificationCenterOpen: true,
       notificationCenterRequestedTab: tab,
@@ -384,7 +397,7 @@ export const createNotificationSlice = (set, get) => ({
     const licenseDetails = get().licenseDetails;
 
     if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
-      setIfRuntimeCurrent(set, get, token, resetNotificationState);
+      setIfRuntimeCurrent(set, get, token, { ...resetNotificationState, notificationsAccessDenied: get().notificationsAccessDenied });
       return { success: true, notifications: [], unread_count: 0, skipped: true };
     }
 
@@ -447,6 +460,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const message = result.message || result.code || 'No pudimos cargar tus notificaciones. Intenta de nuevo.';
         setIfRuntimeCurrent(set, get, token, {
           notifications: [],
@@ -482,6 +496,7 @@ export const createNotificationSlice = (set, get) => ({
       return await promise;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code, message: NOTIFICATION_ACCESS_MESSAGE };
       const message = getNotificationErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         notificationsLoading: false,
@@ -534,6 +549,7 @@ export const createNotificationSlice = (set, get) => ({
       try {
         const result = await refreshOperationalNotifications({ licenseDetails });
         if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+        if (get().handleNotificationAccessError(result, token)) return result;
         setIfRuntimeCurrent(set, get, token, {
           lastOperationalRefreshAt: now(),
           operationalRefreshStale: false,
@@ -543,6 +559,7 @@ export const createNotificationSlice = (set, get) => ({
       } catch (error) {
         if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
         setIfRuntimeCurrent(set, get, token, { operationalRefreshInFlight: false });
+        if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
         logNotificationDebug('operational refresh failed', error?.message || error);
         return { success: false, message: getNotificationErrorMessage(error) };
       }
@@ -743,12 +760,14 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
       }
 
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code, message: NOTIFICATION_ACCESS_MESSAGE };
       const message = getNotificationErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, { notificationsError: message });
       await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
@@ -781,6 +800,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         setIfRuntimeCurrent(set, get, token, {
           notifications: previousNotifications,
           notificationsUnreadCount: previousUnreadCount
@@ -790,6 +810,7 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code, message: NOTIFICATION_ACCESS_MESSAGE };
       const message = getNotificationErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         notifications: previousNotifications,
@@ -826,6 +847,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         setIfRuntimeCurrent(set, get, token, {
           notifications: previousNotifications,
           notificationsUnreadCount: previousUnreadCount
@@ -836,6 +858,7 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code, message: NOTIFICATION_ACCESS_MESSAGE };
       const message = getNotificationErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         notifications: previousNotifications,
@@ -933,6 +956,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const message = 'No pudimos cargar el soporte. Intenta de nuevo.';
         setIfRuntimeCurrent(set, get, token, {
           supportTickets: [],
@@ -966,6 +990,7 @@ export const createNotificationSlice = (set, get) => ({
       return await promise;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
       const message = getSupportErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         supportTicketsLoading: false,
@@ -1048,6 +1073,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const message = 'No pudimos cargar el hilo de soporte. Intenta de nuevo.';
         const requestState = get().supportThreadRequestInFlightByTicketId || {};
         setIfRuntimeCurrent(set, get, token, {
@@ -1093,6 +1119,7 @@ export const createNotificationSlice = (set, get) => ({
       return await threadPromise;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
       const message = getSupportErrorMessage(error);
       const requestState = get().supportThreadRequestInFlightByTicketId || {};
       setIfRuntimeCurrent(set, get, token, {
@@ -1139,6 +1166,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const messageText = 'No pudimos crear la solicitud. Intenta de nuevo.';
         setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
@@ -1162,6 +1190,7 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
       const messageText = getSupportErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
@@ -1193,6 +1222,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const messageText = 'No pudimos enviar la respuesta. Intenta de nuevo.';
         setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
@@ -1209,6 +1239,7 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
       const messageText = getSupportErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
@@ -1235,6 +1266,7 @@ export const createNotificationSlice = (set, get) => ({
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
+        if (get().handleNotificationAccessError(result, token)) return result;
         const messageText = 'No pudimos cerrar el ticket. Intenta de nuevo.';
         setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
@@ -1250,6 +1282,7 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     } catch (error) {
       if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+      if (get().handleNotificationAccessError(error, token)) return { success: false, code: error.code };
       const messageText = getSupportErrorMessage(error);
       setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,

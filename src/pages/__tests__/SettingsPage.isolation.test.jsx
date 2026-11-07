@@ -80,7 +80,7 @@ describe('SettingsPage section isolation', () => {
   it('renders NoPermission and never mounts General when zero tabs are authorized', () => {
     renderPage();
 
-    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(state.generalRenders).not.toHaveBeenCalled();
   });
 

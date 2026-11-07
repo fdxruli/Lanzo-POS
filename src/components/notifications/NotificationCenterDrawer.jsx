@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useActorAccess } from '../../services/auth/useActorAccess';
+import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey, NOTIFICATION_ACCESS_MESSAGE } from '../../services/notifications/notificationAccess';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   canStaffAccessNotificationCategory,
-  canStaffAccessNotifications,
   canStaffAccessSupportCenter,
-  isCloudNotificationsEnabled,
   isSupportCenterEnabled
 } from '../../services/notifications/notificationCapabilities';
 import {
@@ -55,13 +55,14 @@ export default function NotificationCenterDrawer({
   onClose,
   unreadCount = 0
 }) {
+  const actorAccess = useActorAccess();
+  const drawerRef = useRef(null);
+  const accessDenied = useAppStore((state) => state.notificationsAccessDenied);
   const [activeTab, setActiveTab] = useState('all');
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const notifications = useAppStore((state) => state.notifications);
   const notificationsLoading = useAppStore((state) => state.notificationsLoading);
   const isRefreshingNotifications = useAppStore((state) => state.isRefreshingNotifications);
@@ -98,15 +99,12 @@ export default function NotificationCenterDrawer({
   const muteNotificationCategory = useAppStore((state) => state.muteNotificationCategory);
   const unmuteNotificationCategory = useAppStore((state) => state.unmuteNotificationCategory);
 
-  const staffSession = useMemo(
-    () => ({ currentDeviceRole, currentStaffUser }),
-    [currentDeviceRole, currentStaffUser]
-  );
-  const notificationsAccessEnabled = canStaffAccessNotifications(licenseDetails, staffSession);
+  const authorizationKey = useAppStore((state) => state.notificationAuthorizationKey);
+  const runtimeCurrent = authorizationKey === getNotificationAuthorizationKey({ licenseDetails }, actorAccess);
+  const staffSession = actorAccess.permissionSession;
   const supportAccessEnabled = canStaffAccessSupportCenter(licenseDetails, staffSession);
   const cloudNotificationsEnabled = (
-    isCloudNotificationsEnabled(licenseDetails) &&
-    notificationsAccessEnabled
+    canAccessCloudNotificationCenter(licenseDetails, actorAccess) && runtimeCurrent && !accessDenied
   );
   const supportCenterEnabled = (
     isSupportCenterEnabled(licenseDetails) &&
@@ -179,7 +177,18 @@ export default function NotificationCenterDrawer({
   useEffect(() => {
     if (!isOpen) return undefined;
 
+    const previousFocus = document.activeElement;
+    const focusTimer = setTimeout(() => drawerRef.current?.querySelector('.notification-center-close')?.focus(), 0);
     const handleKeyDown = (event) => {
+      if (event.key === 'Tab') {
+        const elements = [...(drawerRef.current?.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') || [])];
+        const first = elements[0];
+        const last = elements.at(-1);
+        if (first && ((!event.shiftKey && document.activeElement === last) || (event.shiftKey && document.activeElement === first) || !drawerRef.current?.contains(document.activeElement))) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      }
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();
@@ -190,6 +199,8 @@ export default function NotificationCenterDrawer({
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      clearTimeout(focusTimer);
+      if (previousFocus?.isConnected) previousFocus.focus?.();
       document.body.classList.remove('notification-center-open');
       document.removeEventListener('keydown', handleKeyDown);
     };
@@ -202,8 +213,8 @@ export default function NotificationCenterDrawer({
     loadNotificationPreferences?.();
 
     const loadAndMarkSeen = async () => {
-      await loadNotifications?.();
-      if (!cancelled) {
+      const result = await loadNotifications?.();
+      if (!cancelled && result?.success !== false) {
         await markNotificationsSeen?.();
       }
     };
@@ -222,9 +233,9 @@ export default function NotificationCenterDrawer({
   ]);
 
   useEffect(() => {
-    if (!isOpen || activeTab !== 'support' || !supportCenterEnabled) return;
+    if (!isOpen || !cloudNotificationsEnabled || activeTab !== 'support' || !supportCenterEnabled) return;
     loadSupportTickets?.();
-  }, [activeTab, isOpen, loadSupportTickets, supportCenterEnabled]);
+  }, [activeTab, cloudNotificationsEnabled, isOpen, loadSupportTickets, supportCenterEnabled]);
 
   useEffect(() => {
     if (!isOpen || !requestedTab) return;
@@ -420,6 +431,7 @@ export default function NotificationCenterDrawer({
         />
 
         <aside
+          ref={drawerRef}
           id="notification-center-drawer"
           className="notification-center-drawer"
           role="dialog"
@@ -427,8 +439,8 @@ export default function NotificationCenterDrawer({
           aria-labelledby="notification-center-title"
         >
           <NotificationCenterHeader onClose={onClose} />
-          <div className="notification-list-state notification-list-state--error" role="alert">
-            <p>Tu usuario staff no tiene acceso al Centro de Notificaciones.</p>
+          <div className="notification-list-state notification-list-state--restricted" role="status">
+            <p>{NOTIFICATION_ACCESS_MESSAGE}</p>
             <button type="button" onClick={onClose}>
               Cerrar
             </button>
@@ -448,6 +460,7 @@ export default function NotificationCenterDrawer({
       />
 
       <aside
+        ref={drawerRef}
         id="notification-center-drawer"
         className={[
           'notification-center-drawer',

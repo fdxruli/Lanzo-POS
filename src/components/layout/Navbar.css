@@ -830,3 +830,9 @@
     line-height: 1.3;
   }
 }
+
+/* Author display rules otherwise override the browser's [hidden] behavior. */
+.mobile-bottom-nav .bottom-nav-item[hidden],
+.sidebar-links .nav-link[hidden] {
+  display: none;
+}

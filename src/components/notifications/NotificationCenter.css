@@ -1527,3 +1527,43 @@
     justify-self: start;
   }
 }
+
+/* Cloud states must size to their content, not stretch grid rows or buttons.
+   Keep these rules scoped: support and local inventory also use list-state. */
+.notification-center-drawer > .notification-center-header,
+.notification-center-drawer > .notification-center-actions,
+.notification-center-drawer > .notification-tabs {
+  flex-shrink: 0;
+}
+
+.notification-center-body {
+  align-content: start;
+}
+
+.notification-center-body > .notification-list-state,
+.notification-center-drawer > .notification-list-state--restricted {
+  align-content: start;
+  align-self: start;
+  width: 100%;
+  box-sizing: border-box;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.notification-center-drawer > .notification-list-state--restricted {
+  flex: 0 0 auto;
+  margin-top: 20px;
+}
+
+.notification-center-body > .notification-list-state button,
+.notification-list-state--restricted button {
+  align-self: start;
+  min-height: 44px;
+  height: auto;
+  padding: 10px 16px;
+}
+
+.notification-center-drawer .notification-list-state button:focus-visible {
+  outline: 2px solid var(--ui-text-brand);
+  outline-offset: 3px;
+}
