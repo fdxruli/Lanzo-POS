@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { act, cleanup, render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
@@ -119,9 +120,11 @@ describe('EcommercePortalSettings QR isolation', () => {
       features: { customSlug: true, cloudCatalogSource: true, maxPublishedProducts: -1 }
     });
     listPublishedProducts.mockResolvedValue({ success: true, products: [] });
+    grantTestActor({ actorType: 'admin', actorId: 'admin-fixture', permissions: ['*'] });
     act(() => useAppStore.setState({
       companyProfile: { name: 'Negocio ejemplo' },
       currentDeviceRole: 'admin',
+      currentAdminUser: { id: 'admin-fixture' },
       currentStaffUser: null,
       licenseDetails: AUTHORIZED_ECOMMERCE_LICENSE,
       _isInitializing: false

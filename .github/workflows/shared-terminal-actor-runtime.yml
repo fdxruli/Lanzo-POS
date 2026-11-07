@@ -143,6 +143,27 @@ jobs:
       - name: ActorRuntime focused tests
         run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
 
+      - name: Admin Staff RBAC Stage 1 routes and navigation
+        run: >-
+          npx vitest run
+          src/services/auth/__tests__/actorAccessPolicy.test.js
+          src/services/auth/__tests__/useSettingsAccess.test.jsx
+          src/services/auth/__tests__/settingsAccessPolicy.test.js
+          src/services/auth/__tests__/salesPermissionPolicy.test.js
+          src/services/auth/__tests__/freeAdminAuthorityAccess.test.js
+          src/components/common/__tests__/PermissionRoute.integration.test.jsx
+          src/components/common/__tests__/SettingsRoute.test.jsx
+          src/components/common/__tests__/SalesReportsRoute.test.jsx
+          src/components/layout/__tests__/Navbar.test.jsx
+          src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+          src/components/ai/__tests__/CommercialAIAgents.test.jsx
+          src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js
+          src/pages/__tests__/settingsPageAccess.test.js
+          --maxWorkers=4
+
       - name: Admin authentication preparation recovery R1
         run: npx vitest run src/services/auth/__tests__/adminLoginRecovery.integration.test.js src/services/__tests__/supabase.indexedDbBootstrap.test.js src/components/common/__tests__/AdminLoginModal.preparation.test.jsx src/store/slices/createProfileSlice.profileSync.test.js src/components/common/__tests__/AdminLoginModal.recovery.test.jsx --maxWorkers=4
 

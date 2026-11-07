@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../services/auth/__tests__/actorAccessTestHarness';
 import React, { Suspense } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -104,16 +105,9 @@ describe('optional admin lazy surfaces', () => {
       licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false } },
       companyProfile: { name: 'Local test business' },
     };
-    mocks.actorSnapshot = {
-      status: 'granted',
-      actorType: 'admin',
-      actorId: 'admin-local-test',
-      actorKey: 'admin:local-test',
-      sessionId: 'session-local-test',
-      deviceRef: 'device-local-test',
-      permissions: ['*'],
-      tenant: { opaqueId: 'tenant-local-test', databaseName: 'LanzoDB_local-test', generation: 1 },
-    };
+    mocks.app.currentDeviceRole = 'admin';
+    mocks.app.currentAdminUser = { id: 'admin-local-test' };
+    mocks.actorSnapshot = grantTestActor({ actorType: 'admin', actorId: 'admin-local-test' });
   });
 
   afterEach(() => {

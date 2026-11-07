@@ -673,11 +673,16 @@ export const createLicenseAdminActions = ({ set, get }) => {
       lockActorRuntime('admin_enrollment_required');
       set({
         appStatus: 'admin_enrollment_required',
-        licenseDetails: { ...(result.details || {}), license_key: licenseKey, device_role: 'admin' },
+        ownerEnrollmentContext: 'existing_license',
+        // Preserve the bound local license and never return to device-only
+        // authorization while the owner is completing enrollment.
+        licenseDetails: { ...discoveredLicense, admin_identity_required: true },
         currentDeviceRole: 'admin',
         currentAdminUser: null,
+        currentStaffUser: null,
         adminLoginLicenseKey: licenseKey,
-        adminLoginMessage: result.message,
+        adminLoginMessage: result.message || 'Crea las credenciales del propietario para continuar.',
+        adminLoginError: null,
         adminEnrollmentRequired: true,
         pendingAdminSessionResult: null
       });
@@ -698,24 +703,21 @@ export const createLicenseAdminActions = ({ set, get }) => {
         return { success: false, adminLoginRequired: true };
       }
 
-      // Legacy device validation has no authenticated actor session proof.
-      // Preserve compatibility only for a genuinely legacy FREE/local owner;
-      // once the client has modern Admin evidence it can never become legacy.
-      lockActorRuntime('legacy_admin_without_actor_session');
-      Logger.warn('[AdminAuth] Backend legacy detectado; continuando con sesión local hasta aplicar la migración.');
-      await saveLicenseToStorage(discoveredLicense);
-      set({
-        licenseDetails: discoveredLicense,
-        _isLoggingOut: false,
-        currentDeviceRole: 'admin',
-        currentAdminUser: null,
-        currentStaffUser: null,
-        adminLoginMessage: null,
-        adminLoginError: null,
-        pendingAdminSessionResult: null
+      // A server acknowledging a legacy device is not proof of an owner
+      // identity. Never restore the former device-only Admin fallback.
+      await get()._requireAdminLogin({ ...discoveredLicense, admin_identity_required: true }, {
+        code: 'ADMIN_IDENTITY_REQUIRED',
+        message: 'El servidor no ofrecio un acceso seguro para identificar al propietario. Tus datos locales se conservan; contacta Soporte Lanzo.'
       });
-      await get()._processOfflineMode(discoveredLicense, { reason: 'legacy_admin_auth_compatibility' });
-      return { success: true, legacyBackendFallback: true };
+      return { success: false, adminLoginRequired: true, supportRequired: true };
+    }
+
+    if (result.code === 'ADMIN_ENROLLMENT_NOT_ALLOWED') {
+      await get()._requireAdminLogin(discoveredLicense, {
+        code: 'ADMIN_ENROLLMENT_NOT_ALLOWED',
+        message: 'Este dispositivo no esta autorizado para registrar al propietario. Tus datos locales se conservan; contacta Soporte Lanzo.'
+      });
+      return { success: false, adminLoginRequired: true, supportRequired: true };
     }
 
     const discoveryFailure = classifyAdminAccessDiscoveryFailure(result);

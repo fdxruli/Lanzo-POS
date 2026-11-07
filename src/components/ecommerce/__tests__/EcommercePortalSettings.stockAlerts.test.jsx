@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -62,9 +63,11 @@ const product = {
 };
 
 const setAuthorizedStore = ({ snapshot, loadStockAlerts, reconcile } = {}) => {
+  grantTestActor({ actorType: 'admin', actorId: 'admin-fixture' });
   useAppStore.setState({
     companyProfile: { name: 'Tienda de prueba' },
     currentDeviceRole: 'admin',
+    currentAdminUser: { id: 'admin-fixture' },
     currentStaffUser: null,
     licenseDetails: {
       license_key: 'license-a',
@@ -75,7 +78,6 @@ const setAuthorizedStore = ({ snapshot, loadStockAlerts, reconcile } = {}) => {
     },
     deviceFingerprint: 'device-a',
     _isInitializing: false,
-    canAccess: vi.fn(() => true),
     ecommercePublishedStockAlertSnapshot: snapshot || null,
     ecommercePublishedStockAlertLoading: false,
     ecommercePublishedStockAlertError: null,

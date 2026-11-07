@@ -13,9 +13,9 @@ const FREE_LICENSE = {
 };
 
 describe('settingsPageAccess', () => {
-  it('allows an admin device with settings permission', () => {
+  it('allows a confirmed admin with global permissions', () => {
     expect(canManageEcommercePortal({
-      canAccess: buildCanAccess({ settings: true }),
+      canAccess: buildCanAccess({ settings: true, ecommerce: true }),
       currentDeviceRole: 'admin',
       licenseDetails: FREE_LICENSE
     })).toBe(true);
@@ -47,7 +47,7 @@ describe('settingsPageAccess', () => {
 
   it('blocks an admin when the effective plan/license feature disables the portal', () => {
     expect(canManageEcommercePortal({
-      canAccess: buildCanAccess({ settings: true }),
+      canAccess: buildCanAccess({ settings: true, ecommerce: true }),
       currentDeviceRole: 'admin',
       licenseDetails: { features: { ecommerce_portal_enabled: false } }
   })).toBe(false);

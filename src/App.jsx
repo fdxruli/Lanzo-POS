@@ -19,6 +19,8 @@ import LocalTenantMismatchScreen from './components/common/LocalTenantMismatchSc
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
+import EcommercePortalRoute from './components/common/EcommercePortalRoute';
+import { ROUTE_PERMISSIONS } from './services/auth/routePermissions';
 import SettingsRoute from './components/common/SettingsRoute';
 import SalesReportsRoute from './components/common/SalesReportsRoute';
 import CommercialAIAgentsRoute from './components/ai/CommercialAIAgentsRoute';
@@ -434,15 +436,15 @@ function App() {
                   )}
                 />
                 <Route path="/" element={<Layout />}>
-                  <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
-                  <Route path={ADMIN_ROUTE_PATHS.cashRegister} element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
-                  <Route path={ADMIN_ROUTE_PATHS.orders} element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route index element={<PermissionRoute permission={ROUTE_PERMISSIONS['/']}><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.cashRegister} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/caja']}><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.orders} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/pedidos']}><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.onlineOrders} element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
-                  <Route path={ADMIN_ROUTE_PATHS.products} element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
-                  <Route path={ADMIN_ROUTE_PATHS.customers} element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.products} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/productos']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.customers} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/clientes']}><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.sales} element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.aiAgents} element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
-                  <Route path={ADMIN_ROUTE_PATHS.onlinePortal} element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.onlinePortal} element={<EcommercePortalRoute><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></EcommercePortalRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.settings} element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.about} element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                   <Route {...ADMIN_NOT_FOUND_ROUTE} />

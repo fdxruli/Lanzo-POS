@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
@@ -9,15 +10,10 @@ const state = vi.hoisted(() => ({
   products: true
 }));
 
-vi.mock('../../../services/auth/useSettingsAccess', () => ({
-  useSettingsAccess: () => ({ canEnterSettings: state.canEnterSettings })
-}));
-
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector({
     currentDeviceRole: 'staff',
-    currentStaffUser: { id: 'staff-a' },
-    canAccess: (permission) => permission === 'products' && state.products
+    currentStaffUser: { id: 'staff-a', permissions: { products: state.products, settings: state.canEnterSettings } }
   }))
 }));
 
@@ -55,6 +51,7 @@ describe('Settings direct-route authorization', () => {
   beforeEach(() => {
     state.canEnterSettings = false;
     state.products = true;
+    grantTestActor({ permissions: ['products', 'settings'] });
   });
 
   it('allows Products but denies Configuracion for matrix A', () => {

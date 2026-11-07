@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -144,11 +145,12 @@ const deferred = () => {
 };
 
 const setAuthorizedStore = () => {
+  grantTestActor({ actorType: 'admin', actorId: 'admin-fixture' });
   useAppStore.setState({
     companyProfile: { name: 'Negocio de prueba', business_type: 'abarrotes' },
-    canAccess: vi.fn(() => true),
     licenseDetails: AUTHORIZED_ECOMMERCE_LICENSE,
     currentDeviceRole: 'admin',
+    currentAdminUser: { id: 'admin-fixture' },
     currentStaffUser: null,
     _isInitializing: false,
     ecommercePublishedStockAlertSnapshot: { products: [] },

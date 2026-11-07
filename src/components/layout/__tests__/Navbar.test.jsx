@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -6,17 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   app: null,
-  settingsAccess: { canEnterSettings: true },
   actorRuntime: null,
   postDowngradeCash: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(state.app))
-}));
-
-vi.mock('../../../services/auth/useSettingsAccess', () => ({
-  useSettingsAccess: () => state.settingsAccess
 }));
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
@@ -78,7 +74,6 @@ const createAppState = (overrides = {}) => ({
   needsDriveReauth: false,
   dismissedBackupNotice: null,
   showBackupNotice: vi.fn(),
-  canAccess: vi.fn(() => true),
   licenseDetails: {
     features: {
       cloud_pos_sync: false,
@@ -132,19 +127,12 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   state.app = createAppState();
-  state.settingsAccess = { canEnterSettings: true };
   state.postDowngradeCash = {
     eligible: false,
     pendingCount: null,
     status: 'idle'
   };
-  state.actorRuntime = {
-    status: 'granted',
-    actorType: 'admin',
-    actorId: 'admin-1',
-    sessionId: 'admin-session-1',
-    permissions: ['*']
-  };
+  state.actorRuntime = grantTestActor({ actorType: 'admin', actorId: 'admin-1' });
 });
 
 describe('Navbar Settings shell access', () => {
@@ -186,9 +174,8 @@ describe('Navbar Settings shell access', () => {
       currentDeviceRole: 'staff',
       currentAdminUser: null,
       currentStaffUser: { id: 'staff-a', permissions: { products: true } },
-      canAccess: vi.fn((permission) => permission === 'products')
     });
-    state.settingsAccess = { canEnterSettings: false };
+    state.actorRuntime = grantTestActor({ actorId: 'staff-a', permissions: ['products'] });
 
     renderNavbar();
 
@@ -202,7 +189,7 @@ describe('Navbar Settings shell access', () => {
     const view = renderNavbar();
     expect(document.querySelector('.desktop-sidebar a[href="/configuracion"]')).not.toHaveAttribute('hidden');
 
-    state.settingsAccess = { canEnterSettings: false };
+    state.actorRuntime = { status: 'locked' };
     view.rerender(
       <MemoryRouter initialEntries={['/']}>
         <Navbar />
@@ -466,8 +453,10 @@ describe('Navbar ecommerce orders access', () => {
   it('shows the link to staff with ecommerce permission', () => {
     state.app = createAppState({
       currentDeviceRole: 'staff',
-      currentStaffUser: { permissions: { ecommerce: true } }
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: { ecommerce: true } }
     });
+    state.actorRuntime = grantTestActor({ actorId: 'staff-a', permissions: ['ecommerce'] });
     renderNavbar();
 
     expect(getOnlineOrderLinks()).toHaveLength(2);
@@ -477,7 +466,6 @@ describe('Navbar ecommerce orders access', () => {
     state.app = createAppState({
       currentDeviceRole: 'staff',
       currentStaffUser: { permissions: { ecommerce: false } },
-      canAccess: vi.fn((permission) => permission !== 'ecommerce')
     });
     renderNavbar();
 
@@ -512,7 +500,7 @@ describe('Navbar AI capability discovery', () => {
     state.app = createAppState({
       licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false, cloud_pos_sync: false } }
     });
-    state.actorRuntime = boundAdminActor;
+    state.actorRuntime = grantTestActor({ actorType: 'admin', actorId: 'admin-1' });
     renderNavbar('/agentes-ia');
 
     const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
@@ -535,7 +523,7 @@ describe('Navbar AI capability discovery', () => {
     state.app = createAppState({
       licenseDetails: { valid: true, plan_code: 'nube', features: { ai_agents: true, cloud_pos_sync: true } }
     });
-    state.actorRuntime = boundAdminActor;
+    state.actorRuntime = grantTestActor({ actorType: 'admin', actorId: 'admin-1' });
     renderNavbar('/agentes-ia');
 
     const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
@@ -563,5 +551,43 @@ describe('Navbar AI capability discovery', () => {
 
     const { drawer } = openMobileDrawer();
     expect(drawer.querySelector('a[href="/agentes-ia"]')).toBeNull();
+  });
+});
+
+describe('Navbar session authority on a shared device', () => {
+  it('shows only POS to Staff even when the persisted device record says Admin', () => {
+    state.app.currentDeviceRole = 'staff';
+    state.app.currentAdminUser = null;
+    state.app.currentStaffUser = { id: 'staff-a', permissions: { pos: true } };
+    state.app.licenseDetails = { ...state.app.licenseDetails, device_mode: 'shared', device_role: 'admin' };
+    state.actorRuntime = grantTestActor({ actorId: 'staff-a', permissions: ['pos'] });
+    renderNavbar();
+    for (const selector of ['.desktop-sidebar', '.mobile-bottom-nav']) {
+      expect(document.querySelector(`${selector} a[href="/"]`)).not.toHaveAttribute('hidden');
+      for (const path of ['/caja', '/productos', '/ventas']) {
+        expect(document.querySelector(`${selector} a[href="${path}"]`)).toHaveAttribute('hidden');
+      }
+    }
+    openMobileDrawer();
+    for (const path of ['/clientes', '/configuracion', '/portal-online', '/pedidos-online']) {
+      expect(document.querySelector(`#mobile-main-menu a[href="${path}"]`)).toBeNull();
+    }
+    expect(document.querySelectorAll('a[href="/portal-online"]')).toHaveLength(0);
+  });
+
+  it('removes all protected navigation when the runtime locks despite a remaining Admin identity', () => {
+    state.actorRuntime = { status: 'locked' };
+    renderNavbar();
+    for (const path of ['/', '/caja', '/productos', '/clientes', '/configuracion', '/ventas']) {
+      expect(document.querySelector(`.desktop-sidebar a[href="${path}"]`)).toHaveAttribute('hidden');
+    }
+    expect(document.querySelectorAll('a[href="/portal-online"], a[href="/pedidos-online"]')).toHaveLength(0);
+  });
+
+  it('denies an Admin runtime whose active store identity is missing', () => {
+    state.app.currentAdminUser = null;
+    renderNavbar();
+    expect(document.querySelector('.desktop-sidebar a[href="/caja"]')).toHaveAttribute('hidden');
+    expect(document.querySelector('.desktop-sidebar a[href="/configuracion"]')).toHaveAttribute('hidden');
   });
 });

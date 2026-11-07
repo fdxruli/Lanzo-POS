@@ -1,8 +1,8 @@
 import NoPermission from './NoPermission';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { useActorAccess } from '../../services/auth/useActorAccess';
 
 export default function SalesReportsRoute({ children }) {
-  const actorRuntime = useActorRuntimeSnapshot();
-  return canReadSalesReports(actorRuntime) ? children : <NoPermission />;
+  const { runtimeSnapshot } = useActorAccess();
+  return canReadSalesReports(runtimeSnapshot || {}) ? children : <NoPermission />;
 }

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor, tenantState } from '../../../services/auth/__tests__/actorAccessTestHarness';
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -37,7 +38,12 @@ vi.mock('../../../services/aiService', () => ({
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector({
     licenseDetails: runtime.licenseDetails,
-    companyProfile: runtime.companyProfile
+    companyProfile: runtime.companyProfile,
+    currentDeviceRole: runtime.actorSnapshot?.actorType,
+    currentAdminUser: runtime.actorSnapshot?.actorType === 'admin' ? { id: runtime.actorSnapshot.actorId } : null,
+    currentStaffUser: runtime.actorSnapshot?.actorType === 'staff' ? {
+      id: runtime.actorSnapshot.actorId, permissions: runtime.actorSnapshot.permissions
+    } : null
   })
 }));
 
@@ -62,6 +68,13 @@ const boundAdmin = {
   deviceRef: 'device-a',
   permissions: ['*'],
   tenant: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_tenant-a', generation: 1 }
+};
+
+const bindTestActor = (overrides = {}) => {
+  const actor = { ...boundAdmin, ...overrides };
+  tenantState.current = actor.tenant;
+  return grantTestActor({ actorType: actor.actorType, actorId: actor.actorId,
+    sessionId: actor.sessionId, permissions: actor.permissions });
 };
 
 const renderCenter = () => render(
@@ -126,7 +139,7 @@ describe('commercial AI center', () => {
   beforeEach(() => {
     runtime.licenseDetails = entitledLicense;
     runtime.companyProfile = { timezone: 'America/New_York' };
-    runtime.actorSnapshot = boundAdmin;
+    runtime.actorSnapshot = bindTestActor();
     runtime.historyStorage.clear();
     runtime.runAgent.mockReset();
     runtime.loadProducts.mockReset();
@@ -320,9 +333,9 @@ describe('commercial AI center', () => {
     const dialog = await openHistory();
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver respuesta' }));
     if (context === 'license') runtime.licenseDetails = { ...entitledLicense, license_key: 'license-b' };
-    else if (context === 'tenant') runtime.actorSnapshot = { ...boundAdmin, tenant: { ...boundAdmin.tenant, opaqueId: 'tenant-b' } };
-    else if (context === 'actor') runtime.actorSnapshot = { ...boundAdmin, actorKey: 'admin:admin-b', actorId: 'admin-b' };
-    else runtime.actorSnapshot = { ...boundAdmin, sessionId: 'session-b' };
+    else if (context === 'tenant') runtime.actorSnapshot = bindTestActor({ tenant: { ...boundAdmin.tenant, opaqueId: 'tenant-b' } });
+    else if (context === 'actor') runtime.actorSnapshot = bindTestActor({ actorId: 'admin-b' });
+    else runtime.actorSnapshot = bindTestActor({ sessionId: 'session-b' });
     rerenderCenter(view);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByText('Resumen de prueba')).not.toBeInTheDocument();
@@ -802,10 +815,9 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
 
-    runtime.actorSnapshot = {
-      ...boundAdmin,
+    runtime.actorSnapshot = bindTestActor({
       tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 }
-    };
+    });
     rerenderCenter(view);
     await expectEmptyHistory();
 
@@ -832,7 +844,7 @@ describe('commercial AI center', () => {
     rerenderCenter(view);
     expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
 
-    runtime.actorSnapshot = { ...boundAdmin, sessionId: 'session-b' };
+    runtime.actorSnapshot = bindTestActor({ sessionId: 'session-b' });
     rerenderCenter(view);
     await expectEmptyHistory();
 
@@ -961,13 +973,12 @@ describe('commercial AI center', () => {
     await openHistory();
     expect(await screen.findByRole('heading', { name: '¿Mi negocio es rentable?' })).toBeInTheDocument();
 
-    runtime.actorSnapshot = {
-      ...boundAdmin,
+    runtime.actorSnapshot = bindTestActor({
       actorKey: 'admin:admin-b',
       actorId: 'admin-b',
       sessionId: 'session-b',
       tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 }
-    };
+    });
     view.rerender(
       <MemoryRouter initialEntries={['/agentes-ia']}>
         <CommercialAIAgentsRoute><CommercialAIAgentsPage /></CommercialAIAgentsRoute>
@@ -1147,7 +1158,7 @@ describe('commercial AI center', () => {
   });
 
   it('keeps the existing entitled Staff permission path in the real center', () => {
-    runtime.actorSnapshot = { ...boundAdmin, actorType: 'staff', permissions: ['ai_agents'] };
+    runtime.actorSnapshot = bindTestActor({ actorType: 'staff', actorId: 'staff-a', permissions: ['ai_agents'] });
     renderCenter();
 
     expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();

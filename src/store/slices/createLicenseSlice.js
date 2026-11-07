@@ -1,3 +1,4 @@
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
 import { createLicenseInitialState } from './license/licenseState';
 import { createLicenseRealtimeActions } from './license/licenseRealtimeActions';
 import { createLicenseSyncActions } from './license/licenseSyncActions';
@@ -29,14 +30,7 @@ export const createLicenseSlice = (set, get) => ({
 
   isAdminDevice: () => get().currentDeviceRole !== 'staff',
 
-  canAccess: (permission) => {
-    const state = get();
-
-    if (state.currentDeviceRole !== 'staff') return true;
-    if (!state.currentStaffUser) return false;
-
-    return state.currentStaffUser.permissions?.[permission] === true;
-  },
+  canAccess: (permission) => readActorAccess(get()).canAccessPermission(permission),
 
   ...createLicenseRealtimeActions({
     set,

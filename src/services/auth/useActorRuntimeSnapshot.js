@@ -14,9 +14,25 @@ export const useActorRuntimeSnapshot = () => {
 
   useEffect(() => {
     const unsubscribe = actorRuntimeController.subscribe(setSnapshot);
-    setSnapshot(actorRuntimeController.getState());
-    return unsubscribe;
+    const refresh = () => setSnapshot(actorRuntimeController.getState());
+    refresh();
+    globalThis.addEventListener?.('focus', refresh);
+    globalThis.document?.addEventListener('visibilitychange', refresh);
+    return () => {
+      unsubscribe();
+      globalThis.removeEventListener?.('focus', refresh);
+      globalThis.document?.removeEventListener('visibilitychange', refresh);
+    };
   }, []);
+
+  useEffect(() => {
+    if (snapshot.status !== 'granted' || !Number.isFinite(snapshot.authorizationExpiresAt)) return;
+    // Unmount protected content even when an idle page has no store updates.
+    const timer = setTimeout(() => {
+      setSnapshot(actorRuntimeController.getState());
+    }, Math.min(2 ** 31 - 1, Math.max(0, snapshot.authorizationExpiresAt - Date.now())));
+    return () => clearTimeout(timer);
+  }, [snapshot]);
 
   return snapshot;
 };

@@ -778,23 +778,33 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     return { status: get().appStatus };
                 }
 
-                // Legacy/FREE admin compatibility has no stable authenticated
-                // admin-user session proof. Keep ActorRuntime LOCKED rather
-                // than manufacturing authority from a device identity.
+                // A legacy FREE device flag is not authenticated owner authority.
+                // The existing server flow confirms an owner login or allows owner
+                // enrollment only on an active, bound device with its security token.
                 logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
                 assertBootstrapActorCurrent();
-                options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
-                await (options?.lifecycle
-                                    ? get()._processOfflineMode(localLicense, { lifecycle: options.lifecycle })
-                                    : get()._processOfflineMode(localLicense));
-                assertBootstrapActorCurrent();
-                if (navigator.onLine) {
-                    get()._validateInBackground(localLicense.license_key, {
-                        reason: 'admin_legacy_restore', lifecycle: options?.lifecycle
+                set({
+                    appStatus: 'loading',
+                    licenseDetails: localLicense,
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: null,
+                    currentStaffUser: null,
+                    adminLoginLicenseKey: localLicense.license_key
+                });
+                if (!navigator.onLine) {
+                    setVerificationUnavailable(set, 'admin', localLicense, {
+                        verificationStatus: SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
+                        code: 'ONLINE_REQUIRED',
+                        uiCode: 'SESSION_VERIFICATION_INCONCLUSIVE',
+                        userMessage: 'Este acceso Free antiguo necesita conexion para registrar o verificar al propietario. Tus datos locales se conservan. Conectate y pulsa Reintentar verificacion.'
                     });
-                } else {
-                    Logger.log('[AppStore] Sin red al iniciar, se mantiene cache local.');
+                    coordinatorState = 'ready';
+                    return { status: 'admin_login_required' };
                 }
+
+                // Discovery uses the existing RPC enrollment/login path. It must
+                // not mark the app ready or grant authority from device validation.
+                await get().discoverAdminAccess(localLicense.license_key);
                 coordinatorState = 'ready';
                 return { status: get().appStatus };
             } catch (criticalError) {

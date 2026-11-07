@@ -23,8 +23,15 @@ describe('approved response and Free boundaries', () => {
     expect(hash(source('CommercialAIAgentsPage.css'))).toBe('7d3955b30d2ae9262d7aada0ac7d656382a82a78ab3f2169f802b64dcb8cd632');
   });
 
-  it('preserves the original Free showcase route and authorization boundary', () => {
-    expect(hash(source('CommercialAIAgentsRoute.jsx'))).toBe('58ba292ea4dee85cf90844ec91f33eec0ce7e7ce97baeed310bc48deae39858b');
+  it('preserves the Free showcase while requiring the current authenticated actor', () => {
+    const route = source('CommercialAIAgentsRoute.jsx');
+    expect(route).toContain('useActorAccess');
+    expect(route).toContain('const { runtimeSnapshot: actorSnapshot } = useActorAccess()');
+    expect(route).toContain('getCommercialAIAgentAccessState({ licenseDetails, actorSnapshot })');
+    expect(route).toContain('if (!access.canSeeEntry) return <NoPermission />');
+    expect(route).toContain('if (!access.canEnter)');
+    expect(route).toContain('<ProFeatureShowcase');
+    expect(route).toContain('return children;');
   });
 
   it('keeps new workspace rules away from protected report selectors', () => {
