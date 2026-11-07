@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../store/useAppStore';
 import WelcomeModal from './WelcomeModal';
@@ -17,7 +17,24 @@ describe('WelcomeModal mobile-first welcome', () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const mockSpaciousLayout = (initial) => {
+    let listener;
+    const query = {
+      matches: initial,
+      addEventListener: (_event, callback) => { listener = callback; },
+      removeEventListener: () => { listener = undefined; }
+    };
+    vi.stubGlobal('matchMedia', vi.fn(() => query));
+    return (matches) => {
+      query.matches = matches;
+      act(() => listener?.({ matches }));
+    };
+  };
 
   it('introduces LANZO POS and provides the public information destinations', () => {
     render(<WelcomeModal />);
@@ -53,6 +70,46 @@ describe('WelcomeModal mobile-first welcome', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('textbox', { name: 'Clave de licencia' })).toHaveValue('LANZO-PRUEBA-1234');
+  });
+
+  it('shows the license form without an accordion on a spacious viewport', () => {
+    mockSpaciousLayout(true);
+    render(<WelcomeModal />);
+
+    expect(screen.queryByRole('button', { name: /ya tengo una licencia/i })).not.toBeInTheDocument();
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+    expect(screen.getByRole('textbox', { name: 'Clave de licencia' })).toBeVisible();
+  });
+
+  it('adapts between spacious and compact layouts without losing the license', () => {
+    const resize = mockSpaciousLayout(false);
+    render(<WelcomeModal />);
+
+    const toggle = screen.getByRole('button', { name: /ya tengo una licencia/i });
+    fireEvent.click(toggle);
+    const input = screen.getByRole('textbox', { name: 'Clave de licencia' });
+    fireEvent.change(input, { target: { value: 'lanzo-prueba-5678' } });
+    fireEvent.click(toggle);
+    expect(document.getElementById('welcome-license-panel')).toHaveAttribute('hidden');
+
+    resize(true);
+    expect(toggle).not.toBeVisible();
+    expect(input).toHaveValue('LANZO-PRUEBA-5678');
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+
+    // Focus before a keyboard-driven viewport reduction must not hide the active field.
+    fireEvent.focus(input);
+    resize(false);
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+    expect(input).toHaveValue('LANZO-PRUEBA-5678');
+  });
+
+  it('keeps all three low-priority information actions together in the footer', () => {
+    render(<WelcomeModal />);
+    const footer = document.querySelector('.welcome-secondary');
+    const actions = footer.querySelector('.prelogin-support__actions');
+    expect(actions.querySelectorAll('a')).toHaveLength(2);
+    expect(actions.querySelector('button')).toHaveTextContent('Soporte');
   });
 
   it('keeps initial activation and free creation blocked while offline', () => {
