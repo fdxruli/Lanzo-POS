@@ -502,3 +502,21 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     });
   });
 });
+
+
+it('preserves the receipt-required metadata when the financial transport is ambiguous', async () => {
+  mocks.createCloudCashierInventorySale.mockRejectedValueOnce(Object.assign(new Error('Failed to fetch'), {
+    isFinancialOperationAmbiguous: true, financialIntentId: 'intent-1', financialIdempotencyKey: 'existing-key'
+  }));
+  await expect(salesCloudCashierService.processCloudCashierSale({ sale: makeSale(), processedItems: makeSale().items,
+    paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'session-1' }, total: '10' }))
+    .rejects.toMatchObject({ isFinancialOperationAmbiguous: true, financialIntentId: 'intent-1', financialIdempotencyKey: 'existing-key' });
+});
+
+it('recognizes confirmed money while the existing local projection needs repair', async () => {
+  mocks.createCloudCashierInventorySale.mockResolvedValueOnce({ ...makeResponse(), projection: { outcome: 'projection_failed' } });
+  await expect(salesCloudCashierService.processCloudCashierSale({ sale: makeSale(), processedItems: makeSale().items,
+    paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'session-1' }, total: '10' }))
+    .resolves.toMatchObject({ success: true, projectionDeferred: true, financialIntentId: 'intent-1' });
+  expect(mocks.pullCatalogChanges).not.toHaveBeenCalled();
+});

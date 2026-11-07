@@ -227,17 +227,20 @@ export const runCheckoutActorOperation = async ({
   orderId,
   label = 'checkout.operation',
   recognizeLocalCommit = false,
+  recognizeCloudCommit = false,
   operation
 } = {}) => {
   let localOutcome = null;
   const trackedOperation = async (context) => {
-    if (recognizeLocalCommit) context.handle.assertCurrent('pos');
+    if (recognizeLocalCommit || recognizeCloudCommit) context.handle.assertCurrent('pos');
     const result = await operation(context);
-    if (recognizeLocalCommit && result?.saleId === orderId && (
+    if ((recognizeLocalCommit || recognizeCloudCommit) && result?.saleId === orderId && (
       (result.success === true && result.financialResult?.status === 'success' &&
-        result.financialResult?.sourceMode === 'local_committed') ||
-      (result.code === 'LOCAL_COMMIT_UNCERTAIN' && result.retryable === false &&
-        result.financialResult?.sourceMode === 'local_uncertain')
+        ((recognizeLocalCommit && result.financialResult?.sourceMode === 'local_committed') ||
+         (recognizeCloudCommit && result.financialResult?.sourceMode === 'cloud_committed'))) ||
+      (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code) && result.retryable === false &&
+        ((recognizeLocalCommit && result.financialResult?.sourceMode === 'local_uncertain') ||
+         (recognizeCloudCommit && result.financialResult?.sourceMode === 'cloud_uncertain')))
     )) {
       localOutcome = result;
     }

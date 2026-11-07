@@ -371,7 +371,7 @@ export function usePosCheckout({
             return buildStaleCheckoutAttemptResult();
         }
 
-        if (snapshot?.localCommitUncertain) return { success: false, code: 'LOCAL_COMMIT_UNCERTAIN', released: false };
+        if (snapshot?.localCommitUncertain) return { success: false, code: snapshot.commitUncertainCode || 'LOCAL_COMMIT_UNCERTAIN', released: false };
         if (!snapshot?.orderId) {
             return { success: true, released: false, reason: 'missing_order_id' };
         }
@@ -1348,8 +1348,9 @@ export function usePosCheckout({
                 createdAt: snapshot.createdAt
             });
 
-            if (result.code === 'LOCAL_COMMIT_UNCERTAIN') {
+            if (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code)) {
                 snapshot.localCommitUncertain = true;
+                snapshot.commitUncertainCode = result.code;
                 return result;
             }
             if (!result.success) {

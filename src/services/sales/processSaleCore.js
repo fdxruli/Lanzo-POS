@@ -537,6 +537,12 @@ export const processSaleCore = async ({
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
 
+                if (cloudCashierError.isFinancialOperationAmbiguous) return {
+                    success: false, saleId: sale.id, code: 'CLOUD_COMMIT_UNCERTAIN', retryable: false,
+                    financialIntentId: cloudCashierError.financialIntentId,
+                    financialIdempotencyKey: cloudCashierError.financialIdempotencyKey,
+                    financialResult: { status: 'unknown', sourceMode: 'cloud_uncertain', saleId: sale.id }
+                };
                 return withFinancialFailure({
                     success: false,
                     errorType: 'CLOUD_CASHIER_FAILED',
@@ -547,6 +553,18 @@ export const processSaleCore = async ({
             }
 
             const cloudSale = cloudResult.localSale || sale;
+            let authorityCurrent = true;
+            try { actorContext?.assertCurrent?.('pos'); } catch { authorityCurrent = false; }
+            if (cloudResult.projectionDeferred || !authorityCurrent) return {
+                success: true, saleId: sale.id, cloudCommitted: true,
+                cloudSaleId: cloudResult.response?.sale?.id || null,
+                financialIntentId: cloudResult.financialIntentId, projectionPending: Boolean(cloudResult.projectionDeferred),
+                restaurantSettlement: cloudResult.restaurantSettlement || null,
+                atomicRestaurantSettlement: cloudResult.atomicRestaurantSettlement === true,
+                ...createFinancialNotificationResult({ financialResult: {
+                    status: 'success', saleId: sale.id, sourceMode: 'cloud_committed', cloudCommitted: true
+                } })
+            };
 
             let postEffectsFailed = false;
             let postEffectsError = null;

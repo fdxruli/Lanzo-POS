@@ -1046,8 +1046,9 @@ export const salesCloudCashierService = {
 
   async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null } = {}) {
     const actorHandle = actorRuntimeController.capture();
+    actorHandle.assertCurrent('pos');
     const context = await getRuntimeContext();
-    actorHandle.assertCurrent();
+    actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
     const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || sale?.paymentMethod || sale?.payment_method);
     const inventoryEnabled = isCloudSalesInventoryEnabled(details);
@@ -1092,7 +1093,7 @@ export const salesCloudCashierService = {
           || ''
         ).trim();
         if (!parentOrderId) throw Object.assign(new Error('RESTAURANT_PARENT_ORDER_REQUIRED'), { code: 'RESTAURANT_PARENT_ORDER_REQUIRED' });
-        actorHandle.assertCurrent();
+        actorHandle.assertCurrent('pos');
         const preflight = await preflightCloudRestaurantOrderSettlement({
           licenseKey: context.licenseKey,
           parentOrderId,
@@ -1100,7 +1101,7 @@ export const salesCloudCashierService = {
           settlementTotal: total,
           actorHandle
         });
-        actorHandle.assertCurrent();
+        actorHandle.assertCurrent('pos');
         if (preflight?.success !== true) {
           throw Object.assign(new Error(preflight?.message || preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED'), {
             code: preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED',
@@ -1120,7 +1121,7 @@ export const salesCloudCashierService = {
         ? salesCloudRepository.createCloudCreditSale
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
 
-      actorHandle.assertCurrent();
+      actorHandle.assertCurrent('pos');
       const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
         ...payload,
@@ -1140,12 +1141,10 @@ export const salesCloudCashierService = {
       }
 
       const projection = response?.projection || null;
-      if (projection?.outcome === 'projection_failed') {
-        throw projection.error || Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
-      }
+      const projectionDeferred = ['projection_failed', 'projection_deferred'].includes(projection?.outcome);
       const localSale = projection?.result?.localSale || null;
 
-      if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
+      if (!projectionDeferred && inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
         pullCatalogChanges(context.licenseKey).catch((pullError) => {
           Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
         });
@@ -1153,6 +1152,8 @@ export const salesCloudCashierService = {
 
       return {
         success: true,
+        projectionDeferred,
+        financialIntentId: response.financialIntentId,
         response,
         localSale,
         payload,
@@ -1164,7 +1165,12 @@ export const salesCloudCashierService = {
       };
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
-      throw friendlyCloudCashierError(error);
+      const mapped = friendlyCloudCashierError(error);
+      if (error.isFinancialOperationAmbiguous) Object.assign(mapped, {
+        isFinancialOperationAmbiguous: true, financialIntentId: error.financialIntentId,
+        financialIdempotencyKey: error.financialIdempotencyKey, financialStatus: error.financialStatus
+      });
+      throw mapped;
     }
   }
 };

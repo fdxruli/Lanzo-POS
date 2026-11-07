@@ -8,7 +8,8 @@ const runtime = vi.hoisted(() => {
     handle: null,
     execute: vi.fn(),
     receipt: vi.fn(),
-    rpcCalls: []
+    rpcCalls: [],
+    onDiscovery: null
   };
 
   state.db = {
@@ -23,8 +24,9 @@ vi.mock('../../db/dexie', () => ({
   db: runtime.db
 }));
 
-vi.mock('../../auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => runtime.handle }
+vi.mock('../../auth/actorRuntimeController', async importOriginal => ({
+  ...await importOriginal(),
+  actorRuntimeController: { capture: () => runtime.handle, getState: () => ({ status: 'granted', ...runtime.handle }), subscribe: () => () => {} }
 }));
 
 vi.mock('../../sync/posSyncClient', () => ({
@@ -36,7 +38,14 @@ vi.mock('../../sync/posSyncClient', () => ({
   })
 }));
 
+vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({
+  licenseDetails: { license_key: 'fixture-license', features: {
+    cloud_pos_sync: true, cloud_sales_sync_base: true, cloud_cash_sync: true, cloud_sales_cashier: true
+  } }
+}) } }));
+
 vi.mock('../../supabase', () => ({
+  getStableDeviceId: async () => 'device-a',
   supabaseClient: {
     async rpc(name, args) {
       runtime.rpcCalls.push({ name, args: structuredClone(args) });
@@ -50,14 +59,14 @@ vi.mock('../../supabase', () => ({
         customer_projections: [],
         operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
       });
-      if (name === 'pos_fin01_sync_contract_v1') return { data: {
+      if (name === 'pos_fin01_sync_contract_v1') { runtime.onDiscovery?.(); return { data: {
         contract_version: 2,
         tenant_id: 'tenant-a',
         server_status: 'SUPPORTED',
         endpoint_families: ['financial_operations'],
         endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
         capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
-      }, error: null };
+      }, error: null }; }
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -86,6 +95,7 @@ vi.mock('../../supabase', () => ({
   }
 }));
 
+import { recoverFinancialIntent } from '../financialIntentRecovery';
 import {
   FINANCIAL_INTENT_STATUS,
   claimFinancialIntentRecovery,
@@ -152,6 +162,7 @@ beforeEach(async () => {
   runtime.execute.mockReset();
   runtime.receipt.mockReset();
   runtime.rpcCalls.splice(0);
+  runtime.onDiscovery = null;
   runtime.receipt.mockResolvedValue({ status: 'NOT_FOUND' });
   runtime.execute.mockResolvedValue({ success: true, sale: { id: 'cloud-sale-race-1' } });
 });
@@ -303,4 +314,118 @@ describe('financial intent real Dexie fencing', () => {
       recoveryLeaseId: null
     });
   });
+});
+
+
+describe('Staff POS cloud boundary', () => {
+  beforeEach(() => { runtime.handle.actorType = 'staff'; runtime.handle.actorKey = 'staff:actor-a'; });
+  const options = () => ({ operationType: SALE_OPERATION, request: saleRequest(),
+    licenseKey: 'fixture-license', idempotencyKey: 'staff-pos-k', cashSessionId: 'session-a',
+    actorHandle: runtime.handle, projectionRequired: false });
+  const denyPos = () => runtime.handle.assertCurrent.mockImplementation(permission => {
+    if (permission === 'pos') throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+  });
+
+  it('checks POS again after protocol discovery and before the mutation RPC', async () => {
+    runtime.onDiscovery = denyPos;
+    await expect(executeNewFinancialIntent(options())).rejects.toThrow();
+    expect(executeCalls()).toHaveLength(0);
+  });
+
+  it('recognizes a confirmed sale after a permission-only revocation', async () => {
+    runtime.execute.mockImplementation(async () => { denyPos(); return { success: true, sale: { id: 'confirmed-sale' } }; });
+    const result = await executeNewFinancialIntent(options());
+    expect(result.response.success).toBe(true);
+    expect((await getFinancialIntent(result.intentId)).status).toBe('COMPLETED');
+    expect(executeCalls()).toHaveLength(1);
+  });
+
+  it('does not dispatch a PREPARED checkout from a replacement session', async () => {
+    const row = await createFinancialIntent(options());
+    const replacement = { ...runtime.handle, sessionId: 'replacement', generation: 2 };
+    await expect(recoverFinancialIntent({ intentId: row.id, licenseKey: 'fixture-license', actorHandle: replacement })).rejects.toThrow();
+    expect(executeCalls()).toHaveLength(0);
+  });
+
+  it('does not allocate or send a new sale without POS', async () => {
+    denyPos();
+    await expect(executeNewFinancialIntent(options())).rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+    expect(executeCalls()).toHaveLength(0);
+    expect(await runtime.database.table('financial_intents').count()).toBe(0);
+  });
+
+  it('retains a validated confirmation when the session changes during its response', async () => {
+    runtime.execute.mockImplementation(async () => {
+      runtime.handle.assertCurrent.mockImplementation(() => {
+        throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' });
+      });
+      return { success: true, sale: { id: 'confirmed-sale' } };
+    });
+    const result = await executeNewFinancialIntent(options());
+    expect(result.response).toMatchObject({ success: true, sale: { id: 'confirmed-sale' } });
+    expect(executeCalls()).toHaveLength(1);
+    const row = await runtime.database.table('financial_intents').get(result.intentId);
+    expect(row.idempotencyKey).toBe('staff-pos-k');
+    expect(row.dispatchAttemptCount).toBe(1);
+    // No stale-session projection or write is allowed; receipt recovery owns it.
+    expect(result.projection.outcome).toBe('projection_deferred');
+    // Simulate expiration of the old lease, then authenticate the same actor
+    // in another session for receipt-only recovery. Immutable origin survives.
+    await runtime.database.table('financial_intents').update(row.id, { recoveryLeaseUntil: new Date(Date.now() - 1000).toISOString() });
+    const replacement = { ...runtime.handle, sessionId: 'replacement', generation: 2, assertCurrent: vi.fn() };
+    runtime.receipt.mockResolvedValue({ status: 'COMPLETED', result: { success: true, sale: { id: 'confirmed-sale' } } });
+    await recoverFinancialIntent({ intentId: row.id, licenseKey: 'fixture-license', actorHandle: replacement, project: null });
+    expect((await getFinancialIntent(row.id)).status).toBe('COMPLETED');
+    expect((await getFinancialIntent(row.id)).originActorSessionId).toBe(row.originActorSessionId);
+    expect(executeCalls()).toHaveLength(1);
+  });
+
+  it('reconciles a lost response after POS revocation without redispatching', async () => {
+    runtime.execute.mockImplementation(async () => { denyPos(); throw new Error('Failed to fetch'); });
+    await expect(executeNewFinancialIntent(options())).rejects.toMatchObject({ isFinancialOperationAmbiguous: true });
+    const [row] = await runtime.database.table('financial_intents').toArray();
+    expect(row.status).toBe('PENDING_RECEIPT');
+    await recoverFinancialIntent({ intentId: row.id, licenseKey: 'fixture-license', actorHandle: runtime.handle });
+    expect(executeCalls()).toHaveLength(1);
+    runtime.receipt.mockResolvedValue({ status: 'COMPLETED', result: { success: true, sale: { id: 'confirmed-sale' } } });
+    await recoverFinancialIntent({ intentId: row.id, licenseKey: 'fixture-license', actorHandle: runtime.handle });
+    expect((await getFinancialIntent(row.id)).status).toBe('COMPLETED');
+    expect(executeCalls()).toHaveLength(1);
+    await expect(executeNewFinancialIntent({ ...options(), idempotencyKey: 'another-k' }))
+      .rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+    expect(executeCalls()).toHaveLength(1);
+  });
+
+  it.each(['actor', 'tenant', 'device'])('does not recover another %s origin', async changed => {
+    runtime.execute.mockRejectedValue(new Error('Failed to fetch'));
+    await expect(executeNewFinancialIntent(options())).rejects.toMatchObject({ isFinancialOperationAmbiguous: true });
+    const [row] = await runtime.database.table('financial_intents').toArray();
+    const foreign = makeHandle();
+    if (changed === 'actor') { foreign.actorKey = 'staff:other'; foreign.actorId = 'other'; }
+    if (changed === 'tenant') foreign.tenant = { ...foreign.tenant, opaqueId: 'other', databaseName: 'other' };
+    if (changed === 'device') foreign.deviceRef = 'other';
+    await expect(recoverFinancialIntent({ intentId: row.id, licenseKey: 'fixture-license', actorHandle: foreign })).rejects.toThrow();
+    expect(executeCalls()).toHaveLength(1);
+  });
+});
+
+
+it('carries a late confirmation through the real cashier, repository, protocol and ledger', async () => {
+  vi.stubEnv('VITE_ENABLE_CLOUD_CASHIER_SALES', 'true');
+  runtime.handle.actorType = 'staff'; runtime.handle.actorKey = 'staff:actor-a';
+  const { salesCloudCashierService } = await import('../../salesCloud/salesCloudCashierService');
+  runtime.execute.mockImplementation(async () => {
+    runtime.handle.assertCurrent.mockImplementation(() => { throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' }); });
+    return { success: true, sale: { id: 'confirmed-sale' } };
+  });
+  try {
+    const sale = { id: 'sale-race-1', timestamp: '2026-08-29T12:34:56.000Z', total: '10', subtotal: '10',
+      status: 'closed', items: [{ id: 'product-a', name: 'Producto', quantity: 1, price: 10, cost: 4 }],
+      paymentMethod: 'cash', abono: '10', saldoPendiente: '0' };
+    const result = await salesCloudCashierService.processCloudCashierSale({ sale, processedItems: sale.items,
+      paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'session-a' }, total: '10' });
+    expect(result).toMatchObject({ success: true, projectionDeferred: true, response: { sale: { id: 'confirmed-sale' } } });
+    expect(executeCalls()).toHaveLength(1);
+    expect((await getFinancialIntent(result.financialIntentId)).status).toBe('DISPATCHING');
+  } finally { vi.unstubAllEnvs(); }
 });
