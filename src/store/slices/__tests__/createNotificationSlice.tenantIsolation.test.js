@@ -1,3 +1,4 @@
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const cloudMocks = vi.hoisted(() => ({
@@ -42,11 +43,19 @@ const license = (key) => ({
 });
 
 const createHarness = (initialState = {}) => {
+  const grantState = (value) => grantTestActor({
+    actorType: value.currentDeviceRole,
+    actorId: (value.currentDeviceRole === 'admin' ? value.currentAdminUser : value.currentStaffUser)?.id,
+    permissions: value.currentStaffUser?.permissions || []
+  });
+  grantState(initialState);
   let state = { ...initialState };
   const get = () => state;
   const set = (patch) => {
     const next = typeof patch === 'function' ? patch(state) : patch;
+    const identityChanged = ['currentDeviceRole', 'currentAdminUser', 'currentStaffUser'].some((key) => key in next);
     state = { ...state, ...next };
+    if (identityChanged) grantState(state);
   };
 
   const slice = createNotificationSlice(set, get);
@@ -77,12 +86,14 @@ describe('createNotificationSlice tenant isolation', () => {
   });
 
   it('builds runtime ownership from license and actor', () => {
+    grantTestActor({ actorType: 'admin', actorId: 'admin-a' });
     expect(getNotificationRuntimeOwner({
       licenseDetails: license('A'),
       currentDeviceRole: 'admin',
       currentAdminUser: { id: 'admin-a' }
     })).toBe('A|admin:admin-a');
 
+    grantTestActor({ actorId: 'staff-a' });
     expect(getNotificationRuntimeOwner({
       licenseDetails: license('A'),
       currentDeviceRole: 'staff',

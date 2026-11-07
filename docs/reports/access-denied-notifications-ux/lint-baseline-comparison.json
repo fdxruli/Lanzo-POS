@@ -1,0 +1,14 @@
+{
+  "base": "3cc574d833a4f962247c462e3212ddb4c6a03910",
+  "codeCommit": "c9b0362354d1b24e58659362100aa5ad60618997",
+  "command": "npm run lint",
+  "baseExitCode": 1,
+  "candidateExitCode": 1,
+  "errors": 151,
+  "warnings": 164,
+  "normalization": "Replace each checkout absolute root with <repo>; no other changes",
+  "normalizedOutputsIdentical": true,
+  "normalizedSha256": "0af6c0d37a7d471f64e9dc5b2781fd8ec7ac6311163c357116b01edc389ccb00",
+  "changedJavaScriptFiles": 21,
+  "changedFilesLintExitCode": 0
+}

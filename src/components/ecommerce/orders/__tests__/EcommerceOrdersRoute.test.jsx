@@ -92,7 +92,7 @@ describe('EcommerceOrdersRoute', () => {
     };
 
     renderRoute();
-    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByText('Bandeja autorizada')).not.toBeInTheDocument();
   });
 

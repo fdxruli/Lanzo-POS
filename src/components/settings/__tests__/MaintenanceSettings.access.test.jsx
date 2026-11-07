@@ -119,7 +119,7 @@ describe('MaintenanceSettings action isolation', () => {
 
   it('fails closed when neither maintenance permission is present', () => {
     renderSettings();
-    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByTestId('maintenance-update-controls')).not.toBeInTheDocument();
   });
 

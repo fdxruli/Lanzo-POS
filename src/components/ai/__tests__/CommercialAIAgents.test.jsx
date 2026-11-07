@@ -842,7 +842,7 @@ describe('commercial AI center', () => {
 
     runtime.actorSnapshot = null;
     rerenderCenter(view);
-    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No tienes acceso a esta sección' })).toBeInTheDocument();
 
     runtime.actorSnapshot = bindTestActor({ sessionId: 'session-b' });
     rerenderCenter(view);
@@ -1081,7 +1081,7 @@ describe('commercial AI center', () => {
     runtime.actorSnapshot = { ...boundAdmin, actorKey: '', tenant: null, deviceRef: null };
     renderCenter();
 
-    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No tienes acceso a esta sección' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
   });
   it('does not load usage, catalog, or agent execution paths when Free opens the showcase', () => {
@@ -1126,7 +1126,7 @@ describe('commercial AI center', () => {
     runtime.actorSnapshot = { ...boundAdmin, actorType: 'staff', permissions: ['pos'] };
     renderCenter();
 
-    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No tienes acceso a esta sección' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
     expect(runtime.getUsage).not.toHaveBeenCalled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
@@ -1137,7 +1137,7 @@ describe('commercial AI center', () => {
     runtime.actorSnapshot = { ...boundAdmin, actorKey: '', tenant: null, deviceRef: null };
     renderCenter();
 
-    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No tienes acceso a esta sección' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
     expect(runtime.getUsage).not.toHaveBeenCalled();
   });

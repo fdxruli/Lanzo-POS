@@ -41,6 +41,17 @@ export const evaluateActorAccess = ({
     runtimeSnapshot: isAuthorizedActor
       ? Object.freeze({ ...runtimeSnapshot, permissions: isAdmin ? Object.freeze(['*']) : permissions })
       : null,
+    // Category policies distinguish a missing legacy switch from an explicit denial.
+    permissionSession: {
+      currentDeviceRole: isAdmin ? 'admin' : 'staff',
+      currentStaffUser: { permissions: Object.fromEntries([
+        ...new Set([
+          ...Object.keys(Array.isArray(actor?.permissions) ? {} : actor?.permissions || {}),
+          ...Object.keys(Array.isArray(runtimeSnapshot?.permissions) ? {} : runtimeSnapshot?.permissions || {}),
+          ...permissions
+        ])
+      ].map((key) => [key, canAccessPermission(key)])) }
+    },
     ecommerceSession: isAuthorizedActor ? {
       currentDeviceRole: actorType,
       currentStaffUser: { permissions: Object.fromEntries(permissions.map((key) => [key, true])) }

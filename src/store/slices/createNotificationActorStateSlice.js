@@ -1,3 +1,5 @@
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
+import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey } from '../../services/notifications/notificationAccess';
 import { markCloudNotificationsSeen } from '../../services/notifications/cloudNotificationService';
 import {
   createNotificationSlice as createBaseNotificationSlice,
@@ -16,7 +18,8 @@ const readCount = (result, snakeKey, camelKey) => (
 
 const captureRuntime = (get) => ({
   owner: getNotificationRuntimeOwner(get()),
-  generation: get().notificationRuntimeGeneration
+  generation: get().notificationRuntimeGeneration,
+  authorizationKey: getNotificationAuthorizationKey(get())
 });
 
 const isRuntimeCurrent = (get, token) => (
@@ -24,6 +27,7 @@ const isRuntimeCurrent = (get, token) => (
   && getNotificationRuntimeOwner(get()) === token.owner
   && get().notificationRuntimeOwner === token.owner
   && get().notificationRuntimeGeneration === token.generation
+  && getNotificationAuthorizationKey(get()) === token.authorizationKey
 );
 
 export const createNotificationSlice = (set, get) => {
@@ -41,10 +45,13 @@ export const createNotificationSlice = (set, get) => {
   };
 
   const loadNotifications = async (options = {}) => {
+    base.syncNotificationRuntime();
+    const token = captureRuntime(get);
     const result = await base.loadNotifications(options);
 
     if (result?.stale) return result;
     if (result?.success === false) return result;
+    if (token.owner && !isRuntimeCurrent(get, token)) return { success: false, stale: true, code: 'STALE_NOTIFICATION_RUNTIME' };
 
     if (result?.skipped && Array.isArray(result.notifications) && result.notifications.length === 0) {
       set({ notificationsUnseenCount: 0 });
@@ -55,8 +62,12 @@ export const createNotificationSlice = (set, get) => {
     return result;
   };
 
-  const reconcileAfterMutation = async (result) => {
+  const reconcileAfterMutation = async (operation) => {
+    base.syncNotificationRuntime();
+    const token = captureRuntime(get);
+    const result = await operation();
     if (result?.stale || result?.success === false) return result;
+    if (!isRuntimeCurrent(get, token)) return { success: false, stale: true, code: 'STALE_NOTIFICATION_RUNTIME' };
     applyAuthoritativeCounts(result);
     await get().loadNotifications?.({
       force: true,
@@ -71,10 +82,11 @@ export const createNotificationSlice = (set, get) => {
     loadNotifications,
 
     markNotificationsSeen: async () => {
+      base.syncNotificationRuntime();
       const token = captureRuntime(get);
       const licenseDetails = get().licenseDetails;
 
-      if (!token.owner) {
+      if (!token.owner || get().notificationsAccessDenied || !canAccessCloudNotificationCenter(licenseDetails, readActorAccess(get()))) {
         return { success: true, skipped: true, unread_count: 0, unseen_count: 0 };
       }
 
@@ -98,6 +110,7 @@ export const createNotificationSlice = (set, get) => {
         }
 
         if (result.success === false) {
+          if (get().handleNotificationAccessError(result)) return result;
           set({
             notifications: previousNotifications,
             notificationsUnseenCount: previousUnseenCount
@@ -117,6 +130,7 @@ export const createNotificationSlice = (set, get) => {
           return { success: false, skipped: true, stale: true, code: 'STALE_NOTIFICATION_RUNTIME' };
         }
 
+        if (get().handleNotificationAccessError(error)) return { success: false, code: error.code };
         set({
           notifications: previousNotifications,
           notificationsUnseenCount: previousUnseenCount
@@ -134,15 +148,15 @@ export const createNotificationSlice = (set, get) => {
     },
 
     markNotificationRead: async (notificationId) => (
-      reconcileAfterMutation(await base.markNotificationRead(notificationId))
+      reconcileAfterMutation(() => base.markNotificationRead(notificationId))
     ),
 
     markAllNotificationsRead: async () => (
-      reconcileAfterMutation(await base.markAllNotificationsRead())
+      reconcileAfterMutation(() => base.markAllNotificationsRead())
     ),
 
     archiveNotification: async (notificationId) => (
-      reconcileAfterMutation(await base.archiveNotification(notificationId))
+      reconcileAfterMutation(() => base.archiveNotification(notificationId))
     )
   };
 };

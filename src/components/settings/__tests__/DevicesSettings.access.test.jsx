@@ -137,7 +137,7 @@ describe('DevicesSettings actor isolation', () => {
 
   it('fails closed without devices permission', () => {
     renderSettings();
-    expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(state.deviceManagerRender).not.toHaveBeenCalled();
   });
 });
