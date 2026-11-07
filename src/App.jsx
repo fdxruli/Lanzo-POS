@@ -1,10 +1,11 @@
 import { startAdminResumeChecks } from './pwa/adminResumeChecks';
 import { useEffect, lazy, Suspense, useState } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { AlertTriangle, XCircle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import AdminLazyRouteRecoveryFallback from './components/common/AdminLazyRouteRecoveryFallback';
+import SingleInstanceBlockedScreen from './components/common/SingleInstanceBlockedScreen';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
 import { startCustomerCreditAutoHealLifecycle } from './services/db/customerCreditRepository';
@@ -297,25 +298,7 @@ function App() {
   }), []);
 
   if (isDuplicate) {
-    return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        padding: '20px'
-      }}>
-        <XCircle size={64} className="text-red-500 mb-4" />
-        <h2>Aplicación ya abierta</h2>
-        <p>Lanzo POS ya está abierto en otra pestaña o ventana.</p>
-        <p>Por seguridad de tus datos, usa solo una pestaña a la vez.</p>
-        <button className="btn btn-primary" onClick={() => window.location.reload()}>
-          Reintentar (si ya cerraste la otra)
-        </button>
-      </div>
-    );
+    return <SingleInstanceBlockedScreen />;
   }
 
   if (bootTimedOut && appStatus === 'loading') {
