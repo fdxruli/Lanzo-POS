@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -220,6 +221,7 @@ const initiateCheckout = async (hookResult, options) => {
 };
 
 beforeEach(() => {
+  grantTestActor({ permissions: ['pos'] });
   vi.clearAllMocks();
   mocks.sales.clear();
   mocks.appState = {
@@ -874,4 +876,22 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.activeState.activeOrders.get(orderA.id).isLockedForCheckout).toBe(false);
     expect(deps.modal.closeModal).not.toHaveBeenCalled();
   });
+});
+
+
+it.each(['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'])('retains the checkout lock for %s', async code => {
+  setOrders([makeOrder()]);
+  const deps = makeDeps();
+  mocks.processSale.mockResolvedValue({ success: false, code, retryable: false });
+  const hook = renderHook(() => usePosCheckout(deps.args));
+  await initiateCheckout(hook.result);
+  await act(async () => {
+    expect(await hook.result.current.handleProcessOrder({ paymentMethod: 'tarjeta' }))
+      .toMatchObject({ code });
+    expect(await hook.result.current.handlePaymentModalClose())
+      .toMatchObject({ code, released: false });
+  });
+  expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+  expect(mocks.activeState.activeOrders.get('order-a').isLockedForCheckout).toBe(true);
+  hook.unmount();
 });

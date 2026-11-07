@@ -1,3 +1,4 @@
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { resolveStableActorId } from '../../../services/auth/actorIdentity';
 
 /**
@@ -12,9 +13,11 @@ export const reconcileLicenseSessionIdentity = (state, localLicense, validation)
     ? state.currentStaffUser || localLicense.staff_user || null
     : null;
   const staffId = resolveStableActorId('staff', staff);
-  // Staff-only validation can refresh permissions, but cannot switch actors.
-  // A null Staff payload on a shared device is only device metadata.
-  const updatedStaff = staffId && resolveStableActorId('staff', validation.staff_user) === staffId
+  // A license response cannot overwrite a verified live Staff grant, even
+  // when it includes the same user with older permissions.
+  const runtime = actorRuntimeController.getState();
+  const verifiedSessionActive = runtime.status === 'granted' && runtime.actorType === 'staff' && runtime.actorId === staffId;
+  const updatedStaff = !verifiedSessionActive && staffId && resolveStableActorId('staff', validation.staff_user) === staffId
     ? validation.staff_user
     : staff;
 

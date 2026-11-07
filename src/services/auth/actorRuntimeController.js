@@ -284,6 +284,19 @@ export const createActorRuntimeController = ({
       });
     },
 
+    refreshStaffPermissions({ captured, actorId, permissions } = {}) {
+      const current = controller.assertCurrent(captured);
+      if (current.actorType !== 'staff' || normalizeId(actorId) !== current.actorId) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+      }
+      // Preserve resource ownership. Every protected assertion still reads the
+      // current grants; a captured handle never carries an old permission set.
+      return publish({ ...state,
+        permissions: Object.freeze(normalizePermissions('staff', permissions).filter(permission => permission !== '*')),
+        reason: 'staff_session_reverified'
+      });
+    },
+
     refreshAdminAuthorization({ captured, authorizationExpiresAt, authorizationNow = null } = {}) {
       const current = controller.assertCurrent(captured);
       if (current.actorType !== 'admin') {

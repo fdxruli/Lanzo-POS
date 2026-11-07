@@ -55,7 +55,7 @@ export const isLicenseValidationContextStaleError = (error) => (
   error?.code === LICENSE_VALIDATION_CONTEXT_STALE
 );
 
-export const captureLicenseValidationContext = (state, requestedLicenseKey = null) => {
+export const captureLicenseValidationContext = (state, requestedLicenseKey = null, { trackPermissions = true } = {}) => {
   const actorSnapshot = actorRuntimeController.getState();
   let actorHandle = null;
   if (actorSnapshot?.status === 'granted') {
@@ -70,6 +70,7 @@ export const captureLicenseValidationContext = (state, requestedLicenseKey = nul
     licenseKey: normalizeId(requestedLicenseKey || getLicenseKey(state)),
     deviceRole: getDeviceRole(state),
     actorBinding: Object.freeze(getActorBinding(actorSnapshot)),
+    permissionFingerprint: trackPermissions ? JSON.stringify(actorSnapshot.permissions || []) : null,
     actorHandle
   });
 };
@@ -78,6 +79,9 @@ export const isLicenseValidationContextCurrent = (context, state) => {
   if (!context?.licenseKey) return false;
   if (getLicenseKey(state) !== context.licenseKey) return false;
   if (getDeviceRole(state) !== context.deviceRole) return false;
+
+  if (typeof context.permissionFingerprint === 'string' &&
+      context.permissionFingerprint !== JSON.stringify(actorRuntimeController.getState().permissions || [])) return false;
 
   return sameBinding(
     context.actorBinding,

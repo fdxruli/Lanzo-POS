@@ -1,5 +1,7 @@
 // src/hooks/pos/usePosCheckout.js
 import { useCallback, useEffect, useRef } from 'react';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { rememberPrepaymentCheckout, forgetPrepaymentCheckout, recoverPrepaymentCheckout } from '../../services/auth/actorOperationalHandoff';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../services/products/productCatalogEvents';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
@@ -42,6 +44,11 @@ import {
     ownsCheckoutSnapshot,
     resolveCheckoutTarget
 } from './checkoutTargetIdentity';
+
+const runPosCheckoutOperation = (action, ...args) => runPosActorUiOperation('checkout', (...params) => {
+    actorRuntimeController.capture('pos');
+    return action(...params);
+}, ...args);
 
 const CLOUD_TURN_REQUIRED_PAYMENT_METHODS = new Set(['cash', 'card', 'transfer', 'credit', 'mixed']);
 const POS_CHECKOUT_SNAPSHOT_STALE = 'POS_CHECKOUT_SNAPSHOT_STALE';
@@ -364,6 +371,7 @@ export function usePosCheckout({
             return buildStaleCheckoutAttemptResult();
         }
 
+        if (snapshot?.localCommitUncertain) return { success: false, code: snapshot.commitUncertainCode || 'LOCAL_COMMIT_UNCERTAIN', released: false };
         if (!snapshot?.orderId) {
             return { success: true, released: false, reason: 'missing_order_id' };
         }
@@ -395,6 +403,10 @@ export function usePosCheckout({
                     }
 
                     if (
+                        (snapshot.recoveryHandle && (
+                            persisted?.checkoutActorKey !== snapshot.recoveryHandle.actorKey ||
+                            persisted?.checkoutActorGeneration !== snapshot.recoveryHandle.generation
+                        )) ||
                         !snapshot.checkoutAttemptId ||
                         (persistedOwner && persistedOwner !== snapshot.checkoutAttemptId) ||
                         (memoryOwner && memoryOwner !== snapshot.checkoutAttemptId) ||
@@ -404,6 +416,11 @@ export function usePosCheckout({
                         return;
                     }
 
+                    if (snapshot.cancellationOnly &&
+                        recoverPrepaymentCheckout(snapshot.orderId)?.checkoutAttemptId !== snapshot.checkoutAttemptId) {
+                        throw new Error('CHECKOUT_RECOVERY_NO_LONGER_PREPAYMENT');
+                    }
+                    snapshot.recoveryHandle?.assertCurrent('pos');
                     unlockResult = await useActiveOrders.getState().unlockOrder(snapshot.orderId);
                     if (unlockResult?.success === false) {
                         throw new Error(unlockResult?.reason || 'unlock_order_failed');
@@ -430,6 +447,7 @@ export function usePosCheckout({
                     };
                 }
 
+                forgetPrepaymentCheckout(snapshot.orderId, snapshot.checkoutAttemptId);
                 setCheckoutAttemptOwnerInMemory(snapshot.orderId, null);
                 snapshot.lockReleased = true;
                 snapshot.lockOwnedByCheckout = false;
@@ -687,7 +705,10 @@ export function usePosCheckout({
         expectedOrderId = null,
         expectedCheckoutAttemptId = null
     } = {}) => {
-        const snapshot = checkoutSnapshotRef.current;
+        const snapshot = checkoutSnapshotRef.current || recoverPrepaymentCheckout(
+            expectedOrderId || useActiveOrders.getState().currentOrderId
+        );
+        if (snapshot) checkoutSnapshotRef.current = snapshot;
         const strictOwner = Boolean(expectedOrderId || expectedCheckoutAttemptId);
 
         if (strictOwner && !ownsCheckoutSnapshot({
@@ -799,6 +820,27 @@ export function usePosCheckout({
         }
 
         const activeOrderId = initialTarget.orderId;
+        if (!checkoutSnapshotRef.current) {
+            const recovered = recoverPrepaymentCheckout(activeOrderId);
+            if (recovered) {
+                const persisted = await db.table(STORES.SALES).get(activeOrderId);
+                recovered.recoveryHandle.assertCurrent('pos');
+                if (persisted?.isLockedForCheckout !== true ||
+                    persisted?.checkoutAttemptId !== recovered.checkoutAttemptId ||
+                    persisted?.checkoutActorKey !== recovered.recoveryHandle.actorKey ||
+                    persisted?.checkoutActorGeneration !== recovered.recoveryHandle.generation) {
+                    return buildStaleCheckoutAttemptResult();
+                }
+                checkoutSnapshotRef.current = recovered;
+                modal.openModal('payment');
+                showMessageModal('El cobro anterior sigue pendiente. Cierra el modal para cancelar ese intento antes de iniciar otro.',
+                    null, { type: 'warning' });
+                return { success: false, code: 'CHECKOUT_RECOVERY_CANCEL_REQUIRED' };
+            }
+        }
+        if (checkoutSnapshotRef.current?.cancellationOnly) {
+            return { success: false, code: 'CHECKOUT_RECOVERY_CANCEL_REQUIRED' };
+        }
         let activeOrder = initialTarget.activeOrder;
         const durableOrder = await db.table(STORES.SALES).get(activeOrderId);
         const terminalOrder = [activeOrder, durableOrder].find(isRestaurantCloudTableTerminal);
@@ -1002,6 +1044,7 @@ export function usePosCheckout({
             });
             return buildCheckoutAlreadyActiveResult(existingSnapshot);
         }
+        snapshot.recoveryHandle = rememberPrepaymentCheckout(activeOrderId, checkoutAttemptId);
         checkoutSnapshotRef.current = snapshot;
 
         const afterOwnershipTargetError = await revalidateCheckoutTarget({
@@ -1125,6 +1168,7 @@ export function usePosCheckout({
 
     const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
         const snapshot = checkoutSnapshotRef.current;
+        if (snapshot?.cancellationOnly) return getPosCheckoutSnapshotStaleResult();
         const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
         if (initialSnapshotError) return initialSnapshotError;
 
@@ -1303,6 +1347,11 @@ export function usePosCheckout({
                 createdAt: snapshot.createdAt
             });
 
+            if (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code)) {
+                snapshot.localCommitUncertain = true;
+                snapshot.commitUncertainCode = result.code;
+                return result;
+            }
             if (!result.success) {
                 const authorityResult = handlePosActorAuthorityError(result, 'checkout');
                 if (authorityResult) return authorityResult;
@@ -1472,7 +1521,7 @@ export function usePosCheckout({
             showMessageModal(`Error inesperado: ${error.message}`);
             return { success: false, message: error.message };
         } finally {
-            if (!isSuccess && !isStockWarning) {
+            if (!isSuccess && !isStockWarning && !snapshot.localCommitUncertain) {
                 const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
                     reason: 'process_failed',
                     expectedOrderId: snapshot.orderId,
@@ -1499,7 +1548,7 @@ export function usePosCheckout({
         verifySessionIntegrity
     ]);
 
-    const safeHandleProcessOrder = useCallback((...args) => runPosActorUiOperation('checkout', handleProcessOrder, ...args), [handleProcessOrder]);
+    const safeHandleProcessOrder = useCallback((...args) => runPosCheckoutOperation(handleProcessOrder, ...args), [handleProcessOrder]);
     useEffect(() => {
         handleProcessOrderRef.current = safeHandleProcessOrder;
     }, [safeHandleProcessOrder]);
@@ -1556,10 +1605,10 @@ export function usePosCheckout({
         validateLiveCheckoutSnapshot
     ]);
 
-    const safeInitiateCheckout = useCallback((...args) => runPosActorUiOperation('checkout', handleInitiateCheckout, ...args), [handleInitiateCheckout]);
-    const safePaymentModalClose = useCallback((...args) => runPosActorUiOperation('checkout', handlePaymentModalClose, ...args), [handlePaymentModalClose]);
-    const safeQuickCajaClose = useCallback((...args) => runPosActorUiOperation('checkout', handleQuickCajaClose, ...args), [handleQuickCajaClose]);
-    const safeQuickCajaSubmit = useCallback((...args) => runPosActorUiOperation('checkout', handleQuickCajaSubmit, ...args), [handleQuickCajaSubmit]);
+    const safeInitiateCheckout = useCallback((...args) => runPosCheckoutOperation(handleInitiateCheckout, ...args), [handleInitiateCheckout]);
+    const safePaymentModalClose = useCallback((...args) => runPosCheckoutOperation(handlePaymentModalClose, ...args), [handlePaymentModalClose]);
+    const safeQuickCajaClose = useCallback((...args) => runPosCheckoutOperation(handleQuickCajaClose, ...args), [handleQuickCajaClose]);
+    const safeQuickCajaSubmit = useCallback((...args) => runPosCheckoutOperation(handleQuickCajaSubmit, ...args), [handleQuickCajaSubmit]);
 
     return {
         handleInitiateCheckout: safeInitiateCheckout,

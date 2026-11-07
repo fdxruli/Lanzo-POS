@@ -496,10 +496,18 @@ describe('active-order cloud retry transport', () => {
     runtime.projectionFailure = true;
     await useActiveOrders.getState().loadOrdersFromDB();
 
-    await expect(salesCloudCashierService.processCloudCashierSale(checkoutTransport()))
-      .rejects.toMatchObject({ code: 'LOCAL_PROJECTION_FAILED' });
+    const result = await salesCloudCashierService.processCloudCashierSale(checkoutTransport());
 
     const intent = (await runtime.database.table('financial_intents').toArray())[0];
+    expect(result).toMatchObject({
+      success: true,
+      projectionDeferred: true,
+      financialIntentId: intent.id,
+      response: {
+        success: true,
+        sale: { id: 'cloud-sale-1', effects_status: 'payment_recorded' }
+      }
+    });
     expect(runtime.executeCalls).toBe(1);
     expect(await getFinancialIntent(intent.id)).toMatchObject({
       status: 'COMPLETED',

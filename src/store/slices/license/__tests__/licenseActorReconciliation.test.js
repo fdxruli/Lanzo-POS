@@ -186,7 +186,7 @@ describe('license metadata preserves the authenticated actor', () => {
     expect(readActorAccess(state).isAdmin).toBe(true);
   });
 
-  it.each(['background', 'integrity'])('%s: Staff-only consumes matching Staff permission removals', async (path) => {
+  it.each(['background', 'integrity'])('%s: Staff-only does not treat license metadata as a verified Staff permission refresh', async (path) => {
     const details = license({ device_mode: 'staff_only' });
     await saveLicenseToStorage(details);
     const state = harness(details);
@@ -196,8 +196,8 @@ describe('license metadata preserves the authenticated actor', () => {
     }));
     await revalidate(state, path);
     expect(state.currentDeviceRole).toBe('staff');
-    expect(readActorAccess(state).canAccessPermission('pos')).toBe(false);
-    expect((await getLicenseFromStorage()).staff_user.permissions.pos).toBe(false);
+    expect(readActorAccess(state).canAccessPermission('pos')).toBe(true);
+    expect((await getLicenseFromStorage()).staff_user.permissions.pos).toBe(true);
   });
 
   it.each(['background', 'integrity'])('%s: Staff-only preserves its normal POS session', async (path) => {

@@ -106,6 +106,7 @@ const TRANSPORT_ERROR_CODES = new Set([
 ]);
 const AMBIGUOUS_HTTP_STATUSES = new Set([502, 503, 504]);
 const CASH_ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
+const CLOUD_CHECKOUT_SALE_TYPES = new Set(['sale.cashier', 'sale.cashier_inventory', 'sale.credit']);
 const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set([
   'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete',
   'layaway.create', 'layaway.payment', 'layaway.cancel'
@@ -778,10 +779,10 @@ const prepareFinancialIntent = async ({
   const immutableRequest = JSON.parse(JSON.stringify(request));
   assertNoSecretPayload(immutableRequest);
   const handle = actorHandle || actorRuntimeController.capture();
-  handle.assertCurrent();
+  handle.assertCurrent(CLOUD_CHECKOUT_SALE_TYPES.has(operationType) ? 'pos' : null);
   if (!normalizeDeviceRef(handle.deviceRef)) throw new Error('FINANCIAL_ORIGIN_DEVICE_REQUIRED');
   const auth = await buildAuth(licenseKey);
-  handle.assertCurrent();
+  handle.assertCurrent(CLOUD_CHECKOUT_SALE_TYPES.has(operationType) ? 'pos' : null);
   const stationId = await resolveStation({
     auth,
     cashSessionId,
@@ -790,10 +791,10 @@ const prepareFinancialIntent = async ({
     timeouts,
     executionScope
   });
-  handle.assertCurrent();
+  handle.assertCurrent(CLOUD_CHECKOUT_SALE_TYPES.has(operationType) ? 'pos' : null);
   const { canonicalRequest, requestHash } = await financialRequestHashV1({ operationType, request: immutableRequest, actorKey: handle.actorKey, cashSessionId, cashStationId: stationId });
   const intent = initialIntent({ operationType, request: immutableRequest, idempotencyKey: idempotencyKey || secureKey(), requestHash, canonicalRequest, handle, cashSessionId, cashStationId: stationId, projectionStatus: projectionRequired ? FINANCIAL_PROJECTION_STATUS.PENDING : FINANCIAL_PROJECTION_STATUS.NOT_REQUIRED });
-  handle.assertCurrent();
+  handle.assertCurrent(CLOUD_CHECKOUT_SALE_TYPES.has(operationType) ? 'pos' : null);
   return { intent, handle };
 };
 
@@ -1015,6 +1016,13 @@ const executeDurableFinancialIntentForRecovery = async ({
     throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
   }
 
+  const checkoutSale = CLOUD_CHECKOUT_SALE_TYPES.has(durableIntent.operationType);
+  if (checkoutSale) {
+    handle.assertCurrent('pos');
+    assertFinancialIntentExecutionAuthority(durableIntent, handle);
+  }
+  let validatedResponse = null;
+  let sent = false;
   const dispatchAttemptCount = Number(durableIntent.dispatchAttemptCount || 0) + 1;
   await updateFinancialIntentForRecovery(intentId, {
     status: FINANCIAL_INTENT_STATUS.DISPATCHING,
@@ -1042,7 +1050,11 @@ const executeDurableFinancialIntentForRecovery = async ({
           family: 'financial_operations',
           expectedIdempotencyKey: durableIntent.idempotencyKey,
           expectedRequestHash: durableIntent.requestHash,
-          actorHandle: handle
+          actorHandle: handle,
+          ...(checkoutSale ? {
+            beforeFinancialDispatch: () => { handle.assertCurrent('pos'); sent = true; },
+            onValidatedFinancialResponse: response => { if (response?.success === true) validatedResponse = response; }
+          } : {})
         });
       },
       {
@@ -1058,17 +1070,29 @@ const executeDurableFinancialIntentForRecovery = async ({
       throw rejectedFinancialResponseError(result);
     }
   } catch (error) {
+    // A validated server result is evidence, not a grant to the replacement
+    // session. Keep the durable dispatch for receipt recovery; do not project.
+    if (validatedResponse) return { intentId, response: validatedResponse, projection: { intentId, outcome: 'projection_deferred' } };
     const surfacedError = error && (typeof error === 'object' || typeof error === 'function')
       ? error
       : new Error(String(error));
     const { code, status } = error?.isFinancialOperationAmbiguous === true
       ? { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT }
       : classifyDispatchFailure(error);
-    await updateFinancialIntentForRecovery(intentId, {
-      status,
-      lastReceiptStatus: status,
-      lastProtocolCode: code
-    }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
+    try {
+      await updateFinancialIntentForRecovery(intentId, {
+        status,
+        lastReceiptStatus: status,
+        lastProtocolCode: code
+      }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
+    } catch (persistenceError) {
+      if (!checkoutSale || !sent) throw persistenceError;
+      // The old context cannot persist into a replacement session/tenant.
+      // DISPATCHING remains durable and receipt-required, never redispatched.
+      throw Object.assign(surfacedError, { isFinancialOperationAmbiguous: true,
+        financialStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+        financialIntentId: intentId, financialIdempotencyKey: durableIntent.idempotencyKey });
+    }
 
     if (resolveAmbiguousReceipt && status === FINANCIAL_INTENT_STATUS.PENDING_RECEIPT) {
       let receipt = null;
@@ -1143,22 +1167,27 @@ const executeDurableFinancialIntentForRecovery = async ({
     throw surfacedError;
   }
 
-  await updateFinancialIntentForRecovery(intentId, {
-    status: FINANCIAL_INTENT_STATUS.COMPLETED,
-    lastReceiptStatus: 'COMPLETED',
-    lastProtocolCode: null,
-    responsePayload: result,
-    completedAt: now()
-  }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
-  const projection = typeof project === 'function'
-    ? await runFinancialProjectionUnderLease({
-      intentId,
-      actorHandle: handle,
-      recoveryLeaseId,
-      project
-    })
-    : null;
-  return { intentId, response: result, projection };
+  try {
+    await updateFinancialIntentForRecovery(intentId, {
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      lastReceiptStatus: 'COMPLETED',
+      lastProtocolCode: null,
+      responsePayload: result,
+      completedAt: now()
+    }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
+    const projection = typeof project === 'function'
+      ? await runFinancialProjectionUnderLease({
+        intentId,
+        actorHandle: handle,
+        recoveryLeaseId,
+        project
+      })
+      : null;
+    return { intentId, response: result, projection };
+  } catch (error) {
+    if (!checkoutSale) throw error;
+    return { intentId, response: result, projection: { intentId, outcome: 'projection_deferred' } };
+  }
 };
 
 /**

@@ -226,19 +226,93 @@ export const runTrackedActorOperationIfGranted = async (label, operation, permis
 export const runCheckoutActorOperation = async ({
   orderId,
   label = 'checkout.operation',
+  recognizeLocalCommit = false,
+  recognizeCloudCommit = false,
   operation
 } = {}) => {
-  const ownership = orderId ? checkoutOwnership.get(orderId) : null;
-  if (ownership) {
-    if (!ownership.handle) {
-      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
-        reason: ownership.actorKey ? 'checkout_owner_not_reauthenticated' : 'checkout_owner_unresolved',
-        orderId
-      });
+  let localOutcome = null;
+  const trackedOperation = async (context) => {
+    if (recognizeLocalCommit || recognizeCloudCommit) context.handle.assertCurrent('pos');
+    const result = await operation(context);
+    if ((recognizeLocalCommit || recognizeCloudCommit) && result?.saleId === orderId && (
+      (result.success === true && result.financialResult?.status === 'success' &&
+        ((recognizeLocalCommit && result.financialResult?.sourceMode === 'local_committed') ||
+         (recognizeCloudCommit && result.financialResult?.sourceMode === 'cloud_committed'))) ||
+      (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code) && result.retryable === false &&
+        ((recognizeLocalCommit && result.financialResult?.sourceMode === 'local_uncertain') ||
+         (recognizeCloudCommit && result.financialResult?.sourceMode === 'cloud_uncertain')))
+    )) {
+      localOutcome = result;
     }
-    return runTrackedActorOperationWithHandle(ownership.handle, label, operation);
+    return result;
+  };
+  try {
+    const ownership = orderId ? checkoutOwnership.get(orderId) : null;
+    if (ownership) {
+      if (!ownership.handle) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+          reason: ownership.actorKey ? 'checkout_owner_not_reauthenticated' : 'checkout_owner_unresolved',
+          orderId
+        });
+      }
+      return await runTrackedActorOperationWithHandle(ownership.handle, label, trackedOperation);
+    }
+    return await runTrackedActorOperationIfGranted(label, trackedOperation);
+  } catch (error) {
+    if (localOutcome && String(error?.code || '').startsWith('ACTOR_')) return localOutcome;
+    throw error;
   }
-  return runTrackedActorOperationIfGranted(label, operation);
+};
+
+// Only the identity needed to cancel an unpaid modal survives its component.
+// The captured binding deliberately cannot migrate to a different session.
+export const rememberPrepaymentCheckout = (orderId, checkoutAttemptId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership) return null;
+  const handle = actorRuntimeController.capture('pos');
+  ownership.handle.assertCurrent('pos');
+  ownership.prepayment = { checkoutAttemptId, handle, active: true };
+  return handle;
+};
+
+export const forgetPrepaymentCheckout = (orderId, checkoutAttemptId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (ownership?.prepayment?.checkoutAttemptId === checkoutAttemptId) ownership.prepayment.active = false;
+};
+
+// Called before Cloud preparation hands ownership to FIN-01. An in-flight
+// or ambiguous financial intent cannot return to prepayment cancellation.
+export const markCheckoutFinancialDispatch = ({ orderId, handle }) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership?.prepayment) return null;
+  handle.assertCurrent('pos');
+  ownership.handle.assertCurrent(null);
+  ownership.prepayment.handle.assertCurrent(null);
+  ownership.prepayment.active = false;
+  return ownership.prepayment.checkoutAttemptId;
+};
+
+// Restore cancellation identity after a proven local abort or preparation
+// without a durable financial owner. Never grant, unlock or execute a payment.
+export const restoreAbortedCheckoutCancellation = ({ orderId, checkoutAttemptId, handle }) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership?.prepayment || ownership.prepayment.checkoutAttemptId !== checkoutAttemptId) return;
+  handle.assertCurrent(null);
+  ownership.handle.assertCurrent(null);
+  ownership.prepayment.handle.assertCurrent(null);
+  ownership.prepayment.active = true;
+};
+
+export const recoverPrepaymentCheckout = (orderId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  const attempt = ownership?.prepayment;
+  if (!attempt?.active || getPendingActorOperations().some(operation =>
+    operation.label === 'sales.processSale' && operation.actorKey === ownership.actorKey &&
+    operation.tenantOpaqueId === ownership.tenantOpaqueId)) return null;
+  attempt.handle.assertCurrent('pos');
+  ownership.handle.assertCurrent('pos');
+  return { orderId, checkoutAttemptId: attempt.checkoutAttemptId,
+    recoveryHandle: attempt.handle, cancellationOnly: true, lockOwnedByCheckout: true, lockReleased: false };
 };
 
 export const rebindActorOperationalOwnership = ({ actorKey, tenant, handle } = {}) => {

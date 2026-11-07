@@ -512,11 +512,15 @@ const callNegotiatedRpc = async ({
   requireCursor = false,
   expectedOffset = null,
   expectedChangeSeq = null,
-  actorHandle = null
+  actorHandle = null,
+  beforeFinancialDispatch = null,
+  onValidatedFinancialResponse = null
 }, allowLegacy = false) => {
   if (!client?.rpc || typeof rpcName !== 'string' || !isRecord(authArgs)) {
     throw new Error('CLOUD_SYNC_PROTOCOL_CLIENT_INVALID');
   }
+  const financialDispatch = family === 'financial_operations' && rpcName === 'pos_execute_financial_operation_v2';
+  const noteResponse = financialDispatch ? onValidatedFinancialResponse : null;
   // Bind discovery and dispatch to this captured license, without protocol caching.
   authArgs = { ...authArgs };
   if (!hasText(authArgs.p_license_key)) throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
@@ -551,10 +555,13 @@ const callNegotiatedRpc = async ({
       && hasText(discovery.tenant_id) && discovery.mode === undefined
       && discovery.success !== false;
     if (legacy) {
+      if (financialDispatch) beforeFinancialDispatch?.();
       const { data, error } = await client.rpc(LEGACY_RPC_NAMES[rpcName], { ...params, ...authArgs });
-      actorHandle?.assertCurrent?.();
+      if (!noteResponse) actorHandle?.assertCurrent?.();
       if (error) throw error;
       const payload = parseJson(data, 'CLOUD_SYNC_PROTOCOL_INVALID_JSON') || {};
+      noteResponse?.(payload);
+      actorHandle?.assertCurrent?.();
       await resumeCompatibleFamily(family, authArgs.p_license_key, actorHandle, 1);
       return payload;
     }
@@ -568,12 +575,13 @@ const callNegotiatedRpc = async ({
     contract_version: CLOUD_SYNC_CONTRACT_VERSION,
     capabilities: requestedCapabilities
   };
+  if (financialDispatch) beforeFinancialDispatch?.();
   const { data, error } = await client.rpc(rpcName, {
     ...params,
     ...authArgs,
     p_sync_contract: syncContract
   });
-  actorHandle?.assertCurrent?.();
+  if (!noteResponse) actorHandle?.assertCurrent?.();
   if (error) {
     if (isUnavailableRpcError(error, rpcName) || isCloudClientUpdateRequired(error)) {
       reportUpdateRequired(family);
@@ -595,6 +603,7 @@ const callNegotiatedRpc = async ({
       expectedOffset,
       expectedChangeSeq
     });
+    noteResponse?.(validated);
     actorHandle?.assertCurrent?.();
     await resumeCompatibleFamily(family, authArgs.p_license_key, actorHandle, 2);
     return validated;

@@ -74,6 +74,9 @@ export const createLicenseMaintenanceActions = ({
             return;
         }
 
+        await state.refreshStaffSessionPermissions?.(reason);
+        if (get().appStatus !== 'ready') return;
+
         const isRealtimeMode = isRealtimeLicenseMode(state);
         const now = Date.now();
         const lastActiveAt = readStoredTimestamp(LAST_ACTIVE_STORAGE_KEY);

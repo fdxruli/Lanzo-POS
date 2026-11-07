@@ -676,23 +676,41 @@ const buildTransactionTables = (lockedStores = []) => {
 
 export const salesRepository = {
 
-    async executeSaleTransaction(sale, deductions) {
+    async executeSaleTransaction(sale, deductions, { assertAuthorized = null, subscribeAuthority = null } = {}) {
         try {
             const lockedStoreNames = resolveRequiredStoreNames(sale);
             const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
 
             // TRANSACCIÓN ATÓMICA: Venta + Deltas en sync_outbox + Proyección local
-            return await db.transaction('rw', dexieTablesToLock, async () => {
+            return await db.transaction('rw', dexieTablesToLock, async (transaction) => {
                 const tables = buildTransactionTables(lockedStoreNames);
-                return processSaleWithinTransaction({
-                    sale,
-                    deductions,
-                    tables,
-                    logType: 'SALE'
+                assertAuthorized?.();
+                const unsubscribe = subscribeAuthority?.(() => {
+                    try { assertAuthorized(); }
+                    catch { transaction.abort(); }
                 });
+                if (unsubscribe) {
+                    transaction.on('complete', unsubscribe);
+                    transaction.on('abort', unsubscribe);
+                    transaction.on('error', unsubscribe);
+                }
+                const existing = await tables.sales.get(sale.id);
+                if (sale.localCommitBinding && existing?.checkoutActorKey &&
+                    existing.checkoutActorKey !== sale.localCommitBinding.actorKey) {
+                    throw new Error('LOCAL_CHECKOUT_OWNER_MISMATCH');
+                }
+                if (sale.localCheckoutAttemptId && existing?.checkoutAttemptId !== sale.localCheckoutAttemptId) {
+                    throw new Error('LOCAL_CHECKOUT_ATTEMPT_MISMATCH');
+                }
+                const result = await processSaleWithinTransaction({ sale, deductions, tables, logType: 'SALE' });
+                // Still inside Dexie's transaction: a failed check rolls back
+                // the sale, stock, ledger, folio and log together.
+                assertAuthorized?.();
+                return result;
             });
 
         } catch (error) {
+            if (String(error?.code || '').startsWith('ACTOR_')) throw error;
             if (error?.isInventoryError) {
                 return {
                     success: false,

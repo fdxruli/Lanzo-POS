@@ -141,6 +141,9 @@ export const createLicenseSyncActions = ({
 
     if (get().appStatus !== 'ready') return false;
 
+    await get().refreshStaffSessionPermissions?.(reason);
+    if (get().appStatus !== 'ready') return false;
+
     const syncMode = state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails);
 
     // El perfil del negocio tiene su propio ciclo de frescura. Se consulta antes
@@ -283,6 +286,8 @@ export const createLicenseSyncActions = ({
 
       Logger.log('[LicenseSync] Red recuperada. Evaluando revalidación.');
 
+      get().refreshStaffSessionPermissions?.('online');
+
       if (currentMode === 'hybrid_realtime') {
         get().recoverRealtimeSecurity?.('online', {
           source: 'license_sync_online',
@@ -341,6 +346,7 @@ export const createLicenseSyncActions = ({
   },
 
   stopLicenseSync: async () => {
+    get()._stopStaffPermissionRefresh?.();
     if (licenseSyncTimer) {
       clearInterval(licenseSyncTimer);
       licenseSyncTimer = null;
