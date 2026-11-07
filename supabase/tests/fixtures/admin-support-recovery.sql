@@ -33,3 +33,7 @@ language sql as $$
     status='active' and (expires_at is null or expires_at>now()), false, null::timestamptz
   from public.licenses where id=p_id;
 $$;
+
+-- V2 read-only support discovery boundaries; no real billing integration in fixture.
+alter table public.licenses add column organization_name text, add column owner_email text;
+create table public.subscriptions(license_id uuid,provider text,provider_subscription_id text,customer_email text,status text);

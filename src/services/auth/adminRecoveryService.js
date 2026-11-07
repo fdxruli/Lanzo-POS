@@ -4,6 +4,9 @@ import { actorRuntimeController } from './actorRuntimeController';
 import { reportActorAuthorityError } from './actorAuthorityRecovery';
 
 export const RECOVERY_MESSAGES = Object.freeze({
+  RECOVERY_CASE_ACTIVE: 'Ya hay un caso abierto. Comparte su referencia con soporte; no crees otro.',
+  RECOVERY_EMAIL_UNCHANGED: 'Introduce un correo diferente del contacto actual.',
+  RECOVERY_SUPPORT_HOLD: 'La recuperación está detenida por un caso de soporte. Contacta con soporte e indica su referencia.',
   RECOVERY_CODE_INVALID: 'Código incorrecto o no disponible. Revisa el código recibido de soporte.',
   RECOVERY_CODE_EXPIRED: 'El código caducó. Solicita uno nuevo a soporte.',
   RECOVERY_CODE_USED: 'Este código ya fue utilizado. Prueba iniciar sesión con tu nueva contraseña.',
@@ -80,3 +83,7 @@ export const redeemPasswordRecovery = async (licenseKey, code, password) => {
   return result.success && typeof result.username !== 'string'
     ? { success: false, code: 'RECOVERY_UNCONFIRMED' } : result;
 };
+
+export const requestRecoveryContactChange = (licenseKey, email, password) => authenticatedCall('admin_request_recovery_contact_change', licenseKey, {
+  p_email: email.trim(), p_current_password: password
+});
