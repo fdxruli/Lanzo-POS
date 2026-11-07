@@ -46,9 +46,9 @@ create table public.license_admin_users (
     char_length(btrim(display_name)) between 1 and 120
   )
 );
-create unique index public.license_admin_users_license_username_uidx
+create unique index license_admin_users_license_username_uidx
   on public.license_admin_users (license_id, lower(username));
-create unique index public.license_admin_users_one_active_owner_uidx
+create unique index license_admin_users_one_active_owner_uidx
   on public.license_admin_users (license_id)
   where is_owner is true and is_active is true;
 
