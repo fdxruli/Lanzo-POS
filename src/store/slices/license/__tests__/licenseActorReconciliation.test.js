@@ -50,6 +50,7 @@ import { createLicenseProcessingActions } from '../licenseProcessingActions';
 import { createLicenseIntegrityActions } from '../licenseIntegrityActions';
 import { createLicenseBackgroundValidationActions } from '../licenseBackgroundValidationActions';
 import { createLicenseBootstrapActions } from '../licenseBootstrapActions';
+import { requiresAdminIdentity } from '../licenseGuards';
 
 const staff = { id: 'staff-prueba', username: 'prueba', permissions: {
   pos: true, cash_register: false, products: false, inventory: false,
@@ -70,11 +71,13 @@ const validation = (overrides = {}) => ({
 });
 const grant = (actorType = 'staff', actor = staff) => {
   if (runtime.getState().status !== 'authenticating') runtime.beginAuthentication({ actorType });
-  return runtime.grant({
+  const granted = runtime.grant({
     actorType, actorId: actor.id, sessionId: `${actorType}-session`, deviceRef: 'device-test',
     permissions: actor.permissions,
     authorizationExpiresAt: new Date(Date.now() + 86400000).toISOString()
   });
+  clearActorAuthorityRecovery();
+  return granted;
 };
 const harness = (details = license()) => {
   const state = {
@@ -159,9 +162,28 @@ describe('license metadata preserves the authenticated actor', () => {
     runtime.lock('actor_switch'); grant('admin', details.admin_user);
     const state = harness(details);
     await revalidate(state, path);
+    expect(state.refreshLicenseSyncMode).toHaveBeenCalled();
     expect(readActorAccess(state).isAdmin).toBe(true);
     expect(readActorAccess(state).canAccessPermission('settings')).toBe(true);
     expect((await getLicenseFromStorage()).admin_user).toEqual(details.admin_user);
+  });
+
+  it.each(['background', 'integrity'])('%s: legacy Admin metadata does not initiate an identity upgrade', async (path) => {
+    const details = license({ device_role: 'admin', staff_user: null,
+      plan_code: 'free_trial', admin_identity_required: false, max_devices: 1, features: {} });
+    await saveLicenseToStorage(details);
+    runtime.lock('actor_switch'); grant('admin', { id: 'admin-test' });
+    const state = harness(details);
+    state.currentAdminUser = { id: 'admin-test' };
+    mocks.revalidateLicense.mockResolvedValue({ ...details });
+    expect(requiresAdminIdentity(details)).toBe(false);
+    await revalidate(state, path);
+    expect(requiresAdminIdentity(await getLicenseFromStorage())).toBe(false);
+    expect(state.stopLicenseSync).not.toHaveBeenCalled();
+    expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
+    expect(mocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(state.refreshLicenseSyncMode).toHaveBeenCalled();
+    expect(readActorAccess(state).isAdmin).toBe(true);
   });
 
   it.each(['background', 'integrity'])('%s: Staff-only consumes matching Staff permission removals', async (path) => {

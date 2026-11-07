@@ -21,8 +21,8 @@ export const reconcileLicenseSessionIdentity = (state, localLicense, validation)
   return {
     device_role: role,
     staff_user: updatedStaff,
-    admin_user: role === 'admin'
-      ? state.currentAdminUser || localLicense.admin_user || null
-      : null
+    // Do not synthesize modern Admin license evidence from a store snapshot:
+    // that would trigger the existing legacy-to-identity upgrade transition.
+    admin_user: role === 'admin' ? localLicense.admin_user || null : null
   };
 };
