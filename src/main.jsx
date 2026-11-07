@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import AdminStartupRecoveryScreen from './components/common/AdminStartupRecoveryScreen';
+import SingleInstanceGate from './components/common/SingleInstanceGate';
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { isPublicStorePath } from './router/isPublicStorePath';
 import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
@@ -59,7 +60,9 @@ async function renderPosApplication() {
 
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
-      <PosApplicationBootstrap databaseRuntime={databaseRuntime} />
+      <SingleInstanceGate>
+        <PosApplicationBootstrap databaseRuntime={databaseRuntime} />
+      </SingleInstanceGate>
     </React.StrictMode>
   );
 }
