@@ -36,11 +36,43 @@ describe('Settings actor access matrix A-G', () => {
     expect(tabKeys(access)).toEqual([]);
   });
 
-  it('B: settings grants General, Controls, and read-only Messages', () => {
+  it('B: the legacy settings grant maps to General and Controls', () => {
     const access = staffAccess({ settings: true });
 
     expect(access.canEnterSettings).toBe(true);
-    expect(tabKeys(access)).toEqual(['general', 'controls', 'messages']);
+    expect(tabKeys(access)).toEqual(['general', 'controls']);
+  });
+
+  it('A: Datos y Apariencia can be granted without granting Controles', () => {
+    const access = staffAccess({
+      settings_data: true,
+      settings_controls: false,
+      settings_maintenance: false,
+      settings_backup: false
+    });
+
+    expect(tabKeys(access)).toEqual(['general']);
+    expect(access.canAccessSection('general')).toBe(true);
+    expect(access.canAccessSection('controls')).toBe(false);
+  });
+
+  it('B: explicit Data access does not inherit Controles from legacy settings', () => {
+    const access = staffAccess({ settings: true, settings_data: true });
+
+    expect(tabKeys(access)).toEqual(['general']);
+    expect(access.canAccessSection('controls')).toBe(false);
+  });
+
+  it('shows Controles alone without granting business data', () => {
+    const access = staffAccess({
+      settings_data: false,
+      settings_controls: true,
+      settings_maintenance: false,
+      settings_backup: false
+    });
+
+    expect(tabKeys(access)).toEqual(['controls']);
+    expect(access.canAccessSection('general')).toBe(false);
   });
 
   it('C: license grants its section without General', () => {
@@ -57,14 +89,14 @@ describe('Settings actor access matrix A-G', () => {
     expect(access.canAccessSection('license')).toBe(false);
   });
 
-  it('E: sync grants Maintenance and Backup without General', () => {
+  it('E: legacy sync keeps Maintenance and Backup without General', () => {
     const access = staffAccess({ sync: true });
 
     expect(tabKeys(access)).toEqual(['maintenance', 'backup']);
     expect(access.canAccessPermission('inventory')).toBe(false);
   });
 
-  it('F: inventory grants Maintenance without sync-only Backup', () => {
+  it('F: legacy inventory keeps Maintenance without sync-only Backup', () => {
     const access = staffAccess({ inventory: true });
 
     expect(tabKeys(access)).toEqual(['maintenance']);
@@ -78,6 +110,46 @@ describe('Settings actor access matrix A-G', () => {
     expect(resolveAllowedSettingsTab({ requestedTab: 'general', visibleTabs: access.visibleTabs }))
       .toBeNull();
   });
+
+  it.each([
+    ['license', 'license'],
+    ['devices', 'devices'],
+    ['maintenance', 'settings_maintenance'],
+    ['backup', 'settings_backup']
+  ])('grants %s independently without other Settings sections or Admin authority', (section, permission) => {
+    const access = staffAccess({
+      [permission]: true,
+      ...(permission.startsWith('settings_') ? {
+        settings_data: false,
+        settings_controls: false,
+        settings_maintenance: permission === 'settings_maintenance',
+        settings_backup: permission === 'settings_backup'
+      } : {})
+    });
+
+    expect(tabKeys(access)).toEqual([section]);
+    expect(access.isAdmin).toBe(false);
+    for (const otherSection of ['general', 'controls', 'license', 'devices', 'maintenance', 'backup']) {
+      expect(access.canAccessSection(otherSection)).toBe(otherSection === section);
+    }
+  });
+
+  it('does not let legacy grants override an explicit disabled section', () => {
+    const access = staffAccess({
+      settings: true,
+      sync: true,
+      inventory: true,
+      settings_data: true,
+      settings_controls: false,
+      settings_maintenance: false,
+      settings_backup: false
+    });
+
+    expect(tabKeys(access)).toEqual(['general']);
+    expect(access.canAccessSection('controls')).toBe(false);
+    expect(access.canAccessSection('maintenance')).toBe(false);
+    expect(access.canAccessSection('backup')).toBe(false);
+  });
 });
 
 describe('Settings actor evidence', () => {
@@ -90,7 +162,7 @@ describe('Settings actor evidence', () => {
 
     expect(access.canEnterSettings).toBe(true);
     expect(tabKeys(access)).toEqual([
-      'general', 'controls', 'license', 'devices', 'maintenance', 'backup', 'messages'
+      'general', 'controls', 'license', 'devices', 'maintenance', 'backup'
     ]);
   });
 

@@ -20,6 +20,11 @@ import {
   Upload
 } from 'lucide-react';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../common/TermsAndConditionsModal';
+import NoPermission from '../common/NoPermission';
+import {
+  useSettingsAccess,
+  useSettingsActionGuard
+} from '../../services/auth/useSettingsAccess';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -353,8 +358,15 @@ function LegalPanel({ onOpen }) {
 }
 
 export default function GeneralSettings() {
+  const settingsAccess = useSettingsAccess();
+  if (!settingsAccess.canAccessSection('general')) return <NoPermission />;
+  return <GeneralSettingsContent />;
+}
+
+function GeneralSettingsContent() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
+  const captureSettingsAction = useSettingsActionGuard();
   const fieldId = useId();
   const [profileState, dispatchProfile] = useReducer(profileReducer, initialProfileState);
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
@@ -396,13 +408,27 @@ export default function GeneralSettings() {
   }, [activeTheme]);
 
   const handleThemeChange = (event) => {
-    const newTheme = event.target.value;
-    setActiveTheme(newTheme);
-    localStorage.setItem('theme-preference', newTheme);
+    try {
+      const actorHandle = captureSettingsAction('settings_data');
+      actorHandle.assertCurrent();
+      const newTheme = event.target.value;
+      setActiveTheme(newTheme);
+      localStorage.setItem('theme-preference', newTheme);
+    } catch {
+      // The protected subtree may have been revoked between render and click.
+    }
   };
 
   const handleImageChange = async (event) => {
     if (profileState.lockedFields.logo) return;
+
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('settings_data');
+      actorHandle.assertCurrent();
+    } catch {
+      return;
+    }
 
     const file = event.target.files[0];
     if (!file) return;
@@ -410,6 +436,7 @@ export default function GeneralSettings() {
     try {
       setIsProcessingLogo(true);
       const compressedFile = await compressImage(file);
+      actorHandle.assertCurrent();
       const objectURL = URL.createObjectURL(compressedFile);
 
       dispatchProfile({ type: 'logo-selected', previewUrl: objectURL, file: compressedFile });
@@ -423,7 +450,10 @@ export default function GeneralSettings() {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
+    let actorHandle;
     try {
+      actorHandle = captureSettingsAction('settings_data');
+      actorHandle.assertCurrent();
       const updates = {
         name: profileState.name,
         phone: profileState.phone,
@@ -438,9 +468,16 @@ export default function GeneralSettings() {
         business_type: companyProfile?.business_type || [],
         ...updates
       });
+      actorHandle.assertCurrent();
       dispatchProfile({ type: 'saved' });
       showMessageModal('Datos actualizados correctamente. Los campos nuevos se han bloqueado.');
     } catch (error) {
+      if (!actorHandle) return;
+      try {
+        actorHandle.assertCurrent();
+      } catch {
+        return;
+      }
       Logger.error(error);
       showMessageModal('Error al guardar.', null, { type: 'error' });
     }

@@ -104,8 +104,8 @@ describe('LicenseSettings sibling isolation', () => {
     expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
   });
 
-  it('shows rubro/business-profile controls only with settings permission', () => {
-    state.access.canAccessPermission = (permission) => ['license', 'settings'].includes(permission);
+  it('shows rubro/business-profile controls only with Datos y Apariencia permission', () => {
+    state.access.canAccessPermission = (permission) => ['license', 'settings_data'].includes(permission);
 
     render(<LicenseSettings />);
 

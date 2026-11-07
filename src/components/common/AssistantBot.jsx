@@ -7,6 +7,7 @@ import { normalizeBusinessTypes } from '../../utils/businessType';
 import { canOpenBotAction } from '../../utils/botNavigation';
 import { useAppStore } from '../../store/useAppStore';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { useBotAssistant } from '../../hooks/useBotAssistant';
 import { useBotScreenContext } from '../../hooks/useBotScreenContext';
@@ -17,6 +18,7 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
   const location = useLocation();
   const navigate = useNavigate();
   const actor = useActorRuntimeSnapshot();
+  const settingsAccess = useSettingsAccess();
   const hasItems = useActiveOrders(state => Boolean(state.activeOrders.get(state.currentOrderId)?.items?.length));
   const profile = useAppStore(state => state.companyProfile);
   const license = useAppStore(state => state.licenseDetails);
@@ -129,7 +131,11 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
       if (isCurrent()) { pending.current = null; setBusy(false); }
     }
   }, [input, contextKey, askBot, location.pathname, location.search, localTab, businessType, actor.actorType, cloud, online]);
-  const actionAllowed = path => canOpenBotAction(path, canAccess, { licenseDetails: license, actorSnapshot: actor });
+  const actionAllowed = path => canOpenBotAction(path, canAccess, {
+    licenseDetails: license,
+    actorSnapshot: actor,
+    settingsAccess
+  });
   const navigateAction = (action) => {
     if (!actionAllowed(action.path)) return;
     setOpen(false);

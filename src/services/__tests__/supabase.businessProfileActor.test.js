@@ -86,10 +86,15 @@ const setSessionCache = ({
   ));
 };
 
-const createActorHandle = (actorType = 'admin', sessionId = `${actorType}-session`) => ({
+const createActorHandle = (actorType = 'admin', sessionId = `${actorType}-session`, permissions = ['settings_data']) => ({
   actorType,
   sessionId,
-  assertCurrent: vi.fn(() => ({ actorType, sessionId }))
+  assertCurrent: vi.fn((permission) => {
+    if (actorType === 'staff' && !permissions.includes(permission)) {
+      throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+    }
+    return { actorType, sessionId };
+  })
 });
 
 const importSupabase = async () => {
@@ -138,7 +143,19 @@ describe('saveBusinessProfile actor binding', () => {
         business_type: ['hardware']
       }
     });
-    expect(actorHandle.assertCurrent).toHaveBeenCalledWith('settings');
+    expect(actorHandle.assertCurrent).toHaveBeenCalledWith('settings_data');
+  });
+
+  it('does not dispatch the business-profile RPC for Controls-only Staff', async () => {
+    setSessionCache({ actorType: 'staff' });
+    const actorHandle = createActorHandle('staff', 'staff-session', ['settings_controls']);
+    const { saveBusinessProfile } = await importSupabase();
+
+    await expect(saveBusinessProfile('LANZO-PROFILE', {
+      name: 'Controls only', business_type: ['hardware']
+    }, { actorHandle })).resolves.toMatchObject({ success: false, code: 'ACTOR_PERMISSION_DENIED' });
+    expect(actorHandle.assertCurrent).toHaveBeenCalledWith('settings_data');
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it('fails closed without a captured actor and never calls the RPC', async () => {

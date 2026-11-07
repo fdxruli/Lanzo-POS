@@ -103,11 +103,16 @@ function MaintenanceToolCard({
 }
 
 export default function MaintenanceSettings() {
+  const settingsAccess = useSettingsAccess();
+  if (!settingsAccess.canAccessSection('maintenance')) return <NoPermission />;
+  return <MaintenanceSettingsContent settingsAccess={settingsAccess} />;
+}
+
+function MaintenanceSettingsContent({ settingsAccess }) {
   const loadStats = useStatsStore((state) => state.loadStats);
   const loadInitialProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const settingsAccess = useSettingsAccess();
   const captureSettingsAction = useSettingsActionGuard();
   const canSync = settingsAccess.canAccessPermission('sync');
   const canInventory = settingsAccess.canAccessPermission('inventory');
@@ -264,8 +269,6 @@ export default function MaintenanceSettings() {
       }
     }
   };
-
-  if (!settingsAccess.canAccessSection('maintenance')) return <NoPermission />;
 
   return (
     <div className="maintenance-settings-shell">

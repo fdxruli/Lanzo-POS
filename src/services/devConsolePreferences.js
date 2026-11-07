@@ -25,7 +25,7 @@ const publish = next => {
 };
 
 const captureAuthority = () => {
-  const actor = actorRuntimeController.assertGranted('settings');
+  const actor = actorRuntimeController.assertGranted('settings_controls');
   if (!settingsAccess(actor)) throw new Error('Diagnostic settings access denied');
   const storage = captureActorScopedStorageHandle();
   const binding = storage.assertCurrent();

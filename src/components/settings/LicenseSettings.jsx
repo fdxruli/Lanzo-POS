@@ -460,6 +460,12 @@ function LicenseInfoPanel({
 }
 
 export default function LicenseSettings() {
+    const settingsAccess = useSettingsAccess();
+    if (!settingsAccess.canAccessSection('license')) return <NoPermission />;
+    return <LicenseSettingsContent settingsAccess={settingsAccess} />;
+}
+
+function LicenseSettingsContent({ settingsAccess }) {
     const companyProfile = useAppStore((state) => state.companyProfile);
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -468,7 +474,6 @@ export default function LicenseSettings() {
     const logoutStaff = useAppStore((state) => state.logoutStaff);
     const logoutAdmin = useAppStore((state) => state.logoutAdmin);
     const renewLicense = useAppStore((state) => state.renewLicense);
-    const settingsAccess = useSettingsAccess();
     const captureSettingsAction = useSettingsActionGuard();
 
     const [isUpdatingFree, setIsUpdatingFree] = useState(false);
@@ -481,11 +486,12 @@ export default function LicenseSettings() {
     const isProLicense = licenseFeatures.realtime_license_sync === true;
     const staffRolesEnabled = licenseFeatures.staff_roles === true;
     const isStaffDevice = settingsAccess.isStaff;
-    const canEditBusinessProfile = settingsAccess.canAccessPermission('settings');
+    const canEditBusinessProfile = settingsAccess.canAccessPermission('settings_data');
     const canManageStaff = settingsAccess.isAdmin && staffRolesEnabled;
     const gracePeriodState = getGracePeriodState(licenseDetails);
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
-    const showFreeCompatibilityUpdate = gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
+    const showFreeCompatibilityUpdate = settingsAccess.isAdmin
+        && gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
     const commercialPlanName = getCommercialPlanName(licenseDetails);
     const localDiscovery = getLocalPlanDiscoveryCapabilities(
         licenseDetails,
@@ -575,20 +581,20 @@ export default function LicenseSettings() {
     const handleRubroToggle = async (rubroId) => {
         let actorHandle;
         try {
-            actorHandle = captureSettingsAction('settings');
+            actorHandle = captureSettingsAction('settings_data');
         } catch {
             return;
         }
         const persistSelection = async (businessType) => {
             try {
-                actorHandle.assertCurrent('settings');
+                actorHandle.assertCurrent('settings_data');
                 if (companyProfile) {
                     await updateCompanyProfile({ ...companyProfile, business_type: businessType });
                 }
-                actorHandle.assertCurrent('settings');
+                actorHandle.assertCurrent('settings_data');
             } catch (error) {
                 try {
-                    actorHandle.assertCurrent('settings');
+                    actorHandle.assertCurrent('settings_data');
                     showMessageModal(
                         error?.message || 'No se pudo actualizar el giro del negocio.',
                         null,
@@ -679,7 +685,7 @@ export default function LicenseSettings() {
     const handleFreeCompatibilityUpdate = async () => {
         let actorHandle;
         try {
-            actorHandle = captureSettingsAction('license');
+            actorHandle = captureSettingsAction('license', { adminOnly: true });
         } catch {
             return;
         }
@@ -705,8 +711,6 @@ export default function LicenseSettings() {
             }
         }
     };
-
-    if (!settingsAccess.canAccessSection('license')) return <NoPermission />;
 
     return (
         <div className="license-settings-shell">

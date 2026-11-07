@@ -384,4 +384,59 @@ describe('StaffUsersSettings list-first administration', () => {
     expect(notificationMaster).not.toBeChecked();
     expect(ecommerceDetail).toBeDisabled();
   });
+
+  it('shows six independent Settings switches and safely normalizes legacy grants', async () => {
+    const legacyUser = {
+      ...existingUser,
+      permissions: { settings: true, sync: true }
+    };
+    mocks.listStaffUsersService.mockResolvedValue({ success: true, data: [legacyUser] });
+    mocks.updateStaffUserService.mockResolvedValue({
+      success: true,
+      staff_user: {
+        ...legacyUser,
+        permissions: {
+          ...legacyUser.permissions,
+          settings_data: true,
+          settings_controls: false,
+          settings_maintenance: true,
+          settings_backup: true
+        }
+      }
+    });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByText('Configuracion', { selector: 'strong' }));
+
+    for (const label of [
+      'Datos y Apariencia', 'Controles', 'Licencia y Rubros',
+      'Dispositivos', 'Datos y Mantenimiento', 'Respaldos'
+    ]) {
+      expect(screen.getByRole('checkbox', { name: new RegExp(label) })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('checkbox', { name: /Datos y Apariencia/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Controles/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Datos y Mantenimiento/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Respaldos/ })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Controles/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    await waitFor(() => expect(mocks.updateStaffUserService).toHaveBeenCalledWith(
+      'LIC-1',
+      legacyUser.id,
+      expect.objectContaining({
+        permissions: expect.objectContaining({
+          settings: true,
+          sync: true,
+          settings_data: true,
+          settings_controls: false,
+          settings_maintenance: true,
+          settings_backup: true
+        })
+      })
+    ));
+  });
 });

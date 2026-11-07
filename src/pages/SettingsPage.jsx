@@ -30,16 +30,6 @@ export default function SettingsPage() {
   const activeTab = resolveAllowedSettingsTab({ requestedTab, visibleTabs });
   usePublishBotScreen('/configuracion', activeTab);
 
-  if (requestedTab === 'messages') {
-    return (
-      <Navigate
-        to={isCloudCustomerMessagingEnabled(licenseDetails) ? '/clientes?tab=message-config' : '/clientes?tab=list'}
-        replace
-      />
-    );
-  }
-
-
   const handleTabChange = (tabKey) => {
     const param = tabKey === 'general' ? {} : { tab: tabKey };
     setSearchParams(param);
@@ -49,6 +39,15 @@ export default function SettingsPage() {
 
   if (!settingsAccess.canEnterSettings || !activeTab) {
     return <NoPermission />;
+  }
+
+  if (requestedTab === 'messages') {
+    return (
+      <Navigate
+        to={isCloudCustomerMessagingEnabled(licenseDetails) ? '/clientes?tab=message-config' : '/clientes?tab=list'}
+        replace
+      />
+    );
   }
 
   return (

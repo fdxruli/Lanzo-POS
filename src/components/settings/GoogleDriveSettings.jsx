@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Cloud, Link2, Loader2, ShieldCheck, Unplug } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import toast from 'react-hot-toast';
@@ -7,6 +7,8 @@ import {
   hasOnlyDriveFileScope
 } from '../../config/googleDrive';
 import { useAppStore } from '../../store/useAppStore';
+import { useSettingsAccess, useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
+import NoPermission from '../common/NoPermission';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
 
@@ -36,8 +38,10 @@ function GoogleDriveOAuthControls() {
   const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const connectDrive = useAppStore((state) => state.connectDrive);
   const disconnectDrive = useAppStore((state) => state.disconnectDrive);
+  const captureSettingsAction = useSettingsActionGuard();
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
+  const connectActionRef = useRef(null);
 
   const hasActiveSession = Boolean(driveAccessToken && driveTokenExpiresAt);
 
@@ -47,29 +51,64 @@ function GoogleDriveOAuthControls() {
     overrideScope: true,
     include_granted_scopes: false,
     onSuccess: (tokenResponse) => {
-      setIsConnecting(false);
-
       if (!tokenResponse.access_token || !hasOnlyDriveFileScope(tokenResponse.scope)) {
         revokeGoogleToken(tokenResponse.access_token);
+        try {
+          connectActionRef.current?.assertCurrent('settings_backup');
+        } catch {
+          connectActionRef.current = null;
+          return;
+        }
+        connectActionRef.current = null;
+        setIsConnecting(false);
         setError('Google devolvio permisos distintos a drive.file. La conexion fue rechazada.');
         toast.error('No se aceptaron permisos adicionales de Google Drive.');
         return;
       }
 
+      const actionHandle = connectActionRef.current;
+      try {
+        if (!actionHandle) return revokeGoogleToken(tokenResponse.access_token);
+        actionHandle.assertCurrent('settings_backup');
+      } catch {
+        revokeGoogleToken(tokenResponse.access_token);
+        connectActionRef.current = null;
+        return;
+      }
+
+      connectActionRef.current = null;
+      setIsConnecting(false);
       connectDrive({
         accessToken: tokenResponse.access_token,
         expiresIn: tokenResponse.expires_in
       });
+      actionHandle.assertCurrent('settings_backup');
       setError('');
       toast.success('Google Drive conectado para esta sesion.');
     },
     onError: (oauthError) => {
+      try {
+        if (!connectActionRef.current) return;
+        connectActionRef.current.assertCurrent('settings_backup');
+      } catch {
+        connectActionRef.current = null;
+        return;
+      }
+      connectActionRef.current = null;
       setIsConnecting(false);
       const message = getOAuthErrorMessage(oauthError);
       setError(message);
       toast.error(message);
     },
     onNonOAuthError: (oauthError) => {
+      try {
+        if (!connectActionRef.current) return;
+        connectActionRef.current.assertCurrent('settings_backup');
+      } catch {
+        connectActionRef.current = null;
+        return;
+      }
+      connectActionRef.current = null;
       setIsConnecting(false);
       const message = oauthError.type === 'popup_closed'
         ? 'La ventana de autorizacion fue cerrada.'
@@ -79,8 +118,16 @@ function GoogleDriveOAuthControls() {
   });
 
   const handleConnect = () => {
+    let actionHandle;
+    try {
+      actionHandle = captureSettingsAction('settings_backup');
+      actionHandle.assertCurrent('settings_backup');
+    } catch {
+      return;
+    }
     setError('');
     setIsConnecting(true);
+    connectActionRef.current = actionHandle;
 
     try {
       login();
@@ -91,11 +138,18 @@ function GoogleDriveOAuthControls() {
   };
 
   const handleDisconnect = () => {
-    const tokenToRevoke = driveAccessToken;
-    disconnectDrive();
-    revokeGoogleToken(tokenToRevoke);
-    setError('');
-    toast.success('Google Drive desconectado.');
+    try {
+      const actionHandle = captureSettingsAction('settings_backup');
+      actionHandle.assertCurrent('settings_backup');
+      const tokenToRevoke = driveAccessToken;
+      disconnectDrive();
+      actionHandle.assertCurrent('settings_backup');
+      revokeGoogleToken(tokenToRevoke);
+      setError('');
+      toast.success('Google Drive desconectado.');
+    } catch {
+      // The actor changed before this synchronous preference update finished.
+    }
   };
 
   return (
@@ -172,6 +226,9 @@ function GoogleDriveOAuthControls() {
 }
 
 export default function GoogleDriveSettings() {
+  const settingsAccess = useSettingsAccess();
+  if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
+
   return (
     <section className="backup-settings-card backup-settings-card--drive">
       <div className="backup-settings-card__heading">

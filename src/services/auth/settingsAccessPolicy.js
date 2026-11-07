@@ -1,7 +1,22 @@
 import { evaluateActorAccess } from './actorAccessPolicy';
 
+export const SETTINGS_GRANULAR_PERMISSIONS = Object.freeze([
+  'settings_data',
+  'settings_controls',
+  'settings_maintenance',
+  'settings_backup'
+]);
+
+export const SETTINGS_LEGACY_PERMISSION_FALLBACKS = Object.freeze({
+  settings_data: Object.freeze(['settings']),
+  settings_controls: Object.freeze(['settings']),
+  settings_maintenance: Object.freeze(['sync', 'inventory']),
+  settings_backup: Object.freeze(['sync'])
+});
+
 export const SETTINGS_SHELL_PERMISSIONS = Object.freeze([
   'settings',
+  ...SETTINGS_GRANULAR_PERMISSIONS,
   'license',
   'devices',
   'sync',
@@ -9,12 +24,12 @@ export const SETTINGS_SHELL_PERMISSIONS = Object.freeze([
 ]);
 
 export const SETTINGS_SECTION_PERMISSIONS = Object.freeze({
-  general: Object.freeze(['settings']),
-  controls: Object.freeze(['settings']),
+  general: Object.freeze(['settings_data']),
+  controls: Object.freeze(['settings_controls']),
   license: Object.freeze(['license']),
   devices: Object.freeze(['devices']),
-  maintenance: Object.freeze(['sync', 'inventory']),
-  backup: Object.freeze(['sync']),
+  maintenance: Object.freeze(['settings_maintenance']),
+  backup: Object.freeze(['settings_backup']),
   messages: Object.freeze(['settings'])
 });
 
@@ -25,9 +40,18 @@ export const SETTINGS_TAB_DEFINITIONS = Object.freeze([
   Object.freeze({ key: 'devices', section: 'devices' }),
   Object.freeze({ key: 'maintenance', section: 'maintenance' }),
   Object.freeze({ key: 'backup', section: 'backup' }),
-  Object.freeze({ key: 'messages', section: 'messages' }),
   Object.freeze({ key: 'debug', developmentOnly: true }),
   Object.freeze({ key: 'test-ventas', developmentOnly: true })
+]);
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const SETTINGS_ACCESS_SECTIONS = Object.freeze([
+  'general',
+  'controls',
+  'license',
+  'devices',
+  'maintenance',
+  'backup'
 ]);
 
 const deniedAccess = ({ runtimeSnapshot = null, isDev = false } = {}) => {
@@ -39,6 +63,7 @@ const deniedAccess = ({ runtimeSnapshot = null, isDev = false } = {}) => {
     actorId: null,
     actorKey: null,
     generation: runtimeSnapshot?.generation ?? null,
+    runtimeSnapshot: null,
     isAuthorizedActor: false,
     isAdmin: false,
     isStaff: false,
@@ -67,16 +92,37 @@ export const evaluateSettingsAccess = ({
     runtimeSnapshot, currentDeviceRole, currentAdminUser, currentStaffUser
   });
   if (!actorAccess.isAuthorizedActor) return deniedAccess({ runtimeSnapshot, isDev });
-  const { actorType, actorId: runtimeActorId, isAdmin, canAccessPermission } = actorAccess;
-  const canEnterSettings = isAdmin
-    || SETTINGS_SHELL_PERMISSIONS.some(canAccessPermission);
+
+  const { actorType, actorId: runtimeActorId, isAdmin } = actorAccess;
+  const permissionRecord = actorAccess.permissionSession?.currentStaffUser?.permissions || {};
+  const hasGranularSettingsPermissions = SETTINGS_GRANULAR_PERMISSIONS.some((permission) => (
+    hasOwn(permissionRecord, permission)
+  ));
+  const canAccessPermission = (permission) => {
+    if (typeof permission !== 'string' || permission.trim().length === 0) return false;
+    if (isAdmin || actorAccess.canAccessPermission(permission)) return true;
+
+    const legacyFallbacks = SETTINGS_LEGACY_PERMISSION_FALLBACKS[permission];
+    if (!Array.isArray(legacyFallbacks) || hasGranularSettingsPermissions) return false;
+    return legacyFallbacks.some((legacyPermission) => (
+      actorAccess.canAccessPermission(legacyPermission)
+    ));
+  };
+
+  const hasSettingsSectionAccess = () => (
+    isAdmin || SETTINGS_ACCESS_SECTIONS.some((section) => (
+      SETTINGS_SECTION_PERMISSIONS[section].some(canAccessPermission)
+    ))
+  );
   const canAccessSection = (section) => {
-    if (!canEnterSettings) return false;
-    if (section === 'debug' || section === 'test-ventas') return Boolean(isDev);
+    if (section === 'debug' || section === 'test-ventas') {
+      return hasSettingsSectionAccess() && Boolean(isDev);
+    }
     const requiredPermissions = SETTINGS_SECTION_PERMISSIONS[section];
     return Array.isArray(requiredPermissions)
       && requiredPermissions.some(canAccessPermission);
   };
+  const canEnterSettings = hasSettingsSectionAccess();
   const permissions = Object.freeze(Object.fromEntries(
     SETTINGS_SHELL_PERMISSIONS.map((permission) => [
       permission,
@@ -94,8 +140,9 @@ export const evaluateSettingsAccess = ({
   return Object.freeze({
     actorType,
     actorId: runtimeActorId,
-    actorKey: runtimeSnapshot.actorKey,
-    generation: runtimeSnapshot.generation,
+    actorKey: runtimeSnapshot?.actorKey || actorAccess.runtimeSnapshot?.actorKey || null,
+    generation: runtimeSnapshot?.generation ?? actorAccess.runtimeSnapshot?.generation ?? null,
+    runtimeSnapshot: actorAccess.runtimeSnapshot,
     isAuthorizedActor: true,
     isAdmin,
     isStaff: actorType === 'staff',

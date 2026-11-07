@@ -20,7 +20,12 @@ export const canOpenBotAction = (path, canAccess, context = null) => {
     permissions: Object.fromEntries((context.actorSnapshot?.permissions || []).map(permission => [permission, true]))
   });
   if (context && pathname === '/agentes-ia') return getCommercialAIAgentAccessState(context).canSeeEntry;
-  if (pathname === '/configuracion') return (SETTINGS_SECTION_PERMISSIONS[tab || 'general'] || []).some(canAccess);
+  if (pathname === '/configuracion') {
+    if (typeof context?.settingsAccess?.canAccessSection === 'function') {
+      return context.settingsAccess.canAccessSection(tab || 'general');
+    }
+    return (SETTINGS_SECTION_PERMISSIONS[tab || 'general'] || []).some(canAccess);
+  }
   if (pathname === '/productos') {
     if (['add', 'categories', 'ingredients', 'restaurant'].includes(tab)) return canAccess('products');
     if (['batches', 'variants'].includes(tab)) return canAccess('inventory');

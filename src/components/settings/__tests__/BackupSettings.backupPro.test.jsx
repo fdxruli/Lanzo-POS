@@ -3,6 +3,8 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
 
+const access = vi.hoisted(() => ({ isAdmin: false }));
+
 const backupStatus = {
   initialized: true,
   configured: false,
@@ -49,7 +51,8 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
   useSettingsAccess: () => ({
-    canAccessSection: (section) => section === 'backup'
+    canAccessSection: (section) => section === 'backup',
+    isAdmin: access.isAdmin
   }),
   useSettingsActionGuard: () => () => ({ assertCurrent: vi.fn() })
 }));
@@ -78,6 +81,7 @@ describe('BackupSettings copy by license mode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    access.isAdmin = false;
     Object.assign(backupStatus, {
       initialized: true,
       configured: false,
@@ -122,6 +126,26 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.queryByText('Copia local cifrada adicional')).not.toBeNull();
     expect(screen.queryByText('Generar copia local')).not.toBeNull();
     expect(screen.queryByText('Respaldar ahora')).toBeNull();
-    expect(screen.queryByText(/cache de este dispositivo/i)).not.toBeNull();
+    expect(screen.queryByText(/cache de este dispositivo/i)).toBeNull();
+  });
+
+  it('keeps destructive restore controls unavailable to Staff with backup access', () => {
+    backupStatus.configured = true;
+    access.isAdmin = false;
+
+    render(<BackupSettings isCloudLicense />);
+
+    expect(screen.getByText('Generar copia local')).toBeInTheDocument();
+    expect(screen.queryByText('Restaurar respaldo')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restaurar' })).not.toBeInTheDocument();
+  });
+
+  it('keeps restore available for an authorized Admin', () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+
+    render(<BackupSettings isCloudLicense />);
+
+    expect(screen.getByText('Restaurar respaldo')).toBeInTheDocument();
   });
 });
