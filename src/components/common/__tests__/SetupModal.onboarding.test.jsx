@@ -423,7 +423,8 @@ describe('integrated owner onboarding', () => {
     await start();
     business();
     await continueIntegratedOwner();
-    mocks.actorGranted = false;
+    // Invalidate the actual authenticated actor, not just the old boolean mock.
+    mocks.lockActor('onboarding_fixture_test_invalidation');
 
     await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
@@ -439,7 +440,9 @@ describe('integrated owner onboarding', () => {
       currentAdminUser: { id: 'existing' },
       currentDeviceRole: 'admin'
     }));
-    mocks.actorGranted = true;
+    // Restore the real actor session for this already-enrolled owner.
+    mocks.beginAuth('admin');
+    await mocks.grant({ actorType: 'admin', actor: { id: 'existing' } });
 
     business();
 
