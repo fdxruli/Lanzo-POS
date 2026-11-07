@@ -362,6 +362,8 @@ function App() {
           <SetupModal key={licenseDetails?.license_key} />
         </ErrorBoundary>
       );
+    case 'admin_initial_setup_required':
+      return <ErrorBoundary><AdminEnrollmentModal requiresInvitation /></ErrorBoundary>;
     case 'setup_required':
       return (
         <ErrorBoundary>

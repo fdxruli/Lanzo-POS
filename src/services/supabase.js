@@ -805,6 +805,15 @@ export const activateLicense = async function (licenseKey, options = {}) {
             };
         }
 
+        if (data?.code === 'ADMIN_INITIAL_SETUP_REQUIRED') {
+            return {
+                valid: false,
+                initial_setup_required: true,
+                code: data.code,
+                message: data.message || 'Esta licencia necesita su primera configuración con el código entregado por LANZO.'
+            };
+        }
+
         await registerFailedAttempt();
         return {
             valid: false,
@@ -2241,23 +2250,40 @@ export const enrollAdminOwnerOnDevice = async ({
     username,
     password,
     displayName,
+    invitationCode = null,
     beforeLocalPersistence = null
 }) => {
     try {
         if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para crear la cuenta propietaria.' };
-        const [deviceFingerprint, deviceSecurityToken] = await Promise.all([
-            getStableDeviceId(),
-            getDeviceSecurityToken()
-        ]);
-        if (!deviceSecurityToken) return { success: false, code: 'DEVICE_TOKEN_REQUIRED', message: 'No se pudo confirmar este dispositivo.' };
-        const { data, error } = await callAdminAuthRpc('admin_enroll_owner_on_device', {
-            p_license_key: licenseKey,
-            p_device_fingerprint: deviceFingerprint,
-            p_device_security_token: deviceSecurityToken,
-            p_username: username.trim(),
-            p_password: password,
-            p_display_name: displayName.trim()
-        });
+        const deviceFingerprint = await getStableDeviceId();
+        let rpcName;
+        let rpcArgs;
+        if (invitationCode) {
+            rpcName = 'admin_enroll_owner_with_invitation';
+            rpcArgs = {
+                p_license_key: licenseKey,
+                p_invitation_code: invitationCode.trim(),
+                p_device_fingerprint: deviceFingerprint,
+                p_device_name: getFriendlyDeviceName(navigator.userAgent),
+                p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform },
+                p_username: username.trim(),
+                p_password: password,
+                p_display_name: displayName.trim()
+            };
+        } else {
+            const deviceSecurityToken = await getDeviceSecurityToken();
+            if (!deviceSecurityToken) return { success: false, code: 'DEVICE_TOKEN_REQUIRED', message: 'No se pudo confirmar este dispositivo.' };
+            rpcName = 'admin_enroll_owner_on_device';
+            rpcArgs = {
+                p_license_key: licenseKey,
+                p_device_fingerprint: deviceFingerprint,
+                p_device_security_token: deviceSecurityToken,
+                p_username: username.trim(),
+                p_password: password,
+                p_display_name: displayName.trim()
+            };
+        }
+        const { data, error } = await callAdminAuthRpc(rpcName, rpcArgs);
         if (error) throw error;
         return await buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {

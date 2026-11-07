@@ -1,0 +1,52 @@
+name: License admin onboarding
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/App.jsx'
+      - 'src/components/common/AdminEnrollmentModal.jsx'
+      - 'src/components/common/__tests__/AdminEnrollmentModal.initialSetup.test.jsx'
+      - 'src/services/supabase.js'
+      - 'src/store/slices/license/licenseActivationActions.js'
+      - 'src/store/slices/license/licenseAdminActions.js'
+      - 'supabase/migrations/20261107152500_license_admin_initial_owner_onboarding_v1.sql'
+      - 'supabase/tests/fixtures/license-admin-onboarding.sql'
+      - 'scripts/supabase/license-admin-onboarding.node-test.mjs'
+      - '.github/workflows/license-admin-onboarding.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-onboarding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - name: PostgreSQL issuance, consumption, concurrency and rollback
+        run: node --test scripts/supabase/license-admin-onboarding.node-test.mjs
+        env:
+          ONBOARDING_TEST_PGURL: postgresql://postgres@127.0.0.1:55432/postgres
+      - name: First setup UI regression
+        run: npx vitest run --maxWorkers=2 src/components/common/__tests__/AdminEnrollmentModal.initialSetup.test.jsx
+      - name: Frontend build and offline precache checks
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://onboarding-qa.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-public-key

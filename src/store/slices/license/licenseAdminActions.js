@@ -688,6 +688,23 @@ export const createLicenseAdminActions = ({ set, get }) => {
       });
       return { success: false, enrollmentRequired: true };
     }
+    if (result.initial_setup_required) {
+      lockActorRuntime('admin_initial_setup_required');
+      set({
+        appStatus: 'admin_initial_setup_required',
+        ownerEnrollmentContext: null,
+        licenseDetails: { ...discoveredLicense, valid: false, device_role: 'admin' },
+        currentDeviceRole: 'admin',
+        currentAdminUser: null,
+        currentStaffUser: null,
+        adminLoginLicenseKey: licenseKey,
+        adminLoginMessage: result.message || 'Configura la cuenta propietaria con el código entregado por LANZO.',
+        adminLoginError: null,
+        adminEnrollmentRequired: false,
+        pendingAdminSessionResult: null
+      });
+      return { success: false, initialSetupRequired: true };
+    }
     if (result.access_choice_required) {
       await get()._requireAdminLogin(discoveredLicense, result);
       return { success: false, adminLoginRequired: true };
@@ -965,7 +982,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
     }
   },
 
-  handleAdminEnrollment: async ({ username, password, displayName }) => {
+  handleAdminEnrollment: async ({ username, password, displayName, invitationCode = null }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
     let attempt;
     try {
@@ -980,6 +997,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
         username,
         password,
         displayName,
+        invitationCode,
         beforeLocalPersistence: async (tenantSource) => {
           attempt.assertCurrent();
           await assertLocalTenantAccess(tenantSource, { reason: 'admin_enrollment_before_local_persistence' });
@@ -993,7 +1011,14 @@ export const createLicenseAdminActions = ({ set, get }) => {
         set({ adminLoginError: { code: result.code, message: result.message } });
         return { ...result, success: false };
       }
-      return await completeAdminSession(set, get, licenseKey, result, 'admin_enrollment', attempt);
+      return await completeAdminSession(
+        set,
+        get,
+        licenseKey,
+        result,
+        invitationCode ? 'admin_initial_owner_enrollment' : 'admin_enrollment',
+        attempt
+      );
     } catch (error) {
       if (attempt) {
         try { attempt.assertCurrent(); } catch {
