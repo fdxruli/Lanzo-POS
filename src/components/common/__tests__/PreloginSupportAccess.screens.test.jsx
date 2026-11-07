@@ -152,7 +152,7 @@ describe('welcome support as modal', () => {
     render(<WelcomeModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
     const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
-    fireEvent.cancel(dialog);
+    fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true }));
     expect(screen.queryByRole('dialog', { name: 'Soporte LANZO' })).not.toBeInTheDocument();
     noMutations();
   });
