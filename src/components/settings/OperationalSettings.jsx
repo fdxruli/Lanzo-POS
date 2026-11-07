@@ -7,6 +7,8 @@ import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js'
 import { isCloudCashSyncEnabled } from '../../services/sync/syncConstants.js';
 import { getNotificationCapabilities } from '../../services/notifications/notificationCapabilities.js';
 import { useAppStore } from '../../store/useAppStore';
+import { useSettingsAccess, useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
+import NoPermission from '../common/NoPermission';
 
 function SettingsSwitch({ checked, disabled = false, warning = false, onChange, ariaLabel }) {
   return (
@@ -26,6 +28,13 @@ function SettingsSwitch({ checked, disabled = false, warning = false, onChange, 
 }
 
 export default function OperationalSettings() {
+  const settingsAccess = useSettingsAccess();
+  if (!settingsAccess.canAccessSection('controls')) return <NoPermission />;
+  return <OperationalSettingsContent />;
+}
+
+function OperationalSettingsContent() {
+  const captureSettingsAction = useSettingsActionGuard();
   const consolePreference = useSyncExternalStore(subscribeDevConsolePreference, getDevConsolePreference, getDevConsolePreference);
   const showTicker = useAppStore((state) => state.showTicker);
   const setShowTicker = useAppStore((state) => state.setShowTicker);
@@ -71,6 +80,15 @@ export default function OperationalSettings() {
             : 'Oculto: la cinta superior se oculta sin cambiar las demás alertas disponibles.'
       );
   const automaticCashOpening = !cloudCashSyncEnabled && cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC;
+  const withControlsPermission = (action) => (event) => {
+    try {
+      const actorHandle = captureSettingsAction('settings_controls');
+      actorHandle.assertCurrent();
+      action(event);
+    } catch {
+      // A permission revocation or actor handoff invalidates the old click.
+    }
+  };
 
   return (
     <div className="company-form-container settings-control-panel">
@@ -97,7 +115,7 @@ export default function OperationalSettings() {
           </div>
           <SettingsSwitch
             checked={!!showTicker}
-            onChange={(event) => setShowTicker(event.target.checked)}
+            onChange={withControlsPermission((event) => setShowTicker(event.target.checked))}
             ariaLabel="Activar ticker de alertas"
           />
         </div>
@@ -117,7 +135,7 @@ export default function OperationalSettings() {
           </div>
           <SettingsSwitch
             checked={!!showAssistantBot}
-            onChange={(event) => setShowAssistantBot(event.target.checked)}
+            onChange={withControlsPermission((event) => setShowAssistantBot(event.target.checked))}
             ariaLabel="Activar Lanzo Bot"
           />
         </div>
@@ -137,7 +155,7 @@ export default function OperationalSettings() {
           <SettingsSwitch
             checked={consolePreference.enabled}
             disabled={!consolePreference.authorized}
-            onChange={event => setDevConsoleVisible(event.target.checked)}
+            onChange={withControlsPermission((event) => setDevConsoleVisible(event.target.checked))}
             ariaLabel="Activar consola de diagnóstico"
           />
         </div>
@@ -169,10 +187,10 @@ export default function OperationalSettings() {
           <SettingsSwitch
             checked={!!enableMultipleOrders}
             disabled={multipleOrdersLocked}
-            onChange={(event) => {
+            onChange={withControlsPermission((event) => {
               if (!event.target.checked && hasMultipleActiveOrders) return;
               setEnableMultipleOrders(event.target.checked);
-            }}
+            })}
             ariaLabel="Activar multiples ventas"
           />
         </div>
@@ -204,14 +222,14 @@ export default function OperationalSettings() {
             checked={automaticCashOpening}
             disabled={cloudCashSyncEnabled}
             warning={automaticCashOpening}
-            onChange={(event) => {
+            onChange={withControlsPermission((event) => {
               if (cloudCashSyncEnabled) return;
               setCashOpeningPolicy(
                 event.target.checked
                   ? CASH_OPENING_POLICY.AUTOMATIC
                   : CASH_OPENING_POLICY.MANUAL
               );
-            }}
+            })}
             ariaLabel="Permitir autoapertura de caja"
           />
         </div>

@@ -5,11 +5,12 @@ import {
   getLicenseKeyFromDetails,
   isPreparationStationsEnabled
 } from '../../services/sync/syncConstants';
+import { useSettingsAccess, useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
 
 export function usePreparationStations({ includeInactive = false, autoLoad = true } = {}) {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const canAccess = useAppStore((state) => state.canAccess);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const settingsAccess = useSettingsAccess();
+  const captureSettingsAction = useSettingsActionGuard();
 
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const isDynamicStationsEnabled = Boolean(
@@ -17,7 +18,9 @@ export function usePreparationStations({ includeInactive = false, autoLoad = tru
     licenseDetails.valid !== false &&
     isPreparationStationsEnabled(licenseDetails)
   );
-  const hasManagePermission = currentDeviceRole !== 'staff' || canAccess('settings') || canAccess('products');
+  const hasManagePermission = settingsAccess.isAdmin
+    || settingsAccess.canAccessPermission('settings_controls')
+    || settingsAccess.canAccessPermission('products');
   const canManageStations = isDynamicStationsEnabled && hasManagePermission;
 
   const [stations, setStations] = useState(() => preparationStationsRepository.getFallbackPreparationStations());
@@ -60,24 +63,33 @@ export function usePreparationStations({ includeInactive = false, autoLoad = tru
     return active.length > 0 ? active : preparationStationsRepository.getFallbackPreparationStations();
   }, [stations]);
 
-  const assertCanManage = useCallback(() => {
+  const captureManagementAction = useCallback(() => {
     if (!canManageStations) {
       throw new Error('Tu plan o permisos actuales no permiten gestionar areas de preparacion.');
     }
-  }, [canManageStations]);
+    const permission = settingsAccess.isAdmin
+      || settingsAccess.canAccessPermission('settings_controls')
+      ? 'settings_controls'
+      : 'products';
+    const actorHandle = captureSettingsAction(permission);
+    actorHandle.assertCurrent(permission);
+    return { actorHandle, permission };
+  }, [canManageStations, captureSettingsAction, settingsAccess]);
 
   const createStation = useCallback(async ({ name }) => {
-    assertCanManage();
+    const { actorHandle, permission } = captureManagementAction();
     const response = await preparationStationsRepository.upsertPreparationStation({
       licenseKey,
       station: { name }
     });
+    actorHandle.assertCurrent(permission);
     await refreshStations({ force: true });
+    actorHandle.assertCurrent(permission);
     return response;
-  }, [assertCanManage, licenseKey, refreshStations]);
+  }, [captureManagementAction, licenseKey, refreshStations]);
 
   const updateStation = useCallback(async (station, updates = {}) => {
-    assertCanManage();
+    const { actorHandle, permission } = captureManagementAction();
     const response = await preparationStationsRepository.upsertPreparationStation({
       licenseKey,
       station: {
@@ -87,21 +99,25 @@ export function usePreparationStations({ includeInactive = false, autoLoad = tru
       },
       expectedVersion: station.serverVersion || null
     });
+    actorHandle.assertCurrent(permission);
     await refreshStations({ force: true });
+    actorHandle.assertCurrent(permission);
     return response;
-  }, [assertCanManage, licenseKey, refreshStations]);
+  }, [captureManagementAction, licenseKey, refreshStations]);
 
   const toggleStation = useCallback(async (station, isActive) => {
-    assertCanManage();
+    const { actorHandle, permission } = captureManagementAction();
     const response = await preparationStationsRepository.togglePreparationStation({
       licenseKey,
       stationId: station.id,
       isActive,
       expectedVersion: station.serverVersion || null
     });
+    actorHandle.assertCurrent(permission);
     await refreshStations({ force: true });
+    actorHandle.assertCurrent(permission);
     return response;
-  }, [assertCanManage, licenseKey, refreshStations]);
+  }, [captureManagementAction, licenseKey, refreshStations]);
 
   return {
     stations,

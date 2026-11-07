@@ -5,7 +5,10 @@ import {
   ActorRuntimeError,
   actorRuntimeController
 } from './actorRuntimeController';
-import { evaluateSettingsAccess } from './settingsAccessPolicy';
+import {
+  evaluateSettingsAccess,
+  SETTINGS_LEGACY_PERMISSION_FALLBACKS
+} from './settingsAccessPolicy';
 import { readActorAccess } from './actorAccessPolicy';
 import { useActorAccess } from './useActorAccess';
 
@@ -44,7 +47,12 @@ export const useSettingsActionGuard = () => {
       });
     }
 
-    const runtimeHandle = actorRuntimeController.capture(permission);
+    const runtimePermissions = access.runtimeSnapshot?.permissions || [];
+    const runtimePermission = [
+      permission,
+      ...(SETTINGS_LEGACY_PERMISSION_FALLBACKS[permission] || [])
+    ].find((candidate) => runtimePermissions.includes(candidate)) || permission;
+    const runtimeHandle = actorRuntimeController.capture(runtimePermission);
     if (
       runtimeHandle.actorKey !== access.actorKey
       || runtimeHandle.generation !== access.generation
@@ -53,7 +61,7 @@ export const useSettingsActionGuard = () => {
     }
 
     const assertCurrent = (requiredPermission = permission) => {
-      const runtime = runtimeHandle.assertCurrent(requiredPermission);
+      const runtime = runtimeHandle.assertCurrent(runtimePermission);
       const currentAccess = readCurrentSettingsAccess(import.meta.env.DEV);
       if (
         !currentAccess.isAuthorizedActor

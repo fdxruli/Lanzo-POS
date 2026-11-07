@@ -27,6 +27,13 @@ vi.mock('../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: selector =>
 vi.mock('../../hooks/useFeatureConfig', () => ({ useFeatureConfig: () => ({ hasTables: false }) }));
 vi.mock('../diagnostics/incidentEventCenter', () => ({ captureAsyncIncidentNotice: vi.fn() }));
 
+// This suite exercises diagnostic preference persistence, not Settings routing.
+// The real actor-scoped storage and diagnostic authority remain in use.
+vi.mock('../auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => ({ canAccessSection: (section) => section === 'controls' }),
+  useSettingsActionGuard: () => () => ({ assertCurrent: () => true })
+}));
+
 const mountActor = async (id = 'a', permissions = ['settings']) => {
   invalidateActorScopedStorage();
   actorRuntimeController.lock();
@@ -41,7 +48,11 @@ beforeEach(async () => {
   localStorage.clear();
   mocks.storeAuthorized = true;
   mocks.tenant = { ...mocks.tenant, opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', generation: 1 };
-  installDevConsolePreferences({ canAccessSettings: () => mocks.storeAuthorized });
+  installDevConsolePreferences({
+    canAccessSettings: (actor) => mocks.storeAuthorized && actor.permissions.some((permission) => (
+      permission === 'settings_controls' || permission === 'settings'
+    ))
+  });
   await mountActor();
 });
 afterEach(() => {

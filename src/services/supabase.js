@@ -414,7 +414,7 @@ const getActorSessionCredentialForHandle = async (actorHandle) => {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
     }
 
-    actorHandle.assertCurrent('settings');
+    actorHandle.assertCurrent('settings_data');
 
     const [adminToken, adminSessionId, staffToken, staffSessionId] = await Promise.all([
         loadData(STORES.SYNC_CACHE, ADMIN_SESSION_TOKEN_KEY),
@@ -451,7 +451,7 @@ const getActorSessionCredentialForHandle = async (actorHandle) => {
         });
     }
 
-    actorHandle.assertCurrent('settings');
+    actorHandle.assertCurrent('settings_data');
     return selected.token;
 };
 
@@ -1645,7 +1645,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
             business_type: businessType
         };
 
-        actorHandle.assertCurrent('settings');
+        actorHandle.assertCurrent('settings_data');
 
         const { data, error } = await supabaseClient.rpc(
             'save_business_profile_secure',
@@ -1659,7 +1659,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
         );
 
         if (error) throw error;
-        actorHandle.assertCurrent('settings');
+        actorHandle.assertCurrent('settings_data');
 
         if (!data?.success) {
             Logger.warn('[BusinessProfile] Guardado seguro rechazado:', data);

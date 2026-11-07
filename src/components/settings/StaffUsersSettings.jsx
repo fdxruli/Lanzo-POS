@@ -32,9 +32,13 @@ const PERMISSION_LABELS = {
   notifications_system: 'Mensajes de sistema',
   support_center: 'Soporte Lanzo',
   ai_agents: 'Agentes IA',
-  settings: 'Configuracion',
+  settings: 'Configuracion (compatibilidad)',
+  settings_data: 'Datos y Apariencia',
+  settings_controls: 'Controles',
+  settings_maintenance: 'Datos y Mantenimiento',
+  settings_backup: 'Respaldos',
   devices: 'Dispositivos',
-  license: 'Licencia',
+  license: 'Licencia y Rubros',
   inventory: 'Inventario',
   cash_register: 'Caja',
   discounts: 'Descuentos',
@@ -51,10 +55,26 @@ const PERMISSION_DESCRIPTIONS = {
   notifications_inventory: 'Alertas de stock bajo, productos agotados, vencimientos y productos próximos a caducar.',
   notifications_operations: 'Caja, sincronizacion y otras alertas operativas del negocio.',
   notifications_system: 'Mensajes generales de Lanzo que no pertenecen a otra categoria.',
-  support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.'
+  support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.',
+  settings: 'Acceso legado para integraciones que aún usan el permiso general. Las claves de las seis secciones prevalecen cuando están presentes.',
+  settings_data: 'Permite editar los datos y la apariencia del negocio.',
+  settings_controls: 'Permite cambiar los controles operativos y preferencias de este apartado.',
+  settings_maintenance: 'Permite entrar al apartado. Cada rutina conserva además su permiso de sincronización, inventario o reportes.',
+  settings_backup: 'Permite configurar y ejecutar respaldos. La restauración permanece reservada al Administrador.'
 };
 
 const PERMISSION_GROUPS = [
+  {
+    title: 'Configuracion',
+    permissions: [
+      'settings_data',
+      'settings_controls',
+      'license',
+      'devices',
+      'settings_maintenance',
+      'settings_backup'
+    ]
+  },
   {
     title: 'Operacion',
     permissions: [
@@ -64,8 +84,6 @@ const PERMISSION_GROUPS = [
       'customers',
       'reports',
       'settings',
-      'devices',
-      'license',
       'inventory',
       'cash_register',
       'discounts',
@@ -92,6 +110,13 @@ const getPermissionGroupTitle = (permission) => PERMISSION_GROUPS.find((group) =
 const EMPTY_PERMISSIONS = Object.fromEntries(
   Object.keys(PERMISSION_LABELS).map((permission) => [permission, false])
 );
+
+const GRANULAR_SETTINGS_PERMISSIONS = [
+  'settings_data',
+  'settings_controls',
+  'settings_maintenance',
+  'settings_backup'
+];
 
 const ROLE_LABELS = {
   staff: 'Personal',
@@ -149,10 +174,26 @@ const ROLE_OPTIONS = ['staff', 'cashier', 'waiter', 'supervisor', 'custom'];
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 const normalizePermissions = (permissions = {}) => {
+  const permissionRecord = Array.isArray(permissions)
+    ? Object.fromEntries(permissions
+      .filter((permission) => typeof permission === 'string')
+      .map((permission) => [permission, true]))
+    : permissions;
   const normalized = {
     ...EMPTY_PERMISSIONS,
-    ...permissions
+    ...permissionRecord
   };
+
+  // Rows from before section-level access existed keep the same grants. Once
+  // any granular key is explicit, absent section keys stay off and no legacy
+  // broad permission can restore one the Admin disabled.
+  if (!GRANULAR_SETTINGS_PERMISSIONS.some((permission) => hasOwn(permissionRecord, permission))) {
+    normalized.settings_data = permissionRecord?.settings === true;
+    normalized.settings_controls = permissionRecord?.settings === true;
+    normalized.settings_maintenance = permissionRecord?.sync === true
+      || permissionRecord?.inventory === true;
+    normalized.settings_backup = permissionRecord?.sync === true;
+  }
 
   // Compatibility for staff created before category-level notification flags.
   // Inventory inherited Operations before Phase 5, so preserve that exact

@@ -88,7 +88,8 @@ function CardHeading({ Icon, eyebrow, title, description }) {
 function LocalBackupSettings({
   backupContext,
   captureSettingsAction,
-  isCloudLicense = false
+  isCloudLicense = false,
+  isAdmin = false
 }) {
   const { status, backupManager } = backupContext;
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
@@ -128,16 +129,16 @@ function LocalBackupSettings({
     setError('');
     let actorHandle = existingHandle;
     try {
-      actorHandle ||= captureSettingsAction('sync');
-      actorHandle.assertCurrent('sync');
+      actorHandle ||= captureSettingsAction('settings_backup');
+      actorHandle.assertCurrent('settings_backup');
       const result = await action(actorHandle);
-      actorHandle.assertCurrent('sync');
+      actorHandle.assertCurrent('settings_backup');
       if (successMessage) toast.success(successMessage);
       return result;
     } catch (actionError) {
       if (!actorHandle) return null;
       try {
-        actorHandle.assertCurrent('sync');
+        actorHandle.assertCurrent('settings_backup');
       } catch {
         return null;
       }
@@ -198,7 +199,7 @@ function LocalBackupSettings({
 
     let actorHandle;
     try {
-      actorHandle = captureSettingsAction('sync');
+      actorHandle = captureSettingsAction('settings_backup');
     } catch {
       return;
     }
@@ -226,7 +227,7 @@ function LocalBackupSettings({
           if (!(result.blob instanceof Blob)) {
             throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
           }
-          currentActorHandle.assertCurrent('sync');
+          currentActorHandle.assertCurrent('settings_backup');
           await googleDriveService.uploadBackup(
             driveAccessToken,
             result.blob,
@@ -262,7 +263,7 @@ function LocalBackupSettings({
     if (!restoreFile || !restorePin) return;
     let actorHandle;
     try {
-      actorHandle = captureSettingsAction('sync');
+      actorHandle = captureSettingsAction('settings_backup', { adminOnly: true });
     } catch {
       return;
     }
@@ -277,7 +278,7 @@ function LocalBackupSettings({
     if (!confirmed) return;
 
     try {
-      actorHandle.assertCurrent('sync');
+      actorHandle.assertCurrent('settings_backup');
     } catch {
       return;
     }
@@ -455,7 +456,7 @@ function LocalBackupSettings({
         </button>
       </div>
 
-      <div className="backup-settings-danger">
+      {isAdmin && <div className="backup-settings-danger">
         <div className="backup-danger-heading">
           <span className="backup-danger-icon" aria-hidden="true"><RotateCcw size={17} /></span>
           <div>
@@ -486,7 +487,7 @@ function LocalBackupSettings({
             Cancelar restauracion
           </button>
         )}
-      </div>
+      </div>}
 
       {status.supported && (
         <div className="backup-settings-danger">
@@ -516,12 +517,15 @@ function LocalBackupSettings({
 }
 
 export default function BackupSettings({ isCloudLicense = false }) {
+  const settingsAccess = useSettingsAccess();
+  if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
+  return <BackupSettingsContent isCloudLicense={isCloudLicense} settingsAccess={settingsAccess} />;
+}
+
+function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
   const backupContext = useBackupManager();
   const { status } = backupContext;
-  const settingsAccess = useSettingsAccess();
   const captureSettingsAction = useSettingsActionGuard();
-
-  if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
 
   return (
     <div className="backup-settings-shell">
@@ -541,6 +545,7 @@ export default function BackupSettings({ isCloudLicense = false }) {
             backupContext={backupContext}
             captureSettingsAction={captureSettingsAction}
             isCloudLicense={isCloudLicense}
+            isAdmin={settingsAccess.isAdmin}
           />
         </div>
       </section>

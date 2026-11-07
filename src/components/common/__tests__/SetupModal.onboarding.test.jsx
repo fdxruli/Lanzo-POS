@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   fetchAcceptedLegalDocument: vi.fn(), fetchLegalPolicyPreview: vi.fn(),
   fetchLegalPolicyState: vi.fn(), isLegalPolicyPreviewEnabled: vi.fn(),
   actorGranted: false, events: [],
-  grant: vi.fn(), assertCurrent: vi.fn(),
+  grant: vi.fn(), beginAuth: vi.fn(), lockActor: vi.fn(),
 }));
 
 vi.mock('../../../store/useAppStore', async () => {
@@ -44,21 +44,11 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
   initializeLocalTenantGuard: vi.fn(), isLocalTenantAccessError: () => false, lockLocalTenantAccess: vi.fn(),
 }));
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
-  beginActorRuntimeAuthentication: () => { mocks.actorGranted = false; },
+  beginActorRuntimeAuthentication: mocks.beginAuth,
   grantAuthenticatedActorRuntime: mocks.grant,
   assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
-  lockActorRuntime: () => { mocks.actorGranted = false; },
+  lockActorRuntime: mocks.lockActor,
 }));
-vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
-  const actual = await importOriginal();
-  return { ...actual, actorRuntimeController: {
-    getState: () => ({ status: mocks.actorGranted ? 'granted' : 'locked', generation: 0 }),
-    capture: () => {
-      if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
-      return { actorType: 'admin', actorId: 'owner-1', assertCurrent: mocks.assertCurrent };
-    }
-  } };
-});
 vi.mock('../../../services/storage/imageUploadService', () => ({
   IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' }, uploadImageFile: vi.fn(),
 }));
@@ -66,6 +56,7 @@ vi.mock('../../../services/utils', () => ({ compressImage: vi.fn(), showMessageM
 vi.mock('../../../services/backup/backupManager', () => ({ backupManager: { configure: mocks.configureBackup } }));
 vi.mock('../LazyImage', () => ({ default: () => null }));
 
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { useAppStore } from '../../../store/useAppStore';
 import { createLicenseActivationActions } from '../../../store/slices/license/licenseActivationActions';
 import { createLicenseAdminActions } from '../../../store/slices/license/licenseAdminActions';
@@ -127,13 +118,26 @@ beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
   mocks.events = [];
+  actorRuntimeController.lock('onboarding_fixture_reset');
   mocks.actorGranted = false;
-  mocks.grant.mockImplementation(async () => {
+  mocks.beginAuth.mockImplementation((actorType) => {
+    mocks.actorGranted = false;
+    actorRuntimeController.beginAuthentication({ actorType });
+  });
+  mocks.lockActor.mockImplementation((reason) => {
+    mocks.actorGranted = false;
+    actorRuntimeController.lock(reason);
+  });
+  mocks.grant.mockImplementation(async ({ actorType, actor }) => {
+    actorRuntimeController.grant({
+      actorType,
+      actorId: actor.id,
+      sessionId: 'onboarding-owner-session',
+      tenantOpaqueId: 'onboarding-fixture',
+      authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    });
     mocks.actorGranted = true;
     mocks.events.push('actor');
-  });
-  mocks.assertCurrent.mockImplementation(() => {
-    if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_STALE');
   });
   mocks.createFreeTrial.mockResolvedValue({
     success: true,
@@ -419,7 +423,8 @@ describe('integrated owner onboarding', () => {
     await start();
     business();
     await continueIntegratedOwner();
-    mocks.actorGranted = false;
+    // Invalidate the actual authenticated actor, not just the old boolean mock.
+    mocks.lockActor('onboarding_fixture_test_invalidation');
 
     await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
@@ -435,7 +440,9 @@ describe('integrated owner onboarding', () => {
       currentAdminUser: { id: 'existing' },
       currentDeviceRole: 'admin'
     }));
-    mocks.actorGranted = true;
+    // Restore the real actor session for this already-enrolled owner.
+    mocks.beginAuth('admin');
+    await mocks.grant({ actorType: 'admin', actor: { id: 'existing' } });
 
     business();
 
