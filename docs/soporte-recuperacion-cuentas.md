@@ -69,7 +69,12 @@ la recuperación excepcional permanece bloqueada.
 Ejecutar 01 cambiando únicamente `BUSQUEDA` por una licencia exacta, UUID interno,
 parte del nombre (mínimo tres caracteres) o correo completo. Las búsquedas no
 interpretan `%` y `_` como comodines. Devuelve hasta 50 filas; refinar si es necesario.
-No pegar contraseñas, tokens o códigos en la búsqueda.
+No pegar contraseñas, tokens o códigos en la búsqueda. También busca correos históricos
+con verificación consumida y correos de suscripción registrados. Encontrar una cuenta
+por un contacto anterior no vuelve a autorizarlo: `recovery_email` siempre muestra
+el contacto vigente y 03 solo entrega allí. Revisar historial/suscripciones en 02
+para explicar una coincidencia histórica; nunca enviar al correo de búsqueda por
+el simple hecho de haber localizado una cuenta.
 
 | Campo | Uso |
 |---|---|

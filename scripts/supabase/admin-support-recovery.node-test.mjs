@@ -432,3 +432,19 @@ test('V2 evidence-free security freeze cannot become account recovery, invalidat
   assert.equal(action(r.case_id,'cancel').success,true);
   assert.equal(json(openSql(f)).success,true);
 });
+
+test('V2 discovery finds previous verified mailboxes and unverified subscription mail without changing delivery authority', () => {
+  const f=verifiedFixture(); const enrollment=request(f);
+  // A prior valid contact-verification record is historical context, not current delivery authority.
+  sql(`insert into private.admin_recovery_challenges(license_id,admin_user_id,purpose,email,request_session_id,consumed_at)
+    values (${quote(f.license)},${quote(f.owner)},'contact','previous@example.com',${quote(f.session)},now());
+    insert into public.subscriptions values(${quote(f.license)},'TEST','TEST historical reference','billing@example.com','inactive');`);
+  assert.equal(enrollment.code,'RECOVERY_CONTACT_ALREADY_VERIFIED');
+  for(const search of ['previous@example.com','billing@example.com']) {
+    const found=json(`select jsonb_agg(a) from private.support_find_recovery_accounts(${quote(search)}) a;`);
+    assert.equal(found[0].license_id,f.license); assert.equal(found[0].recovery_email,f.email);
+    const template=readFileSync(new URL('../support/account-recovery/01-buscar.sql',import.meta.url),'utf8').replace('BUSQUEDA',search);
+    assert.ok(sql(template).includes(f.license));
+  }
+  assert.equal(issue(f).delivery_email,f.email);
+});

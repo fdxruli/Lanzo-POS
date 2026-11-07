@@ -32,6 +32,8 @@ y ejecutar el recorrido manual del manual. No se declara cumplida la entrega ope
 
 ## 3. Decisiones técnicas
 
+- Búsqueda por contacto vigente, correo verificado anterior o correo histórico de
+  licencia/suscripción; encontrar por historia no habilita entrega a ese buzón.
 - Reutiliza contactos, desafíos, auditoría, criptografía, bloqueo de licencia y canje
   V1. No reemplaza autenticación ni implementa otro sistema de propietarios.
 - Un expediente privado por licencia activa simplifica selección y concurrencia.
@@ -64,7 +66,7 @@ y ejecutar el recorrido manual del manual. No se declara cumplida la entrega ope
 
 - Archivo: `supabase/migrations/20261107004310_account_recovery_support_v2.sql`.
 - Versión: **`20261107004310`**, creada mediante CLI de Supabase.
-- SHA-256: **`06e1d5e80306a60b917ca171b15e74757fa1c6da8938abe8c75cdb29b8f64483`**.
+- SHA-256: **`c602268d7872ea5d9d49b0825599fb68a65adc5959215588cad3d72f9c9b3a60`**.
 - Alcance: una tabla privada de casos y cinco índices; `case_id` e índice en auditoría;
   dos propósitos adicionales de desafío; siete helpers privados y una RPC nuevos.
   Actualiza emisor/verificador V1 con guard de casos y status con campo aditivo.
@@ -108,14 +110,18 @@ facultad administrativa confiada; no pretende proteger contra un DBA malicioso.
 
 ## 7. Pruebas y límites
 
-- **27/27 PostgreSQL 17.6 real local:** V1, FREE/PRO, cambio C/D, excepción E/F,
+- **27/27 PostgreSQL 17.6 real local**, más cuatro pruebas focalizadas finales de
+  búsqueda/ACL (una nueva): **28 pruebas únicas cubiertas**. Cobertura: V1, FREE/PRO, cambio C/D, excepción E/F,
   rechazo de evidencia, propietarios ausentes, aislamiento, códigos incorrectos,
   vencimiento, cinco intentos, reemisión, límites, casos simultáneos, canjes concurrentes,
   doble cierre idempotente, rollback por fallo de auditoría, ACL y Staff,
   sesión caducada, contacto cambiado, licencias suspendidas/vencidas y bloqueo preventivo.
-- **165 pruebas en nueve suites UI/transporte/autoridad/offline aprobadas**; tras ajuste
-  final, las seis pruebas de Recuperación volvieron a aprobarse. Total de pruebas
-  únicas cubiertas: **166**, sin contar dos veces la suite repetida.
+- **166/166 pruebas de nueve suites UI/transporte/autoridad/offline aprobadas en CI**.
+  Las seis pruebas de Recuperación también se ejecutaron localmente tras su ajuste final.
+- CI focalizada del código inicial y del commit documental posterior: aprobada
+  (PostgreSQL, UI/transporte/offline, build y precaché). El ajuste SQL final amplía
+  únicamente búsqueda histórica; sus cuatro pruebas locales pasaron. Consultar CI
+  del HEAD final para confirmar su ejecución completa.
 - ESLint de cuatro archivos JS/JSX modificados; build y verificaciones de precaché: aprobados.
 - HTTP autenticado del Preview: HTML LANZO 200 y bundle 200. Bundle contiene
   `https://odlrhijtfyavryeqivaa.supabase.co`. No se modificó Deployment Protection.
@@ -138,12 +144,14 @@ El runner rechaza hosts remotos y crea/elimina una base temporal propia.
 
 - Rama única: `feat/account-recovery-support-v2`.
 - PR único: [#410 — Draft](https://github.com/fdxruli/Lanzo-POS/pull/410).
-- Commit de implementación probado y desplegado en Preview:
+- Commit inicial de implementación probado y desplegado en Preview:
   `5a8e63688f38e2c86ac64c605a0f259b431b37f9`.
-- Este informe se añade en un commit documental posterior. El HEAD de empaquetado
-  exacto se obtiene del PR; no cambia el SQL ni el código probado.
-- Sin merge ni force push. CI remoto aún en ejecución al redactar este informe;
-  consultar checks de #410 para resultado final del HEAD. No se despachó migración.
+- La revisión final añade búsqueda por contactos históricos/suscripción, prueba
+  focalizada y este informe con el SHA SQL definitivo. El HEAD exacto se obtiene
+  del PR; el hash del punto 5 identifica el SQL candidato final.
+- Sin merge ni force push. Las CI iniciales focalizadas aprobaron; los checks
+  globales y la ejecución completa del HEAD deben consultarse en #410.
+  No se despachó ninguna migración.
 
 ## 9. Vercel
 

@@ -316,7 +316,10 @@ language sql stable security invoker set search_path='' as $$
   where char_length(btrim(coalesce(p_search,'')))>=3 and
     (l.id::text=btrim(p_search) or u.id::text=btrim(p_search) or lower(l.license_key)=lower(btrim(p_search))
       or position(lower(btrim(p_search)) in lower(coalesce(b.business_name,l.organization_name,l.product_name,'')))>0
-      or lower(c.email)=lower(btrim(p_search)) or lower(l.owner_email)=lower(btrim(p_search)))
+      or lower(c.email)=lower(btrim(p_search)) or lower(l.owner_email)=lower(btrim(p_search))
+      or exists(select 1 from public.subscriptions sub where sub.license_id=l.id and lower(sub.customer_email)=lower(btrim(p_search)))
+      or exists(select 1 from private.admin_recovery_challenges h where h.license_id=l.id and h.consumed_at is not null
+        and h.purpose in ('contact','replacement_new','replacement_old') and lower(h.email)=lower(btrim(p_search))))
   order by l.id limit 50;
 $$;
 

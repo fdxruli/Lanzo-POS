@@ -15,5 +15,8 @@ cross join input i
 where char_length(i.q)>=3 and
  (l.id::text=i.q or u.id::text=i.q or lower(l.license_key)=lower(i.q)
   or position(lower(i.q) in lower(coalesce(b.business_name,l.organization_name,l.product_name,'')))>0
-  or lower(c.email)=lower(i.q) or lower(l.owner_email)=lower(i.q))
+  or lower(c.email)=lower(i.q) or lower(l.owner_email)=lower(i.q)
+  or exists(select 1 from public.subscriptions sub where sub.license_id=l.id and lower(sub.customer_email)=lower(i.q))
+  or exists(select 1 from private.admin_recovery_challenges h where h.license_id=l.id and h.consumed_at is not null
+    and h.purpose in ('contact','replacement_new','replacement_old') and lower(h.email)=lower(i.q)))
 order by l.id limit 50;
