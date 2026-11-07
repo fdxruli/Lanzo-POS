@@ -30,7 +30,7 @@ La revocación remota se refleja cuando la autoridad normal actualiza el cliente
 
 ## Validación
 
-**Resultados finales locales:** 712 pruebas PASS y 1 fixture visual opcional omitido en la ejecución normal; fixture visual ejecutado por separado, 48 comprobaciones Chromium PASS; lint de los 21 archivos JS/JSX modificados PASS; lint global FAIL (151 errores y 164 advertencias; comparación con main en curso al preparar el informe); build y postbuild PASS; 5 pruebas de alcance CSS PASS. GitHub y Preview: consultar el único PR Draft y el reporte de entrega con el SHA correspondiente. Comandos ejecutados:
+**Resultados finales locales:** 712 pruebas PASS y 1 fixture visual opcional omitido en la ejecución normal; fixture visual ejecutado por separado, 48 comprobaciones Chromium PASS; lint de los 21 archivos JS/JSX modificados PASS; lint global FAIL (151 errores y 164 advertencias; salida idéntica al worktree limpio de main tras normalizar únicamente las rutas absolutas; ver `lint-baseline-comparison.json`); build y postbuild PASS; 5 pruebas de alcance CSS PASS. GitHub y Preview: consultar el único PR Draft y el reporte de entrega con el SHA correspondiente. Comandos ejecutados:
 
 - `npx vitest run ... --maxWorkers=4`: guards comunes, NoPermission, notificaciones, Navbar, pedidos online, IA, aislamiento de Configuración, acceso a mantenimiento/dispositivos, auth, capacidades/servicios de notificaciones y ambos slices.
 - `npm run lint`: FAIL; `git diff --cached --name-only -z -- 'src/**/*.js' 'src/**/*.jsx' | xargs -0 npx eslint`: PASS. La comparación aislada con main usa el mismo `npm run lint` en un worktree limpio.
@@ -42,6 +42,30 @@ La revocación remota se refleja cuando la autoridad normal actualiza el cliente
 Visual: 48 combinaciones, anchos 320/360/393/1280, claro/oscuro, bloqueo normal/POS, denegación Cloud, conexión, carga y vacío. Sin overflow horizontal, botones de acción de 44–89 px, estado compacto, enlaces `hidden` realmente ocultos y tarjeta fuera de la navegación inferior. No equivale a emulación completa de Android. Las comprobaciones de teclado funcionales se ejecutan sobre componentes React en Testing Library; las imágenes son DOM serializado.
 
 Durante la integración fallaron fixtures antiguos sin autoridad confirmada, aserciones del texto sustituido y una expectativa que exponía el error técnico. Se actualizaron a los contratos finales; no se declararon pruebas reales como ejecutadas. Build puede emitir advertencias de anotaciones de dependencias Zod; no son errores de compilación.
+
+## GitHub y Vercel
+
+Único [PR Draft #409](https://github.com/fdxruli/Lanzo-POS/pull/409), rama `fix/access-denied-notifications-ux`. Commit de código verificado: `c9b0362354d1b24e58659362100aa5ad60618997`; las actualizaciones posteriores del informe son exclusivamente documentales.
+
+[Preview del código verificado](https://lanzo-77jw9iju3-fdxrulis-projects.vercel.app/): **READY**, origen Git, entorno Preview. `/build-info.json` respondió HTTP 200 por la conexión autenticada de Vercel y confirmó ese mismo SHA. Deployment Protection requiere la cuenta Vercel autorizada del propietario; no se modificó esa protección. El Preview más reciente y el estado del CI corresponden al HEAD enlazado en el PR.
+
+Al documentar esta evidencia, Vercel y los ocho tests focales de arranque/Dexie estaban en PASS; los workflows de comparación global, ActorRuntime y calidad seguían en ejecución. No se declara CI global verde antes de que concluya.
+
+Para repetir la selección exacta de regresiones locales:
+
+```bash
+npx vitest run --maxWorkers=4 \
+  src/components/common/__tests__/{NoPermission.test.jsx,PermissionRoute.integration.test.jsx,SettingsRoute.test.jsx,SalesReportsRoute.test.jsx} \
+  src/components/notifications/__tests__ \
+  src/store/slices/__tests__/{createNotificationSlice.tenantIsolation.test.js,createNotificationActorStateSlice.test.js} \
+  src/pages/__tests__/SettingsPage.isolation.test.jsx \
+  src/components/settings/__tests__/{MaintenanceSettings.access.test.jsx,DevicesSettings.access.test.jsx} \
+  src/components/layout/__tests__/{Navbar.test.jsx,Navbar.backupPro.test.jsx} \
+  src/components/ecommerce/orders/__tests__/EcommerceOrdersRoute.test.jsx \
+  src/components/ai/__tests__/CommercialAIAgents.test.jsx \
+  src/services/auth/__tests__ src/services/notifications/__tests__ \
+  src/services/__test__/notifications/notificationCapabilities.test.js
+```
 
 ## QA y veredicto
 
