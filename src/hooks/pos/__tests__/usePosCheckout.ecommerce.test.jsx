@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -220,6 +221,7 @@ const initiateCheckout = async (hookResult, options) => {
 };
 
 beforeEach(() => {
+  grantTestActor({ permissions: ['pos'] });
   vi.clearAllMocks();
   mocks.sales.clear();
   mocks.appState = {

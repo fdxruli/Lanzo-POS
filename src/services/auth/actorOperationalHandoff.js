@@ -241,6 +241,32 @@ export const runCheckoutActorOperation = async ({
   return runTrackedActorOperationIfGranted(label, operation);
 };
 
+// Only the identity needed to cancel an unpaid modal survives its component.
+// The captured binding deliberately cannot migrate to a different session.
+export const rememberPrepaymentCheckout = (orderId, checkoutAttemptId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (!ownership) return null;
+  const handle = actorRuntimeController.capture('pos');
+  ownership.handle.assertCurrent('pos');
+  ownership.prepayment = { checkoutAttemptId, handle };
+  return handle;
+};
+
+export const forgetPrepaymentCheckout = (orderId, checkoutAttemptId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  if (ownership?.prepayment?.checkoutAttemptId === checkoutAttemptId) delete ownership.prepayment;
+};
+
+export const recoverPrepaymentCheckout = (orderId) => {
+  const ownership = checkoutOwnership.get(orderId);
+  const attempt = ownership?.prepayment;
+  if (!attempt) return null;
+  attempt.handle.assertCurrent('pos');
+  ownership.handle.assertCurrent('pos');
+  return { orderId, checkoutAttemptId: attempt.checkoutAttemptId,
+    recoveryHandle: attempt.handle, cancellationOnly: true, lockOwnedByCheckout: true, lockReleased: false };
+};
+
 export const rebindActorOperationalOwnership = ({ actorKey, tenant, handle } = {}) => {
   if (!actorKey || !tenant?.opaqueId || !handle || typeof handle.assertCurrent !== 'function') return 0;
   let rebound = 0;
