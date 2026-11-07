@@ -16,14 +16,15 @@ import Logger from '../../services/Logger';
 import PreloginSupportAccess from './PreloginSupportAccess';
 import { mapLicenseActivationResult, mapFreeLicenseCreationResult } from './licenseActivationErrorMapper';
 
-const DESKTOP_LAYOUT_QUERY = '(min-width: 960px)';
+// Show the license form when the viewport is wide or tall enough; compact screens use the accordion.
+const SPACIOUS_LAYOUT_QUERY = '(min-width: 960px) and (min-height: 640px), (min-width: 360px) and (min-height: 780px)';
 const PUBLIC_LANDING_URL = buildPublicLandingUrl();
 const PUBLIC_STORE_URL = new URL('/', PUBLIC_STORE_ORIGIN).toString();
 
-const getIsDesktopLayout = () => (
+const getIsSpaciousLayout = () => (
   typeof window !== 'undefined'
   && typeof window.matchMedia === 'function'
-  && window.matchMedia(DESKTOP_LAYOUT_QUERY).matches
+  && window.matchMedia(SPACIOUS_LAYOUT_QUERY).matches
 );
 
 export default function WelcomeModal() {
@@ -32,11 +33,11 @@ export default function WelcomeModal() {
   const [errorMessage, setErrorMessage] = useState('');
   const [errorTitle, setErrorTitle] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isDesktopLayout, setIsDesktopLayout] = useState(getIsDesktopLayout);
+  const [isSpaciousLayout, setIsSpaciousLayout] = useState(getIsSpaciousLayout);
   const [isLicenseExpanded, setIsLicenseExpanded] = useState(false);
   const actionInFlight = useRef(false);
   const isLoading = loadingAction !== null;
-  const isLicenseFormVisible = isDesktopLayout || isLicenseExpanded;
+  const isLicenseFormVisible = isSpaciousLayout || isLicenseExpanded;
 
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
@@ -52,11 +53,11 @@ export default function WelcomeModal() {
   };
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia?.(DESKTOP_LAYOUT_QUERY);
+    const mediaQuery = window.matchMedia?.(SPACIOUS_LAYOUT_QUERY);
     if (!mediaQuery) return undefined;
 
-    const updateLayout = (event) => setIsDesktopLayout(event.matches);
-    setIsDesktopLayout(mediaQuery.matches);
+    const updateLayout = (event) => setIsSpaciousLayout(event.matches);
+    setIsSpaciousLayout(mediaQuery.matches);
     if (mediaQuery.addEventListener) {
       mediaQuery.addEventListener('change', updateLayout);
     } else {
@@ -320,6 +321,7 @@ export default function WelcomeModal() {
                       placeholder="LANZO-XXXX-XXXX-XXXX-XXXX"
                       value={licenseKey}
                       onChange={(event) => setLicenseKey(event.target.value.toUpperCase())}
+                      onFocus={() => setIsLicenseExpanded(true)}
                       disabled={isLoading || !isOnline}
                       maxLength={64}
                       autoCapitalize="characters"
@@ -354,11 +356,12 @@ export default function WelcomeModal() {
           )}
 
           <footer className="welcome-secondary">
-            <nav className="welcome-public-links" aria-label="Información pública de LANZO">
-              <a href={PUBLIC_LANDING_URL} target="_blank" rel="noopener noreferrer">Conoce LANZO</a>
-              <a href={PUBLIC_STORE_URL} target="_blank" rel="noopener noreferrer">Tienda en línea</a>
-            </nav>
-            <PreloginSupportAccess screen="Bienvenida" />
+            <PreloginSupportAccess screen="Bienvenida" modal>
+              <nav className="welcome-public-links" aria-label="Información pública de LANZO">
+                <a href={PUBLIC_LANDING_URL} target="_blank" rel="noopener noreferrer">Conoce LANZO</a>
+                <a href={PUBLIC_STORE_URL} target="_blank" rel="noopener noreferrer">Tienda en línea</a>
+              </nav>
+            </PreloginSupportAccess>
           </footer>
         </section>
       </div>
