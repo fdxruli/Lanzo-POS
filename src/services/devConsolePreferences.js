@@ -25,7 +25,9 @@ const publish = next => {
 };
 
 const captureAuthority = () => {
-  const actor = actorRuntimeController.assertGranted('settings_controls');
+  // The verified Settings policy applies granular grants and legacy fallback.
+  // Requiring the literal runtime key would reject legacy Staff with `settings`.
+  const actor = actorRuntimeController.assertGranted();
   if (!settingsAccess(actor)) throw new Error('Diagnostic settings access denied');
   const storage = captureActorScopedStorageHandle();
   const binding = storage.assertCurrent();
