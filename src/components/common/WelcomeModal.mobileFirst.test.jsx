@@ -76,7 +76,8 @@ describe('WelcomeModal mobile-first welcome', () => {
     mockSpaciousLayout(true);
     render(<WelcomeModal />);
 
-    expect(screen.queryByRole('button', { name: /ya tengo una licencia/i })).not.toBeInTheDocument();
+    // The control is visually hidden by the responsive CSS, but remains mounted.
+    expect(document.querySelector('.license-entry-toggle')).toHaveAttribute('aria-expanded', 'true');
     expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
     expect(screen.getByRole('textbox', { name: 'Clave de licencia' })).toBeVisible();
   });
@@ -93,7 +94,7 @@ describe('WelcomeModal mobile-first welcome', () => {
     expect(document.getElementById('welcome-license-panel')).toHaveAttribute('hidden');
 
     resize(true);
-    expect(toggle).not.toBeVisible();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(input).toHaveValue('LANZO-PRUEBA-5678');
     expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
 
