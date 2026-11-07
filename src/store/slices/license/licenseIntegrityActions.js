@@ -26,6 +26,7 @@ import {
     markLastLicenseValidationSuccess
 } from './licenseValidationTimestamps';
 import { isLocalTenantAccessError } from '../../../services/tenant/localTenantGuard';
+import { reconcileLicenseSessionIdentity } from './licenseActorReconciliation';
 import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
 import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../../../services/auth/actorRuntimeController';
 import {
@@ -441,6 +442,7 @@ export const createLicenseIntegrityActions = ({
             const updatedDetails = {
                 ...licenseDetails,
                 ...serverCheck,
+                ...reconcileLicenseSessionIdentity(get(), licenseDetails, serverCheck),
                 grace_period_ends: derivedGracePeriodEnd,
                 status: newStatus,
                 valid: isTechnicallyValid,
@@ -483,7 +485,7 @@ export const createLicenseIntegrityActions = ({
                     licenseStatus: newStatus,
                     gracePeriodEnds: derivedGracePeriodEnd,
                     licenseDetails: updatedDetails,
-                    currentDeviceRole: updatedDetails.device_role || 'admin',
+                    currentDeviceRole: updatedDetails.device_role || null,
                     currentStaffUser: updatedDetails.device_role === 'staff'
                         ? updatedDetails.staff_user || null
                         : null
