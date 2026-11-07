@@ -5,7 +5,6 @@ import { AlertTriangle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import AdminLazyRouteRecoveryFallback from './components/common/AdminLazyRouteRecoveryFallback';
-import SingleInstanceBlockedScreen from './components/common/SingleInstanceBlockedScreen';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
 import { startCustomerCreditAutoHealLifecycle } from './services/db/customerCreditRepository';
@@ -42,7 +41,6 @@ import InstallPrompt from './components/common/InstallPrompt';
 import PersistenceWarningBanner from './components/common/PersistenceWarningBanner';
 import BackupReminder from './components/common/BackupReminder';
 import BackupRuntime from './components/common/BackupRuntime';
-import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
 import { fetchLegalPolicyState, isLegalPolicyPreviewEnabled } from './services/supabase';
@@ -184,7 +182,6 @@ function App() {
     throw new Error('Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.');
   }
 
-  const isDuplicate = useSingleInstance();
   const appStatus = useAppStore((state) => state.appStatus);
   const initializeApp = useAppStore((state) => state.initializeApp);
   const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
@@ -296,10 +293,6 @@ function App() {
   useEffect(() => startAdminResumeChecks({
     performHealthCheck: (reason) => useAppStore.getState().performSystemHealthCheck(reason)
   }), []);
-
-  if (isDuplicate) {
-    return <SingleInstanceBlockedScreen />;
-  }
 
   if (bootTimedOut && appStatus === 'loading') {
     return <AppBootRecovery />;
