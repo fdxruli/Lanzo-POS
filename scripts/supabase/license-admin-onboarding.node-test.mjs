@@ -218,7 +218,9 @@ test('an inactive owner, expired/revoked code, suspended license and cross-licen
   assert.equal(sql(`select count(*) from public.license_admin_users where license_id=${quote(ownerAddedAfterIssue.id)} and is_owner;`), '1');
 
   const expired = seedLicense(); const expiredInvite = issue(expired);
-  sql(`update private.license_onboarding_invitations set expires_at=now()-interval '1 second' where license_id=${quote(expired.id)};`);
+  sql(`update private.license_onboarding_invitations
+    set issued_at=now()-interval '2 seconds', expires_at=now()-interval '1 second'
+    where license_id=${quote(expired.id)};`);
   assertFailure(enroll(expired, expiredInvite.invitation_code), 'ADMIN_ONBOARDING_INVALID');
 
   const revoked = seedLicense(); const revokedInvite = issue(revoked); revoke(revoked);
@@ -291,7 +293,7 @@ test('a committed enrollment whose response is lost is recovered by the current 
   assert.equal(sql(`select count(*) from public.license_admin_users where license_id=${quote(f.id)} and is_owner;`), '1');
   assert.equal(sql(`select count(*) from public.license_devices where license_id=${quote(f.id)} and is_active;`), '1');
   assert.equal(sql(`select count(*) from public.license_admin_sessions where license_id=${quote(f.id)} and revoked_at is null;`), '1');
-  assert.equal(sql(`select count(*) from public.license_onboarding_invitations where license_id=${quote(f.id)} and consumed_at is not null;`), '1');
+  assert.equal(sql(`select count(*) from private.license_onboarding_invitations where license_id=${quote(f.id)} and consumed_at is not null;`), '1');
 });
 
 test('PRO onboarding preserves the plan device limit and never promotes a Staff device', () => {
