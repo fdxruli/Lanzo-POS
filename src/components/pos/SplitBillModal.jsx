@@ -201,6 +201,8 @@ export default function SplitBillModal({
   const [splitIntent, setSplitIntent] = useState(RESTAURANT_SPLIT_INTENTS.BY_ITEMS);
   const [customAmountsCents, setCustomAmountsCents] = useState([]);
   const [customAmountDrafts, setCustomAmountDrafts] = useState({});
+  // UI-only: an untouched focus looks blank without changing the financial draft.
+  const [freshNumericFocus, setFreshNumericFocus] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState({});
   const [assignmentAmounts, setAssignmentAmounts] = useState({});
@@ -635,6 +637,24 @@ export default function SplitBillModal({
     setAssignmentNotice('');
   };
 
+  const getNumericEntryValue = (id, value) => (freshNumericFocus === id ? '' : value);
+
+  const startNumericEntry = (event) => {
+    setFreshNumericFocus(event.currentTarget.id);
+  };
+
+  const changeNumericEntry = (event, update) => {
+    setFreshNumericFocus(null);
+    update(event.currentTarget.value);
+  };
+
+  const finishNumericEntry = (event, commit) => {
+    // Tapping and leaving without editing must never overwrite a valid amount.
+    const changed = freshNumericFocus !== event.currentTarget.id;
+    setFreshNumericFocus(null);
+    if (changed && commit) commit(event.currentTarget.value);
+  };
+
   const updatePayment = (guestId, field, value) => {
     if ((field === 'amountPaid' || field === 'receivedAmount') && !isMoneyInputDraft(value)) return;
     setPayments((previous) => {
@@ -674,6 +694,10 @@ export default function SplitBillModal({
     const normalized = normalizeMoneyInputDraft(value, { allowEmpty });
     if (normalized !== null) updatePayment(guestId, field, normalized);
   };
+
+  useEffect(() => {
+    if (!show) setFreshNumericFocus(null);
+  }, [show]);
 
   const getAssignmentAmount = (item, lineIndex, pending) => {
     const lineKey = String(getCartLineId(item, lineIndex));
@@ -1120,9 +1144,10 @@ export default function SplitBillModal({
                             id={`splitCustomAmount-${guest.id}`}
                             type="text"
                             inputMode="decimal"
-                            value={customAmountDrafts[guest.id] ?? formatMoneyFromCents(customAmountsCents[guestIdx])}
-                            onChange={(event) => updateCustomAmount(guest.id, event.target.value)}
-                            onBlur={(event) => commitCustomAmount(guest.id, event.target.value)}
+                            value={getNumericEntryValue(`splitCustomAmount-${guest.id}`, customAmountDrafts[guest.id] ?? formatMoneyFromCents(customAmountsCents[guestIdx]))}
+                            onFocus={startNumericEntry}
+                            onChange={(event) => changeNumericEntry(event, (value) => updateCustomAmount(guest.id, value))}
+                            onBlur={(event) => finishNumericEntry(event, (value) => commitCustomAmount(guest.id, value))}
                             disabled={isSubmitting}
                             aria-label={`Monto de ${guestContextName(guest, guestIdx)}`}
                             aria-invalid={Boolean(distributionError)}
@@ -1261,11 +1286,13 @@ export default function SplitBillModal({
                                         min={10 ** -STOCK_DECIMALS}
                                         max={pending}
                                         step={10 ** -STOCK_DECIMALS}
-                                        value={getAssignmentAmount(item, lineIndex, pending)}
-                                        onChange={(event) => setAssignmentAmounts((previous) => ({
+                                        value={getNumericEntryValue(`splitAmount-${lineIndex}`, getAssignmentAmount(item, lineIndex, pending))}
+                                        onFocus={startNumericEntry}
+                                        onChange={(event) => changeNumericEntry(event, (value) => setAssignmentAmounts((previous) => ({
                                           ...previous,
-                                          [String(getCartLineId(item, lineIndex))]: event.target.value
-                                        }))}
+                                          [String(getCartLineId(item, lineIndex))]: value
+                                        })))}
+                                        onBlur={(event) => finishNumericEntry(event)}
                                         disabled={isSubmitting}
                                       />
                                     </label>
@@ -1476,11 +1503,12 @@ export default function SplitBillModal({
                                 id={`splitPaid-${guest.id}`}
                                 type="text"
                                 inputMode="decimal"
-                                value={payment.amountPaid ?? formatMoneyFromCents(dueCents)}
+                                value={getNumericEntryValue(`splitPaid-${guest.id}`, payment.amountPaid ?? formatMoneyFromCents(dueCents))}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
-                                onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
-                                onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
+                                onFocus={startNumericEntry}
+                                onChange={(event) => changeNumericEntry(event, (value) => updatePayment(guest.id, 'amountPaid', value))}
+                                onBlur={(event) => finishNumericEntry(event, (value) => commitPaymentAmount(guest.id, 'amountPaid', value))}
                                 disabled={isSubmitting}
                               />
                               <p className="split-review-payment-detail">Aplicado a caja: ${formatMoneyFromCents(dueCents)} · Cambio: ${Money.toNumber(cashChange).toFixed(2)}</p>
@@ -1494,11 +1522,12 @@ export default function SplitBillModal({
                                 id={`splitPaid-${guest.id}`}
                                 type="text"
                                 inputMode="decimal"
-                                value={payment.amountPaid ?? '0'}
+                                value={getNumericEntryValue(`splitPaid-${guest.id}`, payment.amountPaid ?? '0')}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
-                                onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
-                                onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
+                                onFocus={startNumericEntry}
+                                onChange={(event) => changeNumericEntry(event, (value) => updatePayment(guest.id, 'amountPaid', value))}
+                                onBlur={(event) => finishNumericEntry(event, (value) => commitPaymentAmount(guest.id, 'amountPaid', value))}
                                 disabled={isSubmitting}
                               />
                               <label htmlFor={`splitInitialMethod-${guest.id}`}>Método del abono inicial</label>
@@ -1519,9 +1548,10 @@ export default function SplitBillModal({
                                     id={`splitCreditReceived-${guest.id}`}
                                     type="text"
                                     inputMode="decimal"
-                                    value={payment.receivedAmount ?? payment.amountPaid ?? '0'}
-                                    onChange={(event) => updatePayment(guest.id, 'receivedAmount', event.target.value)}
-                                    onBlur={(event) => commitPaymentAmount(guest.id, 'receivedAmount', event.target.value)}
+                                    value={getNumericEntryValue(`splitCreditReceived-${guest.id}`, payment.receivedAmount ?? payment.amountPaid ?? '0')}
+                                    onFocus={startNumericEntry}
+                                    onChange={(event) => changeNumericEntry(event, (value) => updatePayment(guest.id, 'receivedAmount', value))}
+                                    onBlur={(event) => finishNumericEntry(event, (value) => commitPaymentAmount(guest.id, 'receivedAmount', value))}
                                     aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                     aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
                                     disabled={isSubmitting}

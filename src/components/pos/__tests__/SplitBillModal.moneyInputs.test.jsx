@@ -54,6 +54,86 @@ describe('SplitBillModal monetary text editing', () => {
   });
   afterEach(() => cleanup());
 
+  it('shows a clean monetary entry on focus, restores untouched values and replaces the full amount when typing', async () => {
+    const user = userEvent.setup();
+    renderModal();
+    const input = startCustom();
+    expect(input).toHaveValue('0.00');
+
+    fireEvent.focus(input);
+    expect(input).toHaveValue('');
+    fireEvent.blur(input);
+    expect(input).toHaveValue('0.00');
+
+    fireEvent.focus(input);
+    expect(input).toHaveValue('');
+    await user.type(input, '50');
+    expect(input).toHaveValue('50');
+    fireEvent.blur(input);
+    expect(input).toHaveValue('50.00');
+  });
+
+  it('clears the cash input only for entry while keeping the amount if focus leaves untouched', async () => {
+    const user = userEvent.setup();
+    renderModal(100);
+    startEqualPayment();
+    const input = document.getElementById('splitPaid-T1');
+    expect(input).toHaveValue('50.00');
+
+    fireEvent.focus(input);
+    expect(input).toHaveValue('');
+    fireEvent.blur(input);
+    expect(input).toHaveValue('50.00');
+
+    fireEvent.focus(input);
+    await user.type(input, '60');
+    expect(input).toHaveValue('60');
+    expect(input.closest('.split-payment-card')).toHaveTextContent('Cambio: $10.00');
+  });
+
+  it('starts Fiado abono and initial cash inputs blank without resetting financial values on an untouched blur', async () => {
+    const user = userEvent.setup();
+    renderModal(200);
+    startEqualPayment();
+    fireEvent.change(document.getElementById('splitPaymentMethod-T1'), { target: { value: 'fiado' } });
+    const paid = document.getElementById('splitPaid-T1');
+    expect(paid).toHaveValue('0');
+    fireEvent.focus(paid);
+    expect(paid).toHaveValue('');
+    fireEvent.blur(paid);
+    expect(paid).toHaveValue('0');
+    fireEvent.focus(paid);
+    await user.type(paid, '50');
+    expect(paid).toHaveValue('50');
+    const received = document.getElementById('splitCreditReceived-T1');
+    expect(received).toHaveValue('50');
+    fireEvent.focus(received);
+    expect(received).toHaveValue('');
+    fireEvent.blur(received);
+    expect(received).toHaveValue('50');
+    fireEvent.focus(received);
+    await user.type(received, '60');
+    expect(received).toHaveValue('60');
+    expect(received.closest('.split-payment-card')).toHaveTextContent('Cambio del abono: $10.00');
+  });
+
+  it('clears fractional quantity entry on focus without losing the default quantity if untouched', async () => {
+    const user = userEvent.setup();
+    renderModal(30, {
+      order: [{ lineId: 'weighted', id: 'cheese', name: 'Queso', saleType: 'weight', quantity: 1.5, price: 20 }]
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Asignar platos' }));
+    const qty = screen.getByLabelText('O asignar otra cantidad');
+    expect(qty).toHaveValue(1);
+    fireEvent.focus(qty);
+    expect(qty).toHaveValue(null);
+    fireEvent.blur(qty);
+    expect(qty).toHaveValue(1);
+    fireEvent.focus(qty);
+    await user.type(qty, '0.5');
+    expect(qty).toHaveValue(0.5);
+  });
+
   it('keeps each typed character, trailing decimal, caret and every backspace through an empty draft', async () => {
     const user = userEvent.setup();
     renderModal();
