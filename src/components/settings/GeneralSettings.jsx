@@ -41,6 +41,7 @@ const initialProfileState = {
   address: '',
   logoPreview: logoPlaceholder,
   pendingLogoFile: null,
+  pendingLogoUploadSource: null,
   lockedFields: defaultLockedFields
 };
 
@@ -100,6 +101,7 @@ function getProfileState(companyProfile) {
     address,
     logoPreview,
     pendingLogoFile: null,
+    pendingLogoUploadSource: null,
     lockedFields: {
       name: !!(name && name.trim().length > 0),
       phone: !!(phone && phone.trim().length > 0),
@@ -116,9 +118,9 @@ function profileReducer(state, action) {
     case 'field':
       return { ...state, [action.name]: action.value };
     case 'logo-selected':
-      return { ...state, logoPreview: action.previewUrl, pendingLogoFile: action.file };
+      return { ...state, logoPreview: action.previewUrl, pendingLogoFile: action.file, pendingLogoUploadSource: action.uploadSource };
     case 'saved':
-      return { ...state, pendingLogoFile: null };
+      return { ...state, pendingLogoFile: null, pendingLogoUploadSource: null };
     default:
       return state;
   }
@@ -439,7 +441,7 @@ function GeneralSettingsContent() {
       actorHandle.assertCurrent();
       const objectURL = URL.createObjectURL(compressedFile);
 
-      dispatchProfile({ type: 'logo-selected', previewUrl: objectURL, file: compressedFile });
+      dispatchProfile({ type: 'logo-selected', previewUrl: objectURL, file: compressedFile, uploadSource: file });
     } catch (error) {
       Logger.error('Error imagen:', error);
     } finally {
@@ -461,6 +463,7 @@ function GeneralSettingsContent() {
       };
       if (profileState.pendingLogoFile) {
         updates.logo = profileState.pendingLogoFile;
+        updates.logoUploadSource = profileState.pendingLogoUploadSource;
       }
 
       await updateCompanyProfile({
@@ -479,7 +482,13 @@ function GeneralSettingsContent() {
         return;
       }
       Logger.error(error);
-      showMessageModal('Error al guardar.', null, { type: 'error' });
+      const imagePrivacyError = error?.code === 'IMAGE_PROCESSING_FAILED'
+        || error?.code === 'IMAGE_PRIVACY_UNSUPPORTED';
+      showMessageModal(
+        imagePrivacyError ? error.message : 'Error al guardar.',
+        null,
+        { type: 'error' }
+      );
     }
   };
 

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   actorRuntimePermissions: ['settings_data'],
   loadData: vi.fn(),
   saveBusinessProfile: vi.fn(),
+  uploadImageFile: vi.fn(),
   saveData: vi.fn(async () => undefined),
   saveLicenseToStorage: vi.fn(async () => undefined),
   getTenantRuntimeReadiness: vi.fn(() => ({ ready: true, runtime: { opaqueId: 'profile-test', generation: 1 } }))
@@ -36,7 +37,7 @@ vi.mock('../../services/licenseStorage', () => ({
 
 vi.mock('../../services/storage/imageUploadService', () => ({
   IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' },
-  uploadImageFile: vi.fn()
+  uploadImageFile: mocks.uploadImageFile
 }));
 
 vi.mock('../../services/tenant/localTenantGuard', () => ({
@@ -455,4 +456,68 @@ describe('profile refresh during authenticated staff transition', () => {
     expect(set).not.toHaveBeenCalled();
   });
 
+
+  it.each(['updateCompanyProfile', 'handleSetup'])(
+    'uploads the original logo for %s while keeping the auxiliary file out of the profile',
+    async (method) => {
+      const preview = Object.assign(new File(), { size: 100 });
+      const original = Object.assign(new File(), { size: 900000 });
+      mocks.uploadImageFile.mockResolvedValue({ publicUrl: 'https://storage.test/logo-new.webp' });
+      mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+      const state = {
+        currentDeviceRole: 'admin',
+        currentAdminUser: { id: 'admin-id' },
+        licenseDetails: { license_key: 'LANZO-PRO' },
+        companyProfile: null,
+        appStatus: 'setup_required'
+      };
+      Object.assign(state, createProfileSlice(
+        vi.fn((partial) => Object.assign(state, partial)),
+        () => state
+      ));
+
+      await state[method]({
+        name: 'Mi negocio',
+        logo: preview,
+        logoUploadSource: original,
+        business_type: ['hardware']
+      });
+
+      expect(mocks.uploadImageFile).toHaveBeenCalledWith({
+        file: original,
+        licenseKey: 'LANZO-PRO',
+        purpose: 'business-logo'
+      });
+      const profilePayload = mocks.saveBusinessProfile.mock.calls[0][1];
+      expect(profilePayload.logo).toBe('https://storage.test/logo-new.webp');
+      expect(profilePayload).not.toHaveProperty('logoUploadSource');
+    }
+  );
+
+  it('keeps the thumbnail fallback when a logo source is above the upload limit', async () => {
+    const preview = Object.assign(new File(), { size: 120 });
+    const oversizedSource = Object.assign(new File(), { size: 21 * 1024 * 1024 });
+    mocks.uploadImageFile.mockResolvedValue({ publicUrl: 'https://storage.test/logo.webp' });
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    const state = {
+      currentDeviceRole: 'admin',
+      currentAdminUser: { id: 'admin-id' },
+      licenseDetails: { license_key: 'LANZO-PRO' },
+      companyProfile: null
+    };
+    Object.assign(state, createProfileSlice(
+      vi.fn((partial) => Object.assign(state, partial)),
+      () => state
+    ));
+
+    await state.updateCompanyProfile({
+      logo: preview,
+      logoUploadSource: oversizedSource,
+      business_type: ['hardware']
+    });
+
+    expect(mocks.uploadImageFile).toHaveBeenCalledWith(
+      expect.objectContaining({ file: preview, purpose: 'business-logo' })
+    );
+  });
 });

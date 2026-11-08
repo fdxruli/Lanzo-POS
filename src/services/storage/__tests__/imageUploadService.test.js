@@ -30,6 +30,14 @@ vi.mock('../../Logger', () => ({
   default: { warn: mocks.warn }
 }));
 
+vi.mock('../brandingImageOptimizer', () => ({
+  optimizeBrandingImageToWebp: vi.fn(async ({ file }) => new File(
+    ['sanitized-webp'],
+    file.name.replace(/\.[^.]+$/, '.webp'),
+    { type: 'image/webp' }
+  ))
+}));
+
 import {
   IMAGE_UPLOAD_PURPOSES,
   uploadImageFile,
@@ -127,7 +135,7 @@ describe('imageUploadService image normalization', () => {
       'signed-token',
       optimized,
       {
-        cacheControl: '3600',
+        cacheControl: '31536000',
         contentType: 'image/webp',
         upsert: false
       }
@@ -236,42 +244,64 @@ describe('imageUploadService image normalization', () => {
     expect(result.purpose).toBe('product-image');
   });
 
-  it('conserva el archivo original cuando la optimización no está disponible', async () => {
-    const original = new TestFile(['original-png'], 'portada.png', {
-      type: 'image/png'
-    });
-    const imageOptimizer = vi.fn(async () => {
-      throw new Error('canvas unavailable');
-    });
-    const path = authorizeUpload({
-      purpose: 'business-cover',
-      filename: 'id.png'
-    });
+  it('rechaza el original cuando falla la conversión y no solicita autorización', async () => {
+    const original = new TestFile(['raw-exif-gps'], 'portada.jpg', { type: 'image/jpeg' });
 
-    const result = await uploadImageFile({
+    await expect(uploadImageFile({
       file: original,
       licenseKey: 'license-fixture',
       purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_COVER,
-      imageOptimizer
-    });
+      imageOptimizer: vi.fn(async () => { throw new Error('canvas unavailable'); })
+    })).rejects.toMatchObject({ code: 'IMAGE_PROCESSING_FAILED' });
 
-    expect(mocks.invoke).toHaveBeenCalledWith('authorize-image-upload', {
-      body: expect.objectContaining({
-        filename: 'portada.png',
-        mime_type: 'image/png',
-        staff_session_token: 'staff-session-fixture'
-      })
-    });
-    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
-      path,
-      'signed-token',
-      original,
-      expect.objectContaining({ contentType: 'image/png' })
-    );
-    expect(result.optimized).toBe(false);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
     expect(mocks.warn).toHaveBeenCalledWith(
-      '[Storage] No se pudo optimizar la imagen; se usará el archivo original.'
+      '[Storage] No se pudo sanitizar la imagen; la subida se canceló.'
     );
+  });
+
+  it.each(['product-image', 'business-logo', 'business-cover', 'category-image', 'profile-image', 'misc'])(
+    'rechaza un archivo sin recodificar (%s), incluso si ya es WebP',
+    async (purpose) => {
+      const original = new TestFile(['original-with-metadata'], 'image.webp', { type: 'image/webp' });
+
+      await expect(uploadImageFile({
+        file: original,
+        licenseKey: 'license-fixture',
+        purpose,
+        imageOptimizer: vi.fn(async () => original)
+      })).rejects.toMatchObject({ code: 'IMAGE_PROCESSING_FAILED' });
+
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rechaza una conversión con MIME distinto de WebP antes de solicitar autorización', async () => {
+    const source = new TestFile(['original'], 'producto.png', { type: 'image/png' });
+    const candidate = new TestFile(['png-no-sanitizado'], 'producto.png', { type: 'image/png' });
+
+    await expect(uploadImageFile({
+      file: source,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
+      imageOptimizer: vi.fn(async () => candidate)
+    })).rejects.toMatchObject({ code: 'IMAGE_PROCESSING_FAILED' });
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('rechaza GIF con mensaje claro, sin enviar datos originales al servidor', async () => {
+    const original = new TestFile(['GIF89a-metadata'], 'animacion.gif', { type: 'image/gif' });
+    await expect(uploadImageFile({
+      file: original,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE
+    })).rejects.toMatchObject({ code: 'IMAGE_PRIVACY_UNSUPPORTED' });
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
   });
 
   it('falla si Storage no devuelve una URL pública', async () => {
@@ -287,5 +317,29 @@ describe('imageUploadService image normalization', () => {
 
     await expect(uploadProductImage(source, 'license-fixture'))
       .rejects.toMatchObject({ code: 'STORAGE_UPLOAD_FAILED' });
+  });
+
+  it('keeps a short cache TTL for non-catalog image purposes', async () => {
+    const original = new TestFile(['avatar'], 'avatar.webp', { type: 'image/webp' });
+    const path = authorizeUpload({
+      purpose: 'profile-image',
+      filename: 'avatar.webp',
+      maxSizeBytes: 2 * 1024 * 1024
+    });
+
+    const sanitized = new TestFile(['reencoded-avatar'], 'avatar.webp', { type: 'image/webp' });
+    await uploadImageFile({
+      file: original,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PROFILE_IMAGE,
+      imageOptimizer: vi.fn(async () => sanitized)
+    });
+
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
+      path,
+      'signed-token',
+      sanitized,
+      expect.objectContaining({ cacheControl: '3600', upsert: false })
+    );
   });
 });

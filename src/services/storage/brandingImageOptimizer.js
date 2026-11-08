@@ -16,6 +16,21 @@ const IMAGE_WEBP_PROFILES = Object.freeze({
     maxHeight: 1280,
     quality: 0.8
   }),
+  'category-image': Object.freeze({
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.8
+  }),
+  'profile-image': Object.freeze({
+    maxWidth: 1024,
+    maxHeight: 1024,
+    quality: 0.86
+  }),
+  'misc': Object.freeze({
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.8
+  }),
   'restaurant-item-image': Object.freeze({
     maxWidth: 1280,
     maxHeight: 1280,
