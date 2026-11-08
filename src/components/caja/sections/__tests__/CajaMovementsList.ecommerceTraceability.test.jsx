@@ -36,7 +36,7 @@ describe('CajaMovementsList ecommerce traceability', () => {
     render(<CajaMovementsList movimientos={movements} isCloudCash />);
     expect(screen.getAllByText('FG-01-NEW-QA')).toHaveLength(2);
     expect(screen.getByText('+$33.34')).toBeVisible();
-    expect(screen.getByText('+$66.66')).toBeVisible();
+    expect(screen.getByText('$66.66')).toBeVisible();
     expect(screen.getByText(/Tarjeta \$33\.33 · Transferencia \$33\.33/)).toBeVisible();
     expect(screen.queryByText('+$100.00')).not.toBeInTheDocument();
     expect(screen.getByText('2 de 2')).toBeVisible();

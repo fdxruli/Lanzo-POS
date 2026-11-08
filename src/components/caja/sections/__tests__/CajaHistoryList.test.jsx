@@ -45,18 +45,21 @@ describe('CajaHistoryList', () => {
     expect(difference).not.toHaveClass('positive', 'negative');
   });
 
-  it('keeps a small Cuadrada difference neutral', () => {
+  it.each([
+    ['one-cent shortage', '-0.01', '99.99', '-$0.01', 'negative'],
+    ['fifty-cent shortage', '-0.50', '99.50', '-$0.50', 'negative'],
+    ['one-cent surplus', '0.01', '100.01', '+$0.01', 'positive'],
+    ['fifty-cent surplus', '0.50', '100.50', '+$0.50', 'positive']
+  ])('flags a %s as a real discrepancy', (_label, difference, counted, formattedDifference, tone) => {
     render(<CajaHistoryList historial={[{
       ...baseSession,
-      monto_cierre: '100.50',
-      diferencia: '0.50',
+      monto_cierre: counted,
+      diferencia: difference,
       closingMode: 'admin_audited'
     }]} />);
 
-    const difference = screen.getByText('Dif: +$0.50');
-    expect(screen.getByText('Cuadrada')).toBeVisible();
-    expect(difference).toHaveClass('history-difference', 'neutral');
-    expect(difference).not.toHaveClass('positive', 'negative');
+    expect(screen.getByText('Descuadre')).toBeVisible();
+    expect(screen.getByText(`Dif: ${formattedDifference}`)).toHaveClass('history-difference', tone);
   });
 
   it('keeps real positive and negative differences toned by direction', () => {
@@ -80,7 +83,7 @@ describe('CajaHistoryList', () => {
     }]} />);
 
     expect(screen.getByText('Descuadre')).toBeVisible();
-    expect(screen.getByText('Dif: $-2.00')).toHaveClass('history-difference', 'negative');
+    expect(screen.getByText('Dif: -$2.00')).toHaveClass('history-difference', 'negative');
   });
   it('shows a safe station label without exposing technical identifiers', () => {
     render(<CajaHistoryList historial={[{

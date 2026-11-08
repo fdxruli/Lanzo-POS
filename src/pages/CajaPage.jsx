@@ -16,6 +16,7 @@ import {
 import { backupManager } from '../services/backup/backupManager';
 import * as googleDriveService from '../services/googleDriveService';
 import { Money } from '../utils/moneyMath';
+import { resolveCashSessionAmounts } from '../services/cajaProjection';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import {
@@ -202,20 +203,10 @@ export default function CajaPage() {
   // ============================================================
   const totalTeorico = useMemo(() => {
     if (!cajaActual) return 0;
-
-    const inicial = Money.init(cajaActual.monto_inicial || 0);
-    const ventas = Money.init(totalesTurno.ventasContado || 0);
-    const abonos = Money.init(totalesTurno.abonosFiado || 0);
-    const entradas = Money.init(cajaActual.entradas_efectivo || 0);
-    const salidas = Money.init(cajaActual.salidas_efectivo || 0);
-
-    const subtotalIngresos = Money.add(inicial, ventas);
-    const subtotalExtras = Money.add(abonos, entradas);
-    const ingresosTotales = Money.add(subtotalIngresos, subtotalExtras);
-    const total = Money.subtract(ingresosTotales, salidas);
-
-    return Money.toNumber(total);
-  }, [cajaActual, totalesTurno]);
+    return Money.toNumber(
+      resolveCashSessionAmounts(cajaActual, totalesTurno, { isCloudCash }).totalTeorico
+    );
+  }, [cajaActual, totalesTurno, isCloudCash]);
 
   const handleRetryVerification = useCallback(
     () => (reintentarVerificacion
@@ -452,7 +443,7 @@ export default function CajaPage() {
     }
 
     if (resultado.noChange) {
-      showMessageModal('No hay diferencia entre monto fisico y total teorico. No se registro ajuste.');
+      showMessageModal('El conteo coincide con el total teórico. No se registró ajuste ni se guardó comentario.');
       cashAdjustmentModal.close();
       return;
     }

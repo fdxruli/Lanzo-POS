@@ -14,6 +14,7 @@ beforeEach(async () => {
   await db.table(STORES.CAJAS).clear();
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
   await db.table(STORES.SALES).clear();
+  await db.table(STORES.LAYAWAYS).clear();
 });
 
 afterEach(() => {
@@ -245,5 +246,114 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
 
     expect(firstClose.cashSession.closedByActorKey).toBe('admin:a');
     expect(retryClose).toMatchObject({ success: true, alreadyClosed: true, cashSession: { id: session.id, estado: 'cerrada' } });
+  });
+
+  it('closes Free cash with the same reconciliation as the live projection', async () => {
+    const session = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:a',
+      localStationKey: stationKey,
+      montoInicial: '100'
+    });
+    const occurredAt = session.fecha_apertura;
+
+    await db.table(STORES.SALES).bulkAdd([
+      {
+        id: 'cash-sale', cash_session_id: session.id, timestamp: occurredAt,
+        status: 'closed', paymentMethod: 'cash', total: '20'
+      },
+      {
+        id: 'credit-sale', cash_session_id: session.id, timestamp: occurredAt,
+        status: 'closed', paymentMethod: 'fiado', total: '20', abono: '0'
+      },
+      {
+        id: 'card-sale', cash_session_id: session.id, timestamp: occurredAt,
+        status: 'closed', paymentMethod: 'card', total: '30'
+      }
+    ]);
+    await db.table(STORES.MOVIMIENTOS_CAJA).bulkAdd([
+      {
+        id: 'cash-customer-payment', cash_session_id: session.id, tipo: 'abono_cliente',
+        monto: '10', source: 'customer_payment', fecha: occurredAt
+      },
+      {
+        id: 'cash-expense', cash_session_id: session.id, tipo: 'salida',
+        monto: '15', source: 'manual', fecha: occurredAt
+      },
+      {
+        id: 'cash-sale-refund', cash_session_id: session.id, tipo: 'salida',
+        monto: '20', source: 'sale_cancellation', referenceType: 'sale',
+        referenceId: 'cash-sale', fecha: occurredAt
+      }
+    ]);
+    await db.table(STORES.CAJAS).update(session.id, {
+      entradas_efectivo: '10',
+      salidas_efectivo: '35'
+    });
+
+    const closed = await cashLocalRepository.closeCashSession({
+      cashSessionId: session.id,
+      countedAmount: '94.50',
+      nextShiftFund: '0',
+      actorKey: 'admin:a',
+      localStationKey: stationKey
+    });
+
+    expect(closed.cashSession.detalle_cierre).toMatchObject({
+      ventas_contado: '20',
+      abonos_fiado: '0',
+      total_teorico: '95'
+    });
+    expect(closed.diferencia).toBe('-0.5');
+  });
+
+  it('counts a mixed credit down payment and linked layaway cash once at close', async () => {
+    const session = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:a',
+      localStationKey: stationKey,
+      montoInicial: '100'
+    });
+    const occurredAt = session.fecha_apertura;
+
+    await db.table(STORES.SALES).add({
+      id: 'mixed-credit-sale', cash_session_id: session.id, timestamp: occurredAt,
+      status: 'closed', paymentMethod: 'mixed_credit', total: '200',
+      payments: [
+        { method: 'cash', amount: '40', cash_movement_id: 'initial-credit-cash' },
+        { method: 'transfer', amount: '60' }
+      ]
+    });
+    await db.table(STORES.LAYAWAYS).add({
+      id: 'layaway-1', status: 'ready', totalAmount: '25',
+      payments: [{
+        id: 'layaway-payment-1', amount: '25', status: 'confirmed',
+        cashMovementId: 'layaway-cash', cajaId: session.id, date: occurredAt
+      }]
+    });
+    await db.table(STORES.MOVIMIENTOS_CAJA).bulkAdd([
+      {
+        id: 'initial-credit-cash', cash_session_id: session.id, tipo: 'abono_cliente',
+        monto: '40', source: 'sale_credit_payment', fecha: occurredAt
+      },
+      {
+        id: 'layaway-cash', cash_session_id: session.id, tipo: 'entrada', monto: '25',
+        source: 'layaway_payment', referenceType: 'layaway', referenceId: 'layaway-1',
+        layawayId: 'layaway-1', paymentId: 'layaway-payment-1', fecha: occurredAt
+      }
+    ]);
+    await db.table(STORES.CAJAS).update(session.id, { entradas_efectivo: '65' });
+
+    const closed = await cashLocalRepository.closeCashSession({
+      cashSessionId: session.id,
+      countedAmount: '165',
+      nextShiftFund: '0',
+      actorKey: 'admin:a',
+      localStationKey: stationKey
+    });
+
+    expect(closed.cashSession.detalle_cierre).toMatchObject({
+      abonos_fiado: '40',
+      total_teorico: '165'
+    });
+    expect(closed.diferencia).toBe('0');
   });
 });

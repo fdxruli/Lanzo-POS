@@ -845,10 +845,6 @@ export function useCaja({ executionScope = null } = {}) {
     if (!cajaActual) return { success: false, error: new Error('No hay caja activa para ajustar.') };
 
     const comentarioLimpio = String(comentario || '').trim();
-    if (!comentarioLimpio) {
-      showMessageModal('El comentario es obligatorio para registrar ajustes.');
-      return { success: false, error: new Error('Comentario obligatorio.') };
-    }
 
     try {
       const montoFisicoRealSafe = Money.init(montoFisicoReal);
@@ -861,6 +857,11 @@ export function useCaja({ executionScope = null } = {}) {
       const diferenciaSafe = Money.subtract(montoFisicoRealSafe, totalTeoricoSafe);
       if (diferenciaSafe.eq(0)) {
         return { success: true, noChange: true, diferencia: Money.toExactString(diferenciaSafe) };
+      }
+
+      if (!comentarioLimpio) {
+        showMessageModal('El comentario es obligatorio para registrar ajustes.');
+        return { success: false, error: new Error('Comentario obligatorio.') };
       }
 
       const tipoAjuste = diferenciaSafe.gt(0) ? MOVIMIENTO_TIPOS.AJUSTE_ENTRADA : MOVIMIENTO_TIPOS.AJUSTE_SALIDA;

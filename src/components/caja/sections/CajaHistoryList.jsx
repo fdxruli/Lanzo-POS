@@ -28,7 +28,7 @@ const CajaHistoryList = ({
       const rawDifference = c.diferencia ?? c.cash_difference;
       const hasPhysicalCount = rawDifference !== null && rawDifference !== undefined;
       const diffSafe = Money.init(rawDifference ?? 0);
-      const isCuadrada = hasPhysicalCount && diffSafe.abs().lt(1);
+      const isCuadrada = hasPhysicalCount && diffSafe.eq(0);
       const staffUserId = c.staffUserId || c.staff_user_id || null;
       const responsible = c.responsable_apertura
         || c.responsibleName
@@ -60,7 +60,7 @@ const CajaHistoryList = ({
           ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}`
           : 'No contado',
         dif: hasPhysicalCount
-          ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}`
+          ? `${diffSafe.gt(0) ? '+' : diffSafe.lt(0) ? '-' : ''}$${Money.toNumber(diffSafe.abs()).toFixed(2)}`
           : 'No calculada',
         difTone: !hasPhysicalCount || isCuadrada
           ? 'neutral'

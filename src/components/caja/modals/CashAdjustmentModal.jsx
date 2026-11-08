@@ -54,7 +54,9 @@ const CashAdjustmentModal = ({
   const diferenciaEsPositiva = diferenciaSafe.gt(0);
   const diferenciaEsNegativa = diferenciaSafe.lt(0);
   const noHayDiferencia = !diferenciaEsPositiva && !diferenciaEsNegativa;
-  const puedeEnviar = montoFisicoReal && fisicoSafe.gte(0) && comentarioLimpio.length > 0;
+  const puedeEnviar = montoFisicoReal
+    && fisicoSafe.gte(0)
+    && (noHayDiferencia || comentarioLimpio.length > 0);
   const differenceTone = diferenciaEsPositiva
     ? 'positive'
     : diferenciaEsNegativa
@@ -102,7 +104,7 @@ const CashAdjustmentModal = ({
 
         <div className="caja-modal__body">
           <p className="caja-modal__intro">
-            Compara el efectivo físico contra el total teórico y documenta cualquier diferencia.
+            Compara el efectivo físico contra el total teórico. El comentario se guarda únicamente cuando hay un ajuste.
           </p>
 
           <div className="caja-modal__reference">
@@ -136,14 +138,14 @@ const CashAdjustmentModal = ({
             <div className="caja-modal__field">
               <label htmlFor="ajuste-comentario-input">
                 Comentario
-                <span>Obligatorio</span>
+                <span>{noHayDiferencia ? 'Se guarda con un ajuste' : 'Obligatorio'}</span>
               </label>
               <textarea
                 id="ajuste-comentario-input"
                 value={comentario}
                 onChange={(event) => setComentario(event.target.value)}
                 placeholder="Ej. Corrección por cambio mal dado en venta #123"
-                required
+                required={!noHayDiferencia}
                 disabled={isDisabled}
                 rows={3}
               />
@@ -165,7 +167,7 @@ const CashAdjustmentModal = ({
                   <><ArrowUpFromLine size={17} aria-hidden="true" /> Se registrará como ajuste de salida.</>
                 )}
                 {noHayDiferencia && (
-                  <><CheckCircle2 size={17} aria-hidden="true" /> No se generará un movimiento adicional.</>
+                  <><CheckCircle2 size={17} aria-hidden="true" /> No se generará movimiento ni se guardará el comentario.</>
                 )}
               </p>
             </div>
@@ -175,10 +177,9 @@ const CashAdjustmentModal = ({
                 <div className="caja-modal__notice caja-modal__notice--warning">
                   <Info size={18} aria-hidden="true" />
                   <div>
-                    <strong>Confirmar sin registrar ajuste</strong>
+                    <strong>Confirmar conteo sin ajuste</strong>
                     <p>
-                      El monto físico coincide con el teórico. El comentario se guardará como nota,
-                      pero no se generará ningún movimiento.
+                      El monto físico coincide con el teórico. No se generará movimiento y el comentario no se guardará.
                     </p>
                   </div>
                 </div>
@@ -212,7 +213,7 @@ const CashAdjustmentModal = ({
                 disabled={isDisabled || !puedeEnviar}
               >
                 <Scale size={18} aria-hidden="true" />
-                {noHayDiferencia ? 'Guardar nota' : 'Registrar ajuste'}
+                {noHayDiferencia ? 'Confirmar conteo' : 'Registrar ajuste'}
               </button>
             </footer>
           </form>

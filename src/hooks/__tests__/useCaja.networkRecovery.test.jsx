@@ -127,6 +127,7 @@ const flush = async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  runtime.mode.cloudEnabled = true;
   runtime.mode.online = true;
   runtime.mode.readOnly = false;
   runtime.mode.stateKnown = false;
@@ -163,6 +164,24 @@ describe('useCaja network recovery', () => {
     expect(result.current.networkUnavailable).toBe(false);
     expect(result.current.isCloudCashReadOnly).toBe(false);
     expect(runtime.getCurrent).toHaveBeenNthCalledWith(2, { force: true });
+  });
+
+  it('accepts a balanced Free count without requiring or registering an adjustment note', async () => {
+    runtime.mode.cloudEnabled = false;
+    runtime.mode.online = false;
+    runtime.mode.stateKnown = true;
+    runtime.getCurrent.mockResolvedValue(validResult());
+    const { result } = renderHook(() => useCaja());
+
+    await waitFor(() => expect(result.current.cajaActual).toMatchObject({ id: cachedSession.id }));
+
+    let adjustment;
+    await act(async () => {
+      adjustment = await result.current.registrarAjusteCaja('100', '');
+    });
+
+    expect(adjustment).toMatchObject({ success: true, noChange: true, diferencia: '0' });
+    expect(runtime.movement).not.toHaveBeenCalled();
   });
 
   it('revalidates and unlocks after the browser comes back online', async () => {
