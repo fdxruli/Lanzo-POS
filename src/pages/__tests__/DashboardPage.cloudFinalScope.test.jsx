@@ -217,4 +217,16 @@ describe('Dashboard Cloud final scope and history pagination', () => {
       filters.scope === 'mine' && filters.offset === 0
     ))).toBe(true);
   });
+
+  it('does not reuse a history snapshot when no actor session is granted', async () => {
+    renderDashboard({ status: 'locked', actorId: null, sessionId: null, permissions: [], generation: 2 });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Historial y Papelera' }));
+    await waitFor(() => expect(harness.getSalesFinalHistory).toHaveBeenCalledTimes(1));
+
+    expect(harness.getSalesFinalHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'mine', limit: 50, offset: 0 }),
+      { cacheContextKey: null }
+    );
+  });
 });

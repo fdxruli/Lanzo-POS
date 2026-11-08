@@ -107,6 +107,7 @@ export default function DashboardPage() {
     actorRuntime?.deviceRef || null,
     actorRuntime?.generation ?? null
   ]);
+  const salesHistoryCacheContextKey = salesActorIdentity ? salesHistoryContextKey : null;
   const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(licenseDetails), [licenseDetails]);
 
   // 1. ESTADISTICAS
@@ -210,7 +211,7 @@ export default function DashboardPage() {
             limit: SALES_HISTORY_PAGE_SIZE,
             offset: 0,
             ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
-          }, { cacheContextKey: salesHistoryContextKey })
+          }, { cacheContextKey: salesHistoryCacheContextKey })
           : Promise.resolve(null)
       ]))[0];
       const creditHistoryReport = creditHistoryResult.status === 'fulfilled'
@@ -255,7 +256,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, features.activeRubros, salesActorIdentity, salesHistoryContextKey]);
+  }, [dashboardReportMode, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey]);
 
   useEffect(() => {
     if (!dashboardReportMode.cloudSalesFinal || reportingData.isLoading) return undefined;
@@ -309,7 +310,7 @@ export default function DashboardPage() {
       limit: SALES_HISTORY_PAGE_SIZE,
       offset,
       ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
-    }, { cacheContextKey: salesHistoryContextKey }).then((salesHistoryReport) => {
+    }, { cacheContextKey: salesHistoryCacheContextKey }).then((salesHistoryReport) => {
       if (isActive) applySalesHistory(salesHistoryReport);
     }).catch((error) => {
       Logger.warn('No se pudo cargar historial final cloud:', error);
@@ -337,6 +338,7 @@ export default function DashboardPage() {
     reportingData.overviewReport,
     salesFinalHistoryPageIndex,
     salesFinalHistoryScope,
+    salesHistoryCacheContextKey,
     salesHistoryContextKey
   ]);
 
