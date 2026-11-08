@@ -1,119 +1,104 @@
+/* This screen follows the density and colors of the existing settings UI. */
 .backup-settings-shell {
   display: grid;
   gap: var(--ui-space-md);
   min-width: 0;
-}
-
-.backup-settings-hero,
-.backup-settings-card,
-.backup-safety-note,
-.backup-cloud-license-note {
-  color: var(--text-dark);
-  background: var(--card-background-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: var(--box-shadow);
+  max-width: 100%;
+  container-type: inline-size;
 }
 
 .backup-settings-hero {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--ui-space-lg);
-  padding: clamp(18px, 2.4vw, 28px);
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  min-width: 0;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .backup-hero-copy {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1 1 270px;
 }
 
-.backup-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  min-height: 28px;
-  padding: 4px 9px;
+.backup-hero-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
   color: var(--secondary-color);
   background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0;
+  border-radius: 8px;
 }
 
 .backup-hero-copy h2 {
   margin: 0;
   color: var(--text-dark);
-  font-size: clamp(1.35rem, 2vw, 1.8rem);
-  line-height: 1.15;
-  letter-spacing: 0;
+  font-size: clamp(1.12rem, 1.4vw, 1.35rem);
+  line-height: 1.25;
 }
 
 .backup-hero-copy p,
 .backup-settings-card__heading p,
 .backup-settings-danger p,
 .backup-cloud-license-note p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: var(--text-light);
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 .backup-hero-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(104px, 1fr));
-  gap: 8px;
-  align-self: stretch;
-}
-
-.backup-hero-summary > div {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 86px;
-  padding: 12px;
-  background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.backup-hero-summary span {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
   color: var(--text-light);
   font-size: 0.78rem;
-  font-weight: 700;
 }
 
-.backup-hero-summary strong {
-  color: var(--text-dark);
-  font-size: 1.05rem;
-  line-height: 1.15;
+.backup-hero-summary > span {
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.backup-hero-summary b {
+  color: var(--text-dark);
+  font-weight: 700;
 }
 
 .backup-settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(250px, 0.75fr);
   gap: var(--ui-space-md);
   align-items: start;
+  min-width: 0;
 }
 
 .backup-cloud-column,
 .backup-local-column {
   display: grid;
-  gap: var(--ui-space-md);
+  gap: 8px;
   min-width: 0;
 }
 
 .backup-settings-card {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  padding: clamp(16px, 2vw, 22px);
+  padding: 15px;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: none;
 }
 
 .backup-settings-card--loading {
@@ -136,8 +121,8 @@
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   color: var(--secondary-color);
   background: var(--light-background);
   border: 1px solid var(--border-color);
@@ -224,11 +209,8 @@
 
 .backup-setup-panel {
   display: grid;
-  gap: 12px;
-  padding: 12px;
-  background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .backup-settings-grid {
@@ -269,8 +251,8 @@
 
 .backup-settings-status {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
   margin: 0;
 }
 
@@ -279,11 +261,9 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  min-height: 68px;
-  padding: 12px;
+  padding: 8px 10px;
   background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 7px;
 }
 
 .backup-settings-status dt {
@@ -314,10 +294,7 @@
 }
 
 .backup-primary-actions {
-  padding: 12px;
-  background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  padding: 0;
 }
 
 .backup-settings-inline input {
@@ -329,9 +306,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 42px;
+  min-height: 40px;
   border-radius: 8px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .backup-settings-progress {
@@ -361,11 +338,11 @@
 
 .backup-settings-danger {
   display: grid;
-  gap: 12px;
-  padding: 14px;
-  background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 0 0;
+  background: transparent;
+  border-top: 1px solid var(--border-color);
 }
 
 .backup-danger-heading {
@@ -469,14 +446,11 @@
 
 .backup-safety-note {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  color: var(--ui-text-success);
-  background: var(--ui-bg-success-soft);
-  border-color: var(--ui-border-success);
-  font-size: 0.86rem;
-  font-weight: 750;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  color: var(--text-light);
+  font-size: 0.8rem;
   line-height: 1.4;
 }
 
@@ -489,28 +463,90 @@
   padding: clamp(16px, 2vw, 22px);
 }
 
-@media (max-width: 1080px) {
+.backup-advanced-details {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.backup-advanced-details > summary {
+  display: list-item;
+  padding: 6px 0;
+  color: var(--secondary-color);
+  font-size: 0.86rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.backup-advanced-details > summary svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+
+.backup-advanced-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+.backup-advanced-details > summary:focus-visible {
+  outline: 2px solid var(--ui-focus-color, var(--secondary-color));
+  outline-offset: 3px;
+}
+
+.backup-settings-status--technical {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.backup-settings-card__heading > div,
+.backup-danger-heading > div,
+.drive-connection-status > div {
+  min-width: 0;
+}
+
+@container (max-width: 920px) {
   .backup-settings-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 820px) {
-  .backup-settings-hero {
-    flex-direction: column;
-  }
-
-  .backup-hero-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+@media (max-width: 1080px) {
+  .backup-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 680px) {
-  .backup-hero-summary,
+  .backup-settings-shell {
+    gap: 10px;
+  }
+
+  .backup-settings-hero {
+    align-items: flex-start;
+    gap: 9px;
+  }
+
+  .backup-hero-copy {
+    flex-basis: 100%;
+  }
+
+  .backup-hero-summary {
+    gap: 4px 10px;
+    font-size: 0.77rem;
+  }
+
+  .backup-settings-card {
+    gap: 10px;
+    padding: 12px;
+  }
+
   .backup-settings-grid,
-  .backup-settings-grid--three,
-  .backup-settings-status {
-    grid-template-columns: 1fr;
+  .backup-settings-grid--three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-settings-status,
+  .backup-settings-status--technical {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .backup-settings-actions,
@@ -523,5 +559,21 @@
   .backup-settings-inline input,
   .backup-settings-filename {
     width: 100%;
+    min-width: 0;
+  }
+
+  .backup-settings-card .btn {
+    min-height: 44px;
+  }
+
+  .backup-restore-preview ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 390px) {
+  .backup-settings-status,
+  .backup-settings-status--technical {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
