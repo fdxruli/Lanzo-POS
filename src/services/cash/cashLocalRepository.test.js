@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../db/dexie';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../test/tenantRuntimeTestHarness';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
+import { loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
+import { cancelSaleCore } from '../sales/cancelSaleCore';
 
 const stationKey = 'local:device:fp-browser-s';
 const stationKeyA = 'local:device:fp-browser-a';
@@ -15,6 +17,8 @@ beforeEach(async () => {
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
   await db.table(STORES.SALES).clear();
   await db.table(STORES.LAYAWAYS).clear();
+  await db.table(STORES.CUSTOMERS).clear();
+  await db.table(STORES.CUSTOMER_LEDGER).clear();
 });
 
 afterEach(() => {
@@ -23,6 +27,96 @@ afterEach(() => {
 });
 
 describe('cashLocalRepository shared-terminal financial ownership', () => {
+  it('reconciles an actual $20 cash sale and $20 refund to the original $100 fund exactly once', async () => {
+    const cashSession = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:refund',
+      deviceRole: 'admin',
+      localStationKey: stationKey,
+      deviceFingerprint: 'fp-browser-s',
+      montoInicial: '100'
+    });
+    const sale = {
+      id: 'sale-refund-20',
+      timestamp: new Date().toISOString(),
+      cash_session_id: cashSession.id,
+      status: 'closed',
+      paymentMethod: 'efectivo',
+      total: '20',
+      items: [],
+      payments: [{ method: 'cash', amount: '20' }]
+    };
+    await db.table(STORES.SALES).put(sale);
+
+    const cancelled = await cancelSaleCore({
+      saleId: sale.id,
+      refunds: [{ method: 'cash', amount: '20' }],
+      cashSession
+    }, {
+      db,
+      STORES,
+      generateId: () => 'cancel-log-1',
+      assertActorCurrent: vi.fn(),
+      restoreStockFromCancellation: vi.fn(),
+      Logger: { error: vi.fn() }
+    });
+
+    expect(cancelled.success).toBe(true);
+    const storedSession = await db.table(STORES.CAJAS).get(cashSession.id);
+    const projection = await loadCashSessionProjection(db, storedSession);
+    const amounts = resolveCashSessionAmounts(storedSession, projection.totals);
+
+    expect(storedSession.salidas_efectivo).toBe('20');
+    expect(projection.reconciliation).toMatchObject({ directCashSales: 20, exits: 20, theoreticalCash: 100 });
+    expect(amounts.totalTeorico).toBe('100');
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(1);
+  });
+
+  it('rolls back the sale, customer ledger and cash movement together when a cancellation write fails', async () => {
+    const cashSession = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:refund',
+      deviceRole: 'admin',
+      localStationKey: stationKey,
+      deviceFingerprint: 'fp-browser-s',
+      montoInicial: '100'
+    });
+    const sale = {
+      id: 'sale-credit-refund',
+      timestamp: new Date().toISOString(),
+      cash_session_id: cashSession.id,
+      status: 'closed',
+      paymentMethod: 'fiado',
+      customerId: 'customer-refund',
+      total: '20',
+      abono: '10',
+      saldoPendiente: '10',
+      items: [],
+      payments: [{ method: 'cash', amount: '10' }],
+      paymentCollections: [{ id: 'ledger-payment:sale-credit-refund', paymentId: 'ledger-payment', method: 'cash', amount: '10' }]
+    };
+    await db.table(STORES.SALES).put(sale);
+    await db.table(STORES.CUSTOMERS).put({ id: 'customer-refund', debt: '10', debtCents: 1000 });
+    vi.spyOn(db.table(STORES.CUSTOMERS), 'put').mockRejectedValueOnce(new Error('forced customer write failure'));
+
+    const result = await cancelSaleCore({
+      saleId: sale.id,
+      refunds: [{ method: 'cash', amount: '20' }],
+      cashSession
+    }, {
+      db,
+      STORES,
+      generateId: () => 'cancel-log-2',
+      assertActorCurrent: vi.fn(),
+      restoreStockFromCancellation: vi.fn(),
+      Logger: { error: vi.fn() }
+    });
+
+    expect(result.success).toBe(false);
+    expect((await db.table(STORES.SALES).get(sale.id)).status).toBe('closed');
+    expect((await db.table(STORES.CAJAS).get(cashSession.id)).salidas_efectivo).toBe('0');
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+  });
+
   it('ignores null rows while retaining an invalid-row diagnostic', async () => {
     const sessionTable = db.table(STORES.CAJAS);
     vi.spyOn(sessionTable, 'toArray').mockResolvedValue([

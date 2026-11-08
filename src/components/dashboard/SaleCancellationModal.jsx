@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ban, PackagePlus, Trash2, X } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../../services/sales/cancelSaleCore';
+import { getRefundableAmountsByMethod, REFUNDABLE_PAYMENT_METHODS } from '../../services/sales/saleRefunds';
 import { salesCloudCancellationService } from '../../services/salesCloud/salesCloudCancellationService';
 import {
   buildCancellationPreview,
@@ -38,6 +39,7 @@ export default function SaleCancellationModal({
 }) {
   const [actions, setActions] = useState({});
   const [reason, setReason] = useState('');
+  const [refundAmounts, setRefundAmounts] = useState({ cash: '0', card: '0', transfer: '0' });
   const [error, setError] = useState('');
   const [serverPreview, setServerPreview] = useState(null);
   const [previewStatus, setPreviewStatus] = useState('idle');
@@ -59,6 +61,7 @@ export default function SaleCancellationModal({
   const cloudPreviewFailed = isCloudSale && previewStatus === 'error';
   const cloudPreviewBlocked = isCloudSale && serverPreview && serverPreview.can_cancel === false;
   const cloudRuntimeDisabled = isCloudSale && serverPreview?.runtimeCancellationEnabled === false;
+  const refundableAmounts = useMemo(() => getRefundableAmountsByMethod(sale || {}), [sale]);
 
   useEffect(() => {
     if (!show || !sale) return;
@@ -70,6 +73,7 @@ export default function SaleCancellationModal({
 
     setActions(initialActions);
     setReason('');
+    setRefundAmounts({ cash: '0', card: '0', transfer: '0' });
     setError('');
     setServerPreview(null);
     setPreviewStatus('idle');
@@ -122,6 +126,18 @@ export default function SaleCancellationModal({
     }
 
     const trimmedReason = reason.trim();
+
+    if (!isCloudSale) {
+      const invalidRefund = REFUNDABLE_PAYMENT_METHODS.some((method) => {
+        const requested = Number(refundAmounts[method] || 0);
+        const available = Number(refundableAmounts[method] || 0);
+        return !Number.isFinite(requested) || requested < 0 || requested > available + 0.000001;
+      });
+      if (invalidRefund) {
+        setError('La devolución supera el importe cobrado y trazable en ese medio de pago.');
+        return;
+      }
+    }
 
     if (isCloudSale && offlineCloud) {
       setError('Esta venta fue registrada en la nube. Para cancelarla se necesita conexión.');
@@ -180,7 +196,12 @@ export default function SaleCancellationModal({
 
     await onConfirm({
       dispositionPlan,
-      reason: trimmedReason
+      reason: trimmedReason,
+      refunds: isCloudSale
+        ? []
+        : REFUNDABLE_PAYMENT_METHODS
+          .map((method) => ({ method, amount: String(refundAmounts[method] || '0').trim() || '0' }))
+          .filter((refund) => Number(refund.amount) > 0)
     });
   };
 
@@ -314,8 +335,41 @@ export default function SaleCancellationModal({
         ) : (
           <>
             <div className="sale-cancellation-notice">
-              Selecciona el destino de cada producto. La venta quedará en el historial como cancelada.
+              Cancelar una venta no devuelve dinero automáticamente. Indica solo lo que realmente entregas al cliente.
             </div>
+
+            <section className="sale-cancellation-refunds" aria-labelledby="sale-refunds-title">
+              <h3 id="sale-refunds-title">Dinero devuelto</h3>
+              <p>La devolución se registra por separado de la cancelación. No captures pagos que no se devolvieron.</p>
+              {REFUNDABLE_PAYMENT_METHODS.map((method) => {
+                const available = Number(refundableAmounts[method] || 0);
+                const label = method === 'cash' ? 'Efectivo' : method === 'card' ? 'Tarjeta' : 'Transferencia';
+                return (
+                  <label className="sale-cancellation-refund-row" key={method}>
+                    <span>{label}<small>Disponible para devolver: {formatCurrency(available)}</small></span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Number.isFinite(available) ? available.toFixed(2) : '0'}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={refundAmounts[method]}
+                      disabled={available <= 0 || isSubmitting}
+                      onChange={(event) => {
+                        setRefundAmounts((current) => ({ ...current, [method]: event.target.value }));
+                        setError('');
+                      }}
+                      aria-label={`Importe devuelto en ${label.toLowerCase()}`}
+                    />
+                  </label>
+                );
+              })}
+              {REFUNDABLE_PAYMENT_METHODS.every((method) => Number(refundableAmounts[method] || 0) <= 0) && (
+                <small className="sale-cancellation-refund-empty">
+                  No hay cobros con medio verificable disponibles para devolver. La venta puede cancelarse sin registrar reembolso.
+                </small>
+              )}
+            </section>
 
             <div className="sale-cancellation-items">
               {items.map((item, index) => {

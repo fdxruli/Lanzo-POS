@@ -316,7 +316,7 @@ export default function DashboardPage() {
     showMessageModal('Venta cancelada movida a la papelera.');
   };
 
-  const handleConfirmCancellation = async ({ dispositionPlan, reason }) => {
+  const handleConfirmCancellation = async ({ dispositionPlan, reason, refunds }) => {
     if (!saleToCancel || !canManageRefunds || saleToCancel.actorIdentity !== salesActorIdentity) return;
     const sale = saleToCancel.sale;
 
@@ -327,6 +327,7 @@ export default function DashboardPage() {
       restoreStock,
       dispositionPlan,
       reason,
+      refunds,
       allowWaste: features.hasWaste,
       saleOverride: sale,
       actorHandle: saleToCancel.actorHandle

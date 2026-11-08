@@ -104,10 +104,34 @@ describe('processSaleCore', () => {
             expect.objectContaining({ status: 'closed' }),
             expect.any(Array)
         );
+        expect(deps.executeSaleTransactionSafe.mock.calls[0][0].payments).toEqual([
+            expect.objectContaining({ method: 'cash', amount: '10' })
+        ]);
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
         expect(deps.sendReceiptWhatsApp).toHaveBeenCalledOnce();
         expect(result.financialResult).toMatchObject({ status: 'success', saleId: result.saleId });
         expect(result.notificationResult).toMatchObject({ status: 'opened' });
+    });
+
+    it('guarda el medio real del abono inicial de una venta fiada para conciliaciones futuras', async () => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            paymentData: {
+                customerId: 'cust-1',
+                paymentMethod: 'fiado',
+                initialPaymentMethod: 'tarjeta',
+                amountPaid: '5',
+                saldoPendiente: '5',
+                sendReceipt: false
+            }
+        }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe.mock.calls[0][0]).toMatchObject({
+            paymentMethod: 'fiado',
+            initialPaymentMethod: 'tarjeta',
+            payments: [{ method: 'card', amount: '5' }]
+        });
     });
 
     it('keeps a committed sale successful when the customer phone is missing', async () => {

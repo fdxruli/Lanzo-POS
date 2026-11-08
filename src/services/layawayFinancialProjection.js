@@ -94,6 +94,11 @@ const isCashSale = (sale = {}) => {
     || (!method && Number(safeSale.paymentData?.amount) > 0);
 };
 
+const isCashReceiptSale = (sale = {}) => (
+  isFinanciallyClosedSale(sale)
+  || (sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1)
+);
+
 const appliedCashAmount = (sale = {}) => {
   const safeSale = asRecord(sale);
   const payments = getExplicitSalePaymentRows(safeSale);
@@ -519,7 +524,7 @@ export const buildCashReconciliation = ({ cashSession = {}, sales = [], layaways
   );
 
   for (const sale of sessionSales) {
-    if (isFinanciallyClosedSale(sale) && sale.isLayawayConversion !== true && isCashSale(sale)) {
+    if (isCashReceiptSale(sale) && sale.isLayawayConversion !== true && isCashSale(sale)) {
       let saleCash = appliedCashAmount(sale);
       const linkedCash = new Map();
       for (const payment of getExplicitSalePaymentRows(sale) || []) {

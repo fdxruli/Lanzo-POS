@@ -66,6 +66,66 @@
   padding: 16px 22px 8px;
 }
 
+.sale-cancellation-refunds {
+  display: grid;
+  gap: 8px;
+  margin: 14px 22px 0;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--light-background);
+}
+
+.sale-cancellation-refunds h3,
+.sale-cancellation-refunds p {
+  margin: 0;
+}
+
+.sale-cancellation-refunds h3 {
+  font-size: 1rem;
+}
+
+.sale-cancellation-refunds p,
+.sale-cancellation-refund-row small,
+.sale-cancellation-refund-empty {
+  color: var(--text-light);
+  font-size: 0.82rem;
+}
+
+.sale-cancellation-refund-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.sale-cancellation-refund-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.sale-cancellation-refund-row input {
+  width: min(150px, 38%);
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--text-color);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font: inherit;
+  text-align: right;
+}
+
+.sale-cancellation-refund-row input:disabled {
+  opacity: 0.65;
+}
+
+.sale-cancellation-refund-empty {
+  line-height: 1.4;
+}
+
 .sale-cancellation-item {
   padding: 14px 0;
   border-bottom: 1px solid var(--border-color);

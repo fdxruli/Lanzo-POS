@@ -104,6 +104,34 @@ describe('restoreDeletedSaleCore', () => {
       });
   });
 
+  it('restaura a historial una cancelación financiera sin reactivar venta ni revertir su devolución', async () => {
+    const sale = makeSale({
+      cancellationFinancials: {
+        version: 1,
+        refunds: [{ method: 'cash', amount: '20', cashSessionId: 'cash-2', cashMovementId: 'refund-1' }],
+        cashRefundTotal: '20'
+      },
+      cancellationWasteRecordIds: ['waste-1']
+    });
+    const db = makeDb(sale);
+    const reapply = vi.fn(async () => ({ deducted: [] }));
+
+    const result = await restoreDeletedSaleCore(
+      { saleId: sale.id },
+      makeDeps(db, reapply)
+    );
+
+    expect(result).toMatchObject({ success: true, code: 'RESTORED' });
+    expect(result.sale).toMatchObject({
+      status: 'cancelled',
+      fulfillmentStatus: 'cancelled',
+      cancellationFinancials: sale.cancellationFinancials
+    });
+    expect(reapply).not.toHaveBeenCalled();
+    expect(db.maps[STORES.WASTE].has('waste-1')).toBe(false);
+    expect(db.maps[STORES.DELETED_SALES].has(sale.id)).toBe(false);
+  });
+
   it('no modifica inventario para una venta que nunca fue devuelta a stock', async () => {
     const sale = makeSale({
       cancellationDisposition: [{

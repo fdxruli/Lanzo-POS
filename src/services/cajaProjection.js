@@ -36,7 +36,7 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
   const end = sessionEnd(cashSession, endOverride);
   const salesTable = database.table(STORES.SALES);
 
-  const [taggedSales, legacySales] = await Promise.all([
+  const [taggedSales, legacySales, deletedSales] = await Promise.all([
     salesTable
       .where('cash_session_id')
       .equals(cashSession.id)
@@ -45,10 +45,18 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
       .where('timestamp')
       .between(cashSession.fecha_apertura, end, true, true)
       .filter((sale) => !sale?.cash_session_id)
-      .toArray()
+      .toArray(),
+    loadOptionalTable(database, STORES.DELETED_SALES)
   ]);
-
-  return [...records(taggedSales), ...records(legacySales)];
+  const archivedSales = records(deletedSales).filter((sale) => (
+    sale.cash_session_id === cashSession.id
+    || (!sale.cash_session_id && Date.parse(sale.timestamp || 0) >= Date.parse(cashSession.fecha_apertura || 0)
+      && Date.parse(sale.timestamp || 0) <= Date.parse(end || 0))
+  ));
+  return Array.from(new Map(
+    [...records(taggedSales), ...records(legacySales), ...archivedSales]
+      .map((sale) => [sale.id || sale.timestamp, sale])
+  ).values());
 };
 
 const sumCloudCustomerPaymentMovements = (movements = []) => {
@@ -150,7 +158,8 @@ export const calculateSessionTotals = (sales = []) => {
   let abonosFiado = Money.init(0);
 
   for (const sale of records(sales)) {
-    if (!isFinanciallyClosedSale(sale)) continue;
+    const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
+    if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
@@ -316,7 +325,8 @@ export const normalizeSaleMovements = (sales = []) => {
   const movements = [];
 
   for (const sale of records(sales)) {
-    if (!isFinanciallyClosedSale(sale)) continue;
+    const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
+    if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;

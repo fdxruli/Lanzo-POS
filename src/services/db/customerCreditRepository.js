@@ -88,30 +88,9 @@ export const customerCreditRepository = {
             const timestamp = new Date().toISOString();
             const ledgerId = generateID('ldg');
 
-            // Multiplicamos por -1 de forma segura para reflejar reducción de deuda
-            const negativeAmount = Money.multiply(amountSafe, -1);
-
-            // 3. Insertar registro inmutable en el Ledger con strings exactos
-            await db.table(STORES.CUSTOMER_LEDGER).add({
-                id: ledgerId,
-                customerId,
-                type: 'PAYMENT',
-                amount: Money.toExactString(negativeAmount),
-                paymentMethod,
-                note,
-                timestamp
-            });
-
-            // 4. Actualizar la proyección (caché) en el cliente de forma segura
-            const newDebtSafe = Money.subtract(currentDebtSafe, amountSafe);
-            await db.table(STORES.CUSTOMERS).update(customerId, {
-                debt: Money.toExactString(newDebtSafe),
-                financialSource: 'local',
-                debtCents: normalizeCustomerDebtCents(newDebtSafe),
-                updatedAt: timestamp
-            });
-
-            // 5. Aplicar Abono a Notas (FIFO o Específicas)
+            // Resolve and persist the sale allocation so a future cancellation
+            // can identify which tender was collected against each Fiado sale.
+            const resolvedAllocations = [];
             if (allocations && allocations.length > 0) {
                 let totalAllocated = Money.init(0);
                 for (const alloc of allocations) {
@@ -128,15 +107,10 @@ export const customerCreditRepository = {
                     if (sale && sale.saldoPendiente > 0) {
                         const amountToApply = Money.init(alloc.amountApplied);
                         const currentSaldo = Money.init(sale.saldoPendiente);
-
-                        // Bloquear sub-desbordamiento (saldo negativo)
                         const finalAmountToApply = amountToApply.gt(currentSaldo) ? currentSaldo : amountToApply;
-                        const newSaldo = Money.subtract(currentSaldo, finalAmountToApply);
-
-                        await db.table(STORES.SALES).update(alloc.saleId, {
-                            saldoPendiente: Money.toNumber(newSaldo),
-                            creditStatus: newSaldo.lte(0) ? 'PAGADO' : 'PARCIAL'
-                        });
+                        if (finalAmountToApply.gt(0)) {
+                            resolvedAllocations.push({ saleId: sale.id, amountApplied: Money.toExactString(finalAmountToApply) });
+                        }
                     }
                 }
             } else {
@@ -151,22 +125,17 @@ export const customerCreditRepository = {
 
                     const currentSaldo = Money.init(sale.saldoPendiente);
                     const amountToApply = remainingAmount.gte(currentSaldo) ? currentSaldo : remainingAmount;
-                    const newSaldo = Money.subtract(currentSaldo, amountToApply);
-
-                    await db.table(STORES.SALES).update(sale.id, {
-                        saldoPendiente: Money.toNumber(newSaldo),
-                        creditStatus: newSaldo.lte(0) ? 'PAGADO' : 'PARCIAL'
-                    });
+                    if (amountToApply.gt(0)) {
+                        resolvedAllocations.push({ saleId: sale.id, amountApplied: Money.toExactString(amountToApply) });
+                    }
 
                     remainingAmount = Money.subtract(remainingAmount, amountToApply);
                 }
             }
 
-            // 6. Registrar el ingreso en la Caja usando el servicio centralizado.
-            //    Usamos registrarMovimientoCajaEnTransaccion (variante inline) porque
-            //    ya estamos dentro de una transacción Dexie activa, y le inyectamos 'tx'.
-            if (cajaId) {
-                await registrarMovimientoCajaEnTransaccion(
+            let cashMovement = null;
+            if (isCashPayment && cajaId) {
+                const movementResult = await registrarMovimientoCajaEnTransaccion(
                     tx,
                     cajaId,
                     'entrada',
@@ -184,6 +153,54 @@ export const customerCreditRepository = {
                         createdAt: timestamp
                     }
                 );
+                cashMovement = movementResult?.movimiento || null;
+            }
+
+            // 3. Insertar el movimiento inmutable del ledger con la asignación
+            // y el vínculo de caja disponibles para auditoría futura.
+            await db.table(STORES.CUSTOMER_LEDGER).add({
+                id: ledgerId,
+                customerId,
+                type: 'PAYMENT',
+                amount: Money.toExactString(Money.multiply(amountSafe, -1)),
+                paymentMethod,
+                note,
+                timestamp,
+                allocations: resolvedAllocations,
+                cashSessionId: cashMovement ? cajaId : null,
+                cashMovementId: cashMovement?.id || null
+            });
+
+            // 4. Actualizar deuda del cliente y los saldos/tenders de cada nota
+            const newDebtSafe = Money.subtract(currentDebtSafe, amountSafe);
+            await db.table(STORES.CUSTOMERS).update(customerId, {
+                debt: Money.toExactString(newDebtSafe),
+                financialSource: 'local',
+                debtCents: normalizeCustomerDebtCents(newDebtSafe),
+                updatedAt: timestamp
+            });
+
+            for (const allocation of resolvedAllocations) {
+                const sale = await db.table(STORES.SALES).get(allocation.saleId);
+                if (!sale) continue;
+                const currentSaldo = Money.init(sale.saldoPendiente || 0);
+                const applied = Money.init(allocation.amountApplied);
+                const newSaldo = Money.subtract(currentSaldo, applied);
+                const collection = {
+                    id: `${ledgerId}:${sale.id}`,
+                    paymentId: ledgerId,
+                    method: paymentMethod,
+                    amount: Money.toExactString(applied),
+                    timestamp,
+                    cashSessionId: cashMovement ? cajaId : null,
+                    cashMovementId: cashMovement?.id || null
+                };
+                await db.table(STORES.SALES).put({
+                    ...sale,
+                    saldoPendiente: Money.toNumber(newSaldo),
+                    creditStatus: newSaldo.lte(0) ? 'PAGADO' : 'PARCIAL',
+                    paymentCollections: [...(sale.paymentCollections || []), collection]
+                });
             }
 
             return { success: true, newDebt: Money.toExactString(newDebtSafe), ledgerId };
@@ -244,7 +261,7 @@ export const customerCreditRepository = {
             // Obtener TODAS las ventas a crédito (pagadas o no)
             const allFiadoSales = await db.table(STORES.SALES)
                 .where('customerId').equals(customerId)
-                .and(s => s.paymentMethod === 'fiado')
+                .and(s => s.paymentMethod === 'fiado' && s.status !== 'cancelled')
                 .sortBy('timestamp');
 
             // Invertir para aplicar LIFO (Priorizar deuda a los tickets más recientes)
