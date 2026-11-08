@@ -718,7 +718,12 @@ export default function StatsGrid({
         </div>
       </div>
 
-      {/* Grid de métricas principales */}
+      {/* Nunca mostrar cifras de un período anterior mientras se consulta otro. */}
+      {reportStatus !== 'ready' ? (
+        <p className="text-muted" role="status">
+          {reportStatus === 'loading' ? 'Cargando cifras del período seleccionado…' : 'No disponible: no se pudo consultar el reporte local.'}
+        </p>
+      ) : (
       <div className="stats-grid-modern">
         {/* TARJETA 1: VENTAS COMERCIALES */}
         <div className="stat-card-modern revenue-card">
@@ -1005,9 +1010,10 @@ export default function StatsGrid({
           </>
         )}
       </div>
+      )}
 
       {/* Gráfica de evolución temporal */}
-      {metrics.evolutionData.length > 0 && (
+      {reportStatus === 'ready' && metrics.evolutionData.length > 0 && (
         <div className="stats-evolution-card">
           <div className="evolution-header">
             <div className="evolution-title">
@@ -1050,6 +1056,7 @@ export default function StatsGrid({
       )}
 
       {/* Sección de gráficas y datos adicionales */}
+      {reportStatus === 'ready' && (
       <div className="stats-insights-section stats-insights-section--top">
         {/* Gráfica por fecha real */}
         {metrics.dailyRevenue.length > 0 && (
@@ -1081,6 +1088,7 @@ export default function StatsGrid({
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
       </div>
+      )}
     </div>
   );
 }
