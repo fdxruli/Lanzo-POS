@@ -507,7 +507,12 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
                 throw buildInventoryError('DIRECT_PARTIAL_REQUIREMENTS_INVALID');
             }
             const row = grouped.get(req.ingredientId) || { strict: [], partial: [] };
-            row[req.canPartial === true ? 'partial' : 'strict'].push({ lineIndex, required: normalizeStock(needed) });
+            row[req.canPartial === true ? 'partial' : 'strict'].push({
+                lineIndex,
+                required: normalizeStock(needed),
+                ingredientUnit: req.ingredientUnit,
+                ingredientProductType: req.ingredientProductType
+            });
             grouped.set(req.ingredientId, row);
         }
     }
