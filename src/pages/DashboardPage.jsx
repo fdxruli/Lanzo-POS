@@ -87,6 +87,7 @@ export default function DashboardPage() {
     refreshKey: 0
   });
   const [activeTab, setActiveTab] = useState(() => readAIReportUiState().activeTab || 'stats');
+  const [historyView, setHistoryView] = useState('sales');
   usePublishBotScreen('/ventas', activeTab);
   const [hasCompletedInitialStatsLoad, setHasCompletedInitialStatsLoad] = useState(false);
   const [cloudStatsPeriod, setCloudStatsPeriod] = useState('today');
@@ -640,49 +641,55 @@ export default function DashboardPage() {
       )}
 
       {activeTab === 'history' && (
-        <section className="ui-section tab-content fade-in dashboard-section dashboard-section--history">
-          <div className="history-layout-grid">
-            <section className="ui-card dashboard-panel history-panel">
-              <div className="ui-card__header panel-header">
-                <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
-                <span className="panel-subtitle">
-                  {historyIsCloudFinal
-                    ? `Ventas registradas${historyTotalCount !== null ? ` (${historyTotalCount})` : ''}`
-                    : 'Registro de ventas recientes'}
-                </span>
-              </div>
-              <div className="panel-body">
-                <SalesHistory
-                  key={salesHistoryContextKey}
-                  sales={historyRows}
-                  onDeleteSale={handleDeleteSale}
-                  onArchiveSale={handleArchiveCancelledSale}
-                  onNext={handleSalesHistoryNext}
-                  onPrev={handleSalesHistoryPrev}
-                  hasMore={historyHasMore}
-                  currentPageIndex={historyPageIndex}
-                  isLoading={historyIsLoading}
-                  source={historySource}
-                  reportSource={historySource}
-                  isCloudFinal={historyIsCloudFinal}
-                  totalCount={historyTotalCount}
-                  queryScope={historyScope}
-                  dateRange={historyDateRange}
-                  error={historyUsesRepository && historyContextMatches ? reportingData.salesHistoryError : null}
-                  businessName={companyProfile?.name || companyProfile?.business_name || ''}
-                  canManageRefunds={canManageRefunds}
-                />
-              </div>
-            </section>
+        <section className="ui-section tab-content fade-in dashboard-section dashboard-section--history" aria-label="Historial de ventas y papelera">
+          <header className="sales-workspace-header">
+            <h2>Historial y Papelera</h2>
+            <p>Consulta las ventas registradas o recupera elementos eliminados de este dispositivo.</p>
+          </header>
 
-            <section className="ui-card dashboard-panel recycle-panel">
-              <div className="ui-card__header panel-header danger-theme">
-                <h3><Trash2 size={20} /> Papelera</h3>
-                <span className="panel-subtitle">Elementos eliminados</span>
-              </div>
-              <div className="panel-body"><RecycleBin canManageSaleRefunds={canManageRefunds} /></div>
-            </section>
-          </div>
+          <nav className="sales-workspace-tabs" aria-label="Vistas del historial">
+            <button
+              type="button"
+              className={historyView === 'sales' ? 'is-active' : ''}
+              aria-current={historyView === 'sales' ? 'page' : undefined}
+              onClick={() => setHistoryView('sales')}
+            >
+              Historial de ventas
+            </button>
+            <button
+              type="button"
+              className={historyView === 'trash' ? 'is-active' : ''}
+              aria-current={historyView === 'trash' ? 'page' : undefined}
+              onClick={() => setHistoryView('trash')}
+            >
+              Papelera
+            </button>
+          </nav>
+
+          {historyView === 'sales' ? (
+            <SalesHistory
+              key={salesHistoryContextKey}
+              sales={historyRows}
+              onDeleteSale={handleDeleteSale}
+              onArchiveSale={handleArchiveCancelledSale}
+              onNext={handleSalesHistoryNext}
+              onPrev={handleSalesHistoryPrev}
+              hasMore={historyHasMore}
+              currentPageIndex={historyPageIndex}
+              isLoading={historyIsLoading}
+              source={historySource}
+              reportSource={historySource}
+              isCloudFinal={historyIsCloudFinal}
+              totalCount={historyTotalCount}
+              queryScope={historyScope}
+              dateRange={historyDateRange}
+              error={historyUsesRepository && historyContextMatches ? reportingData.salesHistoryError : null}
+              businessName={companyProfile?.name || companyProfile?.business_name || ''}
+              canManageRefunds={canManageRefunds}
+            />
+          ) : (
+            <RecycleBin canManageSaleRefunds={canManageRefunds} />
+          )}
         </section>
       )}
 
