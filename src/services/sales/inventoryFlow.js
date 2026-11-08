@@ -1,6 +1,7 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
-import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { getDirectPartialRecipeSnapshot } from './directPartialAuthorization';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 const EPSILON = 0.00001;
@@ -376,8 +377,11 @@ export const buildProcessedItemsAndDeductions = ({
                     ingredientId: targetId,
                     required: normalizeStock(neededQty),
                     canPartial: recipeIds.has(targetId)
-                        && !(orderItem.selectedModifiers || []).some((modifier) => modifier.ingredientId === targetId)
-                }))
+                        && !(orderItem.selectedModifiers || []).some((modifier) => modifier.ingredientId === targetId),
+                    ingredientUnit: getIngredientDefaultUnit(productMap.get(targetId)),
+                    ingredientProductType: productMap.get(targetId)?.productType || productMap.get(targetId)?.product_type || null
+                })),
+                directPartialRecipeSnapshot: getDirectPartialRecipeSnapshot(product)
             });
             continue;
         }

@@ -1,16 +1,33 @@
 // A checkout confirmation is scoped to one captured cart, actor and attempt.
 // This is a client acknowledgement, not a bypass of inventory/RLS checks.
-const snapshotOf = ({ order, total, paymentData, saleId, attemptId, actorContext }) => JSON.stringify({
+export const getDirectPartialRecipeSnapshot = (product) => ({
+  productId: product?.id || null,
+  recipe: Array.isArray(product?.recipe) ? product.recipe : [],
+  conversionFactor: product?.conversionFactor || null
+});
+
+const snapshotOf = ({ order, total, paymentData, saleId, attemptId, actorContext, recipeSnapshot }) => JSON.stringify({
   order, total: String(total), saleId, attemptId,
   actorKey: actorContext?.actorKey || null,
   tenant: actorContext?.tenant?.opaqueId || null,
+  recipeSnapshot: recipeSnapshot || {},
   payment: {
     paymentMethod: paymentData?.paymentMethod,
+    payments: paymentData?.payments || null,
+    paymentBreakdown: paymentData?.paymentBreakdown || null,
+    paymentDetails: paymentData?.paymentDetails || null,
+    initialPaymentMethod: paymentData?.initialPaymentMethod || null,
+    abonoPaymentMethod: paymentData?.abonoPaymentMethod || null,
+    creditPaymentMethod: paymentData?.creditPaymentMethod || null,
+    partialPaymentMethod: paymentData?.partialPaymentMethod || null,
     amountPaid: paymentData?.amountPaid,
     saldoPendiente: paymentData?.saldoPendiente,
     customerId: paymentData?.customerId,
-    cashSessionId: paymentData?.cashSessionId,
-    saleDiscount: paymentData?.saleDiscount || null
+    dueDate: paymentData?.dueDate || null,
+    cashSessionId: paymentData?.cashSessionId || paymentData?.cash_session_id || null,
+    cashStationId: paymentData?.cashStationId || paymentData?.cash_station_id || null,
+    localStationKey: paymentData?.localStationKey || paymentData?.local_station_key || null,
+    saleDiscount: paymentData?.saleDiscount || paymentData?.discount || null
   }
 });
 export const captureDirectPartialAuthorization = (context, shortages) => ({
@@ -20,6 +37,7 @@ export const captureDirectPartialAuthorization = (context, shortages) => ({
   actorKey: context.actorContext?.actorKey || null,
   tenant: context.actorContext?.tenant?.opaqueId || null,
   exactSnapshot: snapshotOf(context),
+  recipeSnapshot: JSON.parse(JSON.stringify(context.recipeSnapshot || {})),
   maxMissing: Object.fromEntries(shortages.map((row) => [row.ingredientId, row.missing]))
 });
 export const matchesDirectPartialAuthorization = (approval, context) => (

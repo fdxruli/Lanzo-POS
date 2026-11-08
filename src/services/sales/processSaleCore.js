@@ -1,7 +1,11 @@
 import { restoreAbortedCheckoutCancellation, forgetPrepaymentCheckout } from '../auth/actorOperationalHandoff';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { validateStockBeforeSale } from './stockValidation';
-import { captureDirectPartialAuthorization, matchesDirectPartialAuthorization } from './directPartialAuthorization';
+import {
+    captureDirectPartialAuthorization,
+    getDirectPartialRecipeSnapshot,
+    matchesDirectPartialAuthorization
+} from './directPartialAuthorization';
 import { normalizeAndValidatePricing } from './priceSecurity';
 import {
     loadRelevantBatches,
@@ -377,7 +381,11 @@ export const processSaleCore = async ({
             paymentData: safePaymentData,
             saleId: activeOrderId,
             attemptId,
-            actorContext
+            actorContext,
+            recipeSnapshot: Object.fromEntries(
+                Array.from(new Set(itemsToProcess.map((item) => item.parentId || item.id).filter(Boolean)))
+                    .map((productId) => [productId, getDirectPartialRecipeSnapshot(productMap.get(productId))])
+            )
         };
         const isDirectSale = Boolean(activeOrderId && attemptId && actorContext
             && !persistedOrder?.tableData && persistedOrder?.orderType !== 'table'
@@ -531,7 +539,8 @@ export const processSaleCore = async ({
             allProducts,
             batchesMap,
             roundCurrency,
-            enforceExpiryStrict: !isCloudInventorySale
+            enforceExpiryStrict: !isCloudInventorySale,
+            allowDirectPartial: directPartialApproved && !isCloudInventorySale
         });
 
         const stableSaleTimestamp = await resolveStableSaleTimestamp({
@@ -629,6 +638,7 @@ export const processSaleCore = async ({
                     actorKey: actorContext.actorKey,
                     tenant: actorContext.tenant?.opaqueId || null,
                     maxMissing: partialAuthorization.maxMissing,
+                    recipeSnapshot: partialAuthorization.recipeSnapshot,
                     mode: 'direct_recipe_v1'
                 } } : {})
             },

@@ -17,6 +17,7 @@ import Logger from '../Logger';
 import { getOperationalStockSnapshot } from '../inventoryStock';
 import { isBatchExpiredForSale } from '../../utils/dateUtils';
 import { getIngredientDefaultUnit } from '../../utils/ingredientConfiguration';
+import { getDirectPartialRecipeSnapshot } from '../sales/directPartialAuthorization';
 
 const LOCAL_STATION_KEY_PREFIX = 'local:device:';
 const isLocalStationKey = (value) => (
@@ -478,11 +479,22 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
         || approval.actorKey !== sale.localCommitBinding?.actorKey
         || approval.tenant !== sale.localCommitBinding?.tenant?.opaqueId
         || !approval.maxMissing || typeof approval.maxMissing !== 'object'
+        || !approval.recipeSnapshot || typeof approval.recipeSnapshot !== 'object'
         || sale.orderType === 'table' || sale.tableData || sale.restaurantOrderId
         || sale.items.some((item) => item.inventoryReservation?.source === 'table')) {
         throw buildInventoryError('DIRECT_PARTIAL_CONTEXT_INVALID');
     }
     const grouped = new Map();
+    for (const item of sale.items) {
+        const sourceProductId = getRealProductId(item);
+        const approvedRecipe = approval.recipeSnapshot[sourceProductId];
+        const liveProduct = await tables.menu.get(sourceProductId);
+        if (!approvedRecipe || !item.directPartialRecipeSnapshot
+            || JSON.stringify(approvedRecipe) !== JSON.stringify(item.directPartialRecipeSnapshot)
+            || JSON.stringify(approvedRecipe) !== JSON.stringify(getDirectPartialRecipeSnapshot(liveProduct))) {
+            throw buildInventoryError('DIRECT_PARTIAL_RECIPE_CHANGED_RECONFIRM:' + sourceProductId);
+        }
+    }
     for (const [lineIndex, item] of sale.items.entries()) {
         if (!Array.isArray(item.directPartialRequirements)) {
             throw buildInventoryError('DIRECT_PARTIAL_REQUIREMENTS_MISSING');
@@ -508,6 +520,10 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
             throw buildInventoryError('DIRECT_PARTIAL_INGREDIENT_UNAVAILABLE:' + productId);
         }
         const allRequests = [...requirements.strict, ...requirements.partial];
+        if (requirements.partial.some((req) => req.ingredientProductType !== 'ingredient'
+            || req.ingredientUnit !== getIngredientDefaultUnit(product))) {
+            throw buildInventoryError('DIRECT_PARTIAL_INGREDIENT_CHANGED_RECONFIRM:' + productId);
+        }
         const needed = normalizeStock(allRequests.reduce((sum, row) => sum + row.required, 0));
         const strictNeeded = normalizeStock(requirements.strict.reduce((sum, row) => sum + row.required, 0));
         const stockSnapshot = getOperationalStockSnapshot(product);

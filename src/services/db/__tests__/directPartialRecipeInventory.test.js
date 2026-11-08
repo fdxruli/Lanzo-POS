@@ -5,7 +5,11 @@ import { salesRepository } from '../sales';
 import { productsRepository } from '../products';
 import { buildProcessedItemsAndDeductions, commitStock } from '../../sales/inventoryFlow';
 import { validateStockBeforeSale } from '../../sales/stockValidation';
-import { captureDirectPartialAuthorization, matchesDirectPartialAuthorization } from '../../sales/directPartialAuthorization';
+import {
+  captureDirectPartialAuthorization,
+  getDirectPartialRecipeSnapshot,
+  matchesDirectPartialAuthorization
+} from '../../sales/directPartialAuthorization';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 const makeProduct = (id, stock, extra = {}) => ({
@@ -37,6 +41,8 @@ const saleFor = async ({ id, items, catalog, maxMissing = {}, override = {} }) =
       metadata: { directPartialInventoryAuthorization: {
         version: 1, mode: 'direct_recipe_v1', saleId: id, attemptId,
         actorKey: actor.actorKey, tenant: actor.tenant.opaqueId,
+        recipeSnapshot: Object.fromEntries(Array.from(new Set(items.map((item) => item.parentId || item.id)))
+          .map((productId) => [productId, getDirectPartialRecipeSnapshot(catalog.find((product) => product.id === productId))])),
         maxMissing, ...override
       } }
     },
@@ -69,14 +75,29 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
       ingredientId: 'flour', needed: 6, available: 3, missing: 3, unit: 'kg'
     })]);
     expect(checked.response.eligibleForPartial).toBe(true);
-    const context = { order, total: '100.00', paymentData: { paymentMethod: 'tarjeta' },
-      saleId:'sale-1', attemptId:'a1', actorContext:actor };
+    const context = {
+      order, total: '100.00',
+      paymentData: { paymentMethod: 'multiple', amountPaid: '100.00',
+        payments: [{ method: 'cash', amount: '60.00' }, { method: 'card', amount: '40.00' }] },
+      saleId:'sale-1', attemptId:'a1', actorContext:actor,
+      recipeSnapshot: { dish: getDirectPartialRecipeSnapshot(dish) }
+    };
     const proposal = captureDirectPartialAuthorization(context,checked.response.missingData);
     expect(matchesDirectPartialAuthorization(proposal,context)).toBe(true);
     expect(matchesDirectPartialAuthorization(proposal,{...context,order:[{id:'dish',quantity:4}]})).toBe(false);
     expect(matchesDirectPartialAuthorization(proposal,{...context,actorContext:{...actor,actorKey:'staff:other'}})).toBe(false);
     expect(matchesDirectPartialAuthorization(proposal,{...context,actorContext:{...actor,tenant:{opaqueId:'other'}}})).toBe(false);
     expect(matchesDirectPartialAuthorization(proposal,{...context,attemptId:'a2'})).toBe(false);
+    expect(matchesDirectPartialAuthorization(proposal, {
+      ...context,
+      paymentData: { ...context.paymentData, payments: [
+        { method: 'cash', amount: '30.00' }, { method: 'card', amount: '70.00' }
+      ] }
+    })).toBe(false);
+    expect(matchesDirectPartialAuthorization(proposal, {
+      ...context,
+      recipeSnapshot: { dish: getDirectPartialRecipeSnapshot(makeDish('dish', [{ ingredientId: 'flour', quantity: 3 }])) }
+    })).toBe(false);
   });
 
   it('consumes only free physical stock, preserves other table commitments, and records required/used/missing', async () => {
@@ -180,6 +201,23 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
     expect((await db.table(STORES.SALES).get('reconfirm')).status).toBe('open');
     expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
     expect(await db.table(STORES.TRANSACTION_LOG).count()).toBe(0);
+  });
+
+  it('rejects a recipe changed in Dexie after partial authorization without charging', async () => {
+    const dish = makeDish('dish', [{ ingredientId: 'flour', quantity: 2 }]);
+    const flour = makeProduct('flour', 1);
+    await db.table(STORES.MENU).bulkPut([dish, flour]);
+    const { sale, batchesToDeduct } = await saleFor({
+      id: 'recipe-changed', items: [{ id: 'dish', quantity: 1 }],
+      catalog: [dish, flour], maxMissing: { flour: 1 }
+    });
+    await db.table(STORES.MENU).put(makeDish('dish', [{ ingredientId: 'flour', quantity: 3 }]));
+
+    const result = await salesRepository.executeSaleTransaction(sale, batchesToDeduct);
+    expect(result.success).toBe(false);
+    expect((await db.table(STORES.MENU).get('flour')).stock).toBe(1);
+    expect((await db.table(STORES.SALES).get('recipe-changed')).status).toBe('open');
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
   });
 
   it('rejects forged actor, tenant, attempt and table reservation without charging', async () => {
