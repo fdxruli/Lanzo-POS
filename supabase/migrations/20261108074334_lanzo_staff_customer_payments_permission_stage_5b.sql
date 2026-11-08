@@ -193,7 +193,7 @@ begin
       -- unguarded path. Stop on any change to that financial boundary.
       select encode(
         extensions.digest(
-          convert_to(replace(pg_catalog.pg_get_functiondef(v_legacy.oid), E'\\r', ''), 'UTF8'),
+          convert_to(replace(pg_catalog.pg_get_functiondef(v_legacy.oid), E'\r', ''), 'UTF8'),
           'sha256'
         ),
         'hex'
