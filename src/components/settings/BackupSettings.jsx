@@ -7,8 +7,7 @@ import {
   LockKeyhole,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
-  Sparkles
+  ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
@@ -191,35 +190,22 @@ function formatDate(value) {
 }
 
 function BackupHero({ status, isCloudLicense }) {
-  const protectionLabel = isCloudLicense ? 'Cloud + local' : status.configured ? 'Local cifrado' : 'Pendiente';
-  const sessionLabel = status.configured ? (status.unlocked ? 'Desbloqueada' : 'Bloqueada') : 'Sin configurar';
+  const protectionLabel = isCloudLicense ? 'Cloud + local' : status.configured ? 'Local cifrado' : 'Sin configurar';
+  const sessionLabel = status.configured ? (status.unlocked ? 'Desbloqueada' : 'Bloqueada') : 'Pendiente';
 
   return (
     <header className="backup-settings-hero">
       <div className="backup-hero-copy">
-        <span className="backup-kicker">
-          <Sparkles size={15} />
-          Respaldos
-        </span>
+        <span className="backup-hero-icon" aria-hidden="true"><DatabaseBackup size={20} /></span>
         <div>
-          <h2>Proteccion de datos</h2>
-          <p>Administra copias cifradas, restauracion y conexion opcional con Google Drive.</p>
+          <h2>Respaldos y datos</h2>
+          <p>Protege tu negocio, recupera tu información y exporta lo que necesites.</p>
         </div>
       </div>
-
       <div className="backup-hero-summary" aria-label="Resumen de respaldos">
-        <div>
-          <span>Proteccion</span>
-          <strong>{protectionLabel}</strong>
-        </div>
-        <div>
-          <span>Sesion</span>
-          <strong>{sessionLabel}</strong>
-        </div>
-        <div>
-          <span>Ultimo respaldo</span>
-          <strong>{formatDate(status.settings?.lastBackupAt)}</strong>
-        </div>
+        <span><b>Protección:</b> {protectionLabel}</span>
+        <span><b>Sesión:</b> {sessionLabel}</span>
+        <span><b>Última copia:</b> {formatDate(status.settings?.lastBackupAt)}</span>
       </div>
     </header>
   );
@@ -571,13 +557,18 @@ function LocalBackupSettings({
       )}
 
       <dl className="backup-settings-status">
-        <div><dt>Carpeta</dt><dd>{status.settings.directoryName || 'Descargas del navegador'}</dd></div>
-        <div><dt>Permiso</dt><dd>{status.permission}</dd></div>
-        <div><dt>Sesion</dt><dd>{status.unlocked ? 'Desbloqueada' : 'Bloqueada'}</dd></div>
-        <div><dt>Ultimo respaldo</dt><dd>{formatDate(status.settings.lastBackupAt)}</dd></div>
-        <div><dt>Archivo</dt><dd>{status.settings.lastBackupFile || 'Sin archivo'}</dd></div>
+        <div><dt>Último respaldo</dt><dd>{formatDate(status.settings.lastBackupAt)}</dd></div>
         <div><dt>Automático</dt><dd>{status.settings.cronBlocked ? 'Revisa el error' : !status.supported ? 'Manual en este navegador' : status.unlocked && status.permission === 'granted' ? 'Cada 4 h con la app abierta' : 'Al desbloquear y autorizar'}</dd></div>
+        <div><dt>Destino</dt><dd>{status.settings.directoryName || 'Descargas del navegador'}</dd></div>
       </dl>
+      <details className="backup-advanced-details">
+        <summary>Detalles técnicos de la copia</summary>
+        <dl className="backup-settings-status backup-settings-status--technical">
+          <div><dt>Permiso</dt><dd>{status.permission}</dd></div>
+          <div><dt>Sesión</dt><dd>{status.unlocked ? 'Desbloqueada' : 'Bloqueada'}</dd></div>
+          <div><dt>Archivo</dt><dd>{status.settings.lastBackupFile || 'Sin archivo'}</dd></div>
+        </dl>
+      </details>
       {status.settings.lastCoverage?.complete === false && (
         <div className="backup-settings-notice" role="status">
           El último archivo tiene cobertura parcial. Revisa las operaciones pendientes, las cajas abiertas y los estados temporales omitidos.
@@ -663,23 +654,20 @@ function LocalBackupSettings({
       />
 
       {status.supported && (
-        <div className="backup-settings-danger">
-          <div className="backup-danger-heading">
-            <span className="backup-danger-icon backup-danger-icon--neutral" aria-hidden="true"><LockKeyhole size={17} /></span>
-            <div>
-              <h5>Cambiar PIN y recifrar archivos</h5>
-              <p>Actualiza la clave local y recifra los respaldos existentes.</p>
+        <details className="backup-advanced-details">
+          <summary><LockKeyhole size={16} aria-hidden="true" /> Cambiar PIN y recifrar archivos</summary>
+          <div className="backup-settings-danger">
+            <p>Actualiza la clave local y recifra los respaldos existentes.</p>
+            <div className="backup-settings-grid backup-settings-grid--three">
+              <label>PIN actual<input type="password" inputMode="numeric" value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, ''))} /></label>
+              <label>PIN nuevo<input type="password" inputMode="numeric" value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ''))} /></label>
+              <label>Confirmar<input type="password" inputMode="numeric" value={newPinConfirm} onChange={(event) => setNewPinConfirm(event.target.value.replace(/\D/g, ''))} /></label>
             </div>
+            <button type="button" className="btn btn-secondary" onClick={changePin} disabled={status.busy || currentPin.length < 8 || newPin.length < 8 || newPin !== newPinConfirm}>
+              Recifrar respaldos
+            </button>
           </div>
-          <div className="backup-settings-grid backup-settings-grid--three">
-            <label>PIN actual<input type="password" inputMode="numeric" value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, ''))} /></label>
-            <label>PIN nuevo<input type="password" inputMode="numeric" value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ''))} /></label>
-            <label>Confirmar<input type="password" inputMode="numeric" value={newPinConfirm} onChange={(event) => setNewPinConfirm(event.target.value.replace(/\D/g, ''))} /></label>
-          </div>
-          <button type="button" className="btn btn-secondary" onClick={changePin} disabled={status.busy || currentPin.length < 8 || newPin.length < 8 || newPin !== newPinConfirm}>
-            Recifrar respaldos
-          </button>
-        </div>
+        </details>
       )}
 
       {(error || status.settings.lastError) && (
@@ -704,15 +692,7 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
     <div className="backup-settings-shell">
       <BackupHero status={status} isCloudLicense={isCloudLicense} />
 
-      <section className="backup-settings-layout">
-        <div className="backup-cloud-column">
-          <GoogleDriveSettings />
-          <div className="backup-safety-note">
-            <ShieldCheck size={18} />
-            <span>Los respaldos locales se cifran antes de guardarse o restaurarse.</span>
-          </div>
-        </div>
-
+      <section className="backup-settings-layout" aria-label="Protección y recuperación">
         <div className="backup-local-column">
           <LocalBackupSettings
             backupContext={backupContext}
@@ -721,6 +701,13 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
             isAdmin={settingsAccess.isAdmin}
           />
         </div>
+        <aside className="backup-cloud-column">
+          <GoogleDriveSettings />
+          <div className="backup-safety-note">
+            <ShieldCheck size={17} aria-hidden="true" />
+            <span>Las copias locales se guardan cifradas.</span>
+          </div>
+        </aside>
       </section>
       <DataPortabilitySettings
         isAdmin={settingsAccess.isAdmin}
