@@ -20,13 +20,58 @@ import {
   assertLocalTenantSyncAccess,
   isLocalTenantAccessError
 } from '../../services/tenant/localTenantGuard';
-import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import {
+  ACTOR_RUNTIME_ERROR_CODES,
+  ActorRuntimeError,
+  actorRuntimeController
+} from '../../services/auth/actorRuntimeController';
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
+import { evaluateSettingsAccess } from '../../services/auth/settingsAccessPolicy';
 import {
   getTenantRuntimeReadiness,
   isTenantRuntimeError
 } from '../../services/db/tenantRuntimeRouter';
 
 const LEGACY_COMPANY_KEY = 'company';
+
+const captureProfileSettingsAction = (get) => {
+  const runtimeSnapshot = actorRuntimeController.getState();
+  const access = evaluateSettingsAccess({
+    runtimeSnapshot,
+    actorAccess: readActorAccess(get(), runtimeSnapshot)
+  });
+  if (!access.canAccessPermission('settings_data')) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.PERMISSION_DENIED, {
+      permission: 'settings_data',
+      actorKey: access.actorKey
+    });
+  }
+
+  // A legacy Staff session contains only `settings` in the runtime grant.
+  // The policy above permits the fallback only while no granular setting key
+  // is present in the verified actor record.
+  const runtimePermission = runtimeSnapshot.actorType === 'staff'
+    && !runtimeSnapshot.permissions.includes('settings_data')
+    ? 'settings'
+    : 'settings_data';
+  const runtimeHandle = actorRuntimeController.capture(runtimePermission);
+  const assertCurrent = (requiredPermission = 'settings_data') => {
+    const currentRuntime = actorRuntimeController.getState();
+    const currentAccess = evaluateSettingsAccess({
+      runtimeSnapshot: currentRuntime,
+      actorAccess: readActorAccess(get(), currentRuntime)
+    });
+    if (!currentAccess.canAccessPermission(requiredPermission)) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.PERMISSION_DENIED, {
+        permission: requiredPermission,
+        actorKey: currentAccess.actorKey
+      });
+    }
+    return runtimeHandle.assertCurrent(runtimePermission);
+  };
+
+  return Object.freeze({ ...runtimeHandle, assertCurrent });
+};
 
 const getProfileCacheKey = (licenseKey) => `company:${licenseKey}`;
 
@@ -123,7 +168,7 @@ const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) 
   Logger.log('[License] Revalidando capacidades autorizadas antes de finalizar onboarding.');
   const validation = await revalidateLicense(licenseKey);
 
-  actorHandle.assertCurrent('settings');
+  actorHandle.assertCurrent('settings_data');
   if (!isAuthoritativeLicenseValidation(validation)) {
     const error = new Error(
       validation?.details
@@ -158,9 +203,9 @@ const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) 
       || 'admin'
   };
 
-  actorHandle.assertCurrent('settings');
+  actorHandle.assertCurrent('settings_data');
   await saveLicenseToStorage(authoritativeLicense);
-  actorHandle.assertCurrent('settings');
+  actorHandle.assertCurrent('settings_data');
   set({ licenseDetails: authoritativeLicense });
 
   return authoritativeLicense;
@@ -468,7 +513,7 @@ export const createProfileSlice = (set, get) => {
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
-    const actorHandle = actorRuntimeController.capture('settings');
+    const actorHandle = captureProfileSettingsAction(get);
     const sessionGeneration = _profileSessionGeneration;
 
     try {
@@ -483,7 +528,7 @@ export const createProfileSlice = (set, get) => {
         logoUrl = uploadResult.publicUrl;
       }
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       const profileData = {
@@ -501,16 +546,16 @@ export const createProfileSlice = (set, get) => {
         );
       }
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       const companyData = await saveProfileCache(
         licenseKey,
         buildCompanyData(profileData, licenseKey),
-        { beforeWrite: () => actorHandle.assertCurrent('settings') }
+        { beforeWrite: () => actorHandle.assertCurrent('settings_data') }
       );
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       await refreshLicenseBeforeReady({
@@ -520,7 +565,7 @@ export const createProfileSlice = (set, get) => {
         get
       });
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       set({
@@ -538,7 +583,7 @@ export const createProfileSlice = (set, get) => {
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
-    const actorHandle = actorRuntimeController.capture('settings');
+    const actorHandle = captureProfileSettingsAction(get);
     const sessionGeneration = _profileSessionGeneration;
 
     try {
@@ -553,7 +598,7 @@ export const createProfileSlice = (set, get) => {
         nextCompanyData.logo = uploadResult.publicUrl;
       }
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
@@ -567,16 +612,16 @@ export const createProfileSlice = (set, get) => {
         );
       }
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       const scopedCompanyData = await saveProfileCache(
         licenseKey,
         buildCompanyData(nextCompanyData, licenseKey),
-        { beforeWrite: () => actorHandle.assertCurrent('settings') }
+        { beforeWrite: () => actorHandle.assertCurrent('settings_data') }
       );
 
-      actorHandle.assertCurrent('settings');
+      actorHandle.assertCurrent('settings_data');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       set({ companyProfile: scopedCompanyData });

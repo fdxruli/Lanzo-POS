@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     sessionId: 'admin-session',
     assertCurrent: vi.fn()
   },
+  actorRuntimePermissions: ['settings_data'],
   loadData: vi.fn(),
   saveBusinessProfile: vi.fn(),
   saveData: vi.fn(async () => undefined),
@@ -49,7 +50,31 @@ vi.mock('../../services/db/tenantRuntimeRouter', () => ({
 }));
 
 vi.mock('../../services/auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: mocks.actorRuntimeCapture }
+  ACTOR_RUNTIME_ERROR_CODES: { PERMISSION_DENIED: 'ACTOR_PERMISSION_DENIED' },
+  ActorRuntimeError: class ActorRuntimeError extends Error {
+    constructor(code, details = {}) {
+      super(code);
+      this.code = code;
+      this.details = details;
+    }
+  },
+  actorRuntimeController: {
+    capture: mocks.actorRuntimeCapture,
+    getState: () => {
+      const actorType = mocks.actorHandle.actorType;
+      const actorId = `${actorType}-id`;
+      return {
+        status: 'granted',
+        actorType,
+        actorId,
+        actorKey: `${actorType}:${actorId}`,
+        sessionId: mocks.actorHandle.sessionId,
+        generation: 1,
+        permissions: actorType === 'admin' ? ['*'] : mocks.actorRuntimePermissions
+      };
+    },
+    assertCurrent: vi.fn()
+  }
 }));
 
 import { createProfileSlice } from './createProfileSlice';
@@ -80,6 +105,7 @@ describe('profile refresh during authenticated staff transition', () => {
     mocks.actorHandle.sessionId = 'admin-session';
     mocks.actorHandle.assertCurrent.mockReset();
     mocks.actorRuntimeCapture.mockReturnValue(mocks.actorHandle);
+    mocks.actorRuntimePermissions = ['settings_data'];
 
     localStorage.setItem(PROFILE_LAST_LOAD_KEY, String(Date.now()));
     localStorage.setItem(PROFILE_LAST_LICENSE_KEY, 'LANZO-PRO');
@@ -176,8 +202,14 @@ describe('profile refresh during authenticated staff transition', () => {
   it.each(['admin', 'staff'])('binds an allowed %s profile update to its captured actor handle', async (actorType) => {
     mocks.actorHandle.actorType = actorType;
     mocks.actorHandle.sessionId = `${actorType}-session`;
+    mocks.actorRuntimePermissions = ['settings_data'];
     mocks.saveBusinessProfile.mockResolvedValue({ success: true });
     const state = {
+      currentDeviceRole: actorType,
+      currentAdminUser: actorType === 'admin' ? { id: 'admin-id' } : null,
+      currentStaffUser: actorType === 'staff' ? {
+        id: 'staff-id', permissions: { settings_data: true }
+      } : null,
       licenseDetails: { license_key: 'LANZO-PRO' },
       companyProfile: null
     };
@@ -189,14 +221,39 @@ describe('profile refresh during authenticated staff transition', () => {
       business_type: ['hardware']
     });
 
-    expect(mocks.actorRuntimeCapture).toHaveBeenCalledWith('settings');
+    expect(mocks.actorRuntimeCapture).toHaveBeenCalledWith('settings_data');
     expect(mocks.saveBusinessProfile).toHaveBeenCalledWith(
       'LANZO-PRO',
       expect.objectContaining({ name: 'Actor profile', business_type: ['hardware'] }),
-      { actorHandle: mocks.actorHandle }
+      { actorHandle: expect.objectContaining({ actorType, sessionId: `${actorType}-session` }) }
     );
     expect(mocks.saveData).toHaveBeenCalledTimes(2);
     expect(state.companyProfile).toMatchObject({ name: 'Actor profile' });
+  });
+
+  it('keeps an unmodified legacy Settings grant able to update the business profile', async () => {
+    mocks.actorHandle.actorType = 'staff';
+    mocks.actorHandle.sessionId = 'staff-session';
+    mocks.actorRuntimePermissions = ['settings'];
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    const state = {
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-id', permissions: { settings: true } },
+      licenseDetails: { license_key: 'LANZO-PRO' },
+      companyProfile: null
+    };
+    Object.assign(state, createProfileSlice(
+      vi.fn((partial) => Object.assign(state, partial)),
+      () => state
+    ));
+
+    await state.updateCompanyProfile({
+      name: 'Legacy profile',
+      business_type: ['hardware']
+    });
+
+    expect(mocks.actorRuntimeCapture).toHaveBeenCalledWith('settings');
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes effective license features before marking first-time setup ready', async () => {
@@ -206,6 +263,7 @@ describe('profile refresh during authenticated staff transition', () => {
         license_key: 'LANZO-FREE',
         features: { full_access: true }
       },
+      currentAdminUser: { id: 'admin-id' },
       currentDeviceRole: 'admin',
       companyProfile: null,
       appStatus: 'setup_required'
@@ -243,6 +301,7 @@ describe('profile refresh during authenticated staff transition', () => {
     });
     const state = {
       licenseDetails: { license_key: 'LANZO-FREE', features: { full_access: true } },
+      currentAdminUser: { id: 'admin-id' },
       currentDeviceRole: 'admin',
       companyProfile: null,
       appStatus: 'setup_required'
@@ -261,11 +320,14 @@ describe('profile refresh during authenticated staff transition', () => {
   });
 
   it('denies a Staff profile mutation before any remote or local write when settings is absent', async () => {
-    const denied = Object.assign(new Error('ACTOR_PERMISSION_DENIED'), {
-      code: 'ACTOR_PERMISSION_DENIED'
-    });
-    mocks.actorRuntimeCapture.mockImplementationOnce(() => { throw denied; });
-    const state = { licenseDetails: { license_key: 'LANZO-PRO' } };
+    mocks.actorHandle.actorType = 'staff';
+    mocks.actorHandle.sessionId = 'staff-session';
+    mocks.actorRuntimePermissions = ['pos'];
+    const state = {
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-id', permissions: { pos: true } },
+      licenseDetails: { license_key: 'LANZO-PRO' }
+    };
     Object.assign(state, createProfileSlice(
       vi.fn((partial) => Object.assign(state, partial)),
       () => state
@@ -274,7 +336,8 @@ describe('profile refresh during authenticated staff transition', () => {
     await expect(state.updateCompanyProfile({
       name: 'Denied profile',
       business_type: ['hardware']
-    })).rejects.toBe(denied);
+    })).rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+    expect(mocks.actorRuntimeCapture).not.toHaveBeenCalled();
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(mocks.saveData).not.toHaveBeenCalled();
   });
@@ -291,6 +354,8 @@ describe('profile refresh during authenticated staff transition', () => {
       .mockImplementationOnce(() => { throw stale; });
     mocks.saveBusinessProfile.mockResolvedValue({ success: true });
     const state = {
+      currentDeviceRole: 'admin',
+      currentAdminUser: { id: 'admin-id' },
       licenseDetails: { license_key: 'LANZO-PRO' },
       companyProfile: null,
       appStatus: 'setup_required'
@@ -302,7 +367,9 @@ describe('profile refresh during authenticated staff transition', () => {
 
     await expect(state[method](payload)).rejects.toBe(stale);
     expect(mocks.saveBusinessProfile).toHaveBeenCalledWith(
-      'LANZO-PRO', expect.any(Object), { actorHandle: mocks.actorHandle }
+      'LANZO-PRO', expect.any(Object), {
+        actorHandle: expect.objectContaining({ actorType: 'admin', sessionId: 'admin-session' })
+      }
     );
     expect(mocks.saveData).not.toHaveBeenCalled();
     expect(state.companyProfile).toBeNull();

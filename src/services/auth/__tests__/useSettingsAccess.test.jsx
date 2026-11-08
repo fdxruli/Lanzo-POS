@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { grantTestActor } from './actorAccessTestHarness';
+import { actorRuntimeController } from '../actorRuntimeController';
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,6 +72,61 @@ describe('useSettingsAccess actor transitions', () => {
 
     expect(hook.result.current.canEnterSettings).toBe(false);
     expect(hook.result.current.visibleTabs).toEqual([]);
+  });
+
+  it('reflects refreshed granular permissions for the same Staff session', () => {
+    state.app = {
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: {
+        id: 'staff-a',
+        permissions: {
+          settings_data: true,
+          settings_controls: false,
+          settings_maintenance: false,
+          settings_backup: false
+        }
+      }
+    };
+    state.runtime = runtimeFor('staff', 'staff-a', ['settings_data']);
+    const hook = renderHook(() => useSettingsAccess());
+    const generation = hook.result.current.generation;
+    expect(hook.result.current.canAccessSection('general')).toBe(true);
+    expect(hook.result.current.canAccessSection('controls')).toBe(false);
+
+    state.app.currentStaffUser = {
+      id: 'staff-a',
+      permissions: {
+        settings_data: false,
+        settings_controls: true,
+        settings_maintenance: false,
+        settings_backup: false
+      }
+    };
+    state.runtime = actorRuntimeController.refreshStaffPermissions({
+      captured: actorRuntimeController.getState(),
+      actorId: 'staff-a',
+      permissions: ['settings_controls']
+    });
+    hook.rerender();
+
+    expect(hook.result.current.generation).toBe(generation);
+    expect(hook.result.current.canAccessSection('general')).toBe(false);
+    expect(hook.result.current.canAccessSection('controls')).toBe(true);
+  });
+
+  it('keeps legacy action capture working only when no granular key exists', () => {
+    state.app = {
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: { settings: true } }
+    };
+    state.runtime = runtimeFor('staff', 'staff-a', ['settings']);
+    const hook = renderHook(() => useSettingsActionGuard());
+
+    expect(hook.result.current).toBeTypeOf('function');
+    expect(hook.result.current('settings_data')).toBeDefined();
+    expect(hook.result.current('settings_controls')).toBeDefined();
   });
 
   it('recomputes Staff to Admin only after the Admin identity is current', () => {

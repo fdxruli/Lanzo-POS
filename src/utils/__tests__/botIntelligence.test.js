@@ -62,7 +62,8 @@ describe('Navigation authority', () => {
     for (const path of ['//example.com', 'https://example.com', '/inventory', '/reports/sales']) expect(canOpenBotAction(path, () => true)).toBe(false);
     expect(canOpenBotAction('/ventas', permission => permission === 'pos')).toBe(false);
     expect(canOpenBotAction('/productos?tab=batches', permission => permission === 'products')).toBe(false);
-    expect(canOpenBotAction('/configuracion?tab=backup', permission => permission === 'settings')).toBe(false);
-    expect(canOpenBotAction('/configuracion?tab=backup', permission => permission === 'sync')).toBe(true);
+    expect(canOpenBotAction('/configuracion?tab=backup', permission => permission === 'sync')).toBe(false);
+    expect(canOpenBotAction('/configuracion?tab=backup', permission => permission === 'settings_backup')).toBe(true);
+    expect(canOpenBotAction('/configuracion?tab=controls', permission => permission === 'settings_controls')).toBe(true);
   });
 });

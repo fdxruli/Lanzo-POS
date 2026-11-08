@@ -1,11 +1,28 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../store/useAppStore';
 import WelcomeModal from './WelcomeModal';
 
 describe('WelcomeModal mobile-first welcome', () => {
+  const nativeShowModal = HTMLDialogElement.prototype.showModal;
+  const nativeClose = HTMLDialogElement.prototype.close;
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+  });
+  afterEach(() => {
+    if (nativeShowModal) HTMLDialogElement.prototype.showModal = nativeShowModal;
+    else delete HTMLDialogElement.prototype.showModal;
+    if (nativeClose) HTMLDialogElement.prototype.close = nativeClose;
+    else delete HTMLDialogElement.prototype.close;
+  });
   beforeEach(() => {
     Object.defineProperty(window.navigator, 'onLine', {
       configurable: true,
@@ -17,7 +34,24 @@ describe('WelcomeModal mobile-first welcome', () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const mockSpaciousLayout = (initial) => {
+    let listener;
+    const query = {
+      matches: initial,
+      addEventListener: (_event, callback) => { listener = callback; },
+      removeEventListener: () => { listener = undefined; }
+    };
+    vi.stubGlobal('matchMedia', vi.fn(() => query));
+    return (matches) => {
+      query.matches = matches;
+      act(() => listener?.({ matches }));
+    };
+  };
 
   it('introduces LANZO POS and provides the public information destinations', () => {
     render(<WelcomeModal />);
@@ -53,6 +87,64 @@ describe('WelcomeModal mobile-first welcome', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('textbox', { name: 'Clave de licencia' })).toHaveValue('LANZO-PRUEBA-1234');
+  });
+
+  it('shows the license form without an accordion on a spacious viewport', () => {
+    mockSpaciousLayout(true);
+    render(<WelcomeModal />);
+
+    // The control is visually hidden by the responsive CSS, but remains mounted.
+    expect(document.querySelector('.license-entry-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+    expect(screen.getByRole('textbox', { name: 'Clave de licencia' })).toBeVisible();
+  });
+
+  it('adapts between spacious and compact layouts without losing the license', () => {
+    const resize = mockSpaciousLayout(false);
+    render(<WelcomeModal />);
+
+    const toggle = screen.getByRole('button', { name: /ya tengo una licencia/i });
+    fireEvent.click(toggle);
+    const input = screen.getByRole('textbox', { name: 'Clave de licencia' });
+    fireEvent.change(input, { target: { value: 'lanzo-prueba-5678' } });
+    fireEvent.click(toggle);
+    expect(document.getElementById('welcome-license-panel')).toHaveAttribute('hidden');
+
+    resize(true);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(input).toHaveValue('LANZO-PRUEBA-5678');
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+
+    // Focus before a keyboard-driven viewport reduction must not hide the active field.
+    fireEvent.focus(input);
+    resize(false);
+    expect(document.getElementById('welcome-license-panel')).not.toHaveAttribute('hidden');
+    expect(input).toHaveValue('LANZO-PRUEBA-5678');
+  });
+
+  it('keeps all three low-priority information actions together in the footer', () => {
+    render(<WelcomeModal />);
+    const footer = document.querySelector('.welcome-secondary');
+    const actions = footer.querySelector('.prelogin-support__actions');
+    expect(actions.querySelectorAll('a')).toHaveLength(2);
+    expect(actions.querySelector('button')).toHaveTextContent('Soporte');
+  });
+
+  it('opens support in a modal without moving the footer or losing license text', () => {
+    render(<WelcomeModal />);
+    const toggle = screen.getByRole('button', { name: /ya tengo una licencia/i });
+    fireEvent.click(toggle);
+    const license = screen.getByRole('textbox', { name: 'Clave de licencia' });
+    fireEvent.change(license, { target: { value: 'lanzo-demo-456' } });
+    const footer = document.querySelector('.welcome-secondary');
+    const trigger = screen.getByRole('button', { name: 'Soporte' });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    expect(footer).not.toContainElement(dialog);
+    expect(license).toHaveValue('LANZO-DEMO-456');
+    expect(dialog).toContainElement(screen.getByRole('region', { name: 'Soporte oficial de LANZO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
+    expect(license).toHaveValue('LANZO-DEMO-456');
   });
 
   it('keeps initial activation and free creation blocked while offline', () => {

@@ -77,25 +77,33 @@ describe('prelogin official support', () => {
     expect(screen.queryByRole('region', { name: 'Soporte oficial de LANZO' })).not.toBeInTheDocument();
   });
 
-  it('provides a modal presentation with focus management for access pages', async () => {
+  it('provides an accessible native modal presentation for access pages', async () => {
     const user = userEvent.setup();
-    render(<PreloginSupportAccess screen="Acceso administrador" presentation="dialog" />);
+    const originalShowModal = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+      this.querySelector('button')?.focus();
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+
+    render(<PreloginSupportAccess screen="Acceso administrador" modal />);
     const trigger = screen.getByRole('button', { name: 'Soporte' });
     await user.click(trigger);
 
-    const dialog = screen.getByRole('dialog', { name: 'Soporte oficial de LANZO' });
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Soporte oficial de LANZO' })).toHaveFocus());
-    expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(document.body.style.overflow).toBe('hidden');
-
-    fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    await waitFor(() => expect(dialog).toHaveAttribute('open'));
+    expect(dialog).toContainElement(screen.getByRole('region', { name: 'Soporte oficial de LANZO' }));
     expect(screen.getByRole('button', { name: 'Cerrar soporte' })).toHaveFocus();
-    fireEvent.keyDown(document.activeElement, { key: 'Tab' });
-    expect(screen.getByRole('button', { name: 'Cerrar cuadro de soporte' })).toHaveFocus();
-    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
 
-    expect(screen.queryByRole('dialog', { name: 'Soporte oficial de LANZO' })).not.toBeInTheDocument();
+    fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true }));
+
+    expect(screen.queryByRole('dialog', { name: 'Soporte LANZO' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
-    expect(document.body.style.overflow).toBe('');
+    HTMLDialogElement.prototype.showModal = originalShowModal;
+    HTMLDialogElement.prototype.close = originalClose;
   });
 });

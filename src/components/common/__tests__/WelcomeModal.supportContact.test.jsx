@@ -17,8 +17,28 @@ vi.mock('../../../services/support/supportContact', async (importOriginal) => ({
 }));
 import WelcomeModal from '../WelcomeModal';
 
-beforeEach(() => vi.clearAllMocks());
-afterEach(cleanup);
+// jsdom does not provide native dialog methods, so mimic the browser's open state.
+const nativeShowModal = HTMLDialogElement.prototype.showModal;
+const nativeClose = HTMLDialogElement.prototype.close;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
+});
+
+afterEach(() => {
+  cleanup();
+  if (nativeShowModal) HTMLDialogElement.prototype.showModal = nativeShowModal;
+  else delete HTMLDialogElement.prototype.showModal;
+  if (nativeClose) HTMLDialogElement.prototype.close = nativeClose;
+  else delete HTMLDialogElement.prototype.close;
+});
 
 describe('WelcomeModal shared support', () => {
   it('does not request identity, copy automatically, show a message modal or schedule navigation', async () => {
@@ -26,6 +46,7 @@ describe('WelcomeModal shared support', () => {
     const timer = vi.spyOn(window, 'setTimeout');
     fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
     await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('dialog', { name: 'Soporte LANZO' })).toHaveAttribute('open');
     expect(mocks.getStableDeviceId).not.toHaveBeenCalled();
     expect(mocks.copy).not.toHaveBeenCalled();
     expect(mocks.showMessageModal).not.toHaveBeenCalled();

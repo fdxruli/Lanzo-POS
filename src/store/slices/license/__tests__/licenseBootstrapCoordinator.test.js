@@ -753,18 +753,36 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
     actorRuntimeController.lock('onboarding_test_reset');
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     const runtime = { opaqueId: 'fixture-tenant', databaseName: 'fixture-db', generation: 1 };
+    const adminSessionBinding = {
+      actorId: license.admin_user.id,
+      sessionId: 'fixture-admin-session',
+      deviceRef: license.device_id,
+      tenantOpaqueId: runtime.opaqueId
+    };
     vi.spyOn(tenantRouter, 'getTenantRuntimeReadiness').mockReturnValue({ ready: true, runtime });
-    vi.spyOn(actorRuntimeController, 'capture').mockImplementation(() => ({
-      actorType: 'admin', actorId: 'fixture-owner', assertCurrent: vi.fn()
-    }));
+    actorMocks.beginActorRuntimeAuthentication.mockImplementation((actorType) => (
+      actorRuntimeController.beginAuthentication({ actorType })
+    ));
+    actorMocks.lockActorRuntime.mockImplementation((reason) => actorRuntimeController.lock(reason));
     storageMocks.getLicenseFromStorage.mockResolvedValue(license);
     supabaseMocks.hasStaffSessionToken.mockResolvedValue(false);
     supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
     supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: false });
     supabaseMocks.verifyAdminSession.mockResolvedValue({ valid: true, admin_user: license.admin_user, details: license });
-    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementation(async () => ({
-      generation: actorRuntimeController.getState().generation
-    }));
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementation(async ({ actorType, actor }) => {
+      if (actorType !== 'admin' || actor?.id !== adminSessionBinding.actorId) {
+        throw new Error('ADMIN_SESSION_BINDING_MISMATCH');
+      }
+      return actorRuntimeController.grant({
+        actorType,
+        actorId: adminSessionBinding.actorId,
+        sessionId: adminSessionBinding.sessionId,
+        permissions: ['*'],
+        tenantOpaqueId: adminSessionBinding.tenantOpaqueId,
+        deviceRef: adminSessionBinding.deviceRef,
+        authorizationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      });
+    });
     runtimeMocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
     profileStorage.loadData.mockResolvedValue(null);
     supabaseMocks.getBusinessProfile.mockResolvedValue({ success: false, code: 'PROFILE_NOT_FOUND' });
@@ -782,6 +800,19 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
     await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'setup_required' });
     expect(actorMocks.assertAuthenticatedActorSessionCurrent).toHaveBeenCalled();
     expect(supabaseMocks.getBusinessProfile).toHaveBeenCalledWith(license.license_key);
+    expect(supabaseMocks.verifyAdminSession).toHaveBeenCalledWith(
+      license.license_key,
+      expect.objectContaining({ beforeLocalPersistence: expect.any(Function) })
+    );
+    expect(actorRuntimeController.getState()).toEqual(expect.objectContaining({
+      status: 'granted',
+      actorType: 'admin',
+      actorId: license.admin_user.id,
+      actorKey: `admin:${license.admin_user.id}`,
+      sessionId: 'fixture-admin-session',
+      permissions: ['*'],
+      tenant: expect.objectContaining({ opaqueId: 'fixture-tenant' })
+    }));
     expect(supabaseMocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(profileStorage.saveData).not.toHaveBeenCalled();
     expect(supabaseMocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();

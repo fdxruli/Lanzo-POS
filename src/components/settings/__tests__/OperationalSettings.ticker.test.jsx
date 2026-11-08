@@ -2,6 +2,12 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// These UI-copy tests isolate Controls authorization; the actor policy is tested separately.
+vi.mock('../../../services/auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => ({ canAccessSection: (section) => section === 'controls' }),
+  useSettingsActionGuard: () => () => ({ assertCurrent: () => true })
+}));
+
 import OperationalSettings from '../OperationalSettings.jsx';
 import { CASH_OPENING_POLICY } from '../../../services/cashOpeningPolicyService.js';
 

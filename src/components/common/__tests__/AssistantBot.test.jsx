@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({ role: 'admin', allowed: true }));
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: (fn) => fn({ activeOrders: new Map() }) }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: (fn) => fn({ companyProfile: { business_type: 'abarrotes' }, canAccess: () => mocks.allowed }) }));
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({ useActorRuntimeSnapshot: () => ({ generation: 1, actorType: mocks.role }) }));
+vi.mock('../../../services/auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => ({ canAccessSection: () => mocks.role === 'admin' || mocks.allowed })
+}));
 const Location = () => { const location = useLocation(); const navigate = useNavigate(); return <><span data-testid="path">{location.pathname + location.search}</span><button onClick={() => navigate('/clientes?tab=add')}>Cambiar pantalla</button></>; };
 const openBot = () => fireEvent.click(screen.getByRole('button', { name: 'Abrir Lanzó Bot' }));
 const mount = (path = '/') => render(<MemoryRouter initialEntries={[path]}><Location /><AssistantBot /></MemoryRouter>);

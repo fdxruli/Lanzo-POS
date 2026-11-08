@@ -69,7 +69,7 @@ export default function AdminAccountRecovery({ licenseKey, online, onBack, onRec
             <p>Si todavía no vinculaste un correo, soporte comprobará tu titularidad por otra vía. Conocer la licencia no autoriza la recuperación.</p>
             <PreloginSupportAccess
               screen="Recuperación de acceso"
-              presentation="dialog"
+              modal
               triggerLabel="Ver opciones de soporte"
             />
           </section>

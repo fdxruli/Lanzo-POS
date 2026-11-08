@@ -103,6 +103,54 @@ describe('SettingsPage section isolation', () => {
     expect(screen.queryByText('Licencia autorizada')).not.toBeInTheDocument();
   });
 
+  it('A: Staff with Datos y Apariencia does not mount or navigate to Controles', () => {
+    state.access = makeAccess({ tabs: ['general'] });
+
+    renderPage('/configuracion?tab=controls');
+
+    expect(screen.getByText('General autorizado')).toBeInTheDocument();
+    expect(screen.queryByText('Controles autorizados')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Datos y Apariencia' })).toBeVisible();
+    expect(screen.getByText('Controles').closest('button')).toHaveAttribute('hidden');
+  });
+
+  it('B: Staff with Controles only cannot mount General, even by direct URL', () => {
+    state.access = makeAccess({ tabs: ['controls'] });
+
+    renderPage('/configuracion?tab=general');
+
+    expect(screen.getByText('Controles autorizados')).toBeInTheDocument();
+    expect(screen.queryByText('General autorizado')).not.toBeInTheDocument();
+    expect(state.generalRenders).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Controles' })).toBeVisible();
+    expect(screen.getByText('Datos y Apariencia').closest('button')).toHaveAttribute('hidden');
+  });
+
+  it('denies a direct messages URL when the Staff actor has no Settings section grant', () => {
+    state.access = makeAccess();
+
+    renderPage('/configuracion?tab=messages');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
+    expect(screen.queryByText('General autorizado')).not.toBeInTheDocument();
+  });
+
+  it('F: reflects a permission change in the same Staff session without changing generation', () => {
+    state.access = makeAccess({ actorKey: 'staff:staff-a', generation: 9, tabs: ['general'] });
+    const view = renderPage('/configuracion?tab=general');
+    expect(screen.getByText('General autorizado')).toBeInTheDocument();
+
+    state.access = makeAccess({ actorKey: 'staff:staff-a', generation: 9, tabs: ['controls'] });
+    view.rerender(
+      <MemoryRouter initialEntries={['/configuracion?tab=general']}>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Controles autorizados')).toBeInTheDocument();
+    expect(screen.queryByText('General autorizado')).not.toBeInTheDocument();
+  });
+
   it('recomputes an already-mounted page for Staff A to Staff B', () => {
     state.access = makeAccess({ actorKey: 'staff:staff-a', generation: 3, tabs: ['license'] });
     const view = renderPage();

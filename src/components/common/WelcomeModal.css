@@ -464,55 +464,61 @@
 }
 
 .welcome-secondary {
-  display: grid;
-  gap: 0.55rem;
   min-width: 0;
-  margin-top: 0.35rem;
+  margin-top: auto;
   padding-top: 0.8rem;
   border-top: 1px solid var(--ui-border-color, #d9dee7);
 }
 
-.welcome-public-links {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-  min-width: 0;
+.welcome-public-links,
+.welcome-secondary .prelogin-support__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.85rem;
 }
 
-.welcome-public-links a {
+.welcome-public-links a,
+.welcome-secondary .prelogin-support__actions > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 0;
+  width: auto;
   min-height: 44px;
-  padding: 0.55rem 0.45rem;
+  padding: 0 0.05rem;
   color: var(--ui-text-brand, #1d4ed8);
-  background: color-mix(in srgb, var(--ui-color-brand, #2563eb) 6%, var(--ui-bg-surface, #fff));
-  border: 1px solid color-mix(in srgb, var(--ui-color-brand, #2563eb) 18%, var(--ui-border-color, #d9dee7));
-  border-radius: 9px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.2;
-  text-align: center;
   text-decoration: none;
-  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-.welcome-public-links a:hover {
-  background: color-mix(in srgb, var(--ui-color-brand, #2563eb) 12%, var(--ui-bg-surface, #fff));
+.welcome-public-links a:hover,
+.welcome-secondary .prelogin-support__actions > button:hover {
+  color: var(--ui-text-brand, #1d4ed8);
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .welcome-secondary .prelogin-support {
+  width: 100%;
   margin: 0;
 }
 
-.welcome-secondary .prelogin-support__actions {
-  justify-content: flex-start;
+.welcome-secondary .prelogin-support__actions > button > svg {
+  display: none;
 }
 
-.welcome-secondary .prelogin-support__actions > button {
-  min-height: 44px;
-  padding-inline: 0.75rem;
+.welcome-secondary .prelogin-support__panel {
+  max-width: 520px;
+  margin-inline: auto;
 }
 
 [data-theme="dark"] .modal.welcome-modal-overlay {
@@ -646,6 +652,22 @@
     padding: clamp(1.5rem, 3vw, 2.8rem);
   }
 
+  .form-header {
+    margin-top: auto;
+  }
+
+  .form-header h2 {
+    font-size: 1.35rem;
+  }
+
+  .welcome-secondary {
+    padding-top: 1rem;
+  }
+}
+
+/* Width alone is not enough: show the form by default when its controls fit comfortably. */
+@media (min-width: 960px) and (min-height: 640px),
+       (min-width: 360px) and (min-height: 780px) {
   .license-entry-toggle {
     display: none;
   }
@@ -660,15 +682,6 @@
     color: var(--text-dark, #171a1f);
     font-size: 0.9rem;
     line-height: 1.25;
-  }
-
-  .form-header h2 {
-    font-size: 1.35rem;
-  }
-
-  .welcome-secondary {
-    margin-top: 0.75rem;
-    padding-top: 1rem;
   }
 }
 

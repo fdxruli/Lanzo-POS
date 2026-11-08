@@ -1,18 +1,17 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Copy, HelpCircle, Mail, MessageCircle, X } from 'lucide-react';
 import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
 import { buildTelegramSupportTarget } from '../../services/support/telegramContact';
 import './PreloginSupportAccess.css';
 
 // Callers supply a fixed screen label only. No account, device or error context.
-export default function PreloginSupportAccess({ screen, children, presentation = 'panel', triggerLabel = 'Soporte' }) {
+export default function PreloginSupportAccess({ screen, children, modal = false, triggerLabel = 'Soporte' }) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
   const id = useId();
   const trigger = useRef(null);
-  const dialog = useRef(null);
-  const dialogHeading = useRef(null);
-  const closeButton = useRef(null);
+  const dialogRef = useRef(null);
   const email = getSupportEmail();
   const telegram = buildTelegramSupportTarget();
   const body = `Hola equipo de LANZO,\n\nNecesito orientación con LANZO POS.\nPantalla: ${screen}.`;
@@ -22,55 +21,16 @@ export default function PreloginSupportAccess({ screen, children, presentation =
     body
   });
 
+  useEffect(() => {
+    if (!modal || !open || !dialogRef.current?.showModal) return;
+    if (!dialogRef.current.open) dialogRef.current.showModal();
+  }, [modal, open]);
+
   const close = () => {
+    if (modal && dialogRef.current?.open) dialogRef.current.close();
     setOpen(false);
     setFeedback('');
     trigger.current?.focus();
-  };
-
-  useEffect(() => {
-    if (!open || presentation !== 'dialog') return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const frame = typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame(() => dialogHeading.current?.focus())
-      : null;
-    if (frame === null) dialogHeading.current?.focus();
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      if (frame !== null && typeof window.cancelAnimationFrame === 'function') {
-        window.cancelAnimationFrame(frame);
-      }
-    };
-  }, [open, presentation]);
-
-  const handleDialogKeyDown = (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-
-    const buttons = Array.from(dialog.current?.querySelectorAll('button:not(:disabled)') || []);
-    if (!buttons.length) {
-      event.preventDefault();
-      dialogHeading.current?.focus();
-      return;
-    }
-
-    const first = buttons[0];
-    const last = buttons[buttons.length - 1];
-    const active = document.activeElement;
-    const focusIsOutside = !dialog.current?.contains(active);
-    if (event.shiftKey && (active === first || active === dialogHeading.current || focusIsOutside)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && (active === last || active === dialogHeading.current || focusIsOutside)) {
-      event.preventDefault();
-      first.focus();
-    }
   };
 
   const copyEmail = async (event) => {
@@ -87,8 +47,8 @@ export default function PreloginSupportAccess({ screen, children, presentation =
     if (document.activeElement === document.body && button.isConnected) button.focus();
   };
 
-  const supportContent = (
-    <>
+  const panel = (
+    <section id={id} className="prelogin-support__panel" hidden={!modal && !open} aria-label="Soporte oficial de LANZO">
       <p>Puedes consultar soporte sin salir de este proceso. No incluyas contraseñas, licencias ni información sensible al escribir tu mensaje.</p>
       <div className="prelogin-support__channels">
         <div>
@@ -113,20 +73,17 @@ export default function PreloginSupportAccess({ screen, children, presentation =
         </div>
       </div>
       <p role="status" aria-live="polite">{feedback}</p>
-    </>
+      {!modal && <button type="button" className="ui-button ui-button--ghost" onClick={close}>Cerrar soporte</button>}
+    </section>
   );
 
   return (
-    <div
-      className={`prelogin-support${presentation === 'dialog' ? ' prelogin-support--dialog' : ''}`}
-      onKeyDown={(event) => {
-        if (presentation === 'panel' && open && event.key === 'Escape') {
-          event.preventDefault();
-          event.stopPropagation();
-          close();
-        }
-      }}
-    >
+    <div className="prelogin-support" onKeyDown={(event) => {
+      if (!modal && open && event.key === 'Escape') {
+        event.stopPropagation();
+        close();
+      }
+    }}>
       <div className="prelogin-support__actions">
         {children}
         <button
@@ -144,41 +101,32 @@ export default function PreloginSupportAccess({ screen, children, presentation =
           {triggerLabel}
         </button>
       </div>
-      {presentation === 'dialog' ? (open && (
-        <div className="prelogin-support__backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) close();
-        }}>
-          <section
-            id={id}
-            ref={dialog}
-            className="prelogin-support__panel prelogin-support__dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`${id}-title`}
-            onKeyDownCapture={handleDialogKeyDown}
+      {modal ? (
+        open && createPortal(
+          <dialog
+            ref={dialogRef}
+            className="prelogin-support__dialog"
+            aria-labelledby={`${id}-dialog-title`}
+            onCancel={(event) => {
+              event.preventDefault();
+              close();
+            }}
+            onClose={() => {
+              setOpen(false);
+              trigger.current?.focus();
+            }}
           >
             <header className="prelogin-support__dialog-header">
-              <h2 id={`${id}-title`} ref={dialogHeading} tabIndex={-1}>Soporte oficial de LANZO</h2>
-              <button
-                ref={closeButton}
-                type="button"
-                className="prelogin-support__close"
-                onClick={close}
-                aria-label="Cerrar cuadro de soporte"
-              >
-                <X size={19} aria-hidden="true" />
+              <h2 id={`${id}-dialog-title`}>Soporte LANZO</h2>
+              <button type="button" aria-label="Cerrar soporte" onClick={close}>
+                <X size={20} aria-hidden="true" />
               </button>
             </header>
-            {supportContent}
-            <button type="button" className="ui-button ui-button--ghost" onClick={close}>Cerrar soporte</button>
-          </section>
-        </div>
-      )) : (
-        <section id={id} className="prelogin-support__panel" hidden={!open} aria-label="Soporte oficial de LANZO">
-          {supportContent}
-          <button type="button" className="ui-button ui-button--ghost" onClick={close}>Cerrar soporte</button>
-        </section>
-      )}
+            {panel}
+          </dialog>,
+          document.body
+        )
+      ) : panel}
     </div>
   );
 }

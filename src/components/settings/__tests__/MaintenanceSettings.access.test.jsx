@@ -20,7 +20,10 @@ vi.mock('../../../services/auth/useSettingsAccess', () => ({
   useSettingsAccess: () => ({
     canAccessPermission: hasPermission,
     canAccessSection: (section) => section === 'maintenance'
-      && (hasPermission('sync') || hasPermission('inventory'))
+      && (hasPermission('settings_maintenance')
+        || (!['settings_data', 'settings_controls', 'settings_maintenance', 'settings_backup']
+          .some((permission) => Object.prototype.hasOwnProperty.call(state.permissions, permission))
+          && (hasPermission('sync') || hasPermission('inventory'))))
   }),
   useSettingsActionGuard: () => (permission) => {
     if (!hasPermission(permission)) throw new Error('PERMISSION_DENIED');
@@ -121,6 +124,22 @@ describe('MaintenanceSettings action isolation', () => {
     renderSettings();
     expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByTestId('maintenance-update-controls')).not.toBeInTheDocument();
+  });
+
+  it('allows independent section entry without granting sync or inventory routines', () => {
+    state.permissions = {
+      settings_maintenance: true,
+      sync: false,
+      inventory: false,
+      reports: false
+    };
+    renderSettings();
+
+    expect(screen.getByText('Datos y mantenimiento')).toBeInTheDocument();
+    expect(screen.getByTestId('maintenance-update-controls')).toBeInTheDocument();
+    expect(screen.queryByText('Reconstruir desde historial')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sincronizar stock')).not.toBeInTheDocument();
+    expect(screen.queryByText('Archivar ventas antiguas')).not.toBeInTheDocument();
   });
 
   it('does not execute a sync action after its actor handle becomes stale', async () => {
