@@ -3,8 +3,8 @@
 }
 
 .split-bill-modal {
-  width: min(1320px, calc(100vw - 2rem));
-  max-width: 1320px;
+  width: min(1120px, calc(100vw - 2rem));
+  max-width: 1120px;
   height: min(94dvh, 980px);
   display: flex;
   flex-direction: column;
@@ -21,8 +21,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--ui-space-md);
-  padding: var(--ui-space-lg) var(--ui-space-lg) var(--ui-space-md);
-  border-bottom: 1px solid var(--ui-border-color);
+  padding: 14px var(--ui-space-lg) 8px;
+  border-bottom: 0;
 }
 
 .split-bill-title-block {
@@ -43,8 +43,8 @@
 .split-bill-header h2 {
   margin: 0;
   color: var(--ui-text-strong);
-  font-size: 1.35rem;
-  line-height: 1.2;
+  font-size: 1.25rem;
+  line-height: 1.25;
 }
 
 .split-bill-header p {
@@ -84,40 +84,43 @@
 .split-status-strip {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-md) var(--ui-space-lg) 0;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 0;
+  margin: 0 var(--ui-space-lg);
+  padding: 8px 0;
+  background: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
 }
 
 .split-status-card {
   min-width: 0;
-  padding: 9px 12px;
-  background: var(--ui-bg-muted);
-  border: 1px solid var(--ui-border-color);
-  border-radius: var(--ui-radius-sm);
+  padding: 3px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .split-status-card span {
   display: block;
   color: var(--ui-text-muted);
-  font-size: 0.7rem;
-  font-weight: 800;
+  font-size: 0.66rem;
+  font-weight: 700;
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .split-status-card strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--ui-text-strong);
-  font-size: 1.05rem;
+  font-size: 1rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
 .split-status-card.is-pending {
-  background: var(--ui-bg-warning-soft);
-  border-color: var(--ui-border-warning);
+  background: transparent;
+  border-color: transparent;
 }
 
 .split-status-card.is-pending strong {
@@ -125,8 +128,8 @@
 }
 
 .split-status-card.is-ready {
-  background: var(--ui-bg-success-soft);
-  border-color: var(--ui-border-success);
+  background: transparent;
+  border-color: transparent;
 }
 
 .split-status-card.is-ready strong {
@@ -137,26 +140,26 @@
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: var(--ui-space-md) var(--ui-space-lg);
+  gap: 6px;
+  padding: 9px var(--ui-space-lg) 12px;
 }
 
 .split-wizard-step {
   min-width: 0;
-  min-height: 44px;
+  min-height: 38px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 9px;
-  padding: 7px 10px;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
   color: var(--ui-text-muted);
-  background: var(--ui-bg-muted);
+  background: transparent;
   border: 1px solid var(--ui-border-color);
   border-radius: var(--ui-radius-sm);
   font: inherit;
-  font-size: 0.86rem;
-  font-weight: 800;
-  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -164,7 +167,7 @@
   color: var(--ui-text-brand);
   background: var(--ui-bg-selected);
   border-color: var(--ui-border-selected);
-  box-shadow: inset 0 -3px var(--ui-border-selected);
+  box-shadow: none;
 }
 
 .split-wizard-step.is-complete {
@@ -172,8 +175,8 @@
 }
 
 .split-wizard-step-number {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -182,7 +185,7 @@
   background: var(--ui-bg-surface);
   border: 1px solid var(--ui-border-color);
   border-radius: 50%;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
 }
 
 .split-wizard-step:disabled {
@@ -232,14 +235,14 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0 var(--ui-space-lg) var(--ui-space-md);
+  padding: 2px var(--ui-space-lg) var(--ui-space-md);
   -webkit-overflow-scrolling: touch;
 }
 
 .split-step-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-md);
+  gap: 12px;
   min-width: 0;
 }
 
@@ -247,23 +250,23 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: var(--ui-space-md);
-  padding: 4px 0;
+  gap: var(--ui-space-sm);
+  padding: 0;
 }
 
 .split-step-heading h3 {
   margin: 0;
   color: var(--ui-text-strong);
-  font-size: 1.22rem;
-  line-height: 1.25;
+  font-size: 1.12rem;
+  line-height: 1.3;
 }
 
 .split-step-heading p:not(.split-step-eyebrow) {
-  max-width: 75ch;
-  margin: 5px 0 0;
+  max-width: 68ch;
+  margin: 3px 0 0;
   color: var(--ui-text-muted);
-  font-size: 0.88rem;
-  line-height: 1.4;
+  font-size: 0.81rem;
+  line-height: 1.35;
 }
 
 .split-count-selector {
@@ -294,33 +297,33 @@
 
 .split-guest-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-  gap: var(--ui-space-sm);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr));
+  gap: 8px;
 }
 
 .split-guest-name-card {
   min-width: 0;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  align-items: start;
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-md);
-  background: var(--ui-bg-muted);
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--ui-bg-surface);
   border: 1px solid var(--ui-border-color);
   border-radius: var(--ui-radius-md);
 }
 
 .split-guest-avatar {
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--ui-action-primary-text);
   background: var(--ui-action-primary-bg);
   border-radius: 50%;
-  font-size: 1rem;
-  font-weight: 900;
+  font-size: 0.84rem;
+  font-weight: 800;
 }
 
 .split-guest-name-field {
@@ -712,10 +715,10 @@
 .split-payment-grid,
 .split-review-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
   align-items: start;
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-sm);
+  gap: 10px;
+  padding: 0;
 }
 
 .split-ticket-card,
@@ -742,7 +745,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--ui-space-sm);
-  padding: var(--ui-space-md);
+  padding: 11px 12px;
   background: var(--ui-bg-muted);
   border-bottom: 1px solid var(--ui-border-color);
 }
@@ -898,7 +901,9 @@
 
 .split-payment-items {
   display: grid;
-  gap: 5px;
+  gap: 4px;
+  max-height: 110px;
+  overflow-y: auto;
   margin: 5px 0 0;
   padding: 0;
   list-style: none;
@@ -922,7 +927,7 @@
 .split-ticket-payment {
   display: grid;
   gap: 7px;
-  padding: var(--ui-space-md);
+  padding: 12px;
 }
 
 .split-ticket-payment > label:not(.split-receipt-toggle) {
@@ -1000,9 +1005,10 @@
 
 .split-review-payment-detail {
   margin: 0;
-  padding: 0 var(--ui-space-md) 8px;
+  padding: 0 12px 8px;
   color: var(--ui-text-muted);
-  font-size: 0.78rem;
+  font-size: 0.79rem;
+  line-height: 1.4;
 }
 
 .split-review-edit-actions {
@@ -1027,8 +1033,8 @@
 .split-review-total {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-md);
+  gap: 8px;
+  padding: 10px;
   background: var(--ui-bg-muted);
   border: 1px solid var(--ui-border-color);
   border-radius: var(--ui-radius-md);
@@ -1055,9 +1061,9 @@
 .split-actions {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-md) var(--ui-space-lg) calc(var(--ui-space-md) + env(safe-area-inset-bottom, 0px));
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr);
+  gap: 8px;
+  padding: 10px var(--ui-space-lg) calc(10px + env(safe-area-inset-bottom, 0px));
   background: var(--ui-bg-surface);
   border-top: 1px solid var(--ui-border-color);
 }
@@ -1377,10 +1383,10 @@
 .split-strategy-selector label {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: 9px;
-  min-height: 72px;
-  padding: 11px;
+  min-height: 64px;
+  padding: 10px;
   background: var(--ui-bg-surface);
   border: 1px solid var(--ui-border-color);
   border-radius: var(--ui-radius-md);
@@ -1462,8 +1468,8 @@
 .split-money-distribution-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--ui-space-sm);
-  padding: var(--ui-space-sm);
+  gap: 7px;
+  padding: 6px 0;
   border-top: 1px solid var(--ui-border-color);
 }
 
@@ -1500,5 +1506,134 @@
 
   .split-strategy-selector {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Compact split-bill layout: one visual hierarchy across all four steps. */
+.split-bill-header .split-bill-kicker {
+  margin-bottom: 3px;
+  font-size: 0.66rem;
+}
+.split-bill-header .split-help-disclosure {
+  margin-top: 5px;
+  font-size: 0.79rem;
+}
+.split-help-disclosure summary,
+.split-context-help summary {
+  width: fit-content;
+  color: var(--ui-text-brand);
+  font-weight: 700;
+  cursor: pointer;
+}
+.split-help-disclosure summary:focus-visible,
+.split-context-help summary:focus-visible {
+  outline: 2px solid var(--ui-color-primary);
+  outline-offset: 3px;
+}
+.split-help-disclosure p {
+  max-width: 65ch;
+  margin: 5px 0 0;
+  color: var(--ui-text-muted);
+  font-size: 0.79rem;
+}
+.split-status-card + .split-status-card {
+  border-left: 1px solid var(--ui-border-color);
+}
+.split-step-eyebrow,
+.split-guest-name-field label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.split-guest-name-field {
+  gap: 0;
+}
+.split-guest-list-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.split-guest-list-heading strong {
+  color: var(--ui-text-strong);
+  font-size: 0.89rem;
+}
+.split-guest-list-heading span {
+  color: var(--ui-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+.split-context-help {
+  padding: 8px 11px;
+  background: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.split-context-help p {
+  margin: 6px 0 0;
+  color: var(--ui-text-muted);
+}
+.split-ticket-payment .split-review-payment-detail {
+  padding: 6px 0 0;
+}
+@media (max-width: 720px) {
+  .split-status-strip {
+    gap: 0;
+    margin-left: var(--ui-space-md);
+    margin-right: var(--ui-space-md);
+    padding: 8px 0;
+  }
+  .split-status-card {
+    padding: 4px 7px;
+  }
+  .split-status-card span {
+    font-size: 0.62rem;
+  }
+  .split-status-card:first-child strong {
+    font-size: 1.06rem;
+  }
+  .split-wizard-nav {
+    gap: 5px;
+  }
+  .split-wizard-step {
+    min-height: 44px;
+    gap: 4px;
+    justify-content: center;
+    padding: 6px 3px;
+    font-size: 0.73rem;
+  }
+  .split-wizard-step-number {
+    width: 21px;
+    height: 21px;
+  }
+  .split-review-total,
+  .split-money-distribution-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .split-review-total > div:last-child,
+  .split-money-distribution-summary > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .split-money-distribution-summary {
+    padding: 6px 0;
+  }
+  .split-actions {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+@media (max-width: 420px) {
+  .split-wizard-step {
+    min-height: 48px;
+    font-size: 0.7rem;
   }
 }
