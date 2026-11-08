@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -300,7 +300,7 @@ describe('StaffUsersSettings list-first administration', () => {
         display_name: 'Nuevo Staff',
         role_name: 'cashier',
         password: 'secret1',
-        permissions: expect.objectContaining({ pos: true, cash_register: true })
+        permissions: expect.objectContaining({ pos: true, pos_credit_sales: true, cash_register: true })
       })
     ));
     expect(mocks.updateStaffUserService).not.toHaveBeenCalled();
@@ -341,6 +341,31 @@ describe('StaffUsersSettings list-first administration', () => {
     ));
   });
 
+  it('shows the legacy POS credit grant and records its withdrawal explicitly', async () => {
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
+
+    const creditSales = screen.getByRole('checkbox', { name: /Ventas fiadas/ });
+    expect(creditSales).toBeChecked();
+    expect(screen.getByText(/No controla el cobro de abonos/)).toBeInTheDocument();
+
+    fireEvent.click(creditSales);
+    expect(creditSales).not.toBeChecked();
+    expect(screen.getByText('Ventas fiadas', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Se retirarán 1/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(mocks.updateStaffUserService).toHaveBeenCalledWith(
+      'LIC-1',
+      'staff-1',
+      expect.objectContaining({
+        permissions: expect.objectContaining({ pos: true, pos_credit_sales: false })
+      })
+    ));
+  });
+
   it('toggles both permission groups safely and preserves notification master/detail behavior', async () => {
     render(<StaffUsersSettings licenseKey="LIC-1" />);
     await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
@@ -353,7 +378,7 @@ describe('StaffUsersSettings list-first administration', () => {
 
     fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
     expect(operationDetails).toHaveAttribute('open');
-    expect(screen.getByRole('checkbox', { name: /Punto de venta/ })).toBeInTheDocument();
+    expect(within(operationDetails).getByRole('checkbox', { name: /^Punto de venta/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
     expect(operationDetails).not.toHaveAttribute('open');
@@ -449,6 +474,7 @@ describe('StaffUsersSettings list-first administration', () => {
     fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
 
     expect(screen.getByText('Punto de venta', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.getByText('Ventas fiadas', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
     expect(screen.getByText('Clientes', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
     expect(screen.getByText(/se reemplazan los permisos seleccionados en este formulario/i)).toBeInTheDocument();
 
@@ -470,6 +496,7 @@ describe('StaffUsersSettings list-first administration', () => {
         role_name: 'staff',
         permissions: expect.objectContaining({
           pos: true,
+          pos_credit_sales: true,
           orders: false,
           customers: false,
           cash_register: false,
@@ -503,7 +530,7 @@ describe('StaffUsersSettings list-first administration', () => {
     expect(screen.getByText('Controles', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Se concederán 1/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Se retirarán 0/ })).toBeInTheDocument();
-    expect(screen.getByText('Se mantienen activos sin cambios: 4 permisos.')).toBeInTheDocument();
+    expect(screen.getByText('Se mantienen activos sin cambios: 5 permisos.')).toBeInTheDocument();
     expect(screen.queryByText('settings_controls', { selector: '.staff-permission-review-list li' })).not.toBeInTheDocument();
     expect(mocks.updateStaffUserService).not.toHaveBeenCalled();
 

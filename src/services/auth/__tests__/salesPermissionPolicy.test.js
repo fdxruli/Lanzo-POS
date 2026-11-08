@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAuditSalesReports,
+  canCreateCreditSale,
   canPerformRefunds,
   canReadSalesReports,
   getSalesFinalHistoryScope,
   getSalesActorIdentity
 } from '../salesPermissionPolicy';
+import { getExplicitActorPermissions } from '../actorIdentity';
 
 describe('salesPermissionPolicy', () => {
   it('keeps reports read authority separate from refunds action authority', () => {
@@ -111,5 +113,36 @@ describe('salesPermissionPolicy', () => {
     expect(getSalesFinalHistoryScope(adminOnDeviceB)).toBe('license');
     expect(getSalesFinalHistoryScope(staffOnDeviceA)).toBe('mine');
     expect(getSalesFinalHistoryScope(staffOnDeviceB)).toBe('mine');
+  });
+
+  it('grants credit sales only with POS plus an explicit grant or the scoped legacy fallback', () => {
+    const legacyStaff = {
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-legacy', permissions: { pos: true } }
+    };
+    const deniedStaff = {
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-denied', permissions: { pos: true, pos_credit_sales: false } }
+    };
+    const creditWithoutPos = {
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-credit-only', permissions: { pos: false, pos_credit_sales: true } }
+    };
+    const grantedRuntime = {
+      status: 'granted', actorType: 'staff', actorId: 'staff-current', sessionId: 'session-current',
+      permissions: ['pos', 'pos_credit_sales']
+    };
+    const runtimeWithoutPermission = { ...grantedRuntime, permissions: ['pos'] };
+
+    expect(canCreateCreditSale(legacyStaff)).toBe(true);
+    expect(canCreateCreditSale(deniedStaff)).toBe(false);
+    expect(canCreateCreditSale(creditWithoutPos)).toBe(false);
+    expect(canCreateCreditSale(grantedRuntime)).toBe(true);
+    expect(canCreateCreditSale(runtimeWithoutPermission)).toBe(false);
+    expect(canCreateCreditSale({ currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-1' } })).toBe(true);
+    expect(getExplicitActorPermissions('staff', { permissions: { pos: true } }))
+      .toEqual(expect.arrayContaining(['pos', 'pos_credit_sales']));
+    expect(getExplicitActorPermissions('staff', { permissions: { pos: true, pos_credit_sales: false } }))
+      .not.toContain('pos_credit_sales');
   });
 });

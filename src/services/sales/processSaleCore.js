@@ -66,6 +66,26 @@ const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
 ]);
 
 const LOCAL_STATION_KEY_PREFIX = 'local:device:';
+const CREDIT_SALES_PERMISSION_DENIED_CODE = 'POS_PERMISSION_DENIED:pos_credit_sales';
+const CREDIT_SALES_PERMISSION_DENIED_MESSAGE = 'Tu usuario no tiene autorización para generar saldos pendientes mediante ventas.';
+
+const assertSaleAuthority = (actorContext, createsNewDebt) => {
+    if (!actorContext) return;
+    actorContext.assertCurrent('pos');
+    if (!createsNewDebt) return;
+
+    try {
+        actorContext.assertCurrent('pos_credit_sales');
+    } catch (error) {
+        if (error?.code === 'ACTOR_PERMISSION_DENIED') {
+            throw Object.assign(new Error(CREDIT_SALES_PERMISSION_DENIED_MESSAGE), {
+                code: CREDIT_SALES_PERMISSION_DENIED_CODE,
+                cause: error
+            });
+        }
+        throw error;
+    }
+};
 
 const isLocalStationKey = (value) => (
     typeof value === 'string' && value.startsWith(LOCAL_STATION_KEY_PREFIX)
@@ -429,6 +449,17 @@ export const processSaleCore = async ({
             throw new Error(`Datos de pago corruptos: ${e.message}`);
         }
 
+        const createsNewDebt = saldoSeguro.gt(0);
+        assertSaleAuthority(actorContext, createsNewDebt);
+
+        if (createsNewDebt && actorContext?.actorType === 'staff' && cloudCashierDecision?.useCloud !== true) {
+            return withFinancialFailure({
+                success: false,
+                code: 'CREDIT_SALE_CLOUD_REQUIRED',
+                message: 'Las ventas que generan saldo pendiente para Staff requieren autorización cloud en línea. No se registró la venta.'
+            });
+        }
+
         const batchesMap = await loadRelevantBatches({
             itemsToProcess,
             allProducts,
@@ -669,7 +700,7 @@ export const processSaleCore = async ({
         try {
             transactionResult = actorContext
                 ? await executeSaleTransactionSafe(sale, batchesToDeduct, {
-                    assertAuthorized: () => actorContext.assertCurrent('pos'),
+                    assertAuthorized: () => assertSaleAuthority(actorContext, createsNewDebt),
                     subscribeAuthority: actorRuntimeController.subscribe
                 })
                 : await executeSaleTransactionSafe(sale, batchesToDeduct);

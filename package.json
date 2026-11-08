@@ -40,6 +40,7 @@
     "test:admin-cash-close-contract": "node --test scripts/supabase/admin-cash-close-contract.node-test.mjs",
     "test:admin-close-financial-terminal-contract": "node --test scripts/supabase/admin-close-financial-terminal-contract.node-test.mjs",
     "test:admin-staff-product-inventory-authority-contract": "node --test scripts/supabase/admin-staff-product-inventory-authority-contract.node-test.mjs",
+    "test:staff-credit-sales-permission-5a": "node --test scripts/supabase/staff-credit-sales-permission-5a-contract.node-test.mjs",
     "test:license-effective-features-creation-contract": "node --test scripts/supabase/license-effective-features-creation-contract-r1.node-test.mjs",
     "test:license-expiry-entitlement-contract": "node --test scripts/supabase/license-expiry-entitlement-contract-r1.node-test.mjs",
     "test:license-expired-material-downgrade": "node --test scripts/supabase/license-expired-material-downgrade-r1.node-test.mjs",

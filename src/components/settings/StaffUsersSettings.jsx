@@ -19,6 +19,7 @@ const NOTIFICATION_DETAIL_PERMISSIONS = [
 
 const PERMISSION_LABELS = {
   pos: 'Punto de venta',
+  pos_credit_sales: 'Ventas fiadas',
   orders: 'Pedidos',
   products: 'Productos',
   customers: 'Clientes',
@@ -49,6 +50,7 @@ const PERMISSION_LABELS = {
 
 const PERMISSION_DESCRIPTIONS = {
   pos: 'Permite abrir el Punto de venta. Otras acciones conservan sus permisos propios.',
+  pos_credit_sales: 'Requiere Punto de venta. Permite realizar ventas que generen un saldo pendiente para un cliente. No controla el cobro de abonos ni modifica deudas existentes.',
   orders: 'Permite consultar y atender pedidos del negocio.',
   products: 'Permite acceder al catálogo de Productos. Las acciones de inventario conservan su autorización propia.',
   customers: 'Permite consultar y gestionar clientes desde el apartado Clientes.',
@@ -93,6 +95,7 @@ const PERMISSION_GROUPS = [
     title: 'Operación',
     permissions: [
       'pos',
+      'pos_credit_sales',
       'orders',
       'products',
       'customers',
@@ -150,11 +153,12 @@ const ROLE_DESCRIPTIONS = {
 };
 
 const ROLE_TEMPLATES = {
-  staff: { ...EMPTY_PERMISSIONS, pos: true },
-  waiter: { ...EMPTY_PERMISSIONS, pos: true, orders: true },
+  staff: { ...EMPTY_PERMISSIONS, pos: true, pos_credit_sales: true },
+  waiter: { ...EMPTY_PERMISSIONS, pos: true, pos_credit_sales: true, orders: true },
   cashier: {
     ...EMPTY_PERMISSIONS,
     pos: true,
+    pos_credit_sales: true,
     orders: true,
     customers: true,
     cash_register: true,
@@ -163,6 +167,7 @@ const ROLE_TEMPLATES = {
   supervisor: {
     ...EMPTY_PERMISSIONS,
     pos: true,
+    pos_credit_sales: true,
     orders: true,
     products: true,
     customers: true,
@@ -209,6 +214,13 @@ const normalizePermissions = (permissions = {}) => {
       || permissionRecord?.inventory === true;
     normalized.settings_backup = permissionRecord?.sync === true;
   }
+
+  // Legacy Staff could create credit sales whenever they had POS access.
+  // Preserve that effective grant only when the new key is absent; an
+  // explicit false remains a withdrawal.
+  normalized.pos_credit_sales = normalized.pos === true && (hasOwn(permissionRecord, 'pos_credit_sales')
+    ? permissionRecord.pos_credit_sales === true
+    : permissionRecord?.pos === true);
 
   // Compatibility for staff created before category-level notification flags.
   // Inventory inherited Operations before Phase 5, so preserve that exact
@@ -437,6 +449,10 @@ export default function StaffUsersSettings({ licenseKey }) {
         ...current.permissions,
         [permission]: nextValue
       };
+
+      if (permission === 'pos' && !nextValue) {
+        nextPermissions.pos_credit_sales = false;
+      }
 
       // Preserve the old, intuitive behavior when the master switch is first
       // enabled: all categories start enabled and the admin can narrow them.
@@ -898,6 +914,8 @@ export default function StaffUsersSettings({ licenseKey }) {
                               const isNotificationDetail = NOTIFICATION_DETAIL_PERMISSIONS.includes(permission);
                               const isDisabled = isSaving || (
                                 isNotificationDetail && form.permissions?.notifications !== true
+                              ) || (
+                                permission === 'pos_credit_sales' && form.permissions?.pos !== true
                               );
 
                               return (

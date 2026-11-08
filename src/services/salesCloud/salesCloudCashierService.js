@@ -28,8 +28,61 @@ import {
 const CLOUD_RECOVERY_PAGE_LIMIT = 500;
 const CLOUD_RECOVERY_MAX_PAGES = 20;
 const CLOUD_SALE_VERIFICATION_PENDING = 'ECOMMERCE_SALE_VERIFICATION_PENDING';
+const CREDIT_SALES_PERMISSION_DENIED_CODE = 'POS_PERMISSION_DENIED:pos_credit_sales';
+const CREDIT_SALES_PERMISSION_DENIED_MESSAGE = 'Tu usuario no tiene autorización para generar saldos pendientes mediante ventas.';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+
+const toFiniteAmount = (value, fallback = null) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : fallback;
+};
+
+const hasNewCreditBalance = ({ sale = {}, paymentData = {}, total = null } = {}) => {
+  const statedBalances = [
+    paymentData.saldoPendiente,
+    paymentData.balanceDue,
+    paymentData.balance_due,
+    sale.saldoPendiente,
+    sale.balanceDue,
+    sale.balance_due
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => toFiniteAmount(value, null))
+    .filter((value) => value !== null);
+  if (statedBalances.length > 0) {
+    return statedBalances.some((balance) => balance > 0.005);
+  }
+
+  const saleTotal = toFiniteAmount(total ?? sale.total, null);
+  const amountPaid = toFiniteAmount(
+    paymentData.amountPaid ?? paymentData.amount_paid ?? sale.abono ?? sale.amountPaid ?? sale.amount_paid,
+    0
+  );
+  return saleTotal !== null && saleTotal - amountPaid > 0.005;
+};
+
+const assertCreditSalesPermission = (actorHandle) => {
+  try {
+    actorHandle.assertCurrent('pos_credit_sales');
+  } catch (error) {
+    if (error?.code === 'ACTOR_PERMISSION_DENIED') {
+      throw Object.assign(new Error(CREDIT_SALES_PERMISSION_DENIED_MESSAGE), {
+        code: CREDIT_SALES_PERMISSION_DENIED_CODE,
+        cause: error
+      });
+    }
+    throw error;
+  }
+};
+
+const hasCreditPayer = (paymentData = {}) => [
+  ...(Array.isArray(paymentData.payers) ? paymentData.payers : []),
+  ...(Array.isArray(paymentData.payments) ? paymentData.payments : [])
+].some((payment) => (
+  isCreditLikePaymentMethod(payment?.method || payment?.paymentMethod)
+  && toFiniteAmount(payment?.amount ?? payment?.total, 0) > 0
+));
 
 const isExperimentalFlagEnabled = () => {
   try {
@@ -275,10 +328,12 @@ const friendlyCloudCashierError = (error) => {
   const raw = String(error?.message || error?.code || error || '');
   const rawCode = String(error?.code || '').trim();
   const semanticCode = raw.match(/[A-Z][A-Z0-9_]*(?=:|$)/)?.[0] || '';
-  const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
+  const scopedPermissionCode = raw.match(/POS_PERMISSION_DENIED:[a-z_]+/i)?.[0] || '';
+  const code = scopedPermissionCode || (/^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw);
 
   const messages = {
     CREDIT_LIMIT_EXCEEDED: 'El saldo de esta venta supera el crédito autorizado del cliente. La venta no se confirmó; conserva el borrador y revisa el pago o el límite.',
+    [CREDIT_SALES_PERMISSION_DENIED_CODE]: CREDIT_SALES_PERMISSION_DENIED_MESSAGE,
     CLOUD_CASH_SESSION_REQUIRED: 'Para recibir abono inicial en efectivo necesitas abrir caja primero.',
     CASH_SESSION_NOT_FOUND: 'No se encontró la caja seleccionada. Abre tu caja e intenta de nuevo.',
     CASH_SESSION_FORBIDDEN: 'Esta caja pertenece a otro usuario o dispositivo.',
@@ -857,7 +912,14 @@ export const salesCloudCashierService = {
     const details = licenseDetails || context.licenseDetails;
     const hasCredit = childDefinitions.some((child) => (
       isCreditLikePaymentMethod(child?.paymentData?.paymentMethod || child?.paymentData?.method)
+      || hasCreditPayer(child?.paymentData)
     ));
+    const hasCreditDebt = childDefinitions.some((child) => {
+      const paymentData = child?.paymentData || {};
+      const creditIntent = isCreditLikePaymentMethod(paymentData.paymentMethod || paymentData.method)
+        || hasCreditPayer(paymentData);
+      return creditIntent && hasNewCreditBalance({ sale: child?.sale || {}, paymentData, total: child?.sale?.total });
+    });
 
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
@@ -879,6 +941,7 @@ export const salesCloudCashierService = {
     const actorHandle = actorRuntimeController.capture();
 
     try {
+      if (hasCreditDebt) assertCreditSalesPermission(actorHandle);
       const current = await cashRepository.getCurrentCashSession({ force: true });
       actorHandle.assertCurrent?.();
       const currentSession = current?.cashSession || null;
@@ -943,6 +1006,9 @@ export const salesCloudCashierService = {
         children
       };
       const idempotencyKey = 'sales.cloud_split:' + splitGroupId;
+
+      actorHandle.assertCurrent('pos');
+      if (hasCreditDebt) assertCreditSalesPermission(actorHandle);
 
       const response = await salesCloudRepository.createCloudSplitTableSale({
         licenseKey: context.licenseKey,
@@ -1052,8 +1118,12 @@ export const salesCloudCashierService = {
     const context = await getRuntimeContext();
     actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
-    const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || sale?.paymentMethod || sale?.payment_method);
+    const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || paymentData.method)
+      || isCreditLikePaymentMethod(sale?.paymentMethod || sale?.payment_method);
+    const createsNewDebt = hasNewCreditBalance({ sale: sale || {}, paymentData, total });
     const inventoryEnabled = isCloudSalesInventoryEnabled(details);
+
+    if (createsNewDebt) assertCreditSalesPermission(actorHandle);
 
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
 
@@ -1125,6 +1195,7 @@ export const salesCloudCashierService = {
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
 
       actorHandle.assertCurrent('pos');
+      if (createsNewDebt) assertCreditSalesPermission(actorHandle);
       checkoutAttemptId = markCheckoutFinancialDispatch({ orderId: sale.id, handle: actorHandle });
       const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
@@ -1168,7 +1239,9 @@ export const salesCloudCashierService = {
         atomicRestaurantSettlement: response?.restaurant_settlement?.success === true
       };
     } catch (error) {
-      if (checkoutAttemptId && ['ACTOR_PERMISSION_DENIED', 'FINANCIAL_PREFLIGHT_TIMEOUT'].includes(error.code) && !error.isFinancialOperationAmbiguous) {
+      if (checkoutAttemptId
+        && ['ACTOR_PERMISSION_DENIED', CREDIT_SALES_PERMISSION_DENIED_CODE, 'FINANCIAL_PREFLIGHT_TIMEOUT'].includes(error.code)
+        && !error.isFinancialOperationAmbiguous) {
         try {
           // Only a failed preparation with no durable financial owner can
           // return to cancellation. Existing/ambiguous intents stay fenced.
