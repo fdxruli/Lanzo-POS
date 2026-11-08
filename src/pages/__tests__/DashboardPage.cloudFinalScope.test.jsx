@@ -56,7 +56,15 @@ vi.mock('../../store/useInventoryCatalogStore', () => ({
 
 vi.mock('../../components/dashboard/StatsGrid', () => ({ default: () => null }));
 vi.mock('../../components/dashboard/CloudFinalStatsGrid', () => ({
-  default: ({ creditHistoryReport }) => <output data-testid="credit-scope">{creditHistoryReport?.scope || 'unavailable'}</output>
+  default: ({ creditHistoryReport, reportData, period, onPeriodChange }) => (
+    <div>
+      <output data-testid="credit-scope">{creditHistoryReport?.scope || 'unavailable'}</output>
+      <output data-testid="stats-period">{period}</output>
+      <output data-testid="stats-net-sales">{reportData?.overview?.net_sales_total ?? 'unavailable'}</output>
+      <button type="button" onClick={() => onPeriodChange('last7')}>Ver 7 días</button>
+      <button type="button" onClick={() => onPeriodChange('today')}>Ver Hoy</button>
+    </div>
+  )
 }));
 vi.mock('../../components/dashboard/SalesHistory', () => ({
   default: ({ onNext, hasMore, currentPageIndex }) => (
@@ -159,7 +167,9 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(financeRequest).toMatchObject({ scope: 'mine', limit: 50, offset: 0 });
     expect(visibleRequest).toMatchObject({ scope: visibleScope, limit: 50, offset: 0 });
     expectExactReportRange(financeRequest);
-    expectExactReportRange(visibleRequest);
+    expect(visibleRequest.dateFrom).toBeTruthy();
+    expect(visibleRequest.dateTo).toBeTruthy();
+    expect(visibleRequest.dateFrom).not.toBe(dateRange.date_from);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Siguiente página' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
@@ -167,7 +177,7 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     await waitFor(() => expect(harness.historyRequests).toHaveLength(3));
 
     expect(harness.historyRequests[2]).toMatchObject({ scope: visibleScope, limit: 50, offset: 50 });
-    expectExactReportRange(harness.historyRequests[2]);
+    expect(harness.historyRequests[2]).toMatchObject({ dateFrom: visibleRequest.dateFrom, dateTo: visibleRequest.dateTo });
     expect(harness.getOverviewReport).toHaveBeenCalledTimes(1);
     expect(harness.historyRequests.filter((request) => request.scope === 'mine' && request.offset === 0)).toHaveLength(1);
     expect(harness.historyRequests.some((request) => request.scope === 'mine' && request.offset === 50)).toBe(false);
@@ -184,9 +194,9 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(await screen.findByTestId('sales-history')).toBeVisible();
     await waitFor(() => expect(harness.historyRequests).toHaveLength(2));
     expect(harness.historyRequests[0]).toMatchObject({ scope: 'mine', limit: 50, offset: 0 });
-    expectExactReportRange(harness.historyRequests[0]);
+    expect(harness.historyRequests[0].dateFrom).toBeTruthy();
     expect(harness.historyRequests[1]).toMatchObject({ scope: 'mine', limit: 50, offset: 0 });
-    expectExactReportRange(harness.historyRequests[1]);
+    expect(harness.historyRequests[1].dateFrom).toBeTruthy();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Siguiente página' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
@@ -194,6 +204,37 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(harness.historyRequests[2]).toMatchObject({ scope: 'mine', limit: 50, offset: 50 });
     expect(harness.historyRequests.some((request) => request.scope === 'license')).toBe(false);
     expect(harness.getOverviewReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('cambia el período Cloud sin alterar el filtro ni la página del historial visible', async () => {
+    const actor = { status: 'granted', actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a', permissions: ['*'] };
+    renderDashboard(actor);
+    await waitFor(() => expect(harness.historyRequests).toHaveLength(2));
+    const visibleInitial = harness.historyRequests.find((request) => request.scope === 'license');
+    expect(screen.getByTestId('stats-period')).toHaveTextContent('today');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver 7 días' }));
+    await waitFor(() => expect(harness.getOverviewReport).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('stats-period')).toHaveTextContent('last7');
+    expect(harness.getOverviewReport.mock.calls[0][0]).toMatchObject({ scope: 'mine' });
+    expect(harness.getOverviewReport.mock.calls[1][0].dateFrom).not.toBe(harness.getOverviewReport.mock.calls[0][0].dateFrom);
+    expect(harness.historyRequests.filter((request) => request.scope === 'license')).toHaveLength(1);
+    expect(harness.historyRequests.find((request) => request.scope === 'license')).toMatchObject(visibleInitial);
+  });
+
+  it('no deja que una respuesta lenta de otro período reemplace el actual', async () => {
+    const actor = { status: 'granted', actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a', permissions: ['*'] };
+    renderDashboard(actor);
+    await waitFor(() => expect(screen.getByTestId('stats-net-sales')).toHaveTextContent('20'));
+    let resolveOld;
+    harness.getOverviewReport.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
+    harness.getOverviewReport.mockImplementationOnce(async () => ({ ...cloudOverview, overview: { net_sales_total: 70 } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver 7 días' }));
+    await waitFor(() => expect(harness.getOverviewReport).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver Hoy' }));
+    await waitFor(() => expect(screen.getByTestId('stats-net-sales')).toHaveTextContent('70'));
+    resolveOld({ ...cloudOverview, overview: { net_sales_total: 7 } });
+    await waitFor(() => expect(screen.getByTestId('stats-net-sales')).toHaveTextContent('70'));
   });
 
   it('keeps a failed credit reconciliation request separate from the visible sales history request', async () => {
