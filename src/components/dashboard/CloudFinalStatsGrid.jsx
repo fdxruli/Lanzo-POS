@@ -7,6 +7,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import './StatsGrid.css';
+import { CLOUD_STATS_PERIODS, cloudReportMatchesRange, describeCloudStatsRange } from '../../services/reports/dashboardPeriodRange';
 import {
   getCloudFinalDashboardMetrics,
   isCloudFinalSource
@@ -59,7 +60,7 @@ const MetricCard = ({ label, value, note, icon = <Activity size={18} className="
 const metricDisplay = (metric, formatter) => {
   if (metric.status === 'complete') return formatter(metric.value);
   if (metric.status === 'incomplete') return 'Incompleto';
-  return 'Sin dato';
+  return 'No disponible';
 };
 
 const readRangeLabel = (reportData) => {
@@ -86,13 +87,19 @@ export default function CloudFinalStatsGrid({
   reportData = null,
   reportSource = null,
   creditHistoryReport = null,
-  scope = 'mine'
+  scope = 'mine',
+  period = 'today',
+  onPeriodChange = () => {},
+  requestedRange = null,
+  isLoading = false
 }) {
   const reportFailed = reportData?.success === false;
   const source = reportSource || reportData?.source || {};
   const cloudFinalSource = !reportFailed && isCloudFinalSource(source);
-  const finalOverview = reportFailed ? {} : (reportData?.overview || reportData?.summary || reportData || {});
-  const metrics = getCloudFinalDashboardMetrics(reportData, { creditHistoryReport, scope });
+  const rangeMatches = cloudReportMatchesRange(reportData, requestedRange);
+  const verifiedReport = !isLoading && !reportFailed && cloudFinalSource && rangeMatches ? reportData : null;
+  const finalOverview = verifiedReport ? (verifiedReport.overview || verifiedReport.summary || verifiedReport) : {};
+  const metrics = getCloudFinalDashboardMetrics(verifiedReport, { creditHistoryReport, scope });
   const grossSales = readOptionalMoney(finalOverview, ['gross_sales_total', 'grossSalesTotal']);
   const cancelledSales = readOptionalMoney(finalOverview, ['cancelled_sales_total', 'cancelledSalesTotal']);
   const cogs = readOptionalMoney(finalOverview, ['cogs_total', 'cogsTotal']);
@@ -102,19 +109,15 @@ export default function CloudFinalStatsGrid({
   const averageTicket = readMetric(finalOverview, ['average_ticket', 'averageTicket']);
   const profitStatus = readText(finalOverview, ['profit_status', 'profitStatus'], 'unknown');
   const stale = Boolean(source.stale || source.mode === 'cache');
-  const sourceLabel = cloudFinalSource
+  const sourceLabel = isLoading ? 'Actualizando' : cloudFinalSource
     ? (stale ? 'Snapshot Cloud · puede estar desactualizado' : 'Cloud oficial')
     : (source.mode === 'local'
       ? 'Local · este dispositivo'
       : source.mode === 'mixed' || source.local?.includes('all')
         ? 'Respaldo local · Cloud no confirmado'
         : 'Origen no confirmado');
-  const periodLabel = cloudFinalSource
-    ? readRangeLabel(reportData)
-    : 'Periodo Local no informado por la fuente; sin rango Cloud comparable.';
-  const scopeLabel = cloudFinalSource
-    ? `Alcance autorizado: usuario o dispositivo actual (${scope}).`
-    : 'Alcance: datos locales de este dispositivo.';
+  const periodLabel = `Fechas: ${describeCloudStatsRange(requestedRange)} (zona horaria de este dispositivo).`;
+  const scopeLabel = `Alcance consultado: ${scope === 'mine' ? 'usuario o dispositivo actual' : 'licencia autorizada'}.`;
 
   return (
     <div className="stats-container-wrapper">
@@ -122,7 +125,7 @@ export default function CloudFinalStatsGrid({
         <div className="stats-header-title">
           <h3>Resumen de Negocio</h3>
           <p className="stats-subtitle">
-            <Activity size={16} /> Ventas, cobros y crédito del reporte final Cloud.
+            <Activity size={16} /> Ventas y cobros del período seleccionado.
           </p>
           <small className="text-muted">
             {periodLabel} {scopeLabel}
@@ -131,16 +134,31 @@ export default function CloudFinalStatsGrid({
             <span className="mini-stat-pill">{sourceLabel}</span>
           </div>
         </div>
+        <div className="stats-controls-stack">
+          <div className="time-filter-scroll" role="group" aria-label="Período de estadísticas Cloud">
+            {CLOUD_STATS_PERIODS.map(({ key, label }) => (
+              <button key={key} type="button" className={`filter-pill ${period === key ? 'active' : ''}`}
+                aria-pressed={period === key} onClick={() => onPeriodChange(key)}>{label}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {reportFailed && (
+      {isLoading && <p className="text-muted" role="status">Consultando estadísticas de {CLOUD_STATS_PERIODS.find(({ key }) => key === period)?.label || 'Cloud'}…</p>}
+      {!isLoading && cloudFinalSource && !rangeMatches && (
+        <div className="financial-quality-warning financial-quality-warning--compact" role="status">
+          <AlertTriangle size={15} /><span>El rango devuelto no coincide con el seleccionado. No se muestran importes de otro período.</span>
+        </div>
+      )}
+
+      {!isLoading && reportFailed && (
         <div className="financial-quality-warning financial-quality-warning--compact">
           <AlertTriangle size={15} />
           <span>Cloud no confirmó este reporte. Las cifras financieras no están disponibles.</span>
         </div>
       )}
 
-      {!reportFailed && !cloudFinalSource && (
+      {!isLoading && !reportFailed && !cloudFinalSource && (
         <div className="financial-quality-warning financial-quality-warning--compact">
           <AlertTriangle size={15} />
           <span>Cloud no confirmó este reporte. No se muestran cifras locales como ventas o cobros Cloud.</span>
@@ -154,7 +172,7 @@ export default function CloudFinalStatsGrid({
           </div>
           <div className="card-content">
             <span className="card-label">Ventas netas</span>
-            <h2 className="card-value-main">{metricDisplay(metrics.netSales, formatCurrency)}</h2>
+            <h2 className="card-value-main">{isLoading ? 'Cargando' : metricDisplay(metrics.netSales, formatCurrency)}</h2>
             <div className="card-mini-stats">
               <span className="mini-stat-pill">Ventas comerciales válidas</span>
             </div>
@@ -162,15 +180,13 @@ export default function CloudFinalStatsGrid({
           </div>
         </div>
 
-        <MetricCard
-          label="Cobrado"
-          value={metricDisplay(metrics.collected, formatCurrency)}
-          note={metrics.collected.status === 'complete'
-            ? 'Pagos iniciales y abonos posteriores registrados en el periodo.'
-            : 'No se puede conciliar con certeza el desglose de pagos y reversos.'}
-          icon={<DollarSign size={18} className="icon-muted" />}
-          warning={metrics.collected.status !== 'complete'}
-        />
+        <div className={`stat-card-modern revenue-card stats-primary-card ${metrics.collected.status === 'incomplete' ? 'card-warning-state' : ''}`}>
+          <div className="card-content">
+            <span className="card-label">Cobrado</span>
+            <h2 className="card-value-main">{isLoading ? 'Cargando' : metricDisplay(metrics.collected, formatCurrency)}</h2>
+            <small className="text-muted">Pagos iniciales y abonos registrados en este período.</small>
+          </div>
+        </div>
 
         <MetricCard
           label="Vendido a crédito"
@@ -193,11 +209,8 @@ export default function CloudFinalStatsGrid({
           value={metricDisplay(metrics.pendingDebt, formatCurrency)}
           note={!cloudFinalSource
             ? 'No hay un reporte Cloud oficial confirmado para este periodo y alcance.'
-            : metrics.pendingDebt.reason === 'cloud_report_not_successful'
-            ? 'No hay un reporte Cloud confirmado para consultar un saldo vigente.'
-            : 'El reporte devuelve deuda de otro alcance; no se muestra como saldo de este usuario o dispositivo.'}
+            : 'Saldo actual no disponible para el alcance de este usuario o dispositivo.'}
           icon={<AlertTriangle size={18} className="icon-muted" />}
-          warning
         />
 
         <div className={`stat-card-modern profit-card ${profitStatus === 'incomplete' ? 'card-warning-state' : ''}`}>
@@ -206,7 +219,7 @@ export default function CloudFinalStatsGrid({
           </div>
           <div className="card-content">
             <span className="card-label">Ganancia bruta</span>
-            <h2 className="card-value-main">{profit.has ? formatCurrency(profit.value) : 'Sin dato'}</h2>
+            <h2 className="card-value-main">{isLoading ? 'Cargando' : profitStatus === 'incomplete' ? 'Incompleto' : profit.has ? formatCurrency(profit.value) : 'No disponible'}</h2>
             <div className="card-mini-stats">
               <span className="mini-stat-pill">Margen: <strong>{grossMargin.has ? formatPercent(grossMargin.value) : 'Sin dato'}</strong></span>
             </div>
