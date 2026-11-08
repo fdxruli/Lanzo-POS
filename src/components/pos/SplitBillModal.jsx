@@ -201,6 +201,8 @@ export default function SplitBillModal({
   const [splitIntent, setSplitIntent] = useState(RESTAURANT_SPLIT_INTENTS.BY_ITEMS);
   const [customAmountsCents, setCustomAmountsCents] = useState([]);
   const [customAmountDrafts, setCustomAmountDrafts] = useState({});
+  // UI-only blank presentation for the native number quantity field.
+  const [freshNumericFocus, setFreshNumericFocus] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState({});
   const [assignmentAmounts, setAssignmentAmounts] = useState({});
@@ -635,6 +637,30 @@ export default function SplitBillModal({
     setAssignmentNotice('');
   };
 
+  const getNumericEntryValue = (id, value) => (freshNumericFocus === id ? '' : value);
+
+  const selectMonetaryEntry = (event) => {
+    // Native select-all: typing replaces the full amount, while Backspace
+    // still emits a real change event and can intentionally clear the draft.
+    event.currentTarget.select();
+  };
+
+  const startNumericEntry = (event) => {
+    setFreshNumericFocus(event.currentTarget.id);
+  };
+
+  const changeNumericEntry = (event, update) => {
+    setFreshNumericFocus(null);
+    update(event.currentTarget.value);
+  };
+
+  const finishNumericEntry = (event, commit) => {
+    // Tapping and leaving without editing must never overwrite a valid amount.
+    const changed = freshNumericFocus !== event.currentTarget.id;
+    setFreshNumericFocus(null);
+    if (changed && commit) commit(event.currentTarget.value);
+  };
+
   const updatePayment = (guestId, field, value) => {
     if ((field === 'amountPaid' || field === 'receivedAmount') && !isMoneyInputDraft(value)) return;
     setPayments((previous) => {
@@ -674,6 +700,10 @@ export default function SplitBillModal({
     const normalized = normalizeMoneyInputDraft(value, { allowEmpty });
     if (normalized !== null) updatePayment(guestId, field, normalized);
   };
+
+  useEffect(() => {
+    if (!show) setFreshNumericFocus(null);
+  }, [show]);
 
   const getAssignmentAmount = (item, lineIndex, pending) => {
     const lineKey = String(getCartLineId(item, lineIndex));
@@ -1121,6 +1151,7 @@ export default function SplitBillModal({
                             type="text"
                             inputMode="decimal"
                             value={customAmountDrafts[guest.id] ?? formatMoneyFromCents(customAmountsCents[guestIdx])}
+                            onFocus={selectMonetaryEntry}
                             onChange={(event) => updateCustomAmount(guest.id, event.target.value)}
                             onBlur={(event) => commitCustomAmount(guest.id, event.target.value)}
                             disabled={isSubmitting}
@@ -1261,11 +1292,13 @@ export default function SplitBillModal({
                                         min={10 ** -STOCK_DECIMALS}
                                         max={pending}
                                         step={10 ** -STOCK_DECIMALS}
-                                        value={getAssignmentAmount(item, lineIndex, pending)}
-                                        onChange={(event) => setAssignmentAmounts((previous) => ({
+                                        value={getNumericEntryValue(`splitAmount-${lineIndex}`, getAssignmentAmount(item, lineIndex, pending))}
+                                        onFocus={startNumericEntry}
+                                        onChange={(event) => changeNumericEntry(event, (value) => setAssignmentAmounts((previous) => ({
                                           ...previous,
-                                          [String(getCartLineId(item, lineIndex))]: event.target.value
-                                        }))}
+                                          [String(getCartLineId(item, lineIndex))]: value
+                                        })))}
+                                        onBlur={(event) => finishNumericEntry(event)}
                                         disabled={isSubmitting}
                                       />
                                     </label>
@@ -1479,6 +1512,7 @@ export default function SplitBillModal({
                                 value={payment.amountPaid ?? formatMoneyFromCents(dueCents)}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
+                                onFocus={selectMonetaryEntry}
                                 onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
                                 onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
                                 disabled={isSubmitting}
@@ -1497,6 +1531,7 @@ export default function SplitBillModal({
                                 value={payment.amountPaid ?? '0'}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
+                                onFocus={selectMonetaryEntry}
                                 onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
                                 onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
                                 disabled={isSubmitting}
@@ -1520,6 +1555,7 @@ export default function SplitBillModal({
                                     type="text"
                                     inputMode="decimal"
                                     value={payment.receivedAmount ?? payment.amountPaid ?? '0'}
+                                    onFocus={selectMonetaryEntry}
                                     onChange={(event) => updatePayment(guest.id, 'receivedAmount', event.target.value)}
                                     onBlur={(event) => commitPaymentAmount(guest.id, 'receivedAmount', event.target.value)}
                                     aria-invalid={Boolean(activeError && currentStep === 'payment')}
