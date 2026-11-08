@@ -12,7 +12,8 @@ export default function PasswordField({
   fieldClassName = '',
   labelClassName = '',
   autoComplete = 'current-password',
-  minLength
+  minLength,
+  describedBy
 }) {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -28,6 +29,7 @@ export default function PasswordField({
           onChange={onChange}
           autoComplete={autoComplete}
           minLength={minLength}
+          aria-describedby={describedBy}
           disabled={disabled}
           required={required}
         />

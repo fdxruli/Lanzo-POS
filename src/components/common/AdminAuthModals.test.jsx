@@ -25,6 +25,7 @@ describe('admin access UI', () => {
       companyProfile: { name: 'Cafeteria Brisa' },
       licenseDetails: {
         license_key: 'LANZO-TEST-CHOOSER',
+        license_id: '11111111-2222-4333-8444-555555555555',
         product_name: 'Lanzo POS',
         plan_name: 'Pro',
         features: { staff_roles: true }
@@ -47,19 +48,50 @@ describe('admin access UI', () => {
     expect(screen.queryByRole('button', { name: /^Personal \/ StaffUsa/i })).not.toBeInTheDocument();
   });
 
-  it('keeps license context visible in chooser and both login modals', () => {
+  it.each([
+    ['profile selection', LicenseAccessChooser],
+    ['administrator access', AdminLoginModal],
+    ['Staff access', StaffLoginModal],
+    ['owner enrollment', AdminEnrollmentModal]
+  ])('renders %s as a page instead of a modal', (_name, Component) => {
+    render(<Component />);
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.querySelector('.auth-page')).toBeInTheDocument();
+  });
+
+  it('allows auth page scrolling and restores the app scroll lock on exit', () => {
+    const { unmount } = render(<AdminLoginModal />);
+    expect(document.documentElement).toHaveClass('auth-page-document');
+    expect(document.body).toHaveClass('auth-page-document');
+
+    unmount();
+    expect(document.documentElement).not.toHaveClass('auth-page-document');
+    expect(document.body).not.toHaveClass('auth-page-document');
+  });
+
+  it('asks who will sign in and does not announce a completed two-step flow', () => {
     render(<LicenseAccessChooser />);
-    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
-    expect(screen.getByText(/Cafeteria Brisa/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '¿Quién va a ingresar?' })).toBeInTheDocument();
+    expect(screen.queryByText(/Paso 2 de 2/)).not.toBeInTheDocument();
+  });
 
-    cleanup();
-    render(<AdminLoginModal />);
-    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
-
-    cleanup();
-    render(<StaffLoginModal />);
-    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
-    expect(screen.queryByText('Sesión para')).not.toBeInTheDocument();
+  it.each([
+    ['profile selection', LicenseAccessChooser],
+    ['administrator access', AdminLoginModal],
+    ['Staff access', StaffLoginModal],
+    ['independent owner enrollment', AdminEnrollmentModal]
+  ])('keeps safe license context visible in %s', (_name, Component) => {
+    const { container } = render(<Component />);
+    expect(container.querySelector('.auth-license-context__license'))
+      .toHaveTextContent('Licencia 11111111-2222-4333-8444-555555555555');
+    expect(container.querySelector('.auth-license-context__meta'))
+      .toHaveTextContent('Cafeteria Brisa');
+    expect(container.innerHTML).not.toContain('LANZO-TEST-CHOOSER');
+    expect(container.querySelector('.auth-license-context__status svg')).toBeInTheDocument();
+    if (Component === StaffLoginModal) {
+      expect(screen.queryByText('Sesión para')).not.toBeInTheDocument();
+    }
   });
 
   it('submits admin credentials without persisting the password in store', async () => {
@@ -73,7 +105,7 @@ describe('admin access UI', () => {
     expect(useAppStore.getState().password).toBeUndefined();
   });
 
-  it('shows a safe incorrect-login response and stays in the modal', async () => {
+  it('shows a safe incorrect-login response on the full access page', async () => {
     useAppStore.setState({
       handleAdminLogin: vi.fn().mockResolvedValue({
         success: false,
@@ -88,6 +120,7 @@ describe('admin access UI', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Usuario o contraseña incorrectos.');
     expect(alert).not.toHaveTextContent('Credenciales incorrectas.');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('returns to profile selection from both login modals', () => {
@@ -95,12 +128,12 @@ describe('admin access UI', () => {
     useAppStore.setState({ returnToLicenseAccessChoice: returnToChoice });
 
     render(<AdminLoginModal />);
-    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro perfil' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar perfil' }));
     expect(returnToChoice).toHaveBeenCalledTimes(1);
 
     cleanup();
     render(<StaffLoginModal />);
-    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro perfil' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar perfil' }));
     expect(returnToChoice).toHaveBeenCalledTimes(2);
   });
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TELEGRAM_CONTACT_BASE_URL } from '../../../services/support/telegramContact';
@@ -75,5 +75,36 @@ describe('prelogin official support', () => {
     await user.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
     expect(trigger).toHaveFocus();
     expect(screen.queryByRole('region', { name: 'Soporte oficial de LANZO' })).not.toBeInTheDocument();
+  });
+
+  it('provides an accessible native modal presentation for access pages', async () => {
+    const user = userEvent.setup();
+    const originalShowModal = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.setAttribute('open', '');
+      this.querySelector('button')?.focus();
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+
+    render(<PreloginSupportAccess screen="Acceso administrador" modal triggerClassName="auth-page__footer-link" />);
+    const trigger = screen.getByRole('button', { name: 'Soporte' });
+    expect(trigger).toHaveClass('auth-page__footer-link');
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });
+    await waitFor(() => expect(dialog).toHaveAttribute('open'));
+    expect(dialog).toContainElement(screen.getByRole('region', { name: 'Soporte oficial de LANZO' }));
+    expect(screen.getByRole('button', { name: 'Cerrar soporte' })).toHaveFocus();
+
+    fireEvent(dialog, new Event('cancel', { bubbles: true, cancelable: true }));
+
+    expect(screen.queryByRole('dialog', { name: 'Soporte LANZO' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    HTMLDialogElement.prototype.showModal = originalShowModal;
+    HTMLDialogElement.prototype.close = originalClose;
   });
 });

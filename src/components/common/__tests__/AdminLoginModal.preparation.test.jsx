@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   handleFreeDeviceTakeover: vi.fn(), logout: vi.fn(), returnToLicenseAccessChoice: vi.fn(),
   pendingAdminSessionResult: null,
   adminLoginMessage: null,
+  actorAuthorityRecovery: null,
   adminLoginLicenseKey: 'QA-LICENSE', licenseDetails: { plan_code: 'free_trial', license_key: 'QA-LICENSE' }
 }));
 vi.mock('../../../store/useAppStore', () => {
@@ -28,11 +29,53 @@ beforeEach(() => {
   state.pendingAdminSessionResult = null;
   state.adminLoginMessage = null;
   state.adminLoginError = null;
+  state.actorAuthorityRecovery = null;
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 afterEach(cleanup);
 
 describe('Admin preparation recovery UI', () => {
+  it('restores the known Local plan notice once and ignores unclassified store text', () => {
+    state.adminLoginMessage = 'Tu plan cambió a Lanzo Local. Inicia sesión como propietario para usar este dispositivo.';
+    const { unmount } = render(<AdminLoginModal />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(state.adminLoginMessage);
+    expect(screen.getAllByText(state.adminLoginMessage)).toHaveLength(1);
+    unmount();
+
+    state.adminLoginMessage = 'ADMIN_SESSION_INVALID token=private-server-detail';
+    render(<AdminLoginModal />);
+    expect(screen.queryByText(/ADMIN_SESSION_INVALID|token=private-server-detail/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('uses classified administrator recovery guidance without repeating raw store text', () => {
+    state.actorAuthorityRecovery = {
+      actorType: 'admin',
+      message: 'Tu sesión cambió o necesita volver a validarse. Inicia sesión nuevamente para continuar.'
+    };
+    state.adminLoginMessage = 'ACTOR_SESSION_INVALID token=private-server-detail';
+    render(<AdminLoginModal />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Tu sesión cambió o necesita volver a validarse/);
+    expect(screen.getAllByText(/Tu sesión cambió o necesita volver a validarse/)).toHaveLength(1);
+    expect(screen.queryByText(/ACTOR_SESSION_INVALID|token=private-server-detail/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['ACTOR_RUNTIME_RESTORE_FAILED', /La sesión se verificó, pero no pudimos restablecer una autoridad operativa segura/, 'Reintentar recuperación'],
+    ['ADMIN_OFFLINE_EVIDENCE_PENDING', /necesitamos conexión para confirmar la evidencia guardada/, 'Reintentar recuperación']
+  ])('explains the safe recovery action for %s', (code, message, actionLabel) => {
+    state.adminLoginError = { code, verificationStatus: 'verified', message: 'INTERNAL_TOKEN=secret' };
+    state.adminLoginMessage = 'INTERNAL_TOKEN=secret';
+    render(<AdminLoginModal />);
+
+    expect(screen.getByRole('heading', { name: 'Recupera tu sesión' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(message);
+    expect(screen.getByRole('button', { name: actionLabel })).toBeEnabled();
+    expect(screen.queryByText(/INTERNAL_TOKEN=secret/)).not.toBeInTheDocument();
+  });
+
   it.each([
     ['restauración exitosa', { status: 'ready' }, null],
     ['fallo de transporte persistente', { status: 'admin_login_required' }, {
@@ -90,7 +133,7 @@ describe('Admin preparation recovery UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/problema de conexión/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se pudo confirmar el resultado de la acción/i);
     expect(screen.queryByText(/failed to fetch/i)).not.toBeInTheDocument();
   });
 
@@ -207,7 +250,7 @@ describe('Admin preparation recovery UI', () => {
   });
 
   it.each([
-    [{ code: 'ADMIN_LOGIN_ERROR', message: 'Failed to fetch' }, /problema de conexión/i],
+    [{ code: 'ADMIN_LOGIN_ERROR', message: 'Failed to fetch' }, /No se pudo confirmar el resultado de la acción/i],
     [{ code: 'ACTOR_HANDOFF_REQUIRED' }, /no pudimos recuperar tu sesión de forma segura/i]
   ])('shows safe specific copy for %s', async (result, message) => {
     state.handleAdminLogin.mockResolvedValue({ success: false, ...result });

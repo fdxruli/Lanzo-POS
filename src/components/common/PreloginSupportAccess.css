@@ -70,8 +70,8 @@
   outline-offset: 3px;
 }
 
-/* Modal presentation is opt-in from WelcomeModal only. The native dialog keeps
-   focus inside, supports Escape, and does not resize the welcome footer. */
+/* Modal presentation is opt-in from WelcomeModal and auth pages. The native
+   dialog keeps focus inside, supports Escape, and does not resize the page. */
 .prelogin-support__dialog {
   box-sizing: border-box;
   width: min(540px, calc(100vw - 1.5rem));

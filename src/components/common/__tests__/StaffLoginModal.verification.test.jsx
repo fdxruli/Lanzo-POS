@@ -46,7 +46,8 @@ describe('StaffLoginModal verification recovery', () => {
 
     render(<StaffLoginModal />);
 
-    expect(screen.getByText(storeState.staffLoginMessage)).toBeInTheDocument();
+    expect(screen.getByText(/No pudimos confirmar la sesión guardada/)).toBeInTheDocument();
+    expect(screen.queryByText(storeState.staffLoginMessage)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeEnabled();
     expect(screen.queryByLabelText('Usuario')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Contraseña')).not.toBeInTheDocument();
@@ -56,7 +57,7 @@ describe('StaffLoginModal verification recovery', () => {
     expect(storeState.handleStaffLogin).not.toHaveBeenCalled();
   });
 
-  it('releases the submit loading state when Staff login throws', async () => {
+  it('does not label an unidentified online error as a connection failure', async () => {
     storeState.handleStaffLogin.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
     render(<StaffLoginModal />);
@@ -64,7 +65,9 @@ describe('StaffLoginModal verification recovery', () => {
     fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'fixture-only' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
 
-    expect(await screen.findByText(/Comprueba la conexión/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo iniciar sesión staff. Tus datos permanecen intactos. Vuelve a intentarlo.');
+    expect(screen.queryByText(/Failed to fetch/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Comprueba la conexión/i)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
   });
 });

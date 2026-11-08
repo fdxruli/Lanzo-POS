@@ -52,7 +52,7 @@ describe('initial owner invitation flow', () => {
       password: 'OwnerPass123',
       invitationCode: code.toLowerCase()
     }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('El código no es válido.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('El código de primera configuración no es válido.');
     expect(screen.getByLabelText(/Código de primera configuración/)).toHaveValue('');
     expect(screen.getByLabelText(/^Contraseña/)).toHaveValue('');
     expect(screen.getByLabelText('Confirmar contraseña')).toHaveValue('');
@@ -63,5 +63,23 @@ describe('initial owner invitation flow', () => {
   it('does not add the invitation field to the existing authorized enrollment screen', () => {
     render(<AdminEnrollmentModal />);
     expect(screen.queryByLabelText(/Código de primera configuración/)).not.toBeInTheDocument();
+  });
+
+  it('replaces unknown server enrollment messages with safe copy', async () => {
+    mocks.enroll.mockResolvedValue({
+      success: false,
+      code: 'P0001',
+      message: 'INTERNAL_SECRET from private.function at SQL line 42'
+    });
+    render(<AdminEnrollmentModal requiresInvitation />);
+    fireEvent.change(screen.getByLabelText(/Código de primera configuración/), {
+      target: { value: 'ABCDEF0123456789'.repeat(4) }
+    });
+    fillOwnerCredentials();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta propietaria' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/No pudimos confirmar la creación de la cuenta propietaria/);
+    expect(alert).not.toHaveTextContent(/INTERNAL_SECRET|SQL line 42|P0001/);
   });
 });

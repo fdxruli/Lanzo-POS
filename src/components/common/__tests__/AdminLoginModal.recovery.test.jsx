@@ -67,7 +67,8 @@ describe('AdminLoginModal local database recovery', () => {
     recoveryRuntime.redeem.mockResolvedValue({ success: true, username: 'original-owner' });
     render(<AdminLoginModal />);
     fireEvent.click(screen.getByRole('button', { name: '¿Olvidaste tus datos de acceso?' }));
-    expect(screen.getByRole('dialog')).toHaveAccessibleName('Recuperar acceso');
+    expect(screen.getByRole('heading', { name: 'Recuperar acceso' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Usuario')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Código recibido de soporte'), { target: { value: 'received-code' } });
     fireEvent.change(screen.getByLabelText('Nueva contraseña'), { target: { value: 'Newpass123' } });
