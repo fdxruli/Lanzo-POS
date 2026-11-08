@@ -106,7 +106,7 @@ describe('StaffUsersSettings list-first administration', () => {
     expect(screen.getByRole('heading', { name: 'Usuarios staff' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nuevo staff/ })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByText('Operacion')).not.toBeInTheDocument();
+    expect(screen.queryByText('Operación')).not.toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
     expect(screen.getByText('@ana · Cajero')).toBeInTheDocument();
@@ -346,19 +346,19 @@ describe('StaffUsersSettings list-first administration', () => {
     await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
 
-    const operationDetails = screen.getByText('Operacion', { selector: 'strong' }).closest('details');
+    const operationDetails = screen.getByText('Operación', { selector: 'strong' }).closest('details');
     const cloudDetails = screen.getByText('Lanzo Nube', { selector: 'strong' }).closest('details');
     expect(operationDetails).not.toHaveAttribute('open');
     expect(cloudDetails).not.toHaveAttribute('open');
 
-    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
     expect(operationDetails).toHaveAttribute('open');
-    expect(screen.getByRole('checkbox', { name: 'Punto de venta' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Punto de venta/ })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
     expect(operationDetails).not.toHaveAttribute('open');
 
-    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    fireEvent.click(screen.getByText('Operación', { selector: 'strong' }));
     expect(operationDetails).toHaveAttribute('open');
 
     fireEvent.click(screen.getByText('Lanzo Nube', { selector: 'strong' }));
@@ -408,13 +408,14 @@ describe('StaffUsersSettings list-first administration', () => {
     render(<StaffUsersSettings licenseKey="LIC-1" />);
     await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
-    fireEvent.click(screen.getByText('Configuracion', { selector: 'strong' }));
+    fireEvent.click(screen.getByText('Configuración', { selector: 'strong' }));
+    expect(screen.getByText('4 activos · 6 permisos')).toBeInTheDocument();
 
     for (const label of [
       'Datos y Apariencia', 'Controles', 'Licencia y Rubros',
       'Dispositivos', 'Datos y Mantenimiento', 'Respaldos'
     ]) {
-      expect(screen.getByRole('checkbox', { name: new RegExp(label) })).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: new RegExp(`^${label}`) })).toBeInTheDocument();
     }
     expect(screen.getByRole('checkbox', { name: /Datos y Apariencia/ })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Controles/ })).toBeChecked();
@@ -438,5 +439,105 @@ describe('StaffUsersSettings list-first administration', () => {
         })
       })
     ));
+  });
+
+  it('previews a replacement template and keeps it local until the Admin saves', async () => {
+    mocks.listStaffUsersService.mockResolvedValue({ success: true, data: [] });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Nuevo staff/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
+
+    expect(screen.getByText('Punto de venta', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.getByText('Clientes', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.getByText(/se reemplazan los permisos seleccionados en este formulario/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Rol'), { target: { value: 'staff' } });
+
+    expect(screen.getByText('Punto de venta', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.queryByText('Clientes', { selector: '.staff-permission-review-list li' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Caja', { selector: '.staff-permission-review-list li' })).not.toBeInTheDocument();
+    expect(mocks.createStaffUserService).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'nuevo' } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nuevo Staff' } });
+    fireEvent.change(screen.getByLabelText('Contrasena temporal'), { target: { value: 'secret1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear staff' }));
+
+    await waitFor(() => expect(mocks.createStaffUserService).toHaveBeenCalledWith(
+      'LIC-1',
+      expect.objectContaining({
+        role_name: 'staff',
+        permissions: expect.objectContaining({
+          pos: true,
+          orders: false,
+          customers: false,
+          cash_register: false,
+          discounts: false,
+          settings_data: false,
+          settings_controls: false,
+          ecommerce: false
+        })
+      })
+    ));
+  });
+
+  it('summarizes exactly the readable permission grant and leaves other access unchanged', async () => {
+    const userWithGranularSettings = {
+      ...existingUser,
+      permissions: {
+        ...existingUser.permissions,
+        settings_data: true,
+        settings_controls: false
+      }
+    };
+    mocks.listStaffUsersService.mockResolvedValue({ success: true, data: [userWithGranularSettings] });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.click(screen.getByText('Configuración', { selector: 'strong' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Controles/ }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Cambios pendientes');
+    expect(screen.getByText('Controles', { selector: '.staff-permission-review-list li' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Se concederán 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Se retirarán 0/ })).toBeInTheDocument();
+    expect(screen.getByText('Se mantienen activos sin cambios: 4 permisos.')).toBeInTheDocument();
+    expect(screen.queryByText('settings_controls', { selector: '.staff-permission-review-list li' })).not.toBeInTheDocument();
+    expect(mocks.updateStaffUserService).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(mocks.updateStaffUserService).toHaveBeenCalledWith(
+      'LIC-1',
+      userWithGranularSettings.id,
+      expect.objectContaining({
+        permissions: expect.objectContaining({
+          pos: true,
+          customers: true,
+          cash_register: true,
+          settings_data: true,
+          settings_controls: true
+        })
+      })
+    ));
+  });
+
+  it('keeps the form open and reports a rejected save without showing success', async () => {
+    mocks.updateStaffUserService.mockRejectedValue(new Error('Servicio no disponible'));
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana Actualizada' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Servicio no disponible');
+    expect(screen.getByRole('dialog', { name: 'Editar usuario staff' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Error al guardar');
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+    expect(mocks.showMessageModal).not.toHaveBeenCalledWith(
+      'Usuario staff actualizado.', null, { type: 'success' }
+    );
   });
 });
