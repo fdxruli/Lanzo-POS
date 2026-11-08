@@ -37,7 +37,7 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
         color: 'var(--ui-text-strong)',
         background: 'rgba(255, 184, 0, 0.14)',
       },
-      duration: 4000
+      duration: options.duration ?? 4000
     });
     return;
   }
@@ -55,10 +55,10 @@ export function showMessageModal(message, onConfirm = null, options = {}) {
     message.startsWith('⚠️');
 
   if (isError) {
-    toast.error(message, { duration: 4000 });
+    toast.error(message, { duration: options.duration ?? 4000 });
   } else {
     // 3. Por defecto: ÉXITO (Verde)
-    toast.success(message, { duration: 3000 });
+    toast.success(message, { duration: options.duration ?? 3000 });
   }
 }
 

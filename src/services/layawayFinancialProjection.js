@@ -19,6 +19,11 @@ const dateInRange = (value, { start = null, end = null } = {}) => {
   if (!Number.isFinite(timestamp)) return false;
   return (!start || timestamp >= Date.parse(start)) && (!end || timestamp <= Date.parse(end));
 };
+const saleInCashSession = (sale, cashSessionId, range) => {
+  const linkedSessionId = asRecord(sale).cash_session_id;
+  if (cashSessionId && linkedSessionId) return linkedSessionId === cashSessionId;
+  return dateInRange(sale?.timestamp, range);
+};
 
 const movementAmount = (movement) => movement?.monto ?? movement?.amount ?? 0;
 const movementMetadata = (movement = {}) => asRecord(movement).metadata || {};
@@ -335,7 +340,7 @@ export const buildLayawayFinancialProjection = ({
     isFinanciallyClosedSale(sale)
     && sale.isLayawayConversion === true
     && sale.originalLayawayId
-    && dateInRange(sale.timestamp, range)
+    && saleInCashSession(sale, cashSessionId, range)
   ));
   const completedSaleByLayaway = new Map();
   for (const sale of completedSales) {
@@ -509,8 +514,7 @@ export const buildCashReconciliation = ({ cashSession = {}, sales = [], layaways
   const sessionMovements = safeCashMovements.filter((movement) => inScopeMovement(movement, sessionId, period));
   const customerCollectionById = new Map(sessionMovements.filter(isCustomerCollection).map((movement) => [movement.id, movement]));
   const sessionSales = safeSales.filter((sale) => (
-    dateInRange(sale.timestamp, period)
-    && (!sale.cash_session_id || sale.cash_session_id === sessionId)
+    saleInCashSession(sale, sessionId, period)
   ));
   let directCashSales = amount(0);
   let customerCreditCollections = amount(0);

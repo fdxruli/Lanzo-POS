@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import toast from 'react-hot-toast';
+import GlobalToaster from '../../../components/layout/GlobalToaster';
 
 const mocks = vi.hoisted(() => ({
   appState: null,
@@ -220,6 +222,18 @@ const initiateCheckout = async (hookResult, options) => {
   return response;
 };
 
+const mountRealToastLayer = async () => {
+  toast.remove();
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    matches: false,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn()
+  })));
+  render(<GlobalToaster />);
+};
+
 beforeEach(() => {
   grantTestActor({ permissions: ['pos'] });
   vi.clearAllMocks();
@@ -298,7 +312,29 @@ beforeEach(() => {
   mocks.cloudCreditEnabled = false;
 });
 
+afterEach(() => {
+  mocks.showMessageModal.mockReset();
+  toast.remove();
+  vi.unstubAllGlobals();
+});
+
 describe('usePosCheckout ecommerce and stale lock ownership', () => {
+  it('renders success, error, and warning messages in the app global toaster', async () => {
+    await mountRealToastLayer();
+    const { showMessageModal } = await vi.importActual('../../../services/utils');
+
+    act(() => {
+      showMessageModal('✅ ¡Venta registrada correctamente!', null, { duration: Infinity });
+      showMessageModal('Error: No se pudo vender: falta existencia.', null, { type: 'error', duration: Infinity });
+      showMessageModal('El resultado del cobro sigue pendiente de confirmación.', null, { type: 'warning', duration: Infinity });
+    });
+
+    expect(document.querySelector('[data-rht-toaster]')).toBeInTheDocument();
+    expect(screen.getAllByText('✅ ¡Venta registrada correctamente!')).toHaveLength(1);
+    expect(screen.getAllByText('Error: No se pudo vender: falta existencia.')).toHaveLength(1);
+    expect(screen.getAllByText('El resultado del cobro sigue pendiente de confirmación.')).toHaveLength(1);
+  });
+
   it.each([{ restaurantCloudHydrated: true }, { reservationAuthority: 'cloud' }])(
     'blocks normal checkout from durable cloud ownership when the active tab lacks its marker (%j)', async (marker) => {
       const staleOrder = makeOrder();
@@ -641,6 +677,70 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.activeState.removeOrder).toHaveBeenCalledWith('order-a');
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
     expect(mocks.broadcastDBChange).toHaveBeenCalledWith({ action: 'sale-completed', saleId: 'sale-1' });
+  });
+
+  it('requests one success confirmation after the payment form closes', async () => {
+    setOrders([makeOrder({ id: 'order-a' })]);
+    const deps = makeDeps();
+    deps.pos.asegurarCajaAbierta.mockResolvedValue({ id: 'cash-open', estado: 'abierta' });
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    await act(async () => {
+      await result.current.handleProcessOrder({ paymentMethod: 'efectivo', amountPaid: 20 });
+    });
+
+    expect(mocks.showMessageModal).toHaveBeenCalledWith('✅ ¡Venta registrada correctamente!');
+    expect(deps.modal.closeModal).toHaveBeenCalled();
+    expect(mocks.showMessageModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the rejection reason through the existing notification channel', async () => {
+    setOrders([makeOrder({ id: 'order-a' })]);
+    const deps = makeDeps();
+    deps.pos.asegurarCajaAbierta.mockResolvedValue({ id: 'cash-open', estado: 'abierta' });
+    mocks.processSale.mockResolvedValue({
+      success: false,
+      errorType: 'VALIDATION',
+      message: 'No se pudo vender: falta existencia.'
+    });
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    await act(async () => {
+      await result.current.handleProcessOrder({ paymentMethod: 'efectivo', amountPaid: 20 });
+    });
+
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'Error: No se pudo vender: falta existencia.',
+      null,
+      { type: 'error' }
+    );
+    expect(mocks.showMessageModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a pending warning for an uncertain commit without claiming success or inviting a retry', async () => {
+    setOrders([makeOrder({ id: 'order-a' })]);
+    const deps = makeDeps();
+    deps.pos.asegurarCajaAbierta.mockResolvedValue({ id: 'cash-open', estado: 'abierta' });
+    mocks.processSale.mockResolvedValue({ success: false, code: 'LOCAL_COMMIT_UNCERTAIN', retryable: false });
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    let response;
+    await act(async () => {
+      response = await result.current.handleProcessOrder({ paymentMethod: 'efectivo', amountPaid: 20 });
+    });
+
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'El resultado del cobro sigue pendiente de confirmación. Revisa Ventas → Historial; no lo repitas.',
+      null,
+      { type: 'warning', duration: 7000 }
+    );
+    expect(mocks.showMessageModal).toHaveBeenCalledTimes(1);
+    expect(response).toMatchObject({ code: 'LOCAL_COMMIT_UNCERTAIN' });
+    expect(deps.modal.closeModal).toHaveBeenCalled();
+    expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
   });
 
   it('uses the freshly ensured station session instead of a stale cajaActual snapshot', async () => {

@@ -106,6 +106,24 @@ describe('restaurant split cash reconciliation', () => {
     expect(laterShift).toMatchObject({ directCashSales: 0, exits: 20, theoreticalCash: 30 });
   });
 
+  it('keeps a sale linked to another cash session out even when its timestamp falls inside this shift', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: { ...session, monto_inicial: '100' },
+      sales: [{
+        id: 'sale-other-session',
+        timestamp: '2026-07-25T10:00:00.000Z',
+        cash_session_id: 'cash-2',
+        status: 'closed',
+        paymentMethod: 'efectivo',
+        total: '20'
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation).toMatchObject({ directCashSales: 0, recognizedSales: 0, theoreticalCash: 100 });
+  });
+
   it('reconciles legacy sale fields when explicit payments are empty or absent', () => {
     const reconciliation = buildCashReconciliation({
       cashSession: session,

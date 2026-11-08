@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { isAdminNotFoundPath } from '../../router/adminRoutePaths';
-import { Toaster } from 'react-hot-toast';
+import GlobalToaster from './GlobalToaster';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
@@ -152,29 +152,7 @@ function LayoutContent() {
 
   return (
     <div className={`app-layout ${isNotFoundPage ? 'app-layout--not-found' : ''}`.trim()}>
-      <Toaster
-        position="top-center"
-        containerStyle={{
-          zIndex: 'var(--z-toast)',
-          top: 'max(20px, env(safe-area-inset-top, 0px))'
-        }}
-        toastOptions={{
-          style: {
-            background: '#333',
-            color: '#fff',
-            borderRadius: '8px',
-            fontSize: '1rem'
-          },
-          success: {
-            style: { background: 'var(--success-color)', color: 'white' },
-            iconTheme: { primary: 'white', secondary: 'var(--success-color)' }
-          },
-          error: {
-            style: { background: 'var(--error-color)', color: 'white' },
-            iconTheme: { primary: 'white', secondary: 'var(--error-color)' }
-          }
-        }}
-      />
+      <GlobalToaster />
 
       <LocalInventoryOperationalAlertsRuntime />
       <Navbar isSuppressed={isNotFoundPage} />
