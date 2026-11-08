@@ -142,6 +142,7 @@ declare
     'public.pos_record_customer_payment_v2(text,text,text,text,text,numeric,text,text,text,jsonb,text,jsonb)'
   )::oid;
   v_legacy record;
+  v_legacy_sha256 text;
   v_actual_sha256 text;
 begin
   if v_payment_core is null or v_payment_v2 is null then
@@ -168,8 +169,10 @@ begin
     raise exception 'STAFF_CUSTOMER_PAYMENTS_V2_GRANTS_MISSING' using errcode = 'P0001';
   end if;
 
-  -- The old public RPC is revoked in the current contract. Stop if a later
-  -- grant made any legacy overload directly callable again.
+  -- The legacy public RPC is still callable by old clients. Permit only its
+  -- verified rate-limited wrapper, which delegates to the same protected
+  -- unlimited payment core. Other callable overloads or altered wrappers
+  -- must fail closed; do not change any existing EXECUTE grants.
   for v_legacy in
     select p.oid
     from pg_catalog.pg_proc p
@@ -179,7 +182,26 @@ begin
   loop
     if has_function_privilege('anon', v_legacy.oid, 'EXECUTE')
        or has_function_privilege('authenticated', v_legacy.oid, 'EXECUTE') then
-      raise exception 'STAFF_CUSTOMER_PAYMENTS_LEGACY_RPC_EXPOSED' using errcode = 'P0001';
+      if v_legacy.oid is distinct from to_regprocedure(
+        'public.pos_record_customer_payment(text,text,text,text,text,numeric,text,text,text,jsonb,text)'
+      )::oid then
+        raise exception 'STAFF_CUSTOMER_PAYMENTS_LEGACY_RPC_ROUTE_MISMATCH' using errcode = 'P0001';
+      end if;
+
+      -- Pinned definition includes enforce_pos_rpc_rate_limit_v2 and a direct
+      -- call to public.pos_record_customer_payment_unlimited, not another
+      -- unguarded path. Stop on any change to that financial boundary.
+      select encode(
+        extensions.digest(
+          convert_to(replace(pg_catalog.pg_get_functiondef(v_legacy.oid), E'\\r', ''), 'UTF8'),
+          'sha256'
+        ),
+        'hex'
+      ) into v_legacy_sha256;
+      if v_legacy_sha256 is distinct from
+         'da5ca36d00b29a3163907fed17786a7853805e79561ee4da173bd8681c90300c' then
+        raise exception 'STAFF_CUSTOMER_PAYMENTS_LEGACY_RPC_CONTRACT_MISMATCH' using errcode = 'P0001';
+      end if;
     end if;
   end loop;
 end;
