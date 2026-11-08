@@ -45,4 +45,200 @@ const createFakeDb = ({ products = [], batches = [] } = {}) => {
 };
 
 describe('inventoryFlow committed stock', () => {
-  it('reserva st¶»§q«^
+  it('reserva stock simple sin tocar el stock fisico', async () => {
+    const db = createFakeDb({
+      products: [
+        { id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 2 }
+      ]
+    });
+
+    const reservedItems = await commitStock(
+      [{ id: 'beer', name: 'Cerveza', quantity: 3 }],
+      {
+        db,
+        STORES,
+        allProducts: [{ id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 2 }]
+      }
+    );
+
+    expect(reservedItems[0].inventoryReservation).toMatchObject({
+      source: 'table',
+      committedQuantity: 3,
+      committedBatches: []
+    });
+
+    expect(db.__menu.get('beer')).toMatchObject({
+      stock: 10,
+      committedStock: 5
+    });
+  });
+
+  it('reserva lotes y sincroniza committedStock del padre', async () => {
+    const db = createFakeDb({
+      products: [
+        {
+          id: 'milk',
+          name: 'Leche',
+          trackStock: true,
+          stock: 8,
+          committedStock: 1,
+          batchManagement: { enabled: true, selectionStrategy: 'fifo' }
+        }
+      ],
+      batches: [
+        { id: 'b-1', productId: 'milk', stock: 5, committedStock: 1, cost: 10, isActive: true, createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'b-2', productId: 'milk', stock: 3, committedStock: 0, cost: 11, isActive: true, createdAt: '2026-01-02T00:00:00.000Z' }
+      ]
+    });
+
+    const [reservedItem] = await commitStock(
+      [{ id: 'milk', name: 'Leche', quantity: 4 }],
+      {
+        db,
+        STORES,
+        allProducts: [
+          {
+            id: 'milk',
+            name: 'Leche',
+            trackStock: true,
+            stock: 8,
+            committedStock: 1,
+            batchManagement: { enabled: true, selectionStrategy: 'fifo' }
+          }
+        ]
+      }
+    );
+
+    expect(reservedItem.inventoryReservation.committedBatches).toEqual([
+      { batchId: 'b-1', ingredientId: 'milk', quantity: 4, cost: 10, expiryDate: null, batchSku: null }
+    ]);
+    expect(db.__batches.get('b-1').committedStock).toBe(5);
+    expect(db.__menu.get('milk').committedStock).toBe(5);
+    expect(db.__menu.get('milk').stock).toBe(8);
+  });
+
+  it('libera reservas y revierte committedStock', async () => {
+    const db = createFakeDb({
+      products: [
+        { id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 5 }
+      ]
+    });
+
+    await releaseCommittedStock(
+      [{
+        id: 'beer',
+        quantity: 3,
+        inventoryReservation: {
+          source: 'table',
+          committedQuantity: 3,
+          committedBatches: []
+        }
+      }],
+      { db, STORES, allProducts: [{ id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 5 }] }
+    );
+
+    expect(db.__menu.get('beer')).toMatchObject({
+      stock: 10,
+      committedStock: 2
+    });
+  });
+
+  it('falla duro si releaseCommittedStock causa underflow', async () => {
+    const db = createFakeDb({
+      products: [
+        { id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 2 }
+      ]
+    });
+
+    await expect(
+      releaseCommittedStock(
+        [{
+          id: 'beer',
+          quantity: 5,
+          inventoryReservation: {
+            source: 'table',
+            committedQuantity: 5,
+            committedBatches: []
+          }
+        }],
+        { db, STORES, allProducts: [{ id: 'beer', name: 'Cerveza', trackStock: true, stock: 10, committedStock: 2 }] }
+      )
+    ).rejects.toThrow('CRITICAL_COMMITTED_UNDERFLOW');
+  });
+
+  it('convierte una reserva a deduccion real al construir la venta', () => {
+    const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{
+        id: 'beer',
+        name: 'Cerveza',
+        quantity: 2,
+        inventoryReservation: {
+          source: 'table',
+          committedQuantity: 2,
+          committedBatches: [
+            { batchId: 'b-1', ingredientId: 'beer', quantity: 2, cost: 12 }
+          ]
+        }
+      }],
+      allProducts: [{
+        id: 'beer',
+        name: 'Cerveza',
+        trackStock: true,
+        cost: 8
+      }],
+      batchesMap: new Map(),
+      roundCurrency: (value) => Math.round(value * 100) / 100
+    });
+
+    expect(batchesToDeduct).toEqual([
+      {
+        batchId: 'b-1',
+        quantity: 2,
+        productId: 'beer',
+        fromCommittedStock: true
+      }
+    ]);
+    expect(processedItems[0]).toMatchObject({
+      stockDeducted: 2,
+      batchesUsed: [{ batchId: 'b-1', ingredientId: 'beer', quantity: 2, cost: 12 }]
+    });
+  });
+});
+
+
+describe('recipe inventory allocations', () => {
+  const dish = { id: 'dish', name: 'Hamburguesa', trackStock: false,
+    recipe: [{ ingredientId: 'chicken', quantity: 0.15 }, { ingredientId: 'bread', quantity: 1 }] };
+  const chicken = { id: 'chicken', name: 'Pechuga', trackStock: true, stock: 1, committedStock: 0, cost: 50 };
+  const bread = { id: 'bread', name: 'Bolillo', trackStock: true, stock: 10, committedStock: 0, cost: 3 };
+
+  it('allocates non-batch ingredients once per component, not parent dish', () => {
+    const result = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: 'dish', quantity: 2 }],
+      allProducts: [dish, chicken, bread],
+      batchesMap: new Map(),
+      roundCurrency: (v) => Math.round(v * 100) / 100
+    });
+    expect(result.batchesToDeduct).toEqual([]);
+    expect(result.processedItems[0].nonBatchIngredientsUsed).toEqual([
+      { ingredientId: 'chicken', quantity: 0.3, fromCommittedStock: false },
+      { ingredientId: 'bread', quantity: 2, fromCommittedStock: false }
+    ]);
+  });
+
+  it('preserves reserved non-batch ingredient quantities for table settlement', () => {
+    const result = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: 'dish', quantity: 2, inventoryReservation: {
+        source: 'table', committedQuantity: 2, committedBatches: [],
+        committedProducts: [{ productId: 'chicken', quantity: 0.3 }, { productId: 'bread', quantity: 2 }]
+      } }],
+      allProducts: [dish, chicken, bread],
+      batchesMap: new Map(),
+      roundCurrency: (v) => Math.round(v * 100) / 100
+    });
+    expect(result.processedItems[0].nonBatchIngredientsUsed).toEqual([
+      { ingredientId: 'chicken', quantity: 0.3, fromCommittedStock: true },
+      { ingredientId: 'bread', quantity: 2, fromCommittedStock: true }
+    ]);
+  });
+});

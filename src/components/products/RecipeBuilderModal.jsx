@@ -34,4 +34,83 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     setUseSmallUnit(false);
     setUnit(id ? getIngredientDefaultUnit(ingredientsById.get(id)) : '');
   };
-���q�^
+
+  const handleAdd = () => {
+    if (!selectedIngredientId || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) {
+      showMessageModal('Selecciona un ingrediente y una cantidad válida.', null, { type: 'warning' });
+      return;
+    }
+    const ingredient = ingredientsById.get(selectedIngredientId);
+    if (!ingredient) return;
+    if (recipeItems.some((item) => getRecipeIngredientId(item) === selectedIngredientId)) {
+      showMessageModal('Este ingrediente ya está en la receta. Elimínalo para editarlo.', null, { type: 'warning' });
+      return;
+    }
+    const enteredQuantity = Number(quantity);
+    const finalQuantity = useSmallUnit ? enteredQuantity / 1000 : enteredQuantity;
+    if (!Number.isFinite(finalQuantity) || finalQuantity <= 0) return;
+    setRecipeItems((items) => [...items, {
+      ingredientId: ingredient.id,
+      name: ingredient.name,
+      quantity: finalQuantity,
+      unit,
+      estimatedCost: roundCurrency(Number(ingredient.cost || 0) * finalQuantity)
+    }]);
+    resetInput();
+  };
+
+  const invalidItems = recipeItems.filter((item) => {
+    const ingredient = ingredientsById.get(getRecipeIngredientId(item));
+    return !ingredient || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0
+      || (item.unit && getIngredientDefaultUnit(ingredient) !== item.unit);
+  });
+
+  const totalEstimatedCost = recipeItems.reduce((sum, item) => {
+    const ingredient = ingredientsById.get(getRecipeIngredientId(item));
+    return sum + (ingredient
+      ? roundCurrency(Number(ingredient.cost || 0) * Number(item.quantity || 0))
+      : Number(item.estimatedCost || 0));
+  }, 0);
+
+  if (!show) return null;
+
+  return <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
+    <div className="modal-content recipe-modal">
+      <h2 className="modal-title">Construir receta</h2>
+      <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong>. Guarda después el producto para conservar la receta.</p>
+
+      {isLoading ? <div className="warning-box">Cargando insumos...</div> : error ? <div className="warning-box">No se pudieron cargar los insumos. Intenta nuevamente. <button type="button" className="btn btn-secondary" onClick={refresh}>Reintentar</button></div> : ingredients.length === 0 ? <div className="warning-box">No hay insumos activos disponibles. Crea un insumo para comenzar una receta.</div> : <div className="recipe-input-group">
+        <div className="form-group" style={{ flex: 2 }}>
+          <label>Ingrediente</label>
+          <select className="form-input" value={selectedIngredientId} onChange={handleIngredientSelect}>
+            <option value="">-- Seleccionar --</option>
+            {ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.id}>{ingredient.name} — Stock: {ingredient.stock ?? 0} — Costo: ${toMoney(ingredient.cost)}</option>)}
+          </select>
+        </div>
+        <div className="form-group" style={{ flex: 1 }}>
+          <label>Cantidad {useSmallUnit && <small className="recipe-unit-helper">(en {unit === 'kg' ? 'gramos' : 'mililitros'})</small>}</label>
+          <input type="number" className="form-input" placeholder="0.00" min="0" step={useSmallUnit ? '1' : '0.001'} value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+        </div>
+        <div className="form-group" style={{ flex: 0.8, display: 'flex', flexDirection: 'column' }}>
+          <label>Unidad</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <input type="text" className="form-input recipe-unit-input" value={unit} disabled />
+            {(unit === 'kg' || unit === 'lt') && <label className="toggle-switch recipe-small-unit-toggle"><input type="checkbox" checked={useSmallUnit} onChange={(event) => setUseSmallUnit(event.target.checked)} style={{ marginRight: '4px' }} /><span>Usar {unit === 'kg' ? 'gr' : 'ml'}</span></label>}
+          </div>
+        </div>
+        <button type="button" className="btn btn-add-ing" onClick={handleAdd}>+</button>
+      </div>}
+
+      <div className="recipe-list-container"><table className="recipe-table"><thead><tr><th>Ingrediente</th><th>Cantidad</th><th>Costo Est.</th><th>Acción</th></tr></thead><tbody>
+        {recipeItems.length === 0 ? <tr><td colSpan="4" className="recipe-empty-cell">Sin ingredientes asignados</td></tr> : recipeItems.map((item, index) => {
+          const ingredientId = getRecipeIngredientId(item);
+          const ingredient = ingredientsById.get(ingredientId);
+          const isMissing = !ingredient;
+          const estimatedCost = ingredient ? Number(ingredient.cost || 0) * Number(item.quantity || 0) : Number(item.estimatedCost || 0);
+          return <tr key={ingredientId || index} className={isMissing ? 'recipe-row-missing' : ''}><td data-label="Ingrediente">{item.name}{isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}</td><td data-label="Cantidad">{item.quantity} {item.unit}</td><td data-label="Costo Est.">${toMoney(estimatedCost)}</td><td data-label="Acción"><button type="button" className="btn-icon-remove" onClick={() => setRecipeItems((items) => items.filter((candidate) => getRecipeIngredientId(candidate) !== ingredientId))} aria-label="Eliminar ingrediente">×</button></td></tr>;
+        })}
+      </tbody></table></div>
+      <div className="recipe-footer"><div className="recipe-total">Costo teórico total: <span>${toMoney(totalEstimatedCost)}</span></div><div className="recipe-actions"><button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-save" disabled={isLoading || Boolean(error) || invalidItems.length > 0} onClick={() => { onSave(recipeItems); onClose(); }}>Guardar receta</button></div></div>
+    </div>
+  </div>;
+}

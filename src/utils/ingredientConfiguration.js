@@ -36,4 +36,36 @@ export const assertValidRecipeReferences = (recipe, ingredientRecords, { product
   const byId = new Map((ingredientRecords || []).filter(Boolean).map((ingredient) => [ingredient.id, ingredient]));
   const seen = new Set();
   for (const item of recipe) {
-    const ingredientId = getRecipeIngredientI∂ªßq´^
+    const ingredientId = getRecipeIngredientId(item);
+    if (typeof ingredientId !== 'string' || !ingredientId.trim()) {
+      throw new Error('La receta tiene un ingrediente sin identificador. Corr√≠gelo antes de guardar.');
+    }
+    if (ingredientId === productId) throw new Error('Un producto no puede ser ingrediente de s√≠ mismo.');
+    if (seen.has(ingredientId)) throw new Error('La receta tiene ingredientes repetidos. Elimina el duplicado.');
+    seen.add(ingredientId);
+    const ingredient = byId.get(ingredientId);
+    const name = ingredient?.name || item?.name || ingredientId;
+    if (!ingredient || ingredient.isActive === false || ingredient.deletedAt || ingredient.deletedTimestamp
+        || (ingredient.productType || ingredient.product_type) !== 'ingredient') {
+      throw new Error('El ingrediente "' + name + '" no existe o no est√° disponible. Corrige la receta antes de guardar.');
+    }
+    if (licenseId && (ingredient.licenseId || ingredient.license_id)
+        && licenseId !== (ingredient.licenseId || ingredient.license_id)) {
+      throw new Error('El ingrediente "' + name + '" pertenece a otro negocio.');
+    }
+    if (ingredient.trackStock === false) {
+      throw new Error('El ingrediente "' + name + '" no tiene control de inventario activo.');
+    }
+    const quantity = Number(item?.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('La cantidad de "' + name + '" debe ser mayor que cero y v√°lida.');
+    }
+    const storageUnit = getIngredientDefaultUnit(ingredient);
+    const itemUnit = item?.unit ? normalizeIngredientUnit(item.unit) : storageUnit;
+    if (itemUnit !== storageUnit) {
+      throw new Error('La unidad de "' + name + '" (' + itemUnit
+        + ') no coincide con su inventario (' + storageUnit + '). Corrige la receta.');
+    }
+  }
+  return true;
+};

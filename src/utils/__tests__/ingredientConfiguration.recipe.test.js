@@ -23,4 +23,7 @@ describe('recipe persistence integrity', () => {
     expect(() => assertValidRecipeReferences([item, item], [ingredient('chicken')])).toThrow();
     expect(() => assertValidRecipeReferences([item], [{ ...ingredient('chicken'), isActive: false }])).toThrow();
     expect(() => assertValidRecipeReferences([item], [{ ...ingredient('chicken'), licenseId: 'other' }], { licenseId: 'current' })).toThrow();
-    expect(() =¶»§q«^
+    expect(() => assertValidRecipeReferences([item], [ingredient('chicken', 'g')])).toThrow();
+    expect(() => assertValidRecipeReferences([item], [ingredient('chicken')], { productId: 'chicken' })).toThrow();
+  });
+});
