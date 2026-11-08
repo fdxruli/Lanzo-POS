@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TELEGRAM_CONTACT_BASE_URL } from '../../../services/support/telegramContact';
@@ -75,5 +75,27 @@ describe('prelogin official support', () => {
     await user.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
     expect(trigger).toHaveFocus();
     expect(screen.queryByRole('region', { name: 'Soporte oficial de LANZO' })).not.toBeInTheDocument();
+  });
+
+  it('provides a modal presentation with focus management for access pages', async () => {
+    const user = userEvent.setup();
+    render(<PreloginSupportAccess screen="Acceso administrador" presentation="dialog" />);
+    const trigger = screen.getByRole('button', { name: 'Soporte' });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Soporte oficial de LANZO' });
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Soporte oficial de LANZO' })).toHaveFocus());
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
+    expect(screen.getByRole('button', { name: 'Cerrar soporte' })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement, { key: 'Tab' });
+    expect(screen.getByRole('button', { name: 'Cerrar cuadro de soporte' })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Soporte oficial de LANZO' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(document.body.style.overflow).toBe('');
   });
 });

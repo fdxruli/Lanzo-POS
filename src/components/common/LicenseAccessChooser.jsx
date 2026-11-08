@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, BadgeCheck, ShieldCheck, Users } from 'lucide-react';
+import { ArrowRight, BadgeCheck, ShieldCheck, Users } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { getBusinessProfile } from '../../services/supabase';
+import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
-import PreloginSupportAccess from './PreloginSupportAccess';
 import './AdminAuthModal.css';
 
 export default function LicenseAccessChooser() {
@@ -51,17 +51,20 @@ export default function LicenseAccessChooser() {
   }, [businessName, licenseKey]);
 
   return (
-    <div
-      className="admin-auth-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="access-title"
-      aria-describedby="access-description"
+    <AuthPageLayout
+      contentClassName="auth-page__content--wide"
+      footer={(
+        <AuthPageFooter screen="Selección de perfil">
+          <button type="button" className="auth-page__footer-link" onClick={logout}>
+            Cambiar licencia
+          </button>
+        </AuthPageFooter>
+      )}
     >
-      <section className="admin-auth-panel access-choice-panel">
+      <section className="admin-auth-panel access-choice-panel" aria-labelledby="access-title">
         <header className="access-choice-header">
           <div className="access-choice-header__topline">
-            <span className="access-choice-step">Paso 2 de 2</span>
+            <span className="access-choice-step">Acceso al negocio</span>
             <span className="access-choice-status">
               <span className="access-choice-status__dot" aria-hidden="true" />
               {planName}
@@ -73,8 +76,8 @@ export default function LicenseAccessChooser() {
               <BadgeCheck size={24} strokeWidth={2.2} />
             </div>
             <div>
-              <h1 id="access-title">¿Cómo deseas ingresar?</h1>
-              <p id="access-description">Selecciona el perfil que usarás en este dispositivo.</p>
+              <h1 id="access-title">¿Quién va a ingresar?</h1>
+              <p>Elige el perfil que usarás en este dispositivo.</p>
             </div>
           </div>
         </header>
@@ -87,11 +90,7 @@ export default function LicenseAccessChooser() {
           showBusiness
         />
 
-        <p className="access-choice-guidance">
-          Cada opción abre el acceso correcto y mantiene tus permisos separados.
-        </p>
-
-        <div className="access-choice-grid" aria-label="Tipos de cuenta disponibles">
+        <div className="access-choice-grid" role="group" aria-label="Perfiles disponibles">
           <button
             type="button"
             className="access-choice-card access-choice-card--admin"
@@ -124,19 +123,7 @@ export default function LicenseAccessChooser() {
           )}
         </div>
 
-        <footer className="access-choice-footer">
-          <PreloginSupportAccess screen="Selección de Administrador / Staff">
-            <button type="button" className="ui-button ui-button--ghost" onClick={logout}>
-              <ArrowLeft size={17} aria-hidden="true" />
-              Cambiar licencia
-            </button>
-          </PreloginSupportAccess>
-          <span className="access-choice-security">
-            <ShieldCheck size={16} aria-hidden="true" />
-            Acceso protegido
-          </span>
-        </footer>
       </section>
-    </div>
+    </AuthPageLayout>
   );
 }

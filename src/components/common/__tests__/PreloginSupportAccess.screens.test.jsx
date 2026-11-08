@@ -30,7 +30,10 @@ afterEach(cleanup);
 const toggle = () => {
   expect(screen.getAllByRole('button', { name: 'Soporte' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
-  expect(screen.getByRole('region', { name: 'Soporte oficial de LANZO' })).toBeVisible();
+  const support = screen.queryByRole('dialog', { name: 'Soporte oficial de LANZO' })
+    || screen.queryByRole('region', { name: 'Soporte oficial de LANZO' });
+  expect(support).toBeVisible();
+  if (support.getAttribute('role') === 'dialog') expect(support).toHaveAttribute('aria-modal', 'true');
   const url = new URL(screen.getByRole('link', { name: 'Abrir borrador de correo' }).href);
   expect(url.href).not.toMatch(/SECRET|password|token|tenant|userAgent/i);
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));

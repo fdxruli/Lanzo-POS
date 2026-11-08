@@ -12,7 +12,8 @@ describe('Staff explicit session recovery UI', () => {
     mocks.state = {
       handleStaffLogin: vi.fn(), logout: vi.fn(), returnToLicenseAccessChoice: vi.fn(),
       licenseDetails: { features: { staff_roles: true } },
-      staffLoginMessage: 'Tu sesión necesita volver a validarse.', staffLoginError: null
+      staffLoginMessage: 'Tu sesión necesita volver a validarse.', staffLoginError: null,
+      actorAuthorityRecovery: { actorType: 'staff', message: 'Tu sesión cambió o necesita volver a validarse. Inicia sesión nuevamente para continuar.' }
     };
   });
   afterEach(cleanup);
@@ -41,10 +42,18 @@ describe('Staff explicit session recovery UI', () => {
     expect(alert).not.toHaveTextContent(/DEVICE_TOKEN|fingerprint|secret/);
   });
 
-  it('uses a safe connection message for a network rejection', async () => {
+  it('shows the safe actor recovery message without trusting raw store text', () => {
+    mocks.state.staffLoginMessage = 'STAFF_SESSION_INVALID token=secret';
+    render(<StaffLoginModal />);
+    expect(screen.getByRole('status')).toHaveTextContent('Tu sesión cambió o necesita volver a validarse.');
+    expect(screen.queryByText(/token=secret/)).not.toBeInTheDocument();
+  });
+
+  it('does not label an unidentified online error as a connection failure', async () => {
     mocks.state.handleStaffLogin.mockRejectedValue(new TypeError('Failed to fetch'));
     submit();
-    expect(await screen.findByRole('alert')).toHaveTextContent(/conexión/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se pudo iniciar sesión staff/);
+    expect(screen.queryByText(/Failed to fetch|conexión/i)).not.toBeInTheDocument();
     expect(mocks.state.handleStaffLogin).toHaveBeenCalledTimes(1);
   });
 });

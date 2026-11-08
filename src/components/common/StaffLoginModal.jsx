@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, LockKeyhole, LogIn, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
-import PreloginSupportAccess from './PreloginSupportAccess';
 import './StaffLoginModal.css';
 
 const SAFE_LOGIN_MESSAGES = Object.freeze({
@@ -22,9 +22,7 @@ const describeStaffLoginError = (error) => {
   const authority = classifyActorAuthorityError(error);
   if (authority) return authority.message;
   if (SAFE_LOGIN_MESSAGES[error?.code]) return SAFE_LOGIN_MESSAGES[error.code];
-  if (!navigator.onLine || /network|fetch/i.test(error?.message || '')) {
-    return 'No se pudo iniciar sesión staff. Comprueba la conexión e inténtalo de nuevo.';
-  }
+  if (!navigator.onLine) return 'Necesitas conexión para iniciar sesión staff.';
   return 'No se pudo iniciar sesión staff. Tus datos permanecen intactos. Vuelve a intentarlo.';
 };
 
@@ -39,22 +37,30 @@ export default function StaffLoginModal() {
   const initializeApp = useAppStore((state) => state.initializeApp);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
-  const staffLoginMessage = useAppStore((state) => state.staffLoginMessage);
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const actorAuthorityRecovery = useAppStore((state) => state.actorAuthorityRecovery);
   const staffLoginError = useAppStore((state) => state.staffLoginError);
   const verificationUnavailable = [
     'SESSION_VERIFICATION_INCONCLUSIVE',
     'ACTOR_RUNTIME_RESTORE_FAILED'
   ].includes(staffLoginError?.code);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const licenseAuthority = classifyActorAuthorityError(licenseDetails);
+  const authorityRecoveryMessage = actorAuthorityRecovery?.actorType === 'staff'
+    ? actorAuthorityRecovery.message
+    : licenseAuthority?.kind === 'device_blocked'
+      ? licenseAuthority.message
+      : '';
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
-  const staffAlreadyInUseMessage = (staffLoginMessage || staffLoginError?.message || '')
-    .split('\n')
-    .filter((line) => !line.startsWith('Dispositivo activo:'))
-    .join(' ')
-    .trim();
+  const staffAlreadyInUseMessage = 'Esta cuenta ya está activa en otro dispositivo.';
+  const verificationStatusMessage = staffLoginError?.verificationStatus === 'transport_unavailable'
+    ? 'No pudimos comprobar la sesión guardada porque no hubo respuesta del servidor. Puedes volver a intentarlo cuando tengas conexión.'
+    : staffLoginError?.verificationStatus === 'server_error'
+      ? 'El servidor no pudo completar la verificación. Tus datos locales permanecen protegidos; inténtalo de nuevo más tarde.'
+      : 'No pudimos confirmar la sesión guardada. Tus datos locales permanecen protegidos; vuelve a intentar la verificación.';
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -109,30 +115,52 @@ export default function StaffLoginModal() {
   };
 
   return (
-    <div
-      className="staff-login-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="staff-login-title"
-      aria-describedby="staff-login-description"
+    <AuthPageLayout
+      footer={(
+        <AuthPageFooter screen="Acceso Staff">
+          {canSwitchAccess && (
+            <>
+              <button
+                type="button"
+                className="auth-page__footer-link"
+                onClick={returnToLicenseAccessChoice}
+                disabled={isLoading}
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+                Cambiar perfil
+              </button>
+              <span className="auth-page__footer-separator" aria-hidden="true">·</span>
+            </>
+          )}
+          <button type="button" className="auth-page__footer-link" onClick={logout} disabled={isLoading}>
+            Cambiar licencia
+          </button>
+          <span className="auth-page__footer-separator" aria-hidden="true">·</span>
+        </AuthPageFooter>
+      )}
     >
-      <section className="staff-login-panel">
+      <section className="staff-login-panel" aria-labelledby="staff-login-title">
         <div className="auth-login-topline staff-login-topline">
-          <span className="auth-login-step">Acceso seguro</span>
+          <span className="auth-login-step">Acceso al negocio</span>
           <span className="auth-login-role staff-login-role">
             <span className="auth-login-role__dot" aria-hidden="true" />
             Personal / Staff
           </span>
         </div>
 
-        <LicenseContextSummary licenseDetails={licenseDetails} licenseKey={licenseKey} />
+        <LicenseContextSummary
+          licenseDetails={licenseDetails}
+          licenseKey={licenseKey}
+          businessName={companyProfile?.business_name || companyProfile?.name || ''}
+          showBusiness
+        />
 
         <div className="staff-login-brand">
           <span className="staff-login-icon" aria-hidden="true">
             <LockKeyhole size={26} strokeWidth={2.2} />
           </span>
           <div>
-            <h1 id="staff-login-title">Acceso staff</h1>
+            <h1 id="staff-login-title">Ingresar como personal</h1>
             <p id="staff-login-description">
               {verificationUnavailable
                 ? 'La sesión guardada necesita una nueva verificación segura.'
@@ -146,6 +174,12 @@ export default function StaffLoginModal() {
             ? 'El acceso permanece protegido mientras Lanzo intenta confirmar la sesión existente.'
             : 'Usa tu cuenta personal para entrar sólo a las funciones permitidas para tu puesto.'}
         </p>
+
+        {!verificationUnavailable && !staffAlreadyInUse && authorityRecoveryMessage && (
+          <div className="staff-login-note ui-alert ui-alert--info" role="status">
+            {authorityRecoveryMessage}
+          </div>
+        )}
 
         {!isOnline && (
           <div className="staff-login-alert ui-alert ui-alert--danger" role="status">
@@ -172,18 +206,12 @@ export default function StaffLoginModal() {
           </div>
         )}
 
-        {staffLoginMessage && !verificationUnavailable && !errorMessage && !staffAlreadyInUse && (
-          <div className="staff-login-note ui-alert ui-alert--info" role="status">
-            {staffLoginMessage}
-          </div>
-        )}
-
         {verificationUnavailable ? (
           <div className="staff-login-form" aria-busy={isLoading}>
             <div className="staff-login-note ui-alert ui-alert--info" role="status" aria-live="polite">
               {isLoading
                 ? 'Estamos verificando la sesión staff guardada.'
-                : staffLoginMessage || 'No pudimos verificar la sesión staff. Tus datos locales se mantienen protegidos.'}
+                : verificationStatusMessage}
             </div>
             {errorMessage && (
               <div className="staff-login-error ui-alert ui-alert--danger" role="alert">
@@ -240,27 +268,7 @@ export default function StaffLoginModal() {
         </form>
         )}
 
-        <div className="staff-login-footer">
-          <PreloginSupportAccess screen="Acceso Staff">
-            <div className="staff-login-footer-actions">
-              {canSwitchAccess && (
-                <button
-                  type="button"
-                  className="auth-mode-back-button"
-                  onClick={returnToLicenseAccessChoice}
-                  disabled={isLoading}
-                >
-                  <ArrowLeft size={16} aria-hidden="true" />
-                  Elegir otro perfil
-                </button>
-              )}
-              <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
-                Cambiar licencia
-              </button>
-            </div>
-          </PreloginSupportAccess>
-        </div>
       </section>
-    </div>
+    </AuthPageLayout>
   );
 }

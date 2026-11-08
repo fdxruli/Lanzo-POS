@@ -90,7 +90,7 @@ describe('Admin preparation recovery UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/problema de conexión/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se pudo confirmar el resultado de la acción/i);
     expect(screen.queryByText(/failed to fetch/i)).not.toBeInTheDocument();
   });
 
@@ -207,7 +207,7 @@ describe('Admin preparation recovery UI', () => {
   });
 
   it.each([
-    [{ code: 'ADMIN_LOGIN_ERROR', message: 'Failed to fetch' }, /problema de conexión/i],
+    [{ code: 'ADMIN_LOGIN_ERROR', message: 'Failed to fetch' }, /No se pudo confirmar el resultado de la acción/i],
     [{ code: 'ACTOR_HANDOFF_REQUIRED' }, /no pudimos recuperar tu sesión de forma segura/i]
   ])('shows safe specific copy for %s', async (result, message) => {
     state.handleAdminLogin.mockResolvedValue({ success: false, ...result });

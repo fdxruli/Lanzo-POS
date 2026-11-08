@@ -1,8 +1,147 @@
-.admin-account-recovery { display: grid; gap: 1rem; min-width: 0; }
-.admin-account-recovery h2, .admin-account-recovery p { margin: 0; }
-.admin-account-recovery p { line-height: 1.5; }
-.admin-account-recovery input { min-width: 0; width: 100%; box-sizing: border-box; font-size: 1rem; }
-.admin-account-recovery .recovery-code-input { font-family: monospace; }
-.admin-account-recovery .recovery-request-reference { overflow-wrap: anywhere; user-select: all; }
-.admin-account-recovery form { display: grid; gap: .75rem; }
-.admin-account-recovery button, .admin-account-recovery a { min-height: 44px; }
+.admin-account-recovery {
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-account-recovery__heading {
+  margin-bottom: 1.25rem;
+}
+
+.admin-account-recovery__heading h1 {
+  margin: .45rem 0 .35rem;
+  color: var(--ui-text-strong);
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  font-weight: 720;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+}
+
+.admin-account-recovery__heading h1:focus {
+  outline: none;
+}
+
+.admin-account-recovery__heading p,
+.admin-account-recovery__help p,
+.admin-account-recovery__success > p {
+  color: var(--ui-text-muted);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.admin-account-recovery__heading p {
+  margin: 0;
+}
+
+.admin-account-recovery__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.4rem;
+}
+
+.admin-account-recovery__help {
+  min-width: 0;
+  padding: .9rem 1rem;
+  border-left: 3px solid var(--ui-color-brand);
+  background: color-mix(in srgb, var(--ui-bg-brand-soft) 52%, var(--ui-bg-page));
+}
+
+.admin-account-recovery__help h2,
+.admin-account-recovery__code h2 {
+  margin: 0 0 .65rem;
+  color: var(--ui-text-strong);
+  font-size: 1.02rem;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
+.admin-account-recovery__help p {
+  margin: 0 0 .7rem;
+}
+
+.admin-account-recovery__help .prelogin-support {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: .9rem;
+}
+
+.admin-account-recovery__help .prelogin-support__actions > .ui-button {
+  min-height: 2.8rem;
+}
+
+.admin-account-recovery__code {
+  min-width: 0;
+}
+
+.admin-account-recovery__code .admin-auth-form {
+  max-width: none;
+  margin-top: .8rem;
+}
+
+.admin-account-recovery__code .admin-auth-form > p {
+  margin: -.25rem 0 0;
+  color: var(--ui-text-muted);
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+.admin-account-recovery__offline {
+  margin: .7rem 0;
+  color: var(--ui-text-warning);
+  font-size: .87rem;
+  line-height: 1.45;
+}
+
+.admin-account-recovery__back {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  margin-top: .2rem;
+  padding: .3rem .2rem;
+  border: 0;
+  border-radius: .35rem;
+  background: transparent;
+  color: var(--ui-text-brand);
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+  cursor: pointer;
+}
+
+.admin-account-recovery__back:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
+}
+
+.admin-account-recovery__back:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.admin-account-recovery__success {
+  display: grid;
+  max-width: 34rem;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.admin-account-recovery__success > p {
+  margin: 0;
+}
+
+.admin-account-recovery__success > .ui-button {
+  min-height: 3rem;
+}
+
+@media (min-width: 860px) {
+  .admin-account-recovery__grid {
+    grid-template-columns: minmax(14rem, .82fr) minmax(0, 1.18fr);
+    gap: clamp(1.25rem, 3vw, 2.6rem);
+    align-items: start;
+  }
+
+  .admin-account-recovery__help {
+    padding: 1rem 1.15rem;
+  }
+}

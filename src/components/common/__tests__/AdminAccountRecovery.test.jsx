@@ -66,4 +66,10 @@ describe('owner recovery screen', () => {
     view.rerender(<AdminAccountRecovery {...props} online />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar nueva contraseña' })).toBeEnabled());
   });
+
+  it('offers one support dialog action beside the assisted recovery instructions', () => {
+    render(<AdminAccountRecovery licenseKey="PRO" online onBack={vi.fn()} onRecovered={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Ver opciones de soporte' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Soporte', exact: true })).not.toBeInTheDocument();
+  });
 });

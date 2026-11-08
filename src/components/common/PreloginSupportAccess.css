@@ -69,3 +69,99 @@
   outline: 2px solid var(--ui-focus-color, #2563eb);
   outline-offset: 3px;
 }
+
+.prelogin-support--dialog {
+  width: auto;
+}
+
+.prelogin-support__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-overlay, 2200);
+  display: grid;
+  place-items: center;
+  padding:
+    max(1rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+  background: var(--ui-bg-overlay-strong, rgba(15, 23, 42, .78));
+  overscroll-behavior: contain;
+}
+
+.prelogin-support__dialog {
+  width: min(100%, 42rem);
+  max-height: min(48rem, 100%);
+  overflow: auto;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--ui-border-color, #cbd5e1);
+  border-radius: 1.1rem;
+  background: var(--ui-bg-surface, #fff);
+  color: var(--ui-text, #1e293b);
+  box-shadow: var(--ui-shadow-lg, 0 20px 45px rgba(0, 0, 0, .25));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.prelogin-support__dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .75rem;
+}
+
+.prelogin-support__dialog-header h2 {
+  margin: 0;
+  color: var(--ui-text-strong, inherit);
+  font-size: 1.2rem;
+  line-height: 1.25;
+}
+
+.prelogin-support__dialog-header h2:focus {
+  outline: none;
+}
+
+.prelogin-support__close {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--ui-border-color, #cbd5e1);
+  border-radius: .7rem;
+  background: var(--ui-bg-surface, #fff);
+  color: var(--ui-text-strong, #1e293b);
+  cursor: pointer;
+}
+
+.prelogin-support__dialog .prelogin-support__channels {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1.25rem;
+  margin-block: 1rem;
+}
+
+.prelogin-support__dialog .prelogin-support__channels > div {
+  min-width: 0;
+}
+
+.prelogin-support__dialog > .ui-button {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 520px) {
+  .prelogin-support__backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .prelogin-support__dialog {
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px));
+    border-radius: 1.1rem 1.1rem 0 0;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+}

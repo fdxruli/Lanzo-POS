@@ -3,10 +3,10 @@ import { ArrowLeft, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
+import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
-import PreloginSupportAccess from './PreloginSupportAccess';
 import AdminAccountRecovery from './AdminAccountRecovery';
 import './AdminAuthModal.css';
 
@@ -54,9 +54,7 @@ const describeLoginError = (error, result = null) => {
   if (code === 'DB_BROWSER_STORAGE_UNAVAILABLE') {
     return 'No se pudo abrir el almacenamiento local del navegador. Lanzo requiere IndexedDB para operar de forma segura. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
   }
-  if (!navigator.onLine || /network|fetch|Failed to fetch/i.test(error?.message || result?.message || '')) {
-    return 'No pudimos verificar tu acceso por un problema de conexión. Comprueba internet e inténtalo nuevamente.';
-  }
+  if (!navigator.onLine) return 'Necesitas conexión para iniciar sesión.';
   return 'No se pudo confirmar el resultado de la acción. Revisa las operaciones locales pendientes antes de volver a intentarla.';
 };
 
@@ -87,11 +85,16 @@ export default function AdminLoginModal() {
   ].includes(adminLoginError?.code);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
-  const message = useAppStore((state) => state.adminLoginMessage);
+  const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const licenseKey = useAppStore((state) => state.adminLoginLicenseKey || state.licenseDetails?.license_key);
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
+  const verificationStatusMessage = adminLoginError?.verificationStatus === 'transport_unavailable'
+    ? 'No pudimos comprobar la sesión guardada porque no hubo respuesta del servidor. Puedes volver a intentarlo cuando tengas conexión.'
+    : adminLoginError?.verificationStatus === 'server_error'
+      ? 'El servidor no pudo completar la verificación. Tus datos locales permanecen protegidos; inténtalo de nuevo más tarde.'
+      : 'No pudimos confirmar la sesión guardada. Tus datos locales permanecen protegidos; vuelve a intentar la verificación.';
 
   useEffect(() => {
     if (loading) return;
@@ -236,23 +239,53 @@ export default function AdminLoginModal() {
   };
 
   return (
-    <div
-      className="admin-auth-overlay admin-auth-overlay--login"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={accountRecovery ? 'account-recovery-title' : 'admin-login-title'}
-      aria-describedby={accountRecovery ? undefined : 'admin-login-description'}
+    <AuthPageLayout
+      contentClassName={accountRecovery ? 'auth-page__content--wide' : ''}
+      footer={!accountRecovery && (
+        <AuthPageFooter screen="Acceso administrador">
+          {!takeoverRequired && (
+            <>
+              {canSwitchAccess && (
+                <>
+                  <button
+                    type="button"
+                    className="auth-page__footer-link"
+                    onClick={returnToLicenseAccessChoice}
+                    disabled={loading}
+                  >
+                    <ArrowLeft size={15} aria-hidden="true" />
+                    Cambiar perfil
+                  </button>
+                  <span className="auth-page__footer-separator" aria-hidden="true">·</span>
+                </>
+              )}
+              <button type="button" className="auth-page__footer-link" onClick={logout} disabled={loading}>
+                Cambiar licencia
+              </button>
+              <span className="auth-page__footer-separator" aria-hidden="true">·</span>
+            </>
+          )}
+        </AuthPageFooter>
+      )}
     >
-      <section className="admin-auth-panel admin-auth-panel--login">
+      <section
+        className="admin-auth-panel admin-auth-panel--login"
+        aria-labelledby={accountRecovery ? 'account-recovery-title' : 'admin-login-title'}
+      >
         <div className="auth-login-topline">
-          <span className="auth-login-step">Acceso seguro</span>
+          <span className="auth-login-step">Acceso al negocio</span>
           <span className="auth-login-role auth-login-role--admin">
             <span className="auth-login-role__dot" aria-hidden="true" />
             Administrador
           </span>
         </div>
 
-        <LicenseContextSummary licenseDetails={licenseDetails} licenseKey={licenseKey} />
+        <LicenseContextSummary
+          licenseDetails={licenseDetails}
+          licenseKey={licenseKey}
+          businessName={companyProfile?.business_name || companyProfile?.name || ''}
+          showBusiness
+        />
 
         {accountRecovery ? <AdminAccountRecovery key={licenseKey} licenseKey={licenseKey} online={online}
           onBack={() => setAccountRecovery(false)}
@@ -268,7 +301,7 @@ export default function AdminLoginModal() {
             <h1 id="admin-login-title">
         {takeoverRequired ? 'Tu plan cambió a Lanzo Local'
           : verificationUnavailable ? 'Verifica tu sesión'
-            : 'Acceso administrador'}
+            : 'Ingresar como administrador'}
             </h1>
             <p id="admin-login-description">
               {takeoverRequired
@@ -296,16 +329,12 @@ export default function AdminLoginModal() {
               : 'Necesitas internet para iniciar sesión.'}
           </div>
         )}
-        {message && !verificationUnavailable && !error && !recoveryAvailable && (
-          <div className="ui-alert ui-alert--info" role="status">{message}</div>
-        )}
-
         {recoveryAvailable ? (
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
               {loading ? 'Estamos recuperando tu sesión de forma segura.'
                 : verificationUnavailable
-                  ? (message || 'No pudimos verificar tu sesión guardada. Tus datos locales se mantienen protegidos; reintenta cuando regrese la conexión.')
+                  ? verificationStatusMessage
                   : 'Tu sesión está verificada. No pudimos terminar de preparar Lanzo. Reintenta la carga para continuar sin iniciar sesión nuevamente.'}
             </div>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
@@ -321,7 +350,7 @@ export default function AdminLoginModal() {
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
               {loading ? 'Estamos verificando la sesión guardada.'
-                : message || 'No pudimos verificar tu sesión. Tus datos locales se mantienen protegidos.'}
+                : verificationStatusMessage}
             </div>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
@@ -382,7 +411,7 @@ export default function AdminLoginModal() {
               disabled={loading || !online}
               fieldClassName="admin-auth-field"
             />
-            <button type="button" className="ui-button ui-button--ghost" disabled={loading}
+            <button type="button" className="admin-auth-recovery-link" disabled={loading}
               onClick={() => { setAccountRecovery(true); setPassword(''); setError(''); }}>
               ¿Olvidaste tus datos de acceso?
             </button>
@@ -398,28 +427,8 @@ export default function AdminLoginModal() {
           </form>
         )}
 
-        <PreloginSupportAccess screen="Acceso administrador">
-          {!takeoverRequired && (
-            <div className="auth-modal-actions">
-            {canSwitchAccess && (
-              <button
-                type="button"
-                className="auth-mode-back-button"
-                onClick={returnToLicenseAccessChoice}
-                disabled={loading}
-              >
-                <ArrowLeft size={16} aria-hidden="true" />
-                Elegir otro perfil
-              </button>
-            )}
-            <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
-              Cambiar licencia
-            </button>
-            </div>
-          )}
-        </PreloginSupportAccess>
         </>}
       </section>
-    </div>
+    </AuthPageLayout>
   );
 }
