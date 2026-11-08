@@ -12,6 +12,7 @@ import {
   getCloudFinalDashboardMetrics,
   isCloudFinalSource
 } from '../../services/reports/cloudFinalDashboardMetrics';
+import DashboardCustomerFilter from './DashboardCustomerFilter';
 
 const currencyFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
 const numberFormatter = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
@@ -76,15 +77,39 @@ export default function CloudFinalStatsGrid({
   period = 'today',
   onPeriodChange = () => {},
   requestedRange = null,
-  isLoading = false
+  isLoading = false,
+  customers = [],
+  customerId = null,
+  customerName = '',
+  onCustomerChange = () => {},
+  customerFilterDisabledReason = '',
+  statsCustomerContextKey = null
 }) {
   const reportFailed = reportData?.success === false;
   const source = reportSource || reportData?.source || {};
   const cloudFinalSource = !reportFailed && isCloudFinalSource(source);
   const rangeMatches = cloudReportMatchesRange(reportData, requestedRange);
-  const verifiedReport = !isLoading && !reportFailed && cloudFinalSource && rangeMatches ? reportData : null;
+  const requestContext = reportData?.statsRequestContext || {};
+  const reportScope = reportData?.scope || reportData?.raw?.scope || null;
+  const customerContextMatches = statsCustomerContextKey
+    ? requestContext.customerId === customerId
+      && requestContext.scope === scope
+      && requestContext.contextKey === statsCustomerContextKey
+      && requestContext.dateFrom === requestedRange?.dateFrom
+      && requestContext.dateTo === requestedRange?.dateTo
+      && requestContext.cacheContextKey === (customerId ? statsCustomerContextKey : null)
+      && (!customerId || reportScope === scope)
+    : !customerId;
+  const verifiedReport = !isLoading && !reportFailed && cloudFinalSource && rangeMatches && customerContextMatches
+    ? reportData
+    : null;
   const finalOverview = verifiedReport ? (verifiedReport.overview || verifiedReport.summary || verifiedReport) : {};
-  const metrics = getCloudFinalDashboardMetrics(verifiedReport, { creditHistoryReport, scope });
+  const metrics = getCloudFinalDashboardMetrics(verifiedReport, {
+    creditHistoryReport,
+    scope,
+    customerId,
+    expectedContextKey: statsCustomerContextKey
+  });
   const grossSales = readOptionalMoney(finalOverview, ['gross_sales_total', 'grossSalesTotal']);
   const cancelledSales = readOptionalMoney(finalOverview, ['cancelled_sales_total', 'cancelledSalesTotal']);
   const cogs = readOptionalMoney(finalOverview, ['cogs_total', 'cogsTotal']);
@@ -119,7 +144,7 @@ export default function CloudFinalStatsGrid({
             <Activity size={16} /> Ventas y cobros del período seleccionado.
           </p>
           <small className="text-muted">
-            {periodLabel} {scopeLabel}
+            {periodLabel} {scopeLabel} Cliente: {customerId ? customerName : 'Todos los clientes'}.
           </small>
           <div className="card-mini-stats card-mini-stats--inline">
             <span className="mini-stat-pill">{sourceLabel}</span>
@@ -132,6 +157,12 @@ export default function CloudFinalStatsGrid({
                 aria-pressed={period === key} onClick={() => onPeriodChange(key)}>{label}</button>
             ))}
           </div>
+          <DashboardCustomerFilter
+            customers={customers}
+            value={customerId}
+            onChange={onCustomerChange}
+            disabledReason={customerFilterDisabledReason}
+          />
         </div>
       </div>
 
@@ -139,6 +170,12 @@ export default function CloudFinalStatsGrid({
       {!isLoading && cloudFinalSource && !rangeMatches && (
         <div className="financial-quality-warning financial-quality-warning--compact" role="status">
           <AlertTriangle size={15} /><span>El rango recibido ({receivedRangeLabel}) no coincide con el seleccionado. No se muestran importes de otro período.</span>
+        </div>
+      )}
+
+      {!isLoading && cloudFinalSource && rangeMatches && customerId && !customerContextMatches && (
+        <div className="financial-quality-warning financial-quality-warning--compact" role="status">
+          <AlertTriangle size={15} /><span>No se confirma el contexto autorizado de este cliente. Sus cifras no están disponibles.</span>
         </div>
       )}
 

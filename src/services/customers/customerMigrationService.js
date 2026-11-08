@@ -93,6 +93,11 @@ const pullFullSnapshot = async (licenseKey, actorHandle = actorRuntimeController
 };
 
 export const customerMigrationService = {
+  async hasCompleteCloudDirectorySnapshot(licenseKey) {
+    if (!licenseKey) return false;
+    return Boolean(await syncMetaService.getMeta(MIGRATED_KEY, false, { licenseKey }));
+  },
+
   async runInitialMigrationIfNeeded({ licenseKey, actorHandle = actorRuntimeController.capture('customers') } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };

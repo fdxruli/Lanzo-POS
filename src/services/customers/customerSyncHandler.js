@@ -154,6 +154,7 @@ export const customerSyncHandler = {
       const actorHandle = actorRuntimeController.capture('customers');
       const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey, actorHandle });
       actorHandle.assertCurrent();
+      if (migrationResult?.success && !migrationResult?.skipped) notifyCustomersChanged();
       if (migrationResult?.blocked) {
         Logger.warn('[Customers/Sync] Migracion inicial bloqueada:', migrationResult);
       }
