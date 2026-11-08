@@ -5,8 +5,8 @@
 - **Código:** implementado en la rama `fix/caja-financial-reconciliation`.
 - **QA automatizado:** 138 pruebas focalizadas aprobadas; ESLint de los archivos modificados aprobado.
 - **Compilación:** `npm run build` aprobado. Vite mostró avisos no bloqueantes de Rollup y patrones de precache que no encuentran archivos.
-- **CI de GitHub:** pendiente de ejecución sobre el Draft PR.
-- **Vercel Preview:** pendiente de disponibilidad tras publicar el Draft PR. El proyecto verificado es `lanzo-pos` (`prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`), conectado a `fdxruli/Lanzo-POS`; no se ha hecho despliegue manual.
+- **CI de GitHub:** la suite global del PR terminó con éxito; el job sigue comparando contra `main`. Consulta los checks del PR #426 para el estado más reciente.
+- **Vercel Preview:** el Preview del PR está READY en `lanzo-pos` (`prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`), conectado a `fdxruli/Lanzo-POS`. GET `/` respondió HTTP 200 y sirvió la app shell. No se hizo despliegue manual.
 - **QA manual Free y PRO:** pendiente.
 - **Production:** sin cambios. No se hicieron escrituras, migraciones ni modificaciones de datos en Supabase Production.
 
