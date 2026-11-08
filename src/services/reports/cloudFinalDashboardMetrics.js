@@ -66,7 +66,13 @@ const hasMatchingReportSource = (overviewSource, historySource) => (
   && overviewSource.stale === historySource?.stale
 );
 
-const summarizeCreditFromCloudSales = ({ reportData, historyReport, scope = 'mine' }) => {
+const summarizeCreditFromCloudSales = ({
+  reportData,
+  historyReport,
+  scope = 'mine',
+  customerId = null,
+  expectedContextKey = null
+}) => {
   if (!historyReport || historyReport.success === false) return unavailable('cloud_sales_history_not_available');
   if (!isCloudFinalSource(reportData?.source) || !isCloudFinalSource(historyReport.source)) {
     return unavailable('cloud_sales_history_not_official');
@@ -81,6 +87,18 @@ const summarizeCreditFromCloudSales = ({ reportData, historyReport, scope = 'min
   const historyScope = historyReport.scope || historyReport.raw?.scope || null;
   if (overviewScope !== scope || historyScope !== scope) {
     return incomplete('cloud_sales_history_scope_mismatch');
+  }
+  if (customerId) {
+    const overviewContext = reportData?.statsRequestContext || {};
+    const historyContext = historyReport?.statsRequestContext || {};
+    const contextMatches = [overviewContext, historyContext].every((context) => (
+      context.customerId === customerId
+      && context.scope === scope
+      && context.contextKey === expectedContextKey
+      && context.dateFrom === (reportData?.statsRequestContext?.dateFrom || null)
+      && context.dateTo === (reportData?.statsRequestContext?.dateTo || null)
+    ));
+    if (!contextMatches) return incomplete('cloud_sales_history_customer_context_mismatch');
   }
   if (!hasMatchingReportSource(reportData?.source, historyReport.source)) {
     return incomplete('cloud_sales_history_source_mismatch');
@@ -158,7 +176,7 @@ const hasCancellationSignals = (metrics) => {
 
 export const getCloudFinalDashboardMetrics = (
   reportData = null,
-  { creditHistoryReport = null, scope = 'mine' } = {}
+  { creditHistoryReport = null, scope = 'mine', customerId = null, expectedContextKey = null } = {}
 ) => {
   if (!reportData || reportData.success === false) {
     return {
@@ -233,7 +251,9 @@ export const getCloudFinalDashboardMetrics = (
     creditGenerated = summarizeCreditFromCloudSales({
       reportData,
       historyReport: creditHistoryReport,
-      scope
+      scope,
+      customerId,
+      expectedContextKey
     });
   }
 

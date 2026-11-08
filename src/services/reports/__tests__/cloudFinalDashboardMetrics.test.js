@@ -206,4 +206,44 @@ describe('getCloudFinalDashboardMetrics', () => {
       creditHistoryReport: historyReport([cloudSale()], { raw: {} })
     }).creditGenerated.status).toBe('incomplete');
   });
+
+  it('requires matching customer, actor context, scope, and date context for filtered credit', () => {
+    const statsRequestContext = {
+      customerId: 'customer-a',
+      scope: 'mine',
+      dateFrom: '2026-10-09T12:00:00.000Z',
+      dateTo: '2026-11-08T12:00:00.000Z',
+      contextKey: 'license-a:staff-a:session-a',
+      cacheContextKey: 'license-a:staff-a:session-a'
+    };
+    const report = { ...cloudReport(), statsRequestContext };
+    const creditHistoryReport = {
+      ...historyReport([cloudSale()]),
+      statsRequestContext: { ...statsRequestContext }
+    };
+
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport,
+      customerId: 'customer-a',
+      expectedContextKey: statsRequestContext.contextKey
+    }).creditGenerated).toMatchObject({ value: 20, status: 'complete' });
+
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: {
+        ...creditHistoryReport,
+        statsRequestContext: { ...statsRequestContext, customerId: 'customer-b' }
+      },
+      customerId: 'customer-a',
+      expectedContextKey: statsRequestContext.contextKey
+    }).creditGenerated).toMatchObject({ value: null, status: 'incomplete' });
+
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: {
+        ...creditHistoryReport,
+        statsRequestContext: { ...statsRequestContext, contextKey: 'license-a:staff-b:session-b' }
+      },
+      customerId: 'customer-a',
+      expectedContextKey: statsRequestContext.contextKey
+    }).creditGenerated).toMatchObject({ value: null, status: 'incomplete' });
+  });
 });

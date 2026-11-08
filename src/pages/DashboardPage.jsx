@@ -44,6 +44,9 @@ import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapsho
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
 import { buildCloudStatsRange } from '../services/reports/dashboardPeriodRange';
+import { hasSalesActorPermission } from '../services/auth/salesPermissionPolicy';
+import { customerMigrationService } from '../services/customers/customerMigrationService';
+import { isCustomerVisible } from '../services/customers/customerMapper';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
 
@@ -64,6 +67,9 @@ const buildWarningsMessage = (warnings = []) => {
 
 export default function DashboardPage() {
   const [customers, setCustomers] = useState([]);
+  const [isBrowserOnline, setIsBrowserOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  const [customerCatalog, setCustomerCatalog] = useState({ contextKey: null, complete: false, reason: '' });
+  const [statsCustomerSelection, setStatsCustomerSelection] = useState({ contextKey: null, id: null });
   const [reportingData, setReportingData] = useState({
     sales: [],
     wasteLogs: [],
@@ -91,6 +97,7 @@ export default function DashboardPage() {
   const [hasCompletedInitialStatsLoad, setHasCompletedInitialStatsLoad] = useState(false);
   const [cloudStatsPeriod, setCloudStatsPeriod] = useState('today');
   const reportRequestRef = useRef(0);
+  const customerCatalogRequestRef = useRef(0);
   const [visibleHistoryRefresh, setVisibleHistoryRefresh] = useState(0);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [salesFinalHistoryPageIndex, setSalesFinalHistoryPageIndex] = useState(0);
@@ -114,6 +121,47 @@ export default function DashboardPage() {
   ]);
   const salesHistoryCacheContextKey = salesActorIdentity ? salesHistoryContextKey : null;
   const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(licenseDetails), [licenseDetails]);
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsBrowserOnline(typeof navigator === 'undefined' || navigator.onLine !== false);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+  const actorCanReadCustomers = hasSalesActorPermission(actorRuntime, 'customers');
+  const statsCustomerOptions = useMemo(() => customers.filter(isCustomerVisible), [customers]);
+  const customerCatalogMatchesContext = customerCatalog.contextKey === salesHistoryContextKey;
+  const localCustomerFilterAvailable = dashboardReportMode.mode === REPORT_SOURCE_MODES.LOCAL
+    && customerCatalogMatchesContext && customerCatalog.complete;
+  const cloudCustomerFilterAvailable = dashboardReportMode.cloudSalesFinal
+    && isBrowserOnline
+    && actorCanReadCustomers && customerCatalogMatchesContext && customerCatalog.complete;
+  const canFilterStatsByCustomer = localCustomerFilterAvailable || cloudCustomerFilterAvailable;
+  const customerFilterDisabledReason = canFilterStatsByCustomer
+    ? ''
+    : dashboardReportMode.cloudSalesFinal && !isBrowserOnline
+      ? 'Conéctate para confirmar el directorio Cloud autorizado de clientes.'
+      : dashboardReportMode.cloudSalesFinal && !actorCanReadCustomers
+        ? 'Tu usuario no tiene permiso para consultar el directorio de clientes.'
+        : dashboardReportMode.cloudSalesFinal && !customerCatalogMatchesContext
+          ? 'Comprobando el directorio de clientes autorizado…'
+          : dashboardReportMode.cloudSalesFinal && !customerCatalog.complete
+            ? customerCatalog.reason || 'El directorio Cloud no confirma una lista completa en este dispositivo.'
+            : dashboardReportMode.mode === REPORT_SOURCE_MODES.LOCAL && !customerCatalogMatchesContext
+              ? 'Cargando clientes locales…'
+              : dashboardReportMode.cloudReports
+                ? 'El reporte Cloud actual no permite filtrar estadísticas por cliente.'
+                : customerCatalog.reason || 'No hay un directorio local de clientes disponible.';
+  const selectedStatsCustomerId = canFilterStatsByCustomer
+    && statsCustomerSelection.contextKey === salesHistoryContextKey
+    && statsCustomerOptions.some((customer) => String(customer.id) === String(statsCustomerSelection.id))
+    ? String(statsCustomerSelection.id)
+    : null;
+  const selectedStatsCustomerName = statsCustomerOptions.find((customer) => (
+    String(customer.id) === String(selectedStatsCustomerId)
+  ))?.name || '';
   // Historial independiente de las métricas: mismo rango fijo entre sus páginas.
   const visibleHistoryRange = useMemo(() => {
     const dateTo = new Date();
@@ -154,15 +202,57 @@ export default function DashboardPage() {
   // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
 
+  useEffect(() => {
+    const selectionContextChanged = statsCustomerSelection.contextKey !== salesHistoryContextKey;
+    const selectedCustomerStillAvailable = statsCustomerSelection.id
+      && canFilterStatsByCustomer
+      && statsCustomerOptions.some((customer) => String(customer.id) === String(statsCustomerSelection.id));
+    if (selectionContextChanged || (statsCustomerSelection.id && !selectedCustomerStillAvailable)) {
+      setStatsCustomerSelection({ contextKey: salesHistoryContextKey, id: null });
+    }
+  }, [canFilterStatsByCustomer, salesHistoryContextKey, statsCustomerOptions, statsCustomerSelection]);
+
+  const handleStatsCustomerChange = useCallback((customerId) => {
+    const nextId = customerId && canFilterStatsByCustomer
+      && statsCustomerOptions.some((customer) => String(customer.id) === String(customerId))
+      ? String(customerId)
+      : null;
+    setStatsCustomerSelection({ contextKey: salesHistoryContextKey, id: nextId });
+  }, [canFilterStatsByCustomer, salesHistoryContextKey, statsCustomerOptions]);
+
   const loadCustomers = useCallback(async () => {
+    const requestId = ++customerCatalogRequestRef.current;
+    const contextKey = salesHistoryContextKey;
+    const canLoadCloudDirectory = Boolean(dashboardReportMode.cloudSalesFinal && isBrowserOnline && actorCanReadCustomers && licenseKey);
     try {
-      const customersData = await loadData(STORES.CUSTOMERS);
-      setCustomers(customersData || []);
+      const [customersData, cloudSnapshotComplete] = await Promise.all([
+        loadData(STORES.CUSTOMERS),
+        canLoadCloudDirectory
+          ? customerMigrationService.hasCompleteCloudDirectorySnapshot(licenseKey)
+          : Promise.resolve(false)
+      ]);
+      if (requestId !== customerCatalogRequestRef.current) return;
+      const hasLocalDirectory = Array.isArray(customersData);
+      const complete = dashboardReportMode.mode === REPORT_SOURCE_MODES.LOCAL
+        ? hasLocalDirectory
+        : Boolean(canLoadCloudDirectory && cloudSnapshotComplete && hasLocalDirectory);
+      setCustomers(hasLocalDirectory ? customersData : []);
+      setCustomerCatalog({
+        contextKey,
+        complete,
+        reason: !hasLocalDirectory
+          ? 'No se pudo leer el directorio local de clientes.'
+          : dashboardReportMode.cloudSalesFinal && !cloudSnapshotComplete
+            ? 'El directorio Cloud todavía no confirma una sincronización completa.'
+            : ''
+      });
     } catch (error) {
+      if (requestId !== customerCatalogRequestRef.current) return;
       Logger.error('Error cargando clientes:', error);
       setCustomers([]);
+      setCustomerCatalog({ contextKey, complete: false, reason: 'No se pudo cargar el directorio de clientes.' });
     }
-  }, []);
+  }, [actorCanReadCustomers, dashboardReportMode.cloudSalesFinal, dashboardReportMode.mode, isBrowserOnline, licenseKey, salesHistoryContextKey]);
 
   const loadDashboardReporting = useCallback(async () => {
     const requestId = ++reportRequestRef.current;
@@ -189,22 +279,34 @@ export default function DashboardPage() {
         reportsRepository.getOverviewReport({
           rubros: features.activeRubros,
           scope: 'mine',
-          ...(statsRequestedRange || {})
-        })
+          ...(statsRequestedRange || {}),
+          customerId: selectedStatsCustomerId
+        }, selectedStatsCustomerId ? { cacheContextKey: salesHistoryContextKey } : {})
       ]);
 
       const localReport = localReportResult.status === 'fulfilled'
         ? localReportResult.value
         : { sales: [], wasteLogs: [], menu: [] };
-      const overviewReport = cloudOverviewResult.status === 'fulfilled'
+      const overviewPayload = cloudOverviewResult.status === 'fulfilled'
         ? cloudOverviewResult.value
         : null;
-      const reportDateRange = overviewReport?.dateRange
-        || overviewReport?.date_range
-        || overviewReport?.raw?.date_range
+      const reportDateRange = overviewPayload?.dateRange
+        || overviewPayload?.date_range
+        || overviewPayload?.raw?.date_range
         || {};
       const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
       const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
+      const statsRequestContext = {
+        customerId: selectedStatsCustomerId,
+        scope: 'mine',
+        dateFrom: statsRequestedRange?.dateFrom || dateFrom,
+        dateTo: statsRequestedRange?.dateTo || dateTo,
+        contextKey: salesHistoryContextKey,
+        cacheContextKey: selectedStatsCustomerId ? salesHistoryContextKey : null
+      };
+      const overviewReport = overviewPayload
+        ? { ...overviewPayload, statsRequestContext }
+        : null;
       const shouldLoadCreditHistory = shouldLoadFinalHistory
         && Boolean(salesActorIdentity)
         && overviewReport?.success !== false
@@ -216,12 +318,23 @@ export default function DashboardPage() {
             scope: 'mine',
             limit: SALES_HISTORY_PAGE_SIZE,
             offset: 0,
+            customerId: selectedStatsCustomerId,
             ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
-          }, { cacheContextKey: salesHistoryCacheContextKey })
+          }, { cacheContextKey: selectedStatsCustomerId ? salesHistoryContextKey : salesHistoryCacheContextKey })
           : Promise.resolve(null)
       ]))[0];
-      const creditHistoryReport = creditHistoryResult.status === 'fulfilled'
+      const creditHistoryPayload = creditHistoryResult.status === 'fulfilled'
         ? creditHistoryResult.value
+        : null;
+      const creditHistoryReport = creditHistoryPayload
+        ? {
+          ...creditHistoryPayload,
+          statsRequestContext: {
+            ...statsRequestContext,
+            dateFrom: dateFrom || statsRequestedRange?.dateFrom || null,
+            dateTo: dateTo || statsRequestedRange?.dateTo || null
+          }
+        }
         : null;
 
       if (localReportResult.status === 'rejected') {
@@ -261,7 +374,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, cloudStatsPeriod, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey]);
+  }, [dashboardReportMode, cloudStatsPeriod, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey, selectedStatsCustomerId]);
 
   useEffect(() => {
     if (!dashboardReportMode.cloudSalesFinal) return undefined;
@@ -556,6 +669,20 @@ export default function DashboardPage() {
   }
 
   const statsIsCloudFinal = dashboardReportMode.cloudSalesFinal;
+  const currentCloudStatsRange = statsIsCloudFinal ? buildCloudStatsRange(cloudStatsPeriod) : null;
+  const currentCloudStatsRequest = reportingData.overviewReport?.statsRequestContext || {};
+  const cloudStatsRequestMatchesCurrent = Boolean(
+    !statsIsCloudFinal
+    || (
+      currentCloudStatsRequest.customerId === selectedStatsCustomerId
+      && currentCloudStatsRequest.scope === 'mine'
+      && currentCloudStatsRequest.contextKey === salesHistoryContextKey
+      && currentCloudStatsRequest.dateFrom === currentCloudStatsRange?.dateFrom
+      && currentCloudStatsRequest.dateTo === currentCloudStatsRange?.dateTo
+      && currentCloudStatsRequest.cacheContextKey === (selectedStatsCustomerId ? salesHistoryContextKey : null)
+    )
+  );
+  const cloudStatsIsLoading = reportingData.isLoading || !cloudStatsRequestMatchesCurrent;
   const historyContextMatches = reportingData.salesHistoryContextKey === salesHistoryContextKey;
   const historySource = dashboardReportMode.cloudSalesFinal
     ? (historyContextMatches ? reportingData.salesHistorySource : null)
@@ -614,13 +741,25 @@ export default function DashboardPage() {
               scope="mine"
               period={cloudStatsPeriod}
               onPeriodChange={setCloudStatsPeriod}
-              requestedRange={reportingData.statsRequestedRange}
-              isLoading={reportingData.isLoading}
+              requestedRange={currentCloudStatsRange}
+              isLoading={cloudStatsIsLoading}
+              customers={canFilterStatsByCustomer ? statsCustomerOptions : []}
+              customerId={selectedStatsCustomerId}
+              customerName={selectedStatsCustomerName}
+              onCustomerChange={handleStatsCustomerChange}
+              customerFilterDisabledReason={customerFilterDisabledReason}
+              statsCustomerContextKey={salesHistoryContextKey}
             />
           ) : (
             <StatsGrid
               stats={stats}
               customers={customers}
+              customerOptions={canFilterStatsByCustomer ? statsCustomerOptions : []}
+              customerId={selectedStatsCustomerId}
+              customerName={selectedStatsCustomerName}
+              onCustomerChange={handleStatsCustomerChange}
+              customerFilterDisabledReason={customerFilterDisabledReason}
+              statsSourceLabel={dashboardReportMode.mode === REPORT_SOURCE_MODES.LOCAL ? 'Local' : 'Origen Cloud'}
               reportRefreshKey={reportingData.refreshKey}
               activeRubros={features.activeRubros}
               reportData={reportingData.overviewReport}

@@ -410,14 +410,18 @@ export const reportsRepository = {
     return { mode: REPORT_SOURCE_MODES.MIXED, ...mode };
   },
 
-  async getOverviewReport(filters = {}) {
+  async getOverviewReport(filters = {}, { cacheContextKey = null } = {}) {
     const mode = getMode();
     const cloudFilters = normalizeOverviewFilters(filters);
+    const cacheContext = cacheContextKey
+      ? { licenseKey: mode.licenseKey, actorContext: cacheContextKey }
+      : null;
 
     if (mode.cloudSalesFinal) {
       return withCacheFallback({
         reportType: REPORT_TYPES.SALES_FINAL_OVERVIEW,
         filters: cloudFilters,
+        cacheContext,
         reportMode: mode,
         loader: () => reportsCloudRepository.getSalesFinalOverview({ licenseKey: mode.licenseKey, ...cloudFilters }),
         mapper: mapCloudFinalReport,
@@ -436,6 +440,7 @@ export const reportsRepository = {
     return withCacheFallback({
       reportType: REPORT_TYPES.OVERVIEW,
       filters: cloudFilters,
+      cacheContext,
       reportMode: mode,
       loader: () => reportsCloudRepository.getOverviewReport({ licenseKey: mode.licenseKey, ...cloudFilters }),
       mapper: (payload, options = {}) => reportsMapper.normalizeCloudOverviewAsMixed(payload, { stale: Boolean(options.stale) }),

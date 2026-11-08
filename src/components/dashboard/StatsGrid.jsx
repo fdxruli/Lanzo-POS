@@ -26,6 +26,8 @@ import {
 } from '../../services/sales/dashboardFinancialSummary';
 import { useStatsStore } from '../../store/useStatsStore';
 import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
+import { filterLocalDashboardReportForCustomer } from '../../services/sales/customerStatsFilter';
+import DashboardCustomerFilter from './DashboardCustomerFilter';
 
 // Periodos disponibles
 const TIME_PERIODS = {
@@ -421,12 +423,19 @@ export default function StatsGrid({
   reportSource = null,
   isCloudReport = false,
   isMixedReport = false,
-  isStale = false
+  isStale = false,
+  customerOptions = [],
+  customerId = null,
+  customerName = '',
+  onCustomerChange = () => {},
+  customerFilterDisabledReason = '',
+  statsSourceLabel = 'Local'
 }) {
   const [timeRange, setTimeRange] = useState('today');
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [filteredSales, setFilteredSales] = useState([]);
   const [prevPeriodSales, setPrevPeriodSales] = useState([]);
+  const [previousSalesAttributionIncomplete, setPreviousSalesAttributionIncomplete] = useState(false);
   const [filteredWasteLogs, setFilteredWasteLogs] = useState([]);
   const [prevPeriodWasteLogs, setPrevPeriodWasteLogs] = useState([]);
   const [financeEvents, setFinanceEvents] = useState({
@@ -435,9 +444,12 @@ export default function StatsGrid({
     cancelledSales: [],
     cashReversalMovements: [],
     hasUnresolvedCreditCancellation: false,
-    range: null
+    range: null,
+    salesAttributionIncomplete: false,
+    paymentAttributionIncomplete: false
   });
   const [reportStatus, setReportStatus] = useState('loading');
+  const [loadedStatsRequestKey, setLoadedStatsRequestKey] = useState(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const forceRecalculate = useStatsStore((state) => state.forceRecalculate);
@@ -449,6 +461,8 @@ export default function StatsGrid({
     isMixedReport,
     isStale
   }), [reportData, reportSource, isCloudReport, isMixedReport, isStale]);
+  const statsRequestKey = JSON.stringify([timeRange, customerId, reportRefreshKey, localRefreshKey, activeRubros]);
+  const effectiveReportStatus = loadedStatsRequestKey === statsRequestKey ? reportStatus : 'loading';
 
   const renderSourceBadges = (badges = []) => {
     if (!badges.length) return null;
@@ -515,29 +529,36 @@ export default function StatsGrid({
         ]);
 
         if (!isActive) return;
-        setFilteredSales(currentReport.sales || []);
-        setPrevPeriodSales(previousReport.sales || []);
-        setFilteredWasteLogs(currentReport.wasteLogs || []);
+        const customerReport = filterLocalDashboardReportForCustomer(currentReport, customerId);
+        const previousCustomerReport = filterLocalDashboardReportForCustomer(previousReport, customerId);
+        setFilteredSales(customerReport.report.sales || []);
+        setPrevPeriodSales(previousCustomerReport.report.sales || []);
+        setPreviousSalesAttributionIncomplete(previousCustomerReport.salesAttributionIncomplete);
+        setFilteredWasteLogs(customerId ? [] : (currentReport.wasteLogs || []));
         setPrevPeriodWasteLogs(previousReport.wasteLogs || []);
         setFinanceEvents({
-          customerLedger: currentReport.customerLedger || [],
-          customers: Array.isArray(currentReport.customers) ? currentReport.customers : null,
-          cancelledSales: currentReport.cancelledSales || [],
-          cashReversalMovements: currentReport.cashReversalMovements || [],
+          customerLedger: customerReport.report.customerLedger || [],
+          customers: Array.isArray(customerReport.report.customers) ? customerReport.report.customers : null,
+          cancelledSales: customerReport.report.cancelledSales || [],
+          cashReversalMovements: customerReport.report.cashReversalMovements || [],
           hasUnresolvedCreditCancellation: Boolean(currentReport.hasUnresolvedCreditCancellation),
-          range: currentReport.meta?.rangoFechas || ranges.current
+          range: currentReport.meta?.rangoFechas || ranges.current,
+          salesAttributionIncomplete: customerReport.salesAttributionIncomplete,
+          paymentAttributionIncomplete: customerReport.paymentAttributionIncomplete
         });
+        setLoadedStatsRequestKey(statsRequestKey);
         setReportStatus('ready');
 
       } catch (err) {
         if (!isActive) return;
         console.error('Error loading period sales', err);
+        setLoadedStatsRequestKey(statsRequestKey);
         setReportStatus('failed');
       }
     }
     loadPeriodSales();
     return () => { isActive = false; };
-  }, [activeRubros, localRefreshKey, reportRefreshKey, timeRange]);
+  }, [activeRubros, customerId, localRefreshKey, reportRefreshKey, statsRequestKey, timeRange]);
 
   // Calcular métricas para el periodo seleccionado
   const metrics = useMemo(() => {
@@ -562,7 +583,7 @@ export default function StatsGrid({
       range: financeEvents.range
     });
     const unavailableMetric = { value: null, status: 'incomplete', reason: 'local_report_unavailable' };
-    const localFinance = reportStatus === 'ready'
+    const localFinance = effectiveReportStatus === 'ready'
       ? calculatedLocalFinance
       : {
         ...calculatedLocalFinance,
@@ -577,10 +598,11 @@ export default function StatsGrid({
     const totalProfit = profitConfirmed;
     const avgTicket = orders > 0 ? revenue / orders : 0;
     const marginPercent = financialSummary.confirmedMarginPct;
-    const selectedMetricConfig = METRIC_OPTIONS[selectedMetric];
+    const selectedMetricKey = customerId && selectedMetric === 'waste' ? 'revenue' : selectedMetric;
+    const selectedMetricConfig = METRIC_OPTIONS[selectedMetricKey];
     const currentSummary = {
       revenue,
-      financialDataStatus: reportStatus,
+      financialDataStatus: effectiveReportStatus,
       profitConfirmed,
       orders,
       avgTicket,
@@ -598,8 +620,8 @@ export default function StatsGrid({
       marginPercent: prevFinancialSummary.confirmedMarginPct,
       totalWaste: summarizeWaste(prevPeriodWasteLogs)
     };
-    const selectedMetricValue = getMetricValue(currentSummary, selectedMetric);
-    const previousMetricValue = getMetricValue(prevSummary, selectedMetric);
+    const selectedMetricValue = getMetricValue(currentSummary, selectedMetricKey);
+    const previousMetricValue = getMetricValue(prevSummary, selectedMetricKey);
     const metricTrend = period.days === Infinity
       ? null
       : getTrendPercent(selectedMetricValue, previousMetricValue);
@@ -611,17 +633,27 @@ export default function StatsGrid({
       wasteLogs: filteredWasteLogs,
       period,
       now,
-      metricKey: selectedMetric
+      metricKey: selectedMetricKey
     });
 
     const cloudInventoryMetric = reportContext.metrics.inventoryValueApprox;
     const useCloudInventory = Boolean(reportContext.isProReport && cloudInventoryMetric?.has);
     const localInventoryValue = stats?.inventoryValue ?? 0;
 
+    const salesAttributionIncomplete = Boolean(customerId && financeEvents.salesAttributionIncomplete);
+    const trendAttributionIncomplete = Boolean(customerId && (
+      salesAttributionIncomplete || previousSalesAttributionIncomplete
+    ));
+    const paymentAttributionIncomplete = Boolean(customerId && financeEvents.paymentAttributionIncomplete);
+
     return {
       revenue,
-      collected: localFinance.collected,
-      creditGenerated: localFinance.creditGenerated,
+      collected: paymentAttributionIncomplete || salesAttributionIncomplete
+        ? { value: null, status: 'incomplete', reason: 'customer_attribution_incomplete' }
+        : localFinance.collected,
+      creditGenerated: paymentAttributionIncomplete || salesAttributionIncomplete
+        ? { value: null, status: 'incomplete', reason: 'customer_attribution_incomplete' }
+        : localFinance.creditGenerated,
       currentDebt: localFinance.currentDebt,
       profitConfirmed,
       unreliableProfit,
@@ -630,7 +662,7 @@ export default function StatsGrid({
       items,
       avgTicket,
       marginPercent,
-      totalWaste,
+      totalWaste: customerId ? null : totalWaste,
       coveragePercent: financialSummary.reportReliabilityPct,
       missingCostRevenuePct: financialSummary.missingCostRevenuePct,
       qualityStatus: financialSummary.qualityStatus,
@@ -640,9 +672,9 @@ export default function StatsGrid({
       inventorySource: useCloudInventory ? 'cloud' : 'local',
       inventoryBadges: useCloudInventory ? reportContext.cloudMetricBadges : reportContext.localMetricBadges,
       hasMissingCosts,
-      revenueTrend,
-      metricTrend,
-      selectedMetricValue,
+      revenueTrend: trendAttributionIncomplete ? null : revenueTrend,
+      metricTrend: trendAttributionIncomplete ? null : metricTrend,
+      selectedMetricValue: salesAttributionIncomplete ? null : selectedMetricValue,
       selectedMetricLabel: selectedMetricConfig.label,
       selectedMetricColor: selectedMetricConfig.color,
       selectedMetricFormatter: selectedMetricConfig.formatter,
@@ -651,9 +683,15 @@ export default function StatsGrid({
       evolutionData: metricDailyData,
       confirmedRevenue,
       unconfirmedRevenue,
-      filteredSales
+      filteredSales,
+      salesAttributionIncomplete,
+      paymentAttributionIncomplete
     };
-  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, financeEvents, reportStatus, selectedMetric, stats, timeRange, reportContext]);
+  }, [customerId, filteredSales, filteredWasteLogs, prevPeriodSales, previousSalesAttributionIncomplete, prevPeriodWasteLogs, financeEvents, effectiveReportStatus, selectedMetric, stats, timeRange, reportContext]);
+
+  useEffect(() => {
+    if (customerId && selectedMetric === 'waste') setSelectedMetric('revenue');
+  }, [customerId, selectedMetric]);
 
   const periodRange = buildPeriodRanges(timeRange);
   const formatPeriodDate = (date) => new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
@@ -684,6 +722,9 @@ export default function StatsGrid({
               : 'Todo el historial disponible en este dispositivo'}
           </p>
           <small className="text-muted">Las ventas a crédito cuentan como ventas, pero no como dinero cobrado.</small>
+          <small className="text-muted dashboard-stats-context">
+            Cliente: {customerId ? customerName : 'Todos los clientes'} · {statsSourceLabel}
+          </small>
           {renderSourceBadges(reportContext.summaryBadges)}
         </div>
 
@@ -706,6 +747,13 @@ export default function StatsGrid({
             ))}
           </div>
 
+          <DashboardCustomerFilter
+            customers={customerOptions}
+            value={customerId}
+            onChange={onCustomerChange}
+            disabledReason={customerFilterDisabledReason}
+          />
+
           <button
             type="button"
             className="recalc-report-button"
@@ -719,9 +767,9 @@ export default function StatsGrid({
       </div>
 
       {/* Nunca mostrar cifras de un período anterior mientras se consulta otro. */}
-      {reportStatus !== 'ready' ? (
+      {effectiveReportStatus !== 'ready' ? (
         <p className="text-muted" role="status">
-          {reportStatus === 'loading' ? 'Cargando cifras del período seleccionado…' : 'No disponible: no se pudo consultar el reporte local.'}
+          {effectiveReportStatus === 'loading' ? 'Cargando cifras del período seleccionado…' : 'No disponible: no se pudo consultar el reporte local.'}
         </p>
       ) : (
       <div className="stats-grid-modern">
@@ -733,9 +781,11 @@ export default function StatsGrid({
           <div className="card-content">
             <span className="card-label">Ventas netas</span>
             <h2 className="card-value-main">{metrics.financialDataStatus === 'ready'
-              ? formatCurrency(metrics.revenue || 0)
+              ? (metrics.salesAttributionIncomplete ? 'Incompleto' : formatCurrency(metrics.revenue || 0))
               : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
-            <small className="text-muted">Ventas válidas y cerradas del periodo.</small>
+            <small className="text-muted">{metrics.salesAttributionIncomplete
+              ? 'Hay ventas sin una relación de cliente confirmada en este periodo.'
+              : 'Ventas válidas y cerradas del periodo.'}</small>
             {metrics.financialDataStatus === 'ready' && metrics.revenueTrend !== null && (
               <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
                 {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
@@ -754,7 +804,9 @@ export default function StatsGrid({
                 ? (metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible')
                 : metrics.collected.status === 'complete' ? formatCurrency(metrics.collected.value) : 'Incompleto'}
             </h2>
-            <small className="text-muted">Pagos iniciales y abonos registrados en este período.</small>
+            <small className="text-muted">{metrics.paymentAttributionIncomplete
+              ? 'Hay pagos o reversos sin una relación de cliente confirmada en este periodo.'
+              : 'Pagos iniciales y abonos registrados en este período.'}</small>
           </div>
         </div>
 
@@ -773,7 +825,9 @@ export default function StatsGrid({
               ? 'No se pudo leer el reporte local del periodo.'
               : metrics.creditGenerated.status === 'complete'
               ? 'Porción fiada al cerrar las ventas del periodo.'
-              : 'No se puede separar con certeza el pago inicial o los reversos.'}
+              : metrics.paymentAttributionIncomplete || metrics.salesAttributionIncomplete
+                ? 'Hay operaciones sin una relación de cliente confirmada; no se inventa un total.'
+                : 'No se puede separar con certeza el pago inicial o los reversos.'}
           </small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -811,9 +865,13 @@ export default function StatsGrid({
           </div>
           <div className="card-content">
             <span className="card-label">Ganancia bruta confirmada</span>
-            <h2 className="card-value-main">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.profitConfirmed) : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
+            <h2 className="card-value-main">{metrics.financialDataStatus === 'ready'
+              ? (metrics.salesAttributionIncomplete ? 'Incompleto' : formatCurrency(metrics.profitConfirmed))
+              : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
 
-            {metrics.shouldWarnFinancialQuality ? (
+            {metrics.salesAttributionIncomplete ? (
+              <div className="financial-quality-warning"><AlertTriangle size={14} /><span>Hay ventas sin una relación de cliente confirmada.</span></div>
+            ) : metrics.shouldWarnFinancialQuality ? (
               <div className="financial-quality-warning">
                 <AlertTriangle size={14} />
                 <span>
@@ -830,7 +888,7 @@ export default function StatsGrid({
               </div>
             )}
             <small className="financial-quality-text">
-              {`Calidad del reporte financiero: ${metrics.coveragePercent.toFixed(1)}% confiable`}
+              {metrics.salesAttributionIncomplete ? 'No se puede verificar el alcance completo del cliente.' : `Calidad del reporte financiero: ${metrics.coveragePercent.toFixed(1)}% confiable`}
             </small>
             {renderSourceBadges(reportContext.salesBadges)}
           </div>
@@ -842,7 +900,9 @@ export default function StatsGrid({
             <span className="card-label">Utilidad no confiable</span>
             <AlertTriangle size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.unreliableProfit) : 'No disponible'}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready'
+            ? (metrics.salesAttributionIncomplete ? 'Incompleto' : formatCurrency(metrics.unreliableProfit))
+            : 'No disponible'}</div>
           <small className="text-muted">
             {`${metrics.missingCostRevenuePct.toFixed(1)}% de ventas sin costo`}
           </small>
@@ -855,11 +915,11 @@ export default function StatsGrid({
             <span className="card-label">Confiabilidad financiera</span>
             <Activity size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{`${metrics.coveragePercent.toFixed(1)}%`}</div>
+          <div className="card-value-small">{metrics.salesAttributionIncomplete ? 'Incompleto' : `${metrics.coveragePercent.toFixed(1)}%`}</div>
           <div className="reliability-meter" aria-hidden="true">
             <div
               className={`reliability-meter-fill ${metrics.qualityStatus}`}
-              style={{ width: `${Math.max(0, Math.min(100, metrics.coveragePercent))}%` }}
+                style={{ width: `${metrics.salesAttributionIncomplete ? 0 : Math.max(0, Math.min(100, metrics.coveragePercent))}%` }}
             />
           </div>
           <small className="text-muted">
@@ -876,7 +936,9 @@ export default function StatsGrid({
             <span className="card-label">Pedidos</span>
             <ShoppingBag size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? metrics.orders : 'No disponible'}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready'
+            ? (metrics.salesAttributionIncomplete ? 'Incompleto' : metrics.orders)
+            : 'No disponible'}</div>
           <small className="text-muted">Tickets cobrados</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -887,7 +949,9 @@ export default function StatsGrid({
             <span className="card-label">Ticket Promedio</span>
             <Ticket size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.avgTicket) : 'No disponible'}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready'
+            ? (metrics.salesAttributionIncomplete ? 'Incompleto' : formatCurrency(metrics.avgTicket))
+            : 'No disponible'}</div>
           <small className="text-muted">Gasto por cliente</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -898,13 +962,15 @@ export default function StatsGrid({
             <span className="card-label">Prod. Vendidos</span>
             <Package size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? metrics.items : 'No disponible'}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready'
+            ? (metrics.salesAttributionIncomplete ? 'Incompleto' : metrics.items)
+            : 'No disponible'}</div>
           <small className="text-muted">Unidades entregadas</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         {/* TARJETA 8: INVENTARIO */}
-        <div className={`stat-card-modern inventory-card ${metrics.inventory === null ? 'card-error-state' : ''}`}>
+        {!customerId && <div className={`stat-card-modern inventory-card ${metrics.inventory === null ? 'card-error-state' : ''}`}>
           <div className="inventory-content">
             <div className="inventory-text-group">
               <span className="card-label">Dinero en Mercancía</span>
@@ -936,9 +1002,9 @@ export default function StatsGrid({
                 : 'Valor actual de tu stock'}
           </small>
           {renderSourceBadges(metrics.inventoryBadges)}
-        </div>
+        </div>}
 
-        {reportContext.shouldShowCloudCards && (
+        {!customerId && reportContext.shouldShowCloudCards && (
           <>
             {renderCloudMetricCard({
               key: 'customers-total',
@@ -1013,7 +1079,7 @@ export default function StatsGrid({
       )}
 
       {/* Gráfica de evolución temporal */}
-      {reportStatus === 'ready' && metrics.evolutionData.length > 0 && (
+      {effectiveReportStatus === 'ready' && !metrics.salesAttributionIncomplete && metrics.evolutionData.length > 0 && (
         <div className="stats-evolution-card">
           <div className="evolution-header">
             <div className="evolution-title">
@@ -1033,7 +1099,7 @@ export default function StatsGrid({
           <div className="chart-metric-controls">
             <span className="chart-metric-label">Métrica de gráfica</span>
             <div className="metric-filter-scroll" aria-label="Metrica de grafica">
-              {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
+              {Object.entries(METRIC_OPTIONS).filter(([key]) => !customerId || key !== 'waste').map(([key, { label }]) => (
                 <button
                   key={key}
                   type="button"
@@ -1056,10 +1122,10 @@ export default function StatsGrid({
       )}
 
       {/* Sección de gráficas y datos adicionales */}
-      {reportStatus === 'ready' && (
+      {effectiveReportStatus === 'ready' && (
       <div className="stats-insights-section stats-insights-section--top">
         {/* Gráfica por fecha real */}
-        {metrics.dailyRevenue.length > 0 && (
+        {!metrics.salesAttributionIncomplete && metrics.dailyRevenue.length > 0 && (
           <div className="stats-insight-card stats-insight-card--full">
             <div className="insight-header">
               <Calendar size={18} />
@@ -1077,16 +1143,16 @@ export default function StatsGrid({
         )}
 
         {/* Productos más vendidos — filteredSales respeta el periodo y excluye abiertas/canceladas */}
-        <div className="stats-insight-card stats-insight-card--full">
+        {!metrics.salesAttributionIncomplete && <div className="stats-insight-card stats-insight-card--full">
           <TopProducts sales={metrics.filteredSales} limit={5} />
           {renderSourceBadges(reportContext.salesBadges)}
-        </div>
+        </div>}
 
         {/* Clientes frecuentes — filteredSales respeta el periodo y excluye abiertas/canceladas */}
-        <div className="stats-insight-card stats-insight-card--full">
+        {!customerId && <div className="stats-insight-card stats-insight-card--full">
           <TopCustomers sales={metrics.filteredSales} customers={customers} limit={5} />
           {renderSourceBadges(reportContext.salesBadges)}
-        </div>
+        </div>}
       </div>
       )}
     </div>
