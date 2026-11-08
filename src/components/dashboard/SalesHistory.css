@@ -3,8 +3,8 @@
 .sales-history-container {
   display: flex;
   flex-direction: column;
-  height: 500px;
-  /* Altura fija para el panel */
+  height: auto;
+  min-width: 0;
   width: 100%;
 }
 
@@ -72,7 +72,7 @@
 
 .history-filters {
   display: grid;
-  grid-template-columns: minmax(160px, 1.5fr) repeat(6, minmax(110px, 1fr));
+  grid-template-columns: 1fr;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-sm);
 }
@@ -114,12 +114,11 @@
 
 /* El contenedor con scroll */
 .sales-history-list {
-  flex: 1;
-  /* Ocupa el espacio restante */
-  overflow-y: auto;
-  /* Scroll vertical */
-  padding-right: 5px;
-  /* Espacio para el scrollbar */
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+  border-top: 1px solid var(--ui-border-color, var(--border-color));
+  padding: 0;
 }
 
 /* Wrapper para separar las tarjetas */
@@ -138,9 +137,9 @@
 }
 
 .sale-item {
-  display: flex;
-  flex-direction: column;
+  display: block;
   width: 100%;
+  min-width: 0;
 }
 
 /* Cabecera interna de cada venta */
@@ -504,4 +503,124 @@
   .history-pagination {
     justify-content: space-between;
   }
+}
+
+
+/* Lista mobile-first: sin altura fija ni scroll anidado */
+.sales-history-container .subtitle { font-size: 1.04rem; font-weight: 650; margin: 0; }
+.sales-history-topbar { align-items: flex-start; margin: 0 0 8px; }
+.sales-history-topbar .history-result-summary { margin-top: 4px; }
+.sales-history-container .history-secondary-btn { min-height: 40px; padding: 8px 12px; font-size: 0.83rem; }
+.history-primary-filters { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 14px 0 10px; }
+.history-primary-filters input,
+.history-primary-filters select,
+.history-filters input,
+.history-filters select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  height: auto;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 0.86rem;
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  background: var(--ui-bg-surface, var(--card-background-color));
+  color: var(--text-dark);
+  border-radius: var(--ui-radius-sm, 8px);
+  box-sizing: border-box;
+}
+.history-filters {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+}
+.history-filters label { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.history-filters label > span { font-size: 0.79rem; color: var(--text-light); }
+.history-filter-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.sales-history-container .history-export-note { font-size: 0.75rem; margin: 4px 0 10px; }
+.sales-history-container .history-meta { font-size: 0.76rem; gap: 4px 12px; margin: 0 0 10px; }
+.sales-history-container .sale-card-wrapper {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-width: 0;
+}
+.sales-history-container .sale-card-wrapper:hover { background: var(--ui-bg-muted, transparent); }
+.sales-history-container .sale-item { display: block; min-width: 0; }
+.sales-history-container .sale-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  gap: 10px;
+  padding: 16px 2px;
+  list-style: none;
+  cursor: pointer;
+}
+.sales-history-container .sale-header::-webkit-details-marker { display: none; }
+.sales-history-container .sale-date {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-light);
+  line-height: 1.45;
+}
+.sales-history-container .sale-folio-tag {
+  padding: 0;
+  color: var(--text-dark);
+  background: transparent;
+  border-radius: 0;
+  font-size: 0.94rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.sales-history-container .sale-total { max-width: 44%; min-width: 0; flex: 0 1 auto; font-size: 0.97rem; font-variant-numeric: tabular-nums; }
+.sales-history-container .sale-total-label { font-size: 0.72rem; margin-bottom: 4px; }
+.sale-summary-chevron { flex-shrink: 0; margin-top: 12px; color: var(--text-light); transition: transform 160ms ease; }
+.sale-item[open] .sale-summary-chevron { transform: rotate(180deg); }
+.sales-history-container .sale-item-info { padding: 0 2px 14px; min-width: 0; }
+.sales-history-container .sale-item-info ul { padding: 0; }
+.sales-history-container .sale-item-info li { padding: 4px 0; overflow-wrap: anywhere; }
+.sales-history-effect-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.sales-history-container .sale-actions { padding: 10px 2px 16px; margin: 0; gap: 8px; flex-wrap: wrap; }
+.sales-history-container .sale-actions button { min-height: 40px; }
+.sales-history-container .sale-item-info .mini-stat-pill { white-space: normal; overflow-wrap: anywhere; }
+.sales-history-container .sale-header:hover { background: var(--ui-bg-muted, transparent); }
+.sales-history-container .sale-header .split-badge { margin: 0; }
+.sales-history-container .history-pagination { justify-content: space-between; gap: 8px; margin-top: 16px; font-size: 0.79rem; }
+.sales-history-container .history-pagination > span { text-align: center; }
+.sales-history-container .split-child-header { flex-wrap: wrap; gap: 6px; }
+.sales-history-container .split-child-items { overflow-wrap: anywhere; }
+.sales-history-container button:focus-visible,
+.sales-history-container summary:focus-visible,
+.sales-history-container input:focus-visible,
+.sales-history-container select:focus-visible {
+  outline: 2px solid var(--ui-action-primary-bg, var(--secondary-color));
+  outline-offset: 2px;
+}
+@media (min-width: 600px) {
+  .history-primary-filters { grid-template-columns: minmax(0,1fr) minmax(150px,210px) auto; align-items: center; }
+  .history-filters { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .sales-history-container .sale-date { flex-direction: row; align-items: center; gap: 8px 14px; }
+  .sales-history-container .sale-header { padding: 17px 12px; }
+  .sales-history-container .sale-item-info,
+  .sales-history-container .sale-actions { padding-left: 12px; padding-right: 12px; }
+}
+@media (min-width: 950px) {
+  .history-filters { grid-template-columns: repeat(5, minmax(0,1fr)); }
 }
