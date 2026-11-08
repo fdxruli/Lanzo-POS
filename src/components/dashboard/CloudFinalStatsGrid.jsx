@@ -102,6 +102,12 @@ export default function CloudFinalStatsGrid({
         ? 'Respaldo local · Cloud no confirmado'
         : 'Origen no confirmado');
   const periodLabel = `Fechas: ${describeCloudStatsRange(requestedRange)} (zona horaria de este dispositivo).`;
+  const reportedRange = reportData?.dateRange || reportData?.date_range || reportData?.raw?.date_range || {};
+  const reportedFrom = reportedRange.date_from || reportedRange.start || reportedRange.from || reportedRange.dateFrom;
+  const reportedTo = reportedRange.date_to || reportedRange.end || reportedRange.to || reportedRange.dateTo;
+  const receivedRangeLabel = Number.isFinite(Date.parse(reportedFrom)) && Number.isFinite(Date.parse(reportedTo))
+    ? describeCloudStatsRange({ dateFrom: reportedFrom, dateTo: reportedTo })
+    : 'no informado';
   const scopeLabel = `Alcance consultado: ${scope === 'mine' ? 'usuario o dispositivo actual' : 'licencia autorizada'}.`;
 
   return (
@@ -132,7 +138,7 @@ export default function CloudFinalStatsGrid({
       {isLoading && <p className="text-muted" role="status">Consultando estadísticas de {CLOUD_STATS_PERIODS.find(({ key }) => key === period)?.label || 'Cloud'}…</p>}
       {!isLoading && cloudFinalSource && !rangeMatches && (
         <div className="financial-quality-warning financial-quality-warning--compact" role="status">
-          <AlertTriangle size={15} /><span>El rango devuelto no coincide con el seleccionado. No se muestran importes de otro período.</span>
+          <AlertTriangle size={15} /><span>El rango recibido ({receivedRangeLabel}) no coincide con el seleccionado. No se muestran importes de otro período.</span>
         </div>
       )}
 
