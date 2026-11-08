@@ -18,17 +18,24 @@ const hashString = (input = '') => {
   return Math.abs(hash).toString(36);
 };
 
-const buildCacheKey = (reportType, filters = {}) => `${REPORT_CACHE_PREFIX}${reportType}:${hashString(stableStringify(filters || {}))}`;
+const buildCacheKey = (reportType, filters = {}, cacheContext = null) => {
+  const filtersHash = hashString(stableStringify(filters || {}));
+  if (cacheContext === null || cacheContext === undefined) {
+    return `${REPORT_CACHE_PREFIX}${reportType}:${filtersHash}`;
+  }
+
+  return `${REPORT_CACHE_PREFIX}${reportType}:${filtersHash}:${hashString(stableStringify(cacheContext))}`;
+};
 
 export const reportsCacheService = {
   buildCacheKey,
 
-  async saveSnapshot(reportType, filters, payload, source = {}) {
+  async saveSnapshot(reportType, filters, payload, source = {}, cacheContext = null) {
     if (!reportType || !payload) return null;
     if (!db.isOpen()) await db.open();
 
     const record = {
-      key: buildCacheKey(reportType, filters),
+      key: buildCacheKey(reportType, filters, cacheContext),
       value: {
         reportType,
         filtersHash: hashString(stableStringify(filters || {})),
@@ -44,11 +51,11 @@ export const reportsCacheService = {
     return record.value;
   },
 
-  async getSnapshot(reportType, filters = {}) {
+  async getSnapshot(reportType, filters = {}, cacheContext = null) {
     if (!reportType) return null;
     if (!db.isOpen()) await db.open();
 
-    const record = await db.table(STORES.SYNC_CACHE).get(buildCacheKey(reportType, filters));
+    const record = await db.table(STORES.SYNC_CACHE).get(buildCacheKey(reportType, filters, cacheContext));
     if (!record?.value?.payload) return null;
 
     return {

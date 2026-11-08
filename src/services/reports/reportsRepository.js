@@ -78,9 +78,11 @@ const isCloudReportsSyncEnabled = (licenseDetails = {}) => {
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_reports_sync');
 };
 
-const getMode = () => {
+const getMode = (licenseDetailsOverride = undefined) => {
   const state = useAppStore.getState();
-  const licenseDetails = state?.licenseDetails || null;
+  const licenseDetails = licenseDetailsOverride === undefined
+    ? (state?.licenseDetails || null)
+    : (licenseDetailsOverride || null);
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
 
   return {
@@ -132,6 +134,9 @@ const normalizeCachedPayload = ({ cached, mapper, cacheWarning = DEFAULT_CACHE_W
 export const withCacheFallback = async ({
   reportType,
   filters = {},
+  cacheContext = null,
+  cacheEnabled = true,
+  allowLocalFallback = true,
   reportMode,
   loader,
   mapper,
@@ -142,7 +147,9 @@ export const withCacheFallback = async ({
   cloudErrorLocalWarning = DEFAULT_CLOUD_ERROR_LOCAL_WARNING
 }) => {
   if (!reportMode?.online) {
-    const cached = await reportsCacheService.getSnapshot(reportType, filters);
+    const cached = cacheEnabled
+      ? await reportsCacheService.getSnapshot(reportType, filters, cacheContext)
+      : null;
     if (cached?.payload && !hasExplicitReportFailure(cached.payload)) {
       try {
         return normalizeCachedPayload({ cached, mapper, cacheWarning });
@@ -150,6 +157,8 @@ export const withCacheFallback = async ({
         // Ignore a malformed or explicitly unsuccessful snapshot.
       }
     }
+
+    if (!allowLocalFallback) throw new Error('REPORT_CACHE_UNAVAILABLE');
 
     const local = await localFallback();
     return applySourceState(local, {
@@ -165,10 +174,14 @@ export const withCacheFallback = async ({
     if (hasExplicitReportFailure(payload) || mapped?.success === false) {
       throw new Error('REPORT_RPC_EXPLICITLY_FAILED');
     }
-    await reportsCacheService.saveSnapshot(reportType, filters, mapped, mapped.source);
+    if (cacheEnabled) {
+      await reportsCacheService.saveSnapshot(reportType, filters, mapped, mapped.source, cacheContext);
+    }
     return mapped;
   } catch (error) {
-    const cached = await reportsCacheService.getSnapshot(reportType, filters);
+    const cached = cacheEnabled
+      ? await reportsCacheService.getSnapshot(reportType, filters, cacheContext)
+      : null;
     if (cached?.payload && !hasExplicitReportFailure(cached.payload)) {
       try {
         return normalizeCachedPayload({
@@ -180,6 +193,8 @@ export const withCacheFallback = async ({
         // Ignore a malformed or explicitly unsuccessful snapshot.
       }
     }
+
+    if (!allowLocalFallback) throw error;
 
     const local = await localFallback();
     return applySourceState(local, {
@@ -387,8 +402,8 @@ const rowsToCsv = (rows = []) => {
 };
 
 export const reportsRepository = {
-  getReportMode() {
-    const mode = getMode();
+  getReportMode(licenseDetails = undefined) {
+    const mode = getMode(licenseDetails);
     if (!mode.cloudReports) return { mode: REPORT_SOURCE_MODES.LOCAL, ...mode };
     if (!mode.online) return { mode: REPORT_SOURCE_MODES.CACHE, ...mode };
     if (mode.cloudSalesFinal) return { mode: REPORT_SOURCE_MODES.CLOUD_FINAL, ...mode };
@@ -432,7 +447,7 @@ export const reportsRepository = {
     });
   },
 
-  async getSalesFinalHistory(filters = {}) {
+  async getSalesFinalHistory(filters = {}, { cacheContextKey = null } = {}) {
     const mode = getMode();
     const cloudFilters = normalizeSalesFinalHistoryFilters(filters);
     const localHistoryWarning = 'Historial local no oficial de este dispositivo.';
@@ -444,6 +459,11 @@ export const reportsRepository = {
     return withCacheFallback({
       reportType: REPORT_TYPES.SALES_FINAL_HISTORY,
       filters: cloudFilters,
+      cacheContext: cacheContextKey
+        ? { licenseKey: mode.licenseKey, actorContext: cacheContextKey }
+        : null,
+      cacheEnabled: Boolean(cacheContextKey),
+      allowLocalFallback: false,
       reportMode: mode,
       loader: () => reportsCloudRepository.getSalesFinalHistory({ licenseKey: mode.licenseKey, ...cloudFilters }),
       mapper: mapCloudFinalHistoryReport,

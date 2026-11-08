@@ -50,4 +50,35 @@ describe('reportsRepository cache fallback', () => {
       source: { mode: 'local', stale: false }
     });
   });
+
+  it('does not substitute local sales for a Cloud history request when no authorized snapshot is available', async () => {
+    const localFallback = vi.fn(async () => ({ rows: [{ id: 'local-only-sale' }] }));
+
+    await expect(withCacheFallback({
+      reportType: 'sales_final_history',
+      cacheEnabled: false,
+      allowLocalFallback: false,
+      reportMode: { online: true },
+      loader: async () => { throw new Error('CLOUD_UNAVAILABLE'); },
+      mapper: (payload) => payload,
+      localFallback
+    })).rejects.toThrow('CLOUD_UNAVAILABLE');
+
+    expect(localFallback).not.toHaveBeenCalled();
+  });
+
+  it('reports an unavailable scoped snapshot offline instead of showing local sales under Cloud scope', async () => {
+    const localFallback = vi.fn(async () => ({ rows: [{ id: 'local-only-sale' }] }));
+
+    await expect(withCacheFallback({
+      reportType: 'sales_final_history',
+      cacheEnabled: false,
+      allowLocalFallback: false,
+      reportMode: { online: false },
+      mapper: (payload) => payload,
+      localFallback
+    })).rejects.toThrow('REPORT_CACHE_UNAVAILABLE');
+
+    expect(localFallback).not.toHaveBeenCalled();
+  });
 });

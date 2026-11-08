@@ -1,6 +1,6 @@
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/DashboardPage.jsx
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
@@ -9,6 +9,7 @@ import { useStatsStore } from '../store/useStatsStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useRecycleBinStore } from '../store/useRecycleBinStore';
 import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
+import { useAppStore } from '../store/useAppStore';
 
 // --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
@@ -41,6 +42,7 @@ import {
 import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthorization';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
+import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
 
@@ -72,7 +74,11 @@ export default function DashboardPage() {
     creditHistoryAttempted: false,
     salesHistorySource: null,
     salesHistoryHasMore: false,
-    salesHistoryTotalCount: 0,
+    salesHistoryTotalCount: null,
+    salesHistoryDateRange: null,
+    salesHistoryScope: null,
+    salesHistoryContextKey: null,
+    salesHistoryError: null,
     usesRepositorySalesHistory: false,
     salesHistoryIsLoading: false,
     isLoading: true,
@@ -87,10 +93,22 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const features = useFeatureConfig();
   const actorRuntime = useActorRuntimeSnapshot();
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const canManageRefunds = canPerformRefunds(actorRuntime);
   const salesActorIdentity = getSalesActorIdentity(actorRuntime);
   const salesFinalHistoryScope = getSalesFinalHistoryScope(actorRuntime);
-  const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), []);
+  const salesHistoryContextKey = JSON.stringify([
+    licenseKey || 'local',
+    salesActorIdentity || 'no-actor',
+    salesFinalHistoryScope,
+    actorRuntime?.tenant?.opaqueId || null,
+    actorRuntime?.deviceRef || null,
+    actorRuntime?.generation ?? null
+  ]);
+  const salesHistoryCacheContextKey = salesActorIdentity ? salesHistoryContextKey : null;
+  const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(licenseDetails), [licenseDetails]);
 
   // 1. ESTADISTICAS
   const stats = useStatsStore((state) => state.stats);
@@ -144,7 +162,14 @@ export default function DashboardPage() {
       creditHistoryReport: null,
       creditHistoryAttempted: false,
       usesRepositorySalesHistory: shouldLoadFinalHistory,
-      salesHistoryIsLoading: shouldLoadFinalHistory
+      salesHistoryIsLoading: shouldLoadFinalHistory,
+      salesHistory: shouldLoadFinalHistory ? [] : current.salesHistory,
+      salesHistorySource: shouldLoadFinalHistory ? null : current.salesHistorySource,
+      salesHistoryTotalCount: shouldLoadFinalHistory ? null : current.salesHistoryTotalCount,
+      salesHistoryDateRange: shouldLoadFinalHistory ? null : current.salesHistoryDateRange,
+      salesHistoryScope: shouldLoadFinalHistory ? null : current.salesHistoryScope,
+      salesHistoryContextKey: shouldLoadFinalHistory ? null : salesHistoryContextKey,
+      salesHistoryError: null
     }));
 
     try {
@@ -186,7 +211,7 @@ export default function DashboardPage() {
             limit: SALES_HISTORY_PAGE_SIZE,
             offset: 0,
             ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
-          })
+          }, { cacheContextKey: salesHistoryCacheContextKey })
           : Promise.resolve(null)
       ]))[0];
       const creditHistoryReport = creditHistoryResult.status === 'fulfilled'
@@ -211,8 +236,10 @@ export default function DashboardPage() {
         overviewReport,
         reportSource: overviewReport?.source || null,
         salesHistorySource: shouldLoadFinalHistory
-          ? current.salesHistorySource
-          : overviewReport?.source || null,
+          ? null
+          : { mode: REPORT_SOURCE_MODES.LOCAL, local: ['sales'], warnings: ['Ventas cargadas desde este dispositivo.'] },
+        salesHistoryContextKey: shouldLoadFinalHistory ? null : salesHistoryContextKey,
+        salesHistoryError: null,
         creditHistoryReport,
         creditHistoryAttempted: shouldLoadCreditHistory,
         usesRepositorySalesHistory: shouldLoadFinalHistory,
@@ -229,7 +256,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, features.activeRubros, salesActorIdentity]);
+  }, [dashboardReportMode, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey]);
 
   useEffect(() => {
     if (!dashboardReportMode.cloudSalesFinal || reportingData.isLoading) return undefined;
@@ -242,61 +269,63 @@ export default function DashboardPage() {
     const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
     const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
     const offset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
-    const canShareCreditHistory = salesFinalHistoryScope === 'mine'
-      && offset === 0
-      && reportingData.creditHistoryAttempted;
 
     const applySalesHistory = (salesHistoryReport) => {
       const rows = salesHistoryReport?.sales || salesHistoryReport?.rows || [];
-      const totalCount = Number(
+      const rawTotalCount =
         salesHistoryReport?.totalCount
         ?? salesHistoryReport?.total_count
-        ?? rows.length
-      );
+        ?? null;
+      const parsedTotalCount = rawTotalCount === null || rawTotalCount === '' ? Number.NaN : Number(rawTotalCount);
+      const totalCount = Number.isFinite(parsedTotalCount) && parsedTotalCount >= rows.length
+        ? parsedTotalCount
+        : null;
       setReportingData((current) => ({
         ...current,
         salesHistory: rows,
         salesHistorySource: salesHistoryReport?.source || current.reportSource || null,
         salesHistoryHasMore: Boolean(salesHistoryReport?.hasMore || salesHistoryReport?.has_more),
-        salesHistoryTotalCount: Number.isFinite(totalCount) ? totalCount : rows.length,
-        usesRepositorySalesHistory: Boolean(salesHistoryReport),
+        salesHistoryTotalCount: totalCount,
+        salesHistoryDateRange: salesHistoryReport?.dateRange
+          || salesHistoryReport?.date_range
+          || (dateFrom && dateTo ? { dateFrom, dateTo } : null),
+        salesHistoryScope: salesHistoryReport?.scope || salesFinalHistoryScope,
+        salesHistoryContextKey,
+        salesHistoryError: null,
+        usesRepositorySalesHistory: true,
         salesHistoryIsLoading: false
       }));
     };
 
-    if (canShareCreditHistory) {
-      if (reportingData.creditHistoryReport) {
-        applySalesHistory(reportingData.creditHistoryReport);
-      } else {
-        setReportingData((current) => ({
-          ...current,
-          salesHistory: current.sales || [],
-          salesHistorySource: current.reportSource || null,
-          salesHistoryTotalCount: current.sales?.length || 0,
-          usesRepositorySalesHistory: false,
-          salesHistoryIsLoading: false
-        }));
-      }
-      return () => { isActive = false; };
-    }
-
-    setReportingData((current) => ({ ...current, salesHistoryIsLoading: true }));
+    setReportingData((current) => ({
+      ...current,
+      salesHistory: current.salesHistoryContextKey === salesHistoryContextKey ? current.salesHistory : [],
+      salesHistoryTotalCount: current.salesHistoryContextKey === salesHistoryContextKey ? current.salesHistoryTotalCount : null,
+      salesHistoryHasMore: current.salesHistoryContextKey === salesHistoryContextKey ? current.salesHistoryHasMore : false,
+      salesHistoryIsLoading: true,
+      salesHistoryError: null
+    }));
     reportsRepository.getSalesFinalHistory({
       scope: salesFinalHistoryScope,
       limit: SALES_HISTORY_PAGE_SIZE,
       offset,
       ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
-    }).then((salesHistoryReport) => {
+    }, { cacheContextKey: salesHistoryCacheContextKey }).then((salesHistoryReport) => {
       if (isActive) applySalesHistory(salesHistoryReport);
     }).catch((error) => {
       Logger.warn('No se pudo cargar historial final cloud:', error);
       if (!isActive) return;
       setReportingData((current) => ({
         ...current,
-        salesHistory: current.sales || [],
-        salesHistorySource: current.reportSource || null,
-        salesHistoryTotalCount: current.sales?.length || 0,
-        usesRepositorySalesHistory: false,
+        salesHistory: [],
+        salesHistorySource: null,
+        salesHistoryTotalCount: null,
+        salesHistoryDateRange: null,
+        salesHistoryScope: salesFinalHistoryScope,
+        salesHistoryContextKey,
+        salesHistoryError: 'No se pudo cargar este historial. Intenta actualizar la página.',
+        usesRepositorySalesHistory: true,
+        salesHistoryHasMore: false,
         salesHistoryIsLoading: false
       }));
     });
@@ -307,12 +336,15 @@ export default function DashboardPage() {
     reportingData.isLoading,
     reportingData.refreshKey,
     reportingData.overviewReport,
-    reportingData.creditHistoryReport,
-    reportingData.creditHistoryAttempted,
-    reportingData.sales,
     salesFinalHistoryPageIndex,
-    salesFinalHistoryScope
+    salesFinalHistoryScope,
+    salesHistoryCacheContextKey,
+    salesHistoryContextKey
   ]);
+
+  useLayoutEffect(() => {
+    setSalesFinalHistoryPageIndex(0);
+  }, [salesHistoryContextKey]);
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');
@@ -485,7 +517,8 @@ export default function DashboardPage() {
 
   const handleSalesHistoryNext = () => {
     if (reportingData.usesRepositorySalesHistory) {
-      if (!reportingData.salesHistoryHasMore) return;
+      if (!reportingData.salesHistoryHasMore || reportingData.salesHistoryIsLoading) return;
+      setReportingData((current) => ({ ...current, salesHistoryIsLoading: true, salesHistoryError: null }));
       setSalesFinalHistoryPageIndex((current) => current + 1);
       return;
     }
@@ -495,6 +528,8 @@ export default function DashboardPage() {
 
   const handleSalesHistoryPrev = () => {
     if (reportingData.usesRepositorySalesHistory) {
+      if (salesFinalHistoryPageIndex === 0 || reportingData.salesHistoryIsLoading) return;
+      setReportingData((current) => ({ ...current, salesHistoryIsLoading: true, salesHistoryError: null }));
       setSalesFinalHistoryPageIndex((current) => Math.max(0, current - 1));
       return;
     }
@@ -517,14 +552,37 @@ export default function DashboardPage() {
 
   const statsSource = reportingData.reportSource;
   const statsIsCloudFinal = isCloudFinalReportSource(statsSource);
-  const historySource = reportingData.salesHistorySource || reportingData.reportSource;
+  const historyContextMatches = reportingData.salesHistoryContextKey === salesHistoryContextKey;
+  const historySource = dashboardReportMode.cloudSalesFinal
+    ? (historyContextMatches ? reportingData.salesHistorySource : null)
+    : (reportingData.salesHistorySource || {
+      mode: REPORT_SOURCE_MODES.LOCAL,
+      local: ['sales'],
+      warnings: ['Ventas cargadas desde este dispositivo.']
+    });
   const historyIsCloudFinal = isCloudFinalReportSource(historySource);
-  const historyRows = reportingData.usesRepositorySalesHistory ? reportingData.salesHistory : sales;
-  const historyHasMore = reportingData.usesRepositorySalesHistory ? reportingData.salesHistoryHasMore : hasMoreSales;
-  const historyPageIndex = reportingData.usesRepositorySalesHistory ? salesFinalHistoryPageIndex : currentSalesPageIndex;
-  const historyIsLoading = reportingData.usesRepositorySalesHistory
-    ? reportingData.salesHistoryIsLoading
+  const historyUsesRepository = dashboardReportMode.cloudSalesFinal;
+  const historyRows = historyUsesRepository
+    ? (historyContextMatches ? reportingData.salesHistory : [])
+    : sales;
+  const historyHasMore = historyUsesRepository
+    ? (historyContextMatches && reportingData.salesHistoryHasMore)
+    : hasMoreSales;
+  const historyPageIndex = historyUsesRepository
+    ? (historyContextMatches ? salesFinalHistoryPageIndex : 0)
+    : currentSalesPageIndex;
+  const historyIsLoading = historyUsesRepository
+    ? (reportingData.salesHistoryIsLoading || !historyContextMatches)
     : isSalesLoading;
+  const historyTotalCount = historyUsesRepository && historyContextMatches
+    ? reportingData.salesHistoryTotalCount
+    : null;
+  const historyDateRange = historyUsesRepository && historyContextMatches
+    ? reportingData.salesHistoryDateRange
+    : null;
+  const historyScope = historyUsesRepository && historyContextMatches
+    ? reportingData.salesHistoryScope
+    : null;
 
   return (
     <>
@@ -581,12 +639,13 @@ export default function DashboardPage() {
                 <h3><BarChart3 size={20} /> Historial de Movimientos</h3>
                 <span className="panel-subtitle">
                   {historyIsCloudFinal
-                    ? `Ventas registradas${reportingData.salesHistoryTotalCount ? ` (${reportingData.salesHistoryTotalCount})` : ''}`
+                    ? `Ventas registradas${historyTotalCount !== null ? ` (${historyTotalCount})` : ''}`
                     : 'Registro de ventas recientes'}
                 </span>
               </div>
               <div className="panel-body">
                 <SalesHistory
+                  key={salesHistoryContextKey}
                   sales={historyRows}
                   onDeleteSale={handleDeleteSale}
                   onArchiveSale={handleArchiveCancelledSale}
@@ -598,6 +657,11 @@ export default function DashboardPage() {
                   source={historySource}
                   reportSource={historySource}
                   isCloudFinal={historyIsCloudFinal}
+                  totalCount={historyTotalCount}
+                  queryScope={historyScope}
+                  dateRange={historyDateRange}
+                  error={historyUsesRepository && historyContextMatches ? reportingData.salesHistoryError : null}
+                  businessName={companyProfile?.name || companyProfile?.business_name || ''}
                   canManageRefunds={canManageRefunds}
                 />
               </div>
