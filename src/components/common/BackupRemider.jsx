@@ -21,6 +21,7 @@ import { useAppStore } from '../../store/useAppStore';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import { getBackupRiskStorageKey } from '../../services/BackupRiskEvaluator';
 import './MessageModal.css';
 
 // Días de gracia según el nivel de riesgo
@@ -44,10 +45,10 @@ export default function BackupReminder() {
     if (!products || products.length < 5) return;
 
     // Verificar si hay un posponer activo
-    const postponedUntil = localStorage.getItem('backup_postponed_until');
+    const postponedUntil = localStorage.getItem(getBackupRiskStorageKey('backup_postponed_until'));
     if (postponedUntil && new Date() < new Date(postponedUntil)) return;
 
-    const lastBackup = localStorage.getItem('last_backup_date');
+    const lastBackup = localStorage.getItem(getBackupRiskStorageKey('last_backup_date'));
 
     // Sin ningún respaldo previo → urgente en cualquier modo
     if (!lastBackup) {
@@ -113,7 +114,7 @@ export default function BackupReminder() {
   const handlePostpone = useCallback(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    localStorage.setItem('backup_postponed_until', tomorrow.toISOString());
+    localStorage.setItem(getBackupRiskStorageKey('backup_postponed_until'), tomorrow.toISOString());
     window.dispatchEvent(new Event('backup_status_changed'));
     setShow(false);
   }, []);

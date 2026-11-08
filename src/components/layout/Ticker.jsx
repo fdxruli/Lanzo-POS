@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useTickerAlerts } from '../../hooks/useTickerAlerts';
+import { getBackupRiskStorageKey } from '../../services/BackupRiskEvaluator';
 import Logger from '../../services/Logger';
 import {
   DEFAULT_TICKER_MAX_VISIBLE,
@@ -76,12 +77,10 @@ function deriveGracePeriodEnd(expiresAt) {
 }
 
 function readBackupAlert() {
-  const postponedUntil = localStorage.getItem('backup_postponed_until');
-  if (postponedUntil && Date.now() < new Date(postponedUntil).getTime()) {
-    return null;
-  }
+  const postponedUntil = localStorage.getItem(getBackupRiskStorageKey('backup_postponed_until'));
+  if (postponedUntil && Date.now() < new Date(postponedUntil).getTime()) return null;
 
-  const lastBackup = localStorage.getItem('last_backup_date');
+  const lastBackup = localStorage.getItem(getBackupRiskStorageKey('last_backup_date'));
   if (!lastBackup) {
     return {
       id: 'backup-missing',

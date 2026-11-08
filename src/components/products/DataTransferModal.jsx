@@ -1,7 +1,7 @@
 // src/components/products/DataTransferModal.jsx
 import { useCallback, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
+import { downloadInventorySmart, processImport, previewProductCsvImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -19,6 +19,8 @@ export default function DataTransferModal({
   const [activeTab, setActiveTab] = useState('export');
   const [isLoading, setIsLoading] = useState(false);
   const [importLog, setImportLog] = useState(null);
+  const [pendingCsv, setPendingCsv] = useState(null);
+  const [pendingCsvPreview, setPendingCsvPreview] = useState(null);
   const captureSettingsAction = useSettingsActionGuard();
 
   // Hook de configuración para saber si mostrar opciones de Farmacia
@@ -141,19 +143,6 @@ export default function DataTransferModal({
       return;
     }
 
-    const confirmed = await showConfirmModal(
-      'IMPORTANTE: Esta acción agregará nuevos productos o actualizará los existentes si coinciden los IDs. ¿Deseas continuar?',
-      {
-        title: 'Importar productos',
-        confirmButtonText: 'Si, importar',
-        cancelButtonText: 'Cancelar'
-      }
-    );
-    if (!confirmed) {
-      e.target.value = '';
-      return;
-    }
-
     try {
       actorHandle.assertCurrent('inventory');
     } catch {
@@ -163,23 +152,18 @@ export default function DataTransferModal({
 
     setIsLoading(true);
     setImportLog(null);
-
+    setPendingCsvPreview(null);
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
         actorHandle.assertCurrent('inventory');
         const content = evt.target.result;
-        const result = await processImport(content);
+        const preview = await previewProductCsvImport(content, {
+          assertAuthorized: () => actorHandle.assertCurrent('inventory')
+        });
         actorHandle.assertCurrent('inventory');
-        setImportLog(result);
-
-        if (result.success && result.importedCount > 0) {
-          await onRefresh?.();
-          actorHandle.assertCurrent('inventory');
-          showMessageModal(`¡Éxito! Se importaron ${result.importedCount} productos.`);
-        } else if (result.importedCount === 0) {
-          showMessageModal('No se encontraron productos válidos en el archivo.');
-        }
+        setPendingCsv({ content, name: file.name });
+        setPendingCsvPreview(preview);
       } catch (error) {
         try {
           actorHandle.assertCurrent('inventory');
@@ -200,6 +184,55 @@ export default function DataTransferModal({
     };
 
     reader.readAsText(file);
+  };
+
+  const confirmCsvImport = async () => {
+    if (!pendingCsv || !pendingCsvPreview) return;
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('inventory');
+    } catch {
+      return;
+    }
+    const summary = pendingCsvPreview.summary;
+    const confirmed = await showConfirmModal(
+      `Se crearán ${summary.create} productos y se actualizarán ${summary.update}. ${summary.initialInventoryProducts} productos nuevos registrarán inventario inicial en lotes; volver a importar este mismo archivo no volverá a sumar ese stock. ¿Continuar?`,
+      {
+        title: 'Confirmar importación de catálogo',
+        confirmButtonText: 'Importar datos válidos',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+    if (!confirmed) return;
+    try {
+      actorHandle.assertCurrent('inventory');
+      setIsLoading(true);
+      const result = await processImport(pendingCsv.content, {
+        assertAuthorized: () => actorHandle.assertCurrent('inventory')
+      });
+      actorHandle.assertCurrent('inventory');
+      setImportLog(result);
+      await onRefresh?.();
+      actorHandle.assertCurrent('inventory');
+      showMessageModal(`Importación completada. Nuevos: ${result.importedCount}, actualizados: ${result.updatedCount}, duplicados omitidos: ${result.duplicateCount}.`);
+      setPendingCsv(null);
+      setPendingCsvPreview(null);
+    } catch (error) {
+      try {
+        actorHandle.assertCurrent('inventory');
+        Logger.error(error);
+        showMessageModal(`Error crítico al importar: ${error.message}`);
+      } catch {
+        // The actor changed while the import was pending.
+      }
+    } finally {
+      try {
+        actorHandle.assertCurrent('inventory');
+        setIsLoading(false);
+      } catch {
+        // The replacement actor receives a fresh modal subtree.
+      }
+    }
   };
 
   if (!show || (!allowInventory && !allowSalesExport)) return null;
@@ -260,7 +293,7 @@ export default function DataTransferModal({
             </div>
           ) : (
             <div>
-              <p>Sube un archivo CSV para agregar o actualizar productos masivamente.</p>
+              <p>Sube un archivo CSV para revisar cambios en el catálogo antes de importarlo. Existencias nuevas se registran como lotes iniciales; una importación repetida no suma stock otra vez.</p>
 
               <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
                 <button className="btn btn-secondary" onClick={handleDownloadTemplate} disabled={!rubro}>
@@ -273,6 +306,23 @@ export default function DataTransferModal({
                   }
                 </p>
               </div>
+
+              {pendingCsvPreview && (
+                <div className="data-transfer-preview" role="status">
+                  <h3>Revisión de {pendingCsv?.name}</h3>
+                  <p>Nuevos: {pendingCsvPreview.summary.create} · Actualizaciones: {pendingCsvPreview.summary.update} · Duplicados: {pendingCsvPreview.summary.duplicates} · Conflictos: {pendingCsvPreview.summary.conflicts} · Rechazados: {pendingCsvPreview.summary.rejected}</p>
+                  <p>Categorías nuevas: {pendingCsvPreview.summary.categoriesCreated} · Productos con inventario inicial: {pendingCsvPreview.summary.initialInventoryProducts}</p>
+                  {pendingCsvPreview.errors.length > 0 && (
+                    <ul>{pendingCsvPreview.errors.map((message, index) => <li key={`${index}-${message}`}>{message}</li>)}</ul>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-cancel" onClick={() => { setPendingCsv(null); setPendingCsvPreview(null); }}>Cancelar</button>
+                    <button type="button" className="btn btn-save" onClick={confirmCsvImport} disabled={isLoading || pendingCsvPreview.summary.conflicts > 0 || (pendingCsvPreview.summary.create === 0 && pendingCsvPreview.summary.update === 0)}>
+                      Importar datos válidos
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div style={{
                 border: '2px dashed #ccc', padding: '2rem',

@@ -1,6 +1,8 @@
+/* @vitest-environment jsdom */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useBackupRiskStore, evaluator, startBackupRiskEvaluator } from '../BackupRiskEvaluator';
-import { db, STORES } from '../db/dexie';
+import { useBackupRiskStore, evaluator, startBackupRiskEvaluator, getBackupRiskStorageKey } from '../BackupRiskEvaluator';
+import { db } from '../db/dexie';
 import Logger from '../Logger';
 
 // Mock de dexie y localStorage
@@ -72,7 +74,7 @@ describe('BackupRiskEvaluator', () => {
 
   it('no debe disparar alerta si el posponer esta activo', async () => {
     mockDbCounts(200, 100, 5); // Total: 305
-    localStorage.setItem('backup_postpone_limit', '350');
+    localStorage.setItem(getBackupRiskStorageKey('backup_postpone_limit'), '350');
     
     await evaluator.ping();
     
@@ -81,7 +83,7 @@ describe('BackupRiskEvaluator', () => {
 
   it('debe reanudar la alerta L3 si se rebasa el limite de posponer', async () => {
     mockDbCounts(355, 0, 0); // Total: 355
-    localStorage.setItem('backup_postpone_limit', '350');
+    localStorage.setItem(getBackupRiskStorageKey('backup_postpone_limit'), '350');
     
     await evaluator.ping();
     
@@ -95,7 +97,7 @@ describe('BackupRiskEvaluator', () => {
 
     await evaluator.markBackupCompleted();
     
-    expect(localStorage.getItem('last_backup_mutation_count')).toBe('300');
+    expect(localStorage.getItem(getBackupRiskStorageKey('last_backup_mutation_count'))).toBe('300');
     expect(useBackupRiskStore.getState().riskLevel).toBe(0);
   });
 
@@ -140,5 +142,14 @@ describe('BackupRiskEvaluator', () => {
     expect(db.table).toHaveBeenCalledTimes(3);
     expect(useBackupRiskStore.getState().riskLevel).toBe(1);
     expect(startBackupRiskEvaluator()).toBe(false);
+  });
+
+  it('mantiene los marcadores de respaldo separados por base de negocio', () => {
+    const keyA = getBackupRiskStorageKey('last_backup_date', `LanzoDB_t_t_${'a'.repeat(32)}`);
+    const keyB = getBackupRiskStorageKey('last_backup_date', `LanzoDB_t_t_${'b'.repeat(32)}`);
+
+    expect(keyA).not.toBe(keyB);
+    localStorage.setItem(keyA, 'fecha-a');
+    expect(localStorage.getItem(keyB)).toBeNull();
   });
 });

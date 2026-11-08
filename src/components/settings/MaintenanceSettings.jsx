@@ -16,7 +16,7 @@ import Logger from '../../services/Logger';
 import DataTransferModal from '../products/DataTransferModal';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { maintenanceTools } from '../../services/db';
-import { evaluator } from '../../services/BackupRiskEvaluator';
+import { evaluator, getBackupRiskStorageKey } from '../../services/BackupRiskEvaluator';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { showInputPromptModal } from '../common/InputPromptModal';
 import NoPermission from '../common/NoPermission';
@@ -151,10 +151,11 @@ function MaintenanceSettingsContent({ settingsAccess }) {
         a.download = `ARCHIVO_HISTORICO_${new Date().toISOString()}.json`;
         a.click();
 
-        const currentLastBackup = parseInt(localStorage.getItem('last_backup_mutation_count') || '0', 10);
+        const riskCountKey = getBackupRiskStorageKey('last_backup_mutation_count');
+        const currentLastBackup = parseInt(localStorage.getItem(riskCountKey) || '0', 10);
         if (currentLastBackup > 0) {
           const newBaseline = Math.max(0, currentLastBackup - oldSales.length);
-          localStorage.setItem('last_backup_mutation_count', newBaseline.toString());
+          localStorage.setItem(riskCountKey, newBaseline.toString());
         }
 
         evaluator.ping();
