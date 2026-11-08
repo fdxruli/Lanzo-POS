@@ -1,6 +1,17 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../db/dexie';
+import {
+  executeSaleTransactionSafe,
+  loadData,
+  loadMultipleData,
+  queryBatchesByProductIdAndActive,
+  queryByIndex,
+  saveData
+} from '../database';
+import { roundCurrency } from '../utils';
+import { calculatePricingDetails } from '../pricingLogic';
+import { processSaleCore } from '../sales/processSaleCore';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../test/tenantRuntimeTestHarness';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import { loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
@@ -10,6 +21,48 @@ const stationKey = 'local:device:fp-browser-s';
 const stationKeyA = 'local:device:fp-browser-a';
 const stationKeyB = 'local:device:fp-browser-b';
 const stationA = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
+const saleProduct = {
+  id: 'product-cash-integration',
+  name: 'Producto de prueba',
+  price: '20',
+  cost: '0',
+  stock: 100,
+  trackStock: false,
+  batchManagement: { enabled: false }
+};
+
+const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdAt }) => processSaleCore({
+  order: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }],
+  paymentData: {
+    paymentMethod,
+    amountPaid: paymentMethod === 'efectivo' ? '20' : '0',
+    saldoPendiente: paymentMethod === 'efectivo' ? '0' : '20',
+    cashSessionId: cashSession.id,
+    localStationKey: stationKey,
+    sendReceipt: false
+  },
+  total: 20,
+  allProducts: [saleProduct],
+  features: { hasRecipes: false, hasKDS: false, hasLabFields: false, hasTables: false },
+  companyName: 'Negocio de prueba',
+  tempPrescriptionData: null,
+  ignoreStock: false,
+  activeOrderId: id,
+  createdAt
+}, {
+  loadData,
+  loadMultipleData,
+  saveData,
+  STORES,
+  queryBatchesByProductIdAndActive,
+  queryByIndex,
+  executeSaleTransactionSafe,
+  useStatsStore: { getState: () => ({ updateStatsForNewSale: vi.fn(async () => {}) }) },
+  roundCurrency,
+  sendReceiptWhatsApp: vi.fn(async () => ({ status: 'not_requested' })),
+  calculatePricingDetails,
+  Logger: { time: vi.fn(), timeEnd: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() }
+});
 
 beforeEach(async () => {
   await openTestTenantRuntime();
@@ -398,6 +451,117 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       total_teorico: '95'
     });
     expect(closed.diferencia).toBe('-0.5');
+  });
+
+  it('counts two independently committed cash sales in their linked session when an order predates opening', async () => {
+    await db.table(STORES.MENU).put(saleProduct);
+    const orderCreatedBeforeOpen = new Date(Date.now() - 60_000).toISOString();
+    await db.table(STORES.SALES).put({
+      id: 'order-created-before-cash-open',
+      timestamp: orderCreatedBeforeOpen,
+      createdAt: orderCreatedBeforeOpen,
+      status: 'open',
+      paymentMethod: null,
+      total: '20',
+      items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
+    });
+    const cashSession = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:a',
+      localStationKey: stationKey,
+      montoInicial: '100'
+    });
+    const orderCreatedAfterOpen = new Date().toISOString();
+    await db.table(STORES.SALES).put({
+      id: 'order-created-after-cash-open',
+      timestamp: orderCreatedAfterOpen,
+      createdAt: orderCreatedAfterOpen,
+      status: 'open',
+      paymentMethod: null,
+      total: '20',
+      items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
+    });
+
+    const firstSale = await processCashSale({
+      id: 'order-created-before-cash-open',
+      cashSession,
+      createdAt: orderCreatedBeforeOpen
+    });
+    const secondSale = await processCashSale({
+      id: 'order-created-after-cash-open',
+      cashSession,
+      createdAt: orderCreatedAfterOpen
+    });
+
+    expect(firstSale.success).toBe(true);
+    expect(secondSale.success).toBe(true);
+    const storedSales = await db.table(STORES.SALES).bulkGet([firstSale.saleId, secondSale.saleId]);
+    expect(storedSales).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: firstSale.saleId, cash_session_id: cashSession.id, timestamp: orderCreatedBeforeOpen }),
+      expect.objectContaining({ id: secondSale.saleId, cash_session_id: cashSession.id, timestamp: orderCreatedAfterOpen })
+    ]));
+
+    const projection = await loadCashSessionProjection(db, cashSession);
+    const saleMovements = projection.movements.filter((movement) => movement.tipo === 'venta');
+    expect(saleMovements.map((movement) => movement.saleId).sort()).toEqual([
+      firstSale.saleId,
+      secondSale.saleId
+    ].sort());
+    expect(projection.reconciliation).toMatchObject({
+      directCashSales: 40,
+      recognizedSales: 40,
+      theoreticalCash: 140
+    });
+    expect(resolveCashSessionAmounts(cashSession, projection.totals).totalTeorico).toBe('140');
+
+    const closed = await cashLocalRepository.closeCashSession({
+      cashSessionId: cashSession.id,
+      countedAmount: '140',
+      nextShiftFund: '0',
+      actorKey: 'admin:a',
+      localStationKey: stationKey
+    });
+    expect(closed.cashSession.detalle_cierre).toMatchObject({
+      ventas_contado: '40',
+      total_teorico: '140'
+    });
+    expect(closed.diferencia).toBe('0');
+  });
+
+  it('does not carry a previous session sale into the next session or change its closed totals', async () => {
+    await db.table(STORES.MENU).put(saleProduct);
+    const previousSession = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:a',
+      localStationKey: stationKey,
+      montoInicial: '100'
+    });
+    const orderCreatedAt = new Date().toISOString();
+    await db.table(STORES.SALES).put({
+      id: 'order-previous-session', timestamp: orderCreatedAt, createdAt: orderCreatedAt,
+      status: 'open', paymentMethod: null, total: '20',
+      items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
+    });
+    const previousSale = await processCashSale({ id: 'order-previous-session', cashSession: previousSession, createdAt: orderCreatedAt });
+    expect(previousSale.success).toBe(true);
+
+    const previousClose = await cashLocalRepository.closeCashSession({
+      cashSessionId: previousSession.id,
+      countedAmount: '120',
+      nextShiftFund: '0',
+      actorKey: 'admin:a',
+      localStationKey: stationKey
+    });
+    const nextSession = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:a',
+      localStationKey: stationKey,
+      montoInicial: '100'
+    });
+    const nextProjection = await loadCashSessionProjection(db, nextSession);
+
+    expect(nextProjection.sales).toHaveLength(0);
+    expect(nextProjection.reconciliation.theoreticalCash).toBe(100);
+    expect(resolveCashSessionAmounts(nextSession, nextProjection.totals).totalTeorico).toBe('100');
+    expect((await db.table(STORES.CAJAS).get(previousSession.id)).detalle_cierre).toEqual(previousClose.cashSession.detalle_cierre);
+    expect((await db.table(STORES.CAJAS).get(previousSession.id)).detalle_cierre.total_teorico).toBe('120');
   });
 
   it('counts a mixed credit down payment and linked layaway cash once at close', async () => {

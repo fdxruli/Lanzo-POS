@@ -1369,6 +1369,11 @@ export function usePosCheckout({
             if (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code)) {
                 snapshot.localCommitUncertain = true;
                 snapshot.commitUncertainCode = result.code;
+                showMessageModal(
+                    'El resultado del cobro sigue pendiente de confirmación. Revisa Ventas → Historial; no lo repitas.',
+                    null,
+                    { type: 'warning', duration: 7000 }
+                );
                 return result;
             }
             if (!result.success) {
