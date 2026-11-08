@@ -105,6 +105,15 @@ describe('actor session runtime bridge', () => {
     expect(getExplicitActorPermissions('staff', {
       permissions: { reports: true, refunds: true, settings: false }
     })).toEqual(['reports', 'refunds']);
+    expect(getExplicitActorPermissions('staff', {
+      permissions: { customers: true }
+    })).toContain('customer_payments');
+    expect(getExplicitActorPermissions('staff', {
+      permissions: { customers: true, customer_payments: false }
+    })).not.toContain('customer_payments');
+    expect(getExplicitActorPermissions('staff', {
+      permissions: { customers: false, customer_payments: true }
+    })).not.toContain('customer_payments');
     expect(getExplicitActorPermissions('admin', { permissions: [] })).toEqual(['*']);
   });
 

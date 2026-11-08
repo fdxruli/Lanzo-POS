@@ -110,6 +110,32 @@ it('revokes and restores POS through the listener, verifier, store, runtime and 
   expect(state().currentDeviceRole).toBe('staff');
 });
 
+it('removes a revoked customer payment grant from the live Staff runtime', async () => {
+  const captured = actorRuntimeController.capture();
+  actorRuntimeController.refreshStaffPermissions({
+    captured,
+    actorId: 'staff-a',
+    permissions: ['pos', 'customers', 'customer_payments']
+  });
+  fixture.store.setState({ currentStaffUser: {
+    id: 'staff-a',
+    permissions: { pos: true, customers: true, customer_payments: true }
+  } });
+  expect(() => actorRuntimeController.capture('customer_payments')).not.toThrow();
+
+  fixture.rpc.mockResolvedValue({ data: {
+    success: true,
+    valid: true,
+    staff_user: { id: 'staff-a', permissions: { pos: true, customers: true, customer_payments: false } }
+  }, error: null });
+  await act(async () => { await event(); });
+
+  expect(state().currentStaffUser.permissions).toMatchObject({ customers: true, customer_payments: false });
+  expect(actorRuntimeController.getState().permissions).toContain('customers');
+  expect(actorRuntimeController.getState().permissions).not.toContain('customer_payments');
+  expect(() => actorRuntimeController.capture('customer_payments')).toThrow();
+});
+
 
 it('keeps verified Staff grants when a shared-device license describes Admin or older permissions', async () => {
   fixture.store.setState({ licenseDetails: { ...state().licenseDetails, device_role: 'admin', staff_user: null } });
