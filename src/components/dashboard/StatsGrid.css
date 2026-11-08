@@ -2,6 +2,7 @@
 
 /* === CONTENEDOR WRAPPER === */
 .stats-container-wrapper {
+  min-width: 0;
   margin-bottom: var(--spacing-xl);
   animation: fadeIn 0.4s ease-out;
 }
@@ -26,6 +27,7 @@
   flex-direction: column;
   gap: 0.5rem;
   max-width: 100%;
+  min-width: 0;
 }
 
 .stats-header-title h3 {
@@ -89,6 +91,7 @@
   border: none;
   background: transparent;
   padding: 8px 14px;
+  min-height: 44px;
   border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 600;
@@ -100,6 +103,11 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.filter-pill:focus-visible, .metric-pill:focus-visible, .recalc-report-button:focus-visible {
+  outline: 2px solid var(--ui-color-primary);
+  outline-offset: 2px;
 }
 
 .filter-pill:hover {
@@ -165,9 +173,9 @@
 /* === GRID LAYOUT (BENTO BOX) === */
 .stats-grid-modern {
   display: grid;
-  gap: 1.2rem;
-  /* Móvil: 1 columna */
-  grid-template-columns: 1fr;
+  gap: 0.8rem;
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: 1.2rem;
 }
 
 /* === TARJETA DE EVOLUCIÓN === */
@@ -269,8 +277,9 @@
 /* === TARJETAS MODERNAS (BASE) === */
 .stat-card-modern {
   background-color: var(--card-background-color);
-  border-radius: 16px;
-  padding: 1.5rem;
+  border-radius: 14px;
+  padding: clamp(0.9rem, 2vw, 1.3rem);
+  min-width: 0;
   box-shadow: var(--box-shadow);
   border: 1px solid rgba(0,0,0,0.03);
   display: flex;
@@ -280,6 +289,8 @@
   overflow: hidden;
   transition: transform 0.2s, box-shadow 0.2s;
 }
+
+.stats-primary-card { border-color: var(--ui-border-selected); }
 
 .stat-card-modern:hover {
   transform: translateY(-3px);
@@ -327,11 +338,13 @@
 
 /* VALORES PRINCIPALES */
 .card-value-main {
-  font-size: 2rem;
+  font-size: clamp(1.55rem, 4.4vw, 2rem);
   font-weight: 800;
   color: var(--text-dark);
   margin: 0.5rem 0;
-  line-height: 1.1;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 /* MINI STATS & TRENDS */
@@ -378,7 +391,9 @@
 }
 
 .card-value-small {
-  font-size: 1.5rem;
+  font-size: clamp(1.3rem, 3.8vw, 1.5rem);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: var(--text-dark);
 }
@@ -547,11 +562,16 @@
    RESPONSIVE MEDIA QUERIES
    ========================================= */
 
+@media (max-width: 599px) {
+  .stats-header-controls { align-items: stretch; }
+  .stats-controls-stack, .time-filter-scroll, .metric-filter-scroll { width: 100%; min-width: 0; }
+}
+
 /* Tablet (>= 600px) */
 @media (min-width: 600px) {
   .stats-grid-modern {
     /* 2 columnas */
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* Inventory ocupa las 2 columnas en tablet */
@@ -579,7 +599,7 @@
 
   .stats-grid-modern {
     /* 4 columnas (12 unidades de grid visual) */
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: auto auto;
   }
 
