@@ -68,6 +68,13 @@ describe('support integration without changing access state', () => {
     ['admin', AdminLoginModal], ['staff', StaffLoginModal], ['owner', AdminEnrollmentModal]
   ])('offers one support entry in %s without triggering business actions', (_name, Component) => {
     render(<Component />);
+    const supportTrigger = screen.getByRole('button', { name: 'Soporte' });
+    if (_name === 'welcome') {
+      expect(supportTrigger).not.toHaveClass('auth-page__footer-link');
+      expect(supportTrigger).toHaveClass('ui-button--ghost');
+    } else {
+      expect(supportTrigger).toHaveClass('auth-page__footer-link');
+    }
     toggle();
     noMutations();
     expect(state.licenseDetails.license_key).toBe('SECRET-LICENSE');
@@ -105,7 +112,10 @@ describe('support integration without changing access state', () => {
     state.adminLoginError = { code };
     render(<AdminLoginModal />);
     toggle();
-    expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeEnabled();
+    const retryLabel = code === 'SESSION_VERIFICATION_INCONCLUSIVE'
+      ? 'Reintentar verificación'
+      : 'Reintentar recuperación';
+    expect(screen.getByRole('button', { name: retryLabel })).toBeEnabled();
     noMutations();
   });
 

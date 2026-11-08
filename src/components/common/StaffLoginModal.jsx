@@ -5,6 +5,7 @@ import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
+import { STAFF_DEVICE_AUTH_MESSAGE } from '../../store/slices/license/licenseConstants';
 import './StaffLoginModal.css';
 
 const SAFE_LOGIN_MESSAGES = Object.freeze({
@@ -40,6 +41,7 @@ export default function StaffLoginModal() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const actorAuthorityRecovery = useAppStore((state) => state.actorAuthorityRecovery);
   const staffLoginError = useAppStore((state) => state.staffLoginError);
+  const staffLoginMessage = useAppStore((state) => state.staffLoginMessage);
   const verificationUnavailable = [
     'SESSION_VERIFICATION_INCONCLUSIVE',
     'ACTOR_RUNTIME_RESTORE_FAILED'
@@ -53,6 +55,9 @@ export default function StaffLoginModal() {
       : '';
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
+  const staffLoginNotice = !verificationUnavailable && !staffAlreadyInUse && !staffLoginError && !errorMessage
+    ? authorityRecoveryMessage || (staffLoginMessage === STAFF_DEVICE_AUTH_MESSAGE ? STAFF_DEVICE_AUTH_MESSAGE : '')
+    : '';
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
   const staffAlreadyInUseMessage = 'Esta cuenta ya está activa en otro dispositivo.';
@@ -175,9 +180,9 @@ export default function StaffLoginModal() {
             : 'Usa tu cuenta personal para entrar sólo a las funciones permitidas para tu puesto.'}
         </p>
 
-        {!verificationUnavailable && !staffAlreadyInUse && authorityRecoveryMessage && (
+        {staffLoginNotice && (
           <div className="staff-login-note ui-alert ui-alert--info" role="status">
-            {authorityRecoveryMessage}
+            {staffLoginNotice}
           </div>
         )}
 

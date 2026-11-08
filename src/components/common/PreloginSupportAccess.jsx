@@ -6,7 +6,7 @@ import { buildTelegramSupportTarget } from '../../services/support/telegramConta
 import './PreloginSupportAccess.css';
 
 // Callers supply a fixed screen label only. No account, device or error context.
-export default function PreloginSupportAccess({ screen, children, modal = false, triggerLabel = 'Soporte' }) {
+export default function PreloginSupportAccess({ screen, children, modal = false, triggerLabel = 'Soporte', triggerClassName = '' }) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
   const id = useId();
@@ -89,7 +89,7 @@ export default function PreloginSupportAccess({ screen, children, modal = false,
         <button
           ref={trigger}
           type="button"
-          className="ui-button ui-button--ghost"
+          className={`ui-button ui-button--ghost ${triggerClassName}`.trim()}
           aria-expanded={open}
           aria-controls={id}
           onClick={() => {

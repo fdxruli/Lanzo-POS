@@ -24,6 +24,7 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   ADMIN_SESSION_INVALID: 'La sesión administrativa ya no es válida. Inicia sesión nuevamente.',
   ADMIN_AUTH_IN_PROGRESS: 'Estamos recuperando tu sesión de forma segura.'
 });
+const LOCAL_PLAN_OWNER_MESSAGE = 'Tu plan cambió a Lanzo Local. Inicia sesión como propietario para usar este dispositivo.';
 
 const describeLoginError = (error, result = null) => {
   const code = result?.code || error?.code || null;
@@ -77,7 +78,12 @@ export default function AdminLoginModal() {
   const resumeAdminSessionPreparation = useAppStore((state) => state.resumeAdminSessionPreparation);
   const initializeApp = useAppStore((state) => state.initializeApp);
   const recoveryAvailable = useAppStore((state) => Boolean(state.pendingAdminSessionResult?.result?.success));
+  const adminLoginMessage = useAppStore((state) => state.adminLoginMessage);
   const adminLoginError = useAppStore((state) => state.adminLoginError);
+  const actorAuthorityRecovery = useAppStore((state) => state.actorAuthorityRecovery);
+  const actorRuntimeRestoreFailed = adminLoginError?.code === 'ACTOR_RUNTIME_RESTORE_FAILED';
+  const offlineEvidencePending = adminLoginError?.code === 'ADMIN_OFFLINE_EVIDENCE_PENDING';
+  const verificationRecoveryRequired = actorRuntimeRestoreFailed || offlineEvidencePending;
   const verificationUnavailable = [
     'SESSION_VERIFICATION_INCONCLUSIVE',
     'ACTOR_RUNTIME_RESTORE_FAILED',
@@ -94,7 +100,25 @@ export default function AdminLoginModal() {
     ? 'No pudimos comprobar la sesión guardada porque no hubo respuesta del servidor. Puedes volver a intentarlo cuando tengas conexión.'
     : adminLoginError?.verificationStatus === 'server_error'
       ? 'El servidor no pudo completar la verificación. Tus datos locales permanecen protegidos; inténtalo de nuevo más tarde.'
-      : 'No pudimos confirmar la sesión guardada. Tus datos locales permanecen protegidos; vuelve a intentar la verificación.';
+      : actorRuntimeRestoreFailed
+        ? 'La sesión se verificó, pero no pudimos restablecer una autoridad operativa segura. Reintenta la recuperación.'
+        : offlineEvidencePending
+          ? 'Tu sesión está verificada, pero necesitamos conexión para confirmar la evidencia guardada y restablecer el acceso de forma segura.'
+          : 'No pudimos confirmar la sesión guardada. Tus datos locales permanecen protegidos; vuelve a intentar la verificación.';
+  const verificationTitle = verificationRecoveryRequired ? 'Recupera tu sesión' : 'Verifica tu sesión';
+  const verificationDescription = actorRuntimeRestoreFailed
+    ? 'La sesión se verificó, pero el acceso no se pudo restablecer de forma segura.'
+    : offlineEvidencePending
+      ? 'Necesitamos confirmar la evidencia guardada antes de habilitar el acceso.'
+      : 'La sesión guardada necesita una nueva verificación segura.';
+  const verificationActionLabel = verificationRecoveryRequired ? 'Reintentar recuperación' : 'Reintentar verificación';
+  const verificationLoadingLabel = verificationRecoveryRequired ? 'Recuperando sesión...' : 'Verificando sesión...';
+  const authorityRecoveryMessage = actorAuthorityRecovery?.actorType === 'admin'
+    ? actorAuthorityRecovery.message
+    : '';
+  const adminLoginNotice = !verificationUnavailable && !recoveryAvailable && !takeoverRequired && !error
+    ? authorityRecoveryMessage || (adminLoginMessage === LOCAL_PLAN_OWNER_MESSAGE ? LOCAL_PLAN_OWNER_MESSAGE : '')
+    : '';
 
   useEffect(() => {
     if (loading) return;
@@ -300,14 +324,14 @@ export default function AdminLoginModal() {
           <div>
             <h1 id="admin-login-title">
         {takeoverRequired ? 'Tu plan cambió a Lanzo Local'
-          : verificationUnavailable ? 'Verifica tu sesión'
+          : verificationUnavailable ? verificationTitle
             : 'Ingresar como administrador'}
             </h1>
             <p id="admin-login-description">
               {takeoverRequired
                 ? 'El propietario puede elegir el dispositivo que tiene delante.'
               : verificationUnavailable
-                ? 'La sesión guardada necesita una nueva verificación segura.'
+                ? verificationDescription
                 : 'Ingresa con la cuenta del propietario.'}
             </p>
           </div>
@@ -317,9 +341,19 @@ export default function AdminLoginModal() {
           {takeoverRequired
             ? 'Lanzo Local permite utilizar un dispositivo.'
             : verificationUnavailable
-              ? 'El acceso permanece protegido mientras Lanzo intenta confirmar la sesión existente.'
+              ? actorRuntimeRestoreFailed
+                ? 'El acceso permanece protegido mientras Lanzo intenta restablecer la sesión.'
+                : offlineEvidencePending
+                  ? 'Conéctate a internet y vuelve a intentar la recuperación.'
+                  : 'El acceso permanece protegido mientras Lanzo intenta confirmar la sesión existente.'
               : 'Usa tus credenciales de administración para continuar con todos los permisos del negocio.'}
         </p>
+
+        {adminLoginNotice && (
+          <div className="ui-alert ui-alert--info" role="status">
+            {adminLoginNotice}
+          </div>
+        )}
 
         {!online && !recoveryAvailable && (
           <div className={`ui-alert ${verificationUnavailable ? 'ui-alert--info' : 'ui-alert--danger'}`} role="status">
@@ -342,21 +376,22 @@ export default function AdminLoginModal() {
               className="ui-button ui-button--primary admin-auth-submit"
               onClick={retryPreparation} disabled={loading}>
               {loading
-                ? verificationUnavailable ? 'Verificando sesión...' : 'Recuperando sesión...'
-                : verificationUnavailable ? 'Reintentar verificación' : 'Reintentar carga'}
+                ? verificationUnavailable ? verificationLoadingLabel : 'Recuperando sesión...'
+                : verificationUnavailable ? verificationActionLabel : 'Reintentar carga'}
             </button>
           </div>
         ) : verificationUnavailable ? (
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
-              {loading ? 'Estamos verificando la sesión guardada.'
+              {loading
+                ? verificationRecoveryRequired ? 'Estamos recuperando la sesión de forma segura.' : 'Estamos verificando la sesión guardada.'
                 : verificationStatusMessage}
             </div>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
               className="ui-button ui-button--primary admin-auth-submit"
               onClick={retryPreparation} disabled={loading}>
-              {loading ? 'Verificando sesión...' : 'Reintentar verificación'}
+              {loading ? verificationLoadingLabel : verificationActionLabel}
             </button>
           </div>
         ) : takeoverRequired ? (

@@ -28,7 +28,7 @@ export function AuthPageFooter({ screen, children, className = '' }) {
     <footer className="auth-page__footer">
       <nav aria-label="Navegación de acceso">
         {screen
-          ? <PreloginSupportAccess screen={screen} modal>{links}</PreloginSupportAccess>
+          ? <PreloginSupportAccess screen={screen} modal triggerClassName="auth-page__footer-link">{links}</PreloginSupportAccess>
           : links}
       </nav>
       <span className="auth-page__footer-security">

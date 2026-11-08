@@ -90,8 +90,9 @@ describe('prelogin official support', () => {
       this.dispatchEvent(new Event('close'));
     };
 
-    render(<PreloginSupportAccess screen="Acceso administrador" modal />);
+    render(<PreloginSupportAccess screen="Acceso administrador" modal triggerClassName="auth-page__footer-link" />);
     const trigger = screen.getByRole('button', { name: 'Soporte' });
+    expect(trigger).toHaveClass('auth-page__footer-link');
     await user.click(trigger);
 
     const dialog = screen.getByRole('dialog', { name: 'Soporte LANZO' });

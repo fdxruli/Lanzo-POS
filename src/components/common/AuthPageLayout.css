@@ -203,20 +203,53 @@ body.auth-page-document {
   cursor: pointer;
 }
 
-.auth-page__footer-link:hover:not(:disabled) {
+.auth-page .auth-page__footer-link {
+  border: 0;
+  padding: .3rem .2rem;
+  background: transparent;
+  gap: .3rem;
+  font-size: .82rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.auth-page .auth-page__footer-link svg {
+  width: 15px;
+  height: 15px;
+}
+
+.auth-page .auth-page__footer-link:hover:not(:disabled) {
   color: var(--ui-text-brand);
+  border-color: transparent;
+  background: transparent;
   text-decoration: underline;
   text-underline-offset: .2em;
 }
 
-.auth-page__footer-link:focus-visible {
+.auth-page .auth-page__footer-link:focus-visible {
   outline: 2px solid var(--ui-focus-color);
   outline-offset: 2px;
+  box-shadow: none;
 }
 
 .auth-page__footer-link:disabled {
   cursor: not-allowed;
   opacity: .55;
+}
+
+@media (max-width: 420px) {
+  .auth-page__footer .prelogin-support__actions {
+    column-gap: .125rem;
+  }
+
+  .auth-page__footer .auth-page__footer-links {
+    column-gap: .125rem;
+  }
+
+  .auth-page .auth-page__footer-link {
+    padding-inline: 0;
+  }
 }
 
 .auth-page__footer-separator {
