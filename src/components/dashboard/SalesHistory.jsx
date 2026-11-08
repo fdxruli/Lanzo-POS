@@ -426,8 +426,8 @@ export default function SalesHistory({
 
       <p className="history-export-note">
         {isLoading
-          ? 'La exportación estará disponible cuando termine la carga.'
-          : `CSV e impresión incluirán solo ${filteredSales.length} venta(s) filtradas de las ${mainSales.length} cargadas en esta página.`}
+          ? 'Las exportaciones estarán disponibles al terminar la carga.'
+          : 'CSV e impresión incluyen únicamente las ventas visibles y filtradas de esta página.'}
       </p>
 
       <div className="history-meta" aria-label="Alcance de la consulta">
@@ -527,10 +527,12 @@ export default function SalesHistory({
         </div>
       )}
 
-      <p className="history-filter-summary">
-        <strong>Filtros locales:</strong> {activeFilters.length ? activeFilters.join(' · ') : 'Sin filtros locales'}
-        {' '}<span>(aplican solo a los registros cargados de esta página)</span>
-      </p>
+      {activeFilters.length > 0 && (
+        <p className="history-filter-summary">
+          <strong>Filtros aplicados:</strong> {activeFilters.join(' · ')}
+          {' '}<span>· Solo sobre esta página</span>
+        </p>
+      )}
 
       {isLoading && mainSales.length === 0 ? (
         <div className="empty-message" role="status">Cargando historial de ventas…</div>
@@ -573,9 +575,6 @@ export default function SalesHistory({
                       {isCancelled && (
                         <span className="cancelled-sale-badge">Cancelada</span>
                       )}
-                      {badges.map((badge) => (
-                        <span key={`${getSaleKey(sale, saleIndex)}-${badge.label}`} className={`ui-badge ui-badge--sm ${getUiBadgeTone(badge.tone)}`}>{badge.label}</span>
-                      ))}
                     </div>
                     <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
                       <span className="sale-total-label">Total comercial</span>
@@ -585,6 +584,13 @@ export default function SalesHistory({
                   </summary>
 
                   <div className="sale-item-info">
+                    {badges.length > 0 && (
+                      <div className="sales-history-effect-badges">
+                        {badges.map((badge) => (
+                          <span key={`${getSaleKey(sale, saleIndex)}-${badge.label}`} className={`ui-badge ui-badge--sm ${getUiBadgeTone(badge.tone)}`}>{badge.label}</span>
+                        ))}
+                      </div>
+                    )}
                     {items.length === 0 ? (
                       <p className="text-muted sales-history-item-note">
                         {itemsCount || itemsQuantity
