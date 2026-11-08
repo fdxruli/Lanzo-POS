@@ -55,6 +55,21 @@ describe('brandingImageOptimizer', () => {
       maxHeight: 1280,
       quality: 0.8
     });
+    expect(brandingWebpProfileFor('category-image')).toEqual({
+      maxWidth: 1280,
+      maxHeight: 1280,
+      quality: 0.8
+    });
+    expect(brandingWebpProfileFor('profile-image')).toEqual({
+      maxWidth: 1024,
+      maxHeight: 1024,
+      quality: 0.86
+    });
+    expect(brandingWebpProfileFor('misc')).toEqual({
+      maxWidth: 1280,
+      maxHeight: 1280,
+      quality: 0.8
+    });
   });
 
   it('convierte y reduce una portada a WebP sin deformarla', async () => {

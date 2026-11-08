@@ -57,7 +57,7 @@ const uploadFixture = () => {
     file,
     licenseKey: 'license-fixture',
     purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
-    imageOptimizer: vi.fn(async () => file)
+    imageOptimizer: vi.fn(async () => new TestFile(['clean-pixels'], 'product.webp', { type: 'image/webp' }))
   });
 };
 

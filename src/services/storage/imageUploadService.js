@@ -72,6 +72,8 @@ const MAX_SIZE_BY_PURPOSE = Object.freeze({
 const FRIENDLY_UPLOAD_ERRORS = Object.freeze({
   STORAGE_UPLOAD_RATE_LIMITED: 'Demasiados intentos al subir imágenes. Espera unos minutos e intenta de nuevo.',
   INVALID_IMAGE_TYPE: 'El archivo debe ser una imagen JPG, PNG, WEBP o GIF.',
+  IMAGE_PRIVACY_UNSUPPORTED: 'Por privacidad, convierte el GIF a JPG, PNG o WebP antes de subirlo.',
+  IMAGE_PROCESSING_FAILED: 'No se pudo preparar una imagen sin metadatos. Usa JPG, PNG o WebP e inténtalo de nuevo.',
   IMAGE_TOO_LARGE: 'La imagen es demasiado grande. Reduce el tamaño e intenta de nuevo.',
   INVALID_IMAGE_PATH: 'No se pudo preparar la ruta segura de la imagen.',
   STORAGE_UPLOAD_NOT_ALLOWED: 'No tienes permiso para subir esta imagen.',
@@ -105,6 +107,12 @@ function validateClientSideImage(file, purpose, { enforcePurposeLimit = true } =
 
   const extension = getFileExtension(file.name);
   const mimeType = String(file.type || '').toLowerCase();
+
+  // A GIF may contain private metadata and must not be uploaded as-is.
+  // Converting only the first frame would silently discard animations.
+  if (mimeType === 'image/gif') {
+    return { valid: false, code: 'IMAGE_PRIVACY_UNSUPPORTED' };
+  }
 
   if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension) || !ALLOWED_MIME_TYPES.has(mimeType)) {
     return { valid: false, code: 'INVALID_IMAGE_TYPE' };
@@ -153,16 +161,26 @@ async function invokeUploadAuthorization(body) {
 }
 
 async function prepareUploadFile(file, purpose, imageOptimizer) {
+  let candidate;
   try {
-    const candidate = await imageOptimizer({ file, purpose });
-    const candidateValidation = validateClientSideImage(candidate, purpose);
-    return candidateValidation.valid
-      ? { file: candidate, validation: candidateValidation }
-      : { file, validation: validateClientSideImage(file, purpose) };
+    candidate = await imageOptimizer({ file, purpose });
   } catch {
-    Logger.warn('[Storage] No se pudo optimizar la imagen; se usará el archivo original.');
-    return { file, validation: validateClientSideImage(file, purpose) };
+    Logger.warn('[Storage] No se pudo sanitizar la imagen; la subida se canceló.');
+    throw buildUploadError('IMAGE_PROCESSING_FAILED');
   }
+
+  // Re-encoding the pixels in a new canvas-generated WebP strips source
+  // EXIF/GPS metadata. A pass-through, even for source WebP, is not safe.
+  if (
+    !(candidate instanceof File)
+    || candidate === file
+    || String(candidate.type || '').toLowerCase() !== 'image/webp'
+    || getFileExtension(candidate.name) !== 'webp'
+  ) {
+    throw buildUploadError('IMAGE_PROCESSING_FAILED');
+  }
+
+  return { file: candidate, validation: validateClientSideImage(candidate, purpose) };
 }
 
 export async function uploadImageFile({
