@@ -1,98 +1,170 @@
+/* Compact, mobile-first presentation for local data tools. */
 .data-portability-settings {
   display: grid;
-  gap: 1rem;
-  margin-top: 1.25rem;
-}
-
-.data-portability-warning,
-.data-portability-preview,
-.data-portability-problems {
-  border: 1px solid var(--border-color, #d1d5db);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
 }
 
 .data-portability-warning {
-  display: grid;
-  gap: 0.25rem;
-  color: var(--text-dark, #1f2937);
-  background: color-mix(in srgb, #f59e0b 11%, var(--background-color, #fff));
-  border-color: color-mix(in srgb, #f59e0b 45%, var(--border-color, #d1d5db));
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ui-border-warning, var(--border-color));
+  border-radius: 4px;
+  color: var(--text-light);
+  background: var(--light-background);
+  font-size: 0.83rem;
+  line-height: 1.45;
 }
 
 .data-portability-warning strong {
-  color: #92400e;
+  color: var(--text-dark);
+  font-weight: 700;
+}
+
+.data-portability-csv {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.data-portability-csv > label {
+  color: var(--text-dark);
+  font-size: 0.87rem;
+  font-weight: 700;
+}
+
+.data-portability-csv > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.data-portability-csv select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-dark);
+  background: var(--input-background);
+}
+
+.data-portability-csv select:focus-visible,
+.data-portability-expand > summary:focus-visible {
+  outline: 2px solid var(--ui-focus-color, var(--secondary-color));
+  outline-offset: 3px;
+}
+
+.data-portability-expand {
+  min-width: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.data-portability-expand > summary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 9px 0;
+  color: var(--secondary-color);
+  cursor: pointer;
+  list-style: none;
+}
+
+.data-portability-expand > summary::-webkit-details-marker {
+  display: none;
+}
+
+.data-portability-expand > summary::after {
+  content: '▾';
+  font-size: 1rem;
+  text-align: center;
+  transition: transform 160ms ease;
+}
+
+.data-portability-expand[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.data-portability-expand > summary span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.data-portability-expand > summary strong {
+  color: var(--text-dark);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.data-portability-expand > summary small {
+  color: var(--text-light);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.data-portability-expand__body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 0 12px;
+  min-width: 0;
 }
 
 .data-portability-fieldset {
   display: grid;
-  gap: 0.8rem;
+  gap: 10px;
   min-width: 0;
   margin: 0;
-  padding: 1rem;
-  border: 1px solid var(--border-color, #d1d5db);
-  border-radius: 10px;
-  color: var(--text-dark, #1f2937);
+  padding: 0;
+  border: 0;
+  color: var(--text-dark);
 }
 
-.data-portability-fieldset legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0 0.4rem;
-  font-weight: 700;
+.data-portability-fieldset > p,
+.data-portability-preview > p {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
 .data-portability-categories {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 0.5rem 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  min-width: 0;
 }
 
 .data-portability-categories label {
   display: flex;
   align-items: flex-start;
-  gap: 0.55rem;
-  min-height: 2.3rem;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 0;
+  color: var(--text-dark);
+  font-size: 0.85rem;
+  line-height: 1.4;
   cursor: pointer;
 }
 
 .data-portability-categories input {
-  margin-top: 0.2rem;
-  accent-color: var(--primary-color, #2563eb);
+  flex: 0 0 auto;
+  margin-top: 3px;
+  accent-color: var(--secondary-color);
 }
 
-.data-portability-csv {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.data-portability-csv > label {
-  font-weight: 700;
-}
-
-.data-portability-csv > div,
 .data-portability-import {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.data-portability-csv select {
-  flex: 1 1 220px;
-  min-height: 42px;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border-color, #d1d5db);
-  border-radius: 8px;
-  color: var(--text-dark, #1f2937);
-  background: var(--card-bg, #fff);
-}
-
-.data-portability-fieldset > p {
-  margin: 0;
-  line-height: 1.5;
-  color: var(--text-muted, #667085);
+  gap: 8px;
+  min-width: 0;
 }
 
 .data-portability-import input[type='file'] {
@@ -100,90 +172,114 @@
   width: 1px;
   height: 1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
   clip-path: inset(50%);
-}
-
-.data-portability-import input[type='file']:focus-visible + span {
-  outline: 2px solid var(--primary-color, #2563eb);
-  outline-offset: 2px;
+  white-space: nowrap;
 }
 
 .data-portability-import span {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-light);
+  font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
 
 .data-portability-preview {
   display: grid;
-  gap: 0.65rem;
-  background: var(--background-color, #f8fafc);
-}
-
-.data-portability-preview > p {
-  margin: 0;
-  line-height: 1.5;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--light-background);
+  color: var(--text-dark);
 }
 
 .data-portability-summary {
   display: grid;
-  gap: 0.35rem;
+  gap: 6px;
   margin: 0;
+  min-width: 0;
 }
 
 .data-portability-summary > div {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: minmax(85px, 0.45fr) minmax(0, 1fr);
+  gap: 6px;
+  font-size: 0.83rem;
+  line-height: 1.4;
 }
 
 .data-portability-summary dt {
+  color: var(--text-dark);
   font-weight: 700;
 }
 
 .data-portability-summary dd {
+  min-width: 0;
   margin: 0;
-  text-align: right;
+  color: var(--text-light);
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .data-portability-problems {
-  color: #991b1b;
-  background: color-mix(in srgb, #ef4444 8%, var(--background-color, #fff));
-  border-color: color-mix(in srgb, #ef4444 35%, var(--border-color, #d1d5db));
+  min-width: 0;
+  padding: 10px;
+  color: var(--ui-text-danger, var(--error-color));
+  background: var(--ui-bg-danger-soft);
+  border: 1px solid var(--ui-border-danger);
+  border-radius: 8px;
+  font-size: 0.84rem;
 }
 
 .data-portability-problems ul {
-  margin: 0.4rem 0 0;
-  padding-left: 1.3rem;
+  margin: 6px 0 0;
+  padding-left: 18px;
   overflow-wrap: anywhere;
 }
 
 .data-portability-limit {
   margin: 0;
-  color: var(--text-muted, #667085);
-  font-size: 0.83rem;
+  color: var(--text-light);
+  font-size: 0.77rem;
+  line-height: 1.4;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 680px) {
+  .data-portability-settings {
+    gap: 10px;
+  }
+
+  .data-portability-categories {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .data-portability-csv > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .data-portability-csv .btn,
+  .data-portability-expand__body .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .data-portability-import {
     align-items: stretch;
     flex-direction: column;
   }
+}
 
-  .data-portability-csv select,
-  .data-portability-csv .btn,
-  .data-portability-fieldset > .btn {
-    width: 100%;
-  }
-
+@media (max-width: 390px) {
   .data-portability-summary > div {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.1rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
+}
 
-  .data-portability-summary dd {
-    text-align: left;
+@media (prefers-reduced-motion: reduce) {
+  .data-portability-expand > summary::after {
+    transition: none;
   }
 }
