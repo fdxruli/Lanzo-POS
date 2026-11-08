@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fx = vi.hoisted(() => ({
@@ -33,7 +34,15 @@ vi.mock('../../services/backup/backupManager', () => ({ backupManager: { backup:
 vi.mock('../../services/googleDriveService', () => ({ uploadBackup: vi.fn() }));
 vi.mock('../../services/Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../services/cash/businessCashSummary', () => ({
-  canShowBusinessCashSummary: ({ isCloudCash, isReadOnly }) => Boolean(fx.business && isCloudCash && !isReadOnly)
+  canShowBusinessCashSummary: ({ isCloudCash, isReadOnly }) => Boolean(fx.business && isCloudCash && !isReadOnly),
+  getCashSessionAge: () => ({ level: 'normal', label: 'Abierta hace 1 h' }),
+  getCashSessionStationLabel: () => 'Estación principal',
+  isOpenBusinessCashSession: () => false
+}));
+vi.mock('../../services/cash/cashSessionAgeAttention', () => ({
+  getCashSessionAttentionDomId: (id) => 'cash-session-attention-' + String(id),
+  getCashSessionAttentionTargetId: (session) => session?.id || null,
+  getNextCashSessionAgeTransitionAt: () => null
 }));
 vi.mock('../../services/cash/cashDeviceLabel', () => ({ buildLegacyCashAdoptionConfirmation: () => '' }));
 vi.mock('../../components/common/AuditModal', () => ({
@@ -69,7 +78,11 @@ vi.mock('../../components/caja/sections', () => ({
     const [page, setPage] = React.useState(1);
     return <div data-testid="history-list"><span>Historial pagina {page}</span><button type="button" onClick={() => setPage(2)} disabled={page === 2}>Siguiente</button></div>;
   },
-  CajaBusinessCashSummary: () => <div data-testid="business-summary">Efectivo del negocio</div>,
+  CajaBusinessCashSummary: ({ attentionSessionId }) => (
+    <div data-testid="business-summary" data-attention-session-id={attentionSessionId || ''}>
+      Efectivo del negocio
+    </div>
+  ),
   CajaStaffAuditPanel: ({ listCashSessionsForAudit }) => {
     React.useEffect(() => { listCashSessionsForAudit(); }, [listCashSessionsForAudit]);
     return <div data-testid="staff-audit"><button type="button" onClick={listCashSessionsForAudit}>Actualizar</button></div>;
@@ -81,6 +94,12 @@ vi.mock('../../components/caja/sections', () => ({
 
 import React from 'react';
 import CajaPage from '../CajaPage';
+
+const renderCajaPage = (initialEntry = '/caja') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
+    <CajaPage />
+  </MemoryRouter>
+);
 
 const makeState = ({
   actorKey = 'local:default', isStaff = false, isCloudCash = false, isCloudCashReadOnly = false,
@@ -115,7 +134,7 @@ describe('CajaPage progressive disclosure', () => {
     ['local', { isCloudCash: false }],
     ['cloud staff', { isCloudCash: true, isStaff: true, actorKey: 'staff:one' }]
   ])('shows %s tabs without Negocio', async (_name, state) => {
-    fx.hook = makeState(state); render(<CajaPage />);
+    fx.hook = makeState(state); renderCajaPage();
     await waitFor(() => expect(tabLabels()).toEqual(['Turno', 'Movimientos', 'Historial']));
     expect(screen.getByRole('tab', { name: 'Turno' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: 'Negocio' })).not.toBeInTheDocument();
@@ -123,7 +142,7 @@ describe('CajaPage progressive disclosure', () => {
 
   it('shows Negocio for a cloud Admin with business visibility and lazy-mounts content', () => {
     fx.business = true; fx.hook = makeState({ isCloudCash: true, actorKey: 'admin:one' });
-    render(<CajaPage />);
+    renderCajaPage();
     expect(tabLabels()).toEqual(['Turno', 'Movimientos', 'Historial', 'Negocio']);
     expect(screen.queryByTestId('business-summary')).not.toBeInTheDocument();
     clickTab('Negocio');
@@ -132,8 +151,27 @@ describe('CajaPage progressive disclosure', () => {
     expect(fx.audit).not.toHaveBeenCalled();
   });
 
+  it('opens Caja on Negocio when an old-session attention link is followed', async () => {
+    fx.business = true;
+    fx.hook = makeState({ isCloudCash: true, actorKey: 'admin:one' });
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/caja',
+        state: { cashSessionAttention: { section: 'negocio', sessionId: 'cash-old' } }
+      }]}>
+        <CajaPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Negocio' })).toHaveAttribute('aria-selected', 'true');
+    });
+    expect(screen.getByTestId('business-summary')).toBeVisible();
+    expect(screen.getByTestId('business-summary')).toHaveAttribute('data-attention-session-id', 'cash-old');
+  });
+
   it('keeps movement filters and history page alive between section changes', () => {
-    render(<CajaPage />);
+    renderCajaPage();
     expect(screen.queryByTestId('movements-list')).not.toBeInTheDocument();
     expect(screen.queryByTestId('history-list')).not.toBeInTheDocument();
     clickTab('Movimientos');
@@ -149,7 +187,7 @@ describe('CajaPage progressive disclosure', () => {
 
   it('loads Staff audit only after explicit opening and never on tab churn', async () => {
     fx.business = true; fx.hook = makeState({ isCloudCash: true, actorKey: 'admin:one' });
-    render(<CajaPage />); clickTab('Negocio');
+    renderCajaPage(); clickTab('Negocio');
     const summary = screen.getByText(/Auditor/);
     expect(fx.audit).not.toHaveBeenCalled();
     fireEvent.click(summary);
@@ -164,10 +202,10 @@ describe('CajaPage progressive disclosure', () => {
 
   it('falls back to Turno and unmounts business content on authority loss', async () => {
     fx.business = true; fx.hook = makeState({ isCloudCash: true, actorKey: 'admin:one' });
-    const view = render(<CajaPage />); clickTab('Negocio');
+    const view = renderCajaPage(); clickTab('Negocio');
     expect(screen.getByTestId('business-summary')).toBeVisible();
     fx.business = false; fx.hook = makeState({ isCloudCash: true, isStaff: true, actorKey: 'staff:two' });
-    view.rerender(<CajaPage />);
+    view.rerender(<MemoryRouter><CajaPage /></MemoryRouter>);
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'Negocio' })).not.toBeInTheDocument());
     expect(screen.getByRole('tab', { name: 'Turno' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByTestId('business-summary')).not.toBeInTheDocument();
@@ -175,7 +213,7 @@ describe('CajaPage progressive disclosure', () => {
   });
 
   it('preserves primary action callbacks and read-only disablement', () => {
-    render(<CajaPage />);
+    renderCajaPage();
     fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
     fireEvent.click(screen.getByRole('button', { name: 'Entrada' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salida' }));
@@ -185,7 +223,7 @@ describe('CajaPage progressive disclosure', () => {
     expect(fx.modals[2].open).toHaveBeenCalledTimes(1);
     expect(fx.modals[3].open).toHaveBeenCalledTimes(1);
     cleanup(); fx.hook = makeState({ isCloudCash: true, isCloudCashReadOnly: true, actorKey: 'admin:ro' });
-    render(<CajaPage />);
+    renderCajaPage();
     expect(screen.getByRole('alert')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Entrada' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Salida' })).toBeDisabled();
@@ -199,7 +237,7 @@ describe('CajaPage progressive disclosure', () => {
       networkUnavailable: true,
       stateKnown: false
     });
-    render(<CajaPage />);
+    renderCajaPage();
 
     expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
@@ -215,7 +253,7 @@ describe('CajaPage progressive disclosure', () => {
       estadoCaja: 'financial_blocked',
       cajaActual: null
     });
-    render(<CajaPage />);
+    renderCajaPage();
 
     expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
     expect(screen.queryByText('No se puede verificar la estación financiera.')).not.toBeInTheDocument();

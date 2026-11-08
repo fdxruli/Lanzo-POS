@@ -89,7 +89,9 @@ describe('getCashSessionAge', () => {
     ['2026-08-14T02:00:00.000Z', 'normal'],
     ['2026-08-14T00:00:00.000Z', 'warning'],
     ['2026-08-13T12:00:00.000Z', 'important'],
-    ['2026-08-11T12:00:00.000Z', 'review']
+    ['2026-08-11T12:00:00.000Z', 'review'],
+    ['2026-08-14T13:00:00.000Z', 'unknown'],
+    ['not-a-date', 'unknown']
   ])('classifies an opened session as %s', (openedAt, level) => {
     expect(getCashSessionAge(openedAt, now).level).toBe(level);
   });

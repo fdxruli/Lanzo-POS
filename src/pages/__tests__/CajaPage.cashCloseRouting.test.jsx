@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixtures = vi.hoisted(() => ({
@@ -36,17 +37,30 @@ vi.mock('../../services/dataTransfer', () => ({
   BACKUP_ABORT_REASON: 'aborted',
   BACKUP_WARNING_BLOB_PERF: 'blob-performance'
 }));
-vi.mock('../../services/backup/backupManager', () => ({ backupManager: { backup: vi.fn() } }));
+vi.mock('../../services/backup/backupManager', () => ({
+  backupManager: { backup: vi.fn().mockResolvedValue({ success: true }) }
+}));
 vi.mock('../../services/googleDriveService', () => ({ uploadBackup: vi.fn() }));
 vi.mock('../../services/Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../services/cash/businessCashSummary', () => ({
   canShowBusinessCashSummary: () => false,
-  getCashSessionStationLabel: () => 'Estación financiera sin nombre'
+  getCashSessionAge: () => ({ level: 'normal', label: 'Abierta hace 1 h' }),
+  getCashSessionStationLabel: () => 'Estación financiera sin nombre',
+  isOpenBusinessCashSession: () => false
+}));
+vi.mock('../../services/cash/cashSessionAgeAttention', () => ({
+  getCashSessionAttentionDomId: (id) => 'cash-session-attention-' + String(id),
+  getCashSessionAttentionTargetId: (session) => session?.id || null,
+  getNextCashSessionAgeTransitionAt: () => null
 }));
 vi.mock('../../services/cash/cashDeviceLabel', () => ({ buildLegacyCashAdoptionConfirmation: () => '' }));
 
 vi.mock('../../components/common/AuditModal', () => ({
-  default: ({ show }) => show ? <div role="dialog" aria-label="Corte de caja del propietario">Corte de caja</div> : null
+  default: ({ show, onConfirmAudit }) => show ? (
+    <div role="dialog" aria-label="Corte de caja del propietario">
+      <button type="button" onClick={() => onConfirmAudit('100', '0', '')}>Confirmar cierre local</button>
+    </div>
+  ) : null
 }));
 
 vi.mock('../../components/caja/modals', () => ({
@@ -89,9 +103,16 @@ vi.mock('../../components/caja/sections', () => ({
 
 import CajaPage, { isCashSessionOwnedByActor } from '../CajaPage';
 
+const renderCajaPage = (initialEntry = '/caja') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
+    <CajaPage />
+  </MemoryRouter>
+);
+
 const makeHookState = ({
   actorKey = 'admin:stable-admin',
   isStaff = false,
+  isCloudCash = true,
   cajaActual = { id: 'cash-own', actor_key: actorKey, estado: 'abierta', monto_inicial: '100', entradas_efectivo: '0', salidas_efectivo: '0' },
   estadoCaja = 'open',
   aperturaPendiente = null
@@ -104,7 +125,7 @@ const makeHookState = ({
   aperturaPendiente,
   error: null,
   totalesTurno: { ventasContado: '0', abonosFiado: '0' },
-  isCloudCash: true,
+  isCloudCash,
   isCloudCashReadOnly: false,
   cashActor: { actorKey, isStaff, responsibleName: isStaff ? 'Personal B' : 'Administradora A' },
   adminCashSessions: [],
@@ -133,7 +154,10 @@ beforeEach(() => {
   fixtures.hookState = makeHookState();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('CajaPage cash close routing', () => {
   it('compares the stable actor key across both cash session field aliases', () => {
@@ -149,12 +173,30 @@ describe('CajaPage cash close routing', () => {
       cajaActual: { id: 'cash-admin-own', actor_key: 'admin:stable-admin', estado: 'abierta', monto_inicial: '100' }
     });
 
-    render(<CajaPage />);
+    renderCajaPage();
     fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
 
     expect(screen.getByRole('dialog', { name: 'Corte de caja del propietario' })).toBeVisible();
     expect(screen.queryByRole('dialog', { name: 'Auditoría administrativa' })).not.toBeInTheDocument();
     expect(fixtures.closeAdmin).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the grouped attention after a confirmed Free/Local close', async () => {
+    fixtures.hookState = makeHookState({
+      actorKey: 'admin:stable-admin',
+      isCloudCash: false,
+      cajaActual: { id: 'cash-local-own', actor_key: 'admin:stable-admin', estado: 'abierta', monto_inicial: '100' }
+    });
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+    renderCajaPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre local' }));
+
+    await waitFor(() => {
+      expect(fixtures.ownerClose).toHaveBeenCalledWith('100', '0', '');
+      expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'lanzo:cash-sync-updated')).toBe(true);
+    });
   });
 
   it('routes Staff closing their own stable session to the normal owner Corte', () => {
@@ -164,7 +206,7 @@ describe('CajaPage cash close routing', () => {
       cajaActual: { id: 'cash-staff-own', actorKey: 'staff:stable-staff', estado: 'abierta', monto_inicial: '100' }
     });
 
-    render(<CajaPage />);
+    renderCajaPage();
     fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
 
     expect(screen.getByRole('dialog', { name: 'Corte de caja del propietario' })).toBeVisible();
@@ -185,7 +227,7 @@ describe('CajaPage cash close routing', () => {
       }
     });
 
-    render(<CajaPage />);
+    renderCajaPage();
     expect(screen.queryByRole('button', { name: 'Corte de caja' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Revisar caja ajena' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre administrativo' }));
@@ -211,7 +253,7 @@ describe('CajaPage cash close routing', () => {
       }
     });
 
-    render(<CajaPage />);
+    renderCajaPage();
 
     expect(screen.getByRole('alert')).toHaveTextContent('Caja pendiente de cierre');
     expect(screen.getByText('Administradora Ana')).toBeVisible();
