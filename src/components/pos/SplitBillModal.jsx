@@ -908,8 +908,11 @@ export default function SplitBillModal({
         <div className="split-bill-header">
           <div className="split-bill-title-block">
             <span className="split-bill-kicker">División de cuenta</span>
-            <h2 id="split-bill-title">{splitIntent === RESTAURANT_SPLIT_INTENTS.BY_ITEMS ? '¿Qué productos pagará cada persona?' : '¿Cómo dividirán esta cuenta?'}</h2>
-            <p id="split-bill-description">La estrategia, los nombres, la distribución y los métodos de pago se guardan en este dispositivo para esta mesa. No se guardan clientes, abonos ni referencias.</p>
+            <h2 id="split-bill-title">Dividir cuenta</h2>
+            <details className="split-help-disclosure">
+              <summary>¿Qué se guarda?</summary>
+              <p id="split-bill-description">La estrategia, los nombres, la distribución y los métodos de pago se guardan en este dispositivo para esta mesa. No se guardan clientes, abonos ni referencias.</p>
+            </details>
           </div>
           <button type="button" className="split-close-button" onClick={onClose} disabled={isSubmitting} aria-label="Cerrar división de cuenta">
             <X size={20} aria-hidden="true" />
@@ -918,7 +921,7 @@ export default function SplitBillModal({
 
         <div className="split-status-strip" aria-label="Resumen de división">
           <div className="split-status-card">
-            <span>Total de la cuenta</span>
+            <span>Total</span>
                 <strong>${formatMoneyFromCents(parentTotalCents)}</strong>
           </div>
           {splitIntent === RESTAURANT_SPLIT_INTENTS.BY_ITEMS ? (
@@ -976,7 +979,7 @@ export default function SplitBillModal({
                   <div>
                     <p className="split-step-eyebrow">Paso 1 de 4</p>
                     <h3 id="split-people-title" tabIndex={-1}>Personas</h3>
-                    <p>Indica quiénes pagarán. Los nombres son opcionales y solo sirven para identificar a cada persona en esta cuenta.</p>
+                    <p>Define quién pagará y cómo se repartirá la cuenta.</p>
                   </div>
                   <label className="split-count-selector" htmlFor="splitGuestCount">
                     <span>¿Cuántas personas?</span>
@@ -998,7 +1001,7 @@ export default function SplitBillModal({
                       checked={splitIntent === RESTAURANT_SPLIT_INTENTS.BY_ITEMS}
                       onChange={() => requestStrategyChange(RESTAURANT_SPLIT_INTENTS.BY_ITEMS)}
                     />
-                    <span><strong>Cada quien paga lo suyo</strong><small>Asigna productos completos a cada persona.</small></span>
+                    <span><strong>Cada quien paga lo suyo</strong><small>Asigna productos por persona.</small></span>
                   </label>
                   <label className={splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT ? 'is-selected' : ''}>
                     <input
@@ -1008,7 +1011,7 @@ export default function SplitBillModal({
                       checked={splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT}
                       onChange={() => requestStrategyChange(RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT)}
                     />
-                    <span><strong>Dividir el total en partes iguales</strong><small>Los productos se conservan juntos en una sola venta.</small></span>
+                    <span><strong>Dividir el total en partes iguales</strong><small>Una sola venta con pagos iguales.</small></span>
                   </label>
                   <label className={splitIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT ? 'is-selected' : ''}>
                     <input
@@ -1018,10 +1021,14 @@ export default function SplitBillModal({
                       checked={splitIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT}
                       onChange={() => requestStrategyChange(RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT)}
                     />
-                    <span><strong>Ingresar montos personalizados</strong><small>Distribuye el importe exacto sin cambiar precios ni cantidades.</small></span>
+                    <span><strong>Ingresar montos personalizados</strong><small>Cada persona aporta un importe distinto.</small></span>
                   </label>
                 </fieldset>
 
+                <div className="split-guest-list-heading">
+                  <strong>Comensales</strong>
+                  <span>Nombres opcionales; no crean clientes ni cambian cuentas de crédito.</span>
+                </div>
                 <div className="split-guest-list split-guest-list--names">
                   {guests.map((guest, index) => (
                     <article className="split-guest-name-card" key={guest.id}>
@@ -1035,12 +1042,10 @@ export default function SplitBillModal({
                           maxLength={MAX_GUEST_NAME_LENGTH}
                           autoComplete="off"
                           placeholder={`Comensal ${index + 1}`}
-                          aria-describedby={`splitGuestHelp-${guest.id}`}
                           disabled={isSubmitting}
                           onChange={(event) => updateGuestName(guest.id, event.target.value)}
                           onBlur={() => updateGuestName(guest.id, guest.displayName.trim())}
                         />
-                        <small id={`splitGuestHelp-${guest.id}`}>Este nombre no se guarda como cliente ni cambia la cuenta de crédito.</small>
                       </div>
                     </article>
                   ))}
@@ -1091,7 +1096,7 @@ export default function SplitBillModal({
                     <h3 id="split-distribution-title" tabIndex={-1}>
                       {splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT ? 'Distribuye el total en partes iguales' : 'Ingresa los montos de cada persona'}
                     </h3>
-                    <p>Esta división es monetaria. No se asignan productos a pagadores ni se modifican precios, cantidades o descuentos.</p>
+                    <p>Reparte el importe sin cambiar productos, precios ni descuentos.</p>
                   </div>
                 </div>
 
@@ -1137,7 +1142,7 @@ export default function SplitBillModal({
                   </div>
                 </div>
                 {splitIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT && (
-                  <p className="split-sharing-note">Si comparten una pizza u otro plato, la cuenta conserva una sola venta con sus artículos y precios originales. El inventario se descuenta una vez.</p>
+                  <p className="split-sharing-note">Los artículos y precios no cambian; el inventario se descuenta una sola vez.</p>
                 )}
               </section>
             )}
@@ -1148,14 +1153,14 @@ export default function SplitBillModal({
                   <div>
                     <p className="split-step-eyebrow">Paso 2 de 4</p>
                     <h3 id="split-items-title" tabIndex={-1}>Asigna los platos</h3>
-                    <p>Asigna cada unidad a quien la pagará. Puedes devolverla al pendiente o moverla directamente a otra persona.</p>
+                    <p>Asigna cada unidad. Después podrás moverla o devolverla.</p>
                   </div>
                 </div>
 
-                <aside className="split-sharing-note">
-                  <strong>¿Van a compartir un solo plato?</strong>
-                  <span>Elige “Dividir el total en partes iguales” o “Ingresar montos personalizados”. La cuenta conservará sus productos y precios originales.</span>
-                </aside>
+                <details className="split-context-help">
+                  <summary>¿Comparten un mismo plato?</summary>
+                  <p>Elige “Dividir el total en partes iguales” o “Ingresar montos personalizados”. La cuenta conservará sus productos y precios originales.</p>
+                </details>
 
                 <div className="split-assignment-tabs" role="tablist" aria-label="Vista de asignación">
                   <button type="button" role="tab" aria-selected={assignmentPanel === 'pending'} aria-controls="split-pending-panel" onClick={() => setAssignmentPanel('pending')}>
@@ -1395,13 +1400,13 @@ export default function SplitBillModal({
                   <div>
                     <p className="split-step-eyebrow">Paso 3 de 4</p>
                     <h3 id="split-payment-title" tabIndex={-1}>Configura el cobro</h3>
-                    <p>Elige Efectivo, Tarjeta, Transferencia o Fiado para cada persona. Si eliges Fiado, selecciona aparte al cliente financiero registrado.</p>
+                    <p>Elige cómo pagará cada persona. Para Fiado, selecciona un cliente registrado.</p>
                   </div>
                 </div>
                 {splitIntent !== RESTAURANT_SPLIT_INTENTS.BY_ITEMS && (
                   <aside className="split-sharing-note">
                     <strong>Crédito en una sola cuenta</strong>
-                    <span>En una división monetaria solo una persona puede dejar saldo a Fiado. Las demás pueden pagar en efectivo, tarjeta o transferencia; cada pago quedará asociado a la misma venta.</span>
+                    <span>Solo una persona puede dejar saldo a Fiado. Las demás pueden pagar en efectivo, tarjeta o transferencia.</span>
                   </aside>
                 )}
 
@@ -1593,7 +1598,7 @@ export default function SplitBillModal({
                   <div>
                     <p className="split-step-eyebrow">Paso 4 de 4</p>
                     <h3 id="split-review-title" tabIndex={-1}>Revisa antes de confirmar</h3>
-                    <p>Confirma la distribución y los métodos de pago. No se registra una venta hasta que pulses el botón final.</p>
+                    <p>Comprueba los importes y métodos. La venta se registra al confirmar el cobro.</p>
                   </div>
                   {tableName && <span className="split-table-label">{tableName}</span>}
                 </div>
