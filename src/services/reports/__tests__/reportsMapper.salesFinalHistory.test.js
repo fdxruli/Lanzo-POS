@@ -2,6 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { reportsMapper } from '../reportsMapper';
 
 describe('reportsMapper sales final history', () => {
+  it('preserves scope, range and authoritative page metadata for reconciliation', () => {
+    const dateRange = {
+      date_from: '2026-10-09T12:00:00.000Z',
+      date_to: '2026-11-08T12:00:00.000Z'
+    };
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      scope: 'mine',
+      date_range: dateRange,
+      rows: [],
+      total_count: 0,
+      limit: 50,
+      offset: 0,
+      has_more: false
+    });
+
+    expect(mapped).toMatchObject({
+      scope: 'mine',
+      dateRange,
+      totalCount: 0,
+      offset: 0,
+      hasMore: false,
+      raw: { scope: 'mine', date_range: dateRange, total_count: 0, has_more: false }
+    });
+  });
+
   it('preserves authoritative sales source, status and cancellation fields from Supabase rows', () => {
     const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
       rows: [{

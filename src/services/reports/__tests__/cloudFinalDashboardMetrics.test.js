@@ -27,7 +27,7 @@ const cloudReport = (overrides = {}) => ({
   }
 });
 
-const historyReport = (sales = []) => ({
+const historyReport = (sales = [], overrides = {}) => ({
   success: true,
   scope: 'mine',
   dateRange: {
@@ -36,8 +36,10 @@ const historyReport = (sales = []) => ({
   },
   source: { mode: 'cloud_final', final: true, stale: false },
   rows: sales,
+  offset: 0,
   totalCount: sales.length,
-  hasMore: false
+  hasMore: false,
+  ...overrides
 });
 
 const cloudSale = (overrides = {}) => ({
@@ -53,7 +55,7 @@ const cloudSale = (overrides = {}) => ({
 describe('getCloudFinalDashboardMetrics', () => {
   it('does not treat a fully fiado sale or the credit payment category as collected cash', () => {
     const result = getCloudFinalDashboardMetrics(cloudReport(), {
-      historyReport: historyReport([cloudSale()])
+      creditHistoryReport: historyReport([cloudSale()])
     });
 
     expect(result.netSales).toMatchObject({ value: 20, status: 'complete' });
@@ -72,7 +74,7 @@ describe('getCloudFinalDashboardMetrics', () => {
       credit_initial_payments_total: 10,
       credit_balance_created_total: 20
     }), {
-      historyReport: historyReport([cloudSale({
+      creditHistoryReport: historyReport([cloudSale({
         total: '30.00', amount_paid: '10.00'
       })])
     });
@@ -89,7 +91,7 @@ describe('getCloudFinalDashboardMetrics', () => {
       mixed_sales_total: 0,
       credit_balance_created_total: 0
     }), {
-      historyReport: historyReport([cloudSale({
+      creditHistoryReport: historyReport([cloudSale({
         total: '50.00', amount_paid: '50.00', credit_effect_status: 'not_required'
       })])
     });
@@ -103,7 +105,7 @@ describe('getCloudFinalDashboardMetrics', () => {
     const result = getCloudFinalDashboardMetrics(cloudReport({
       cancelled_sales_count: 1,
       cash_reversal_total: 10
-    }), { historyReport: historyReport([cloudSale()]) });
+    }), { creditHistoryReport: historyReport([cloudSale()]) });
 
     expect(result.collected).toMatchObject({ value: null, status: 'incomplete' });
     expect(result.creditGenerated).toMatchObject({ value: null, status: 'incomplete' });
@@ -142,19 +144,66 @@ describe('getCloudFinalDashboardMetrics', () => {
     expect(fallback.creditGenerated.status).toBe('unavailable');
   });
 
-  it('requires complete Cloud history scoped to the same period before attributing credit to sale date', () => {
+  it('uses a separate mine history for financial credit while preserving an authorized license audit history', () => {
     const report = cloudReport();
+    const creditHistoryReport = historyReport([cloudSale()]);
+    const auditHistoryReport = historyReport([cloudSale({ id: 'other-device-sale' })], { scope: 'license' });
+
     expect(getCloudFinalDashboardMetrics(report).creditGenerated.status).toBe('unavailable');
+    expect(getCloudFinalDashboardMetrics(report, { creditHistoryReport })).toMatchObject({
+      creditGenerated: { value: 20, status: 'complete' }
+    });
+    expect(auditHistoryReport.scope).toBe('license');
     expect(getCloudFinalDashboardMetrics(report, {
-      historyReport: { ...historyReport([cloudSale()]), hasMore: true }
+      creditHistoryReport: historyReport([cloudSale()], { hasMore: true })
     }).creditGenerated.status).toBe('incomplete');
     expect(getCloudFinalDashboardMetrics(report, {
-      historyReport: { ...historyReport([cloudSale()]), scope: 'license' }
+      creditHistoryReport: historyReport([cloudSale()], { scope: 'license' })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics({ ...report, scope: 'license' }, {
+      creditHistoryReport
     }).creditGenerated.status).toBe('incomplete');
     expect(getCloudFinalDashboardMetrics(report, {
-      historyReport: { ...historyReport([cloudSale()]), dateRange: {
+      creditHistoryReport: historyReport([cloudSale()], { dateRange: {
         date_from: '2026-10-10T12:00:00.000Z', date_to: '2026-11-08T12:00:00.000Z'
-      } }
+      } })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], { offset: 50, hasMore: false })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], { totalCount: 2 })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], {
+        source: { mode: 'cache', final: true, stale: true }
+      })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], {
+        source: { mode: 'cache', final: true, stale: false }
+      })
+    }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics({
+      ...report,
+      source: { mode: 'cache', final: true, stale: true }
+    }, {
+      creditHistoryReport: historyReport([cloudSale()], {
+        source: { mode: 'cache', final: true, stale: true }
+      })
+    }).creditGenerated).toMatchObject({ value: null, status: 'incomplete' });
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], {
+        source: { mode: 'local', final: false, stale: false }
+      })
+    }).creditGenerated.status).toBe('unavailable');
+    expect(getCloudFinalDashboardMetrics({
+      ...report,
+      scope: undefined,
+      raw: { scope: undefined }
+    }, { creditHistoryReport }).creditGenerated.status).toBe('incomplete');
+    expect(getCloudFinalDashboardMetrics(report, {
+      creditHistoryReport: historyReport([cloudSale()], { raw: {} })
     }).creditGenerated.status).toBe('incomplete');
   });
 });

@@ -85,14 +85,14 @@ const readOptionalMoney = (overview, keys) => {
 export default function CloudFinalStatsGrid({
   reportData = null,
   reportSource = null,
-  historyReport = null,
+  creditHistoryReport = null,
   scope = 'mine'
 }) {
   const reportFailed = reportData?.success === false;
   const source = reportSource || reportData?.source || {};
   const cloudFinalSource = !reportFailed && isCloudFinalSource(source);
   const finalOverview = reportFailed ? {} : (reportData?.overview || reportData?.summary || reportData || {});
-  const metrics = getCloudFinalDashboardMetrics(reportData, { historyReport });
+  const metrics = getCloudFinalDashboardMetrics(reportData, { creditHistoryReport, scope });
   const grossSales = readOptionalMoney(finalOverview, ['gross_sales_total', 'grossSalesTotal']);
   const cancelledSales = readOptionalMoney(finalOverview, ['cancelled_sales_total', 'cancelledSalesTotal']);
   const cogs = readOptionalMoney(finalOverview, ['cogs_total', 'cogsTotal']);

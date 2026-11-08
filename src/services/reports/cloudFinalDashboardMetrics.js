@@ -56,20 +56,41 @@ export const isCloudFinalSource = (source = {}) => (
   || (source.mode === 'cache' && source.final === true)
 );
 
-const summarizeCreditFromCloudSales = ({ reportData, historyReport }) => {
+const hasMatchingReportSource = (overviewSource, historySource) => (
+  Boolean(overviewSource?.mode)
+  && overviewSource.mode === historySource?.mode
+  && typeof overviewSource.final === 'boolean'
+  && typeof historySource?.final === 'boolean'
+  && overviewSource.final === historySource?.final
+  && typeof overviewSource.stale === 'boolean'
+  && overviewSource.stale === historySource?.stale
+);
+
+const summarizeCreditFromCloudSales = ({ reportData, historyReport, scope = 'mine' }) => {
   if (!historyReport || historyReport.success === false) return unavailable('cloud_sales_history_not_available');
   if (!isCloudFinalSource(reportData?.source) || !isCloudFinalSource(historyReport.source)) {
     return unavailable('cloud_sales_history_not_official');
   }
+  if (reportData.source?.mode === 'cache' || historyReport.source?.mode === 'cache') {
+    return incomplete('cloud_sales_history_cache_context_unverified');
+  }
   if (!Array.isArray(historyReport.rows || historyReport.sales)) {
     return unavailable('cloud_sales_history_not_available');
   }
-  if (historyReport.hasMore || historyReport.has_more) return incomplete('cloud_sales_history_is_paged');
-  if (reportData.scope && historyReport.scope && reportData.scope !== historyReport.scope) {
+  const overviewScope = reportData.scope || reportData.raw?.scope || null;
+  const historyScope = historyReport.scope || historyReport.raw?.scope || null;
+  if (overviewScope !== scope || historyScope !== scope) {
     return incomplete('cloud_sales_history_scope_mismatch');
   }
-  if (historyReport.source?.stale !== reportData?.source?.stale || !sameDateRange(reportData, historyReport)) {
+  if (!hasMatchingReportSource(reportData?.source, historyReport.source)) {
+    return incomplete('cloud_sales_history_source_mismatch');
+  }
+  if (!sameDateRange(reportData, historyReport)) {
     return incomplete('cloud_sales_history_range_not_reconciled');
+  }
+  const historyOffset = Number(historyReport.offset ?? historyReport.page_offset ?? historyReport.raw?.offset ?? historyReport.raw?.page_offset);
+  if (historyOffset !== 0 || historyReport.hasMore || historyReport.has_more) {
+    return incomplete('cloud_sales_history_is_paged');
   }
 
   const overview = reportData?.overview || reportData?.summary || reportData || {};
@@ -77,6 +98,16 @@ const summarizeCreditFromCloudSales = ({ reportData, historyReport }) => {
   const netSalesCount = readMetric(overview, ['net_sales_count', 'netSalesCount']);
   const rows = historyReport.rows || historyReport.sales;
   if (!netSales.has || !netSalesCount.has) return unavailable('net_sales_not_in_report');
+  const rawHistory = historyReport.raw || historyReport;
+  const hasAuthoritativeTotalCount = rawHistory.totalCount !== undefined || rawHistory.total_count !== undefined;
+  const hasAuthoritativeHasMore = rawHistory.hasMore !== undefined || rawHistory.has_more !== undefined;
+  if (!hasAuthoritativeTotalCount && !hasAuthoritativeHasMore) {
+    return incomplete('cloud_sales_history_pagination_not_confirmed');
+  }
+  const totalCount = Number(historyReport.totalCount ?? historyReport.total_count ?? historyReport.raw?.total_count ?? historyReport.raw?.totalCount);
+  if (!Number.isFinite(totalCount) || rows.length !== totalCount) {
+    return incomplete('cloud_sales_history_is_paged');
+  }
 
   const activeSales = rows.filter((sale = {}) => (
     String(sale.status || '').toLowerCase() === 'closed'
@@ -125,7 +156,10 @@ const hasCancellationSignals = (metrics) => {
   };
 };
 
-export const getCloudFinalDashboardMetrics = (reportData = null, { historyReport = null } = {}) => {
+export const getCloudFinalDashboardMetrics = (
+  reportData = null,
+  { creditHistoryReport = null, scope = 'mine' } = {}
+) => {
   if (!reportData || reportData.success === false) {
     return {
       netSales: unavailable('cloud_report_not_successful'),
@@ -196,7 +230,11 @@ export const getCloudFinalDashboardMetrics = (reportData = null, { historyReport
     // The aggregate credit_balance_created_total is grouped by ledger.created_at,
     // which can differ from sale.sold_at for an offline sale synced later. Use
     // immutable initial amount_paid from the sale history for sale-period credit.
-    creditGenerated = summarizeCreditFromCloudSales({ reportData, historyReport });
+    creditGenerated = summarizeCreditFromCloudSales({
+      reportData,
+      historyReport: creditHistoryReport,
+      scope
+    });
   }
 
   return {
