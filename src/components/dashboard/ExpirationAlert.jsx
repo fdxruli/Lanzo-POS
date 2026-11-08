@@ -3,20 +3,16 @@ import { useExpirationAlert } from '../../hooks/useExpirationAlert';
 import { useAppStore } from '../../store/useAppStore';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import {
-  AlertTriangle,
   PackageMinus,
   PackagePlus,
   CalendarCheck,
   EyeOff,
   RotateCcw,
-  Pill,
-  ChefHat,
-  Tag,
-  Lightbulb,
   Clock,
   Package,
   Barcode,
-  AlertCircle
+  ChevronDown,
+  Search
 } from 'lucide-react';
 import ExpirationFefoPanel from './ExpirationFefoPanel';
 import ExpirationWasteHistoryPanel from './ExpirationWasteHistoryPanel';
@@ -32,14 +28,8 @@ import { loadData, saveBatchAndSyncProductSafe, STORES } from '../../services/da
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
 import './ExpirationAlert.css';
+import { getExpirationCategory, getExpirationStatus, getExpirationDateTitle, formatExpirationDate } from './expirationPresentation';
 import './ExpirationRegularization.css';
-
-const ICONS = {
-  pill: Pill,
-  'chef-hat': ChefHat,
-  tag: Tag,
-  lightbulb: Lightbulb
-};
 
 const REGULARIZATION_MESSAGES = Object.freeze({
   PRODUCT_ID_REQUIRED: 'Selecciona un producto para regularizar.',
@@ -70,18 +60,6 @@ const getAvailableProductStock = (item = {}) => toSafeNumber(
 );
 
 const isProductRecord = (item = {}) => item.recordType === 'product' || item.type === 'Producto';
-
-const isShelfLifeExpiredRecord = (item = {}) => (
-  item.operationalCategory === 'vida_util_vencida' || item.alertType === 'VIDA_UTIL_VENCIDA'
-);
-
-const isRegularizationRecord = (item = {}) => (
-  isProductRecord(item) && (
-    item.operationalCategory === 'requiere_regularizacion' ||
-    item.canCreateBatchFromStock === true ||
-    item.canAdjustStock === true
-  )
-);
 
 const getErrorCode = (errorOrResponse = {}) => (
   errorOrResponse?.code ||
@@ -155,14 +133,6 @@ const toDateInputValue = (value = null) => {
   return `${year}-${month}-${day}`;
 };
 
-const getStatusText = (item = {}) => {
-  if (item.statusLabel) return item.statusLabel;
-  if (isShelfLifeExpiredRecord(item)) return 'Vida útil vencida';
-  if (isRegularizationRecord(item)) return 'Requiere regularización';
-  if (item.daysRemaining < 0) return 'Vencido';
-  return item.alertType === 'REVISION_MERMA' ? 'Revisión' : 'Caduca en';
-};
-
 export default function ExpirationAlert() {
   const {
     alerts,
@@ -171,8 +141,6 @@ export default function ExpirationAlert() {
     newDate,
     processingId,
     ignoredCount,
-    businessContext,
-    strategyTip,
     cloudProductsEnabled,
     refreshAlerts,
     handleIgnore,
@@ -193,10 +161,36 @@ export default function ExpirationAlert() {
   const [regularizationDraft, setRegularizationDraft] = React.useState(null);
   const [regularizationProcessingId, setRegularizationProcessingId] = React.useState(null);
 
-  const expiredCount = alerts.filter((item) => item.daysRemaining < 0 || isShelfLifeExpiredRecord(item)).length;
-  const productRegularizationCount = alerts.filter(isProductRecord).length;
-  const expiringCount = alerts.length - expiredCount;
-  const StrategyIcon = ICONS[strategyTip?.icon] || Lightbulb;
+  const [activeView, setActiveView] = React.useState('alerts');
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('all');
+  const [visibleCount, setVisibleCount] = React.useState(20);
+  const [expandedId, setExpandedId] = React.useState(null);
+
+  const counts = React.useMemo(() => alerts.reduce((result, item) => {
+    const category = getExpirationCategory(item);
+    result[category] += 1;
+    return result;
+  }, { expired: 0, upcoming: 0, unbatched: 0 }), [alerts]);
+
+  const filteredAlerts = React.useMemo(() => {
+    const term = searchTerm.trim().toLocaleLowerCase('es');
+    return alerts.filter((item) => {
+      if (statusFilter !== 'all' && getExpirationCategory(item) !== statusFilter) return false;
+      if (!term) return true;
+      return [item.productName, item.batchSku, item.message]
+        .some((value) => String(value || '').toLocaleLowerCase('es').includes(term));
+    }).sort((a, b) => {
+      const priority = { expired: 0, unbatched: 1, upcoming: 2 };
+      const delta = priority[getExpirationCategory(a)] - priority[getExpirationCategory(b)];
+      return delta || Number(a.daysRemaining || 0) - Number(b.daysRemaining || 0);
+    });
+  }, [alerts, searchTerm, statusFilter]);
+
+  React.useEffect(() => {
+    setVisibleCount(20);
+    setExpandedId(null);
+  }, [searchTerm, statusFilter]);
 
   const syncAfterCloudRegularization = React.useCallback(async (response, source) => {
     try {
@@ -436,257 +430,208 @@ export default function ExpirationAlert() {
     }
   }, [canAccess, cloudProductsEnabled, licenseKey, syncAfterCloudRegularization]);
 
+  const handleConfirmedWaste = async (item) => {
+    const confirmed = await showConfirmModal(
+      '¿Registrar merma total de "' + item.productName + '"? Se retirarán ' +
+      String(item.stock) + ' unidades del lote ' + (item.batchSku || item.id) +
+      ' y quedará constancia de la pérdida. Esta acción no es solo ocultar una alerta.',
+      {
+        title: 'Confirmar merma de inventario',
+        confirmButtonText: 'Registrar merma',
+        cancelButtonText: 'Cancelar'
+      }
+    );
+    if (!confirmed) return;
+    const result = await handleMoveToWaste(item);
+    if (!result?.success) {
+      showMessageModal(result?.error || 'No se pudo registrar la merma.', null, { type: 'error' });
+      return;
+    }
+    setExpandedId(null);
+    showMessageModal(result.message || 'Merma registrada. Se actualizó el inventario.');
+  };
+
   const renderAlertWidget = () => {
     if (loading) {
       return (
-        <div className="expiration-loading">
-          <Clock className="loading-spinner" size={24} />
-          <span>Buscando lotes y productos con caducidad operativa...</span>
-        </div>
-      );
-    }
-
-    if (alerts.length === 0) {
-      return (
-        <div className="expiration-widget expiration-empty">
-          <div className="empty-icon">
-            <CalendarCheck size={48} strokeWidth={1.5} />
-          </div>
-          <div className="empty-content">
-            <h3>Todo el inventario está fresco</h3>
-            <p>No hay lotes vencidos, próximos a caducar ni productos sin lote visibles.</p>
-            {ignoredCount > 0 && (
-              <button className="btn-restore" onClick={handleRestoreAll}>
-                <RotateCcw size={14} />
-                Restaurar {ignoredCount} ignoradas
-              </button>
-            )}
-          </div>
+        <div className="expiry-state" role="status">
+          <Clock size={20} className="expiry-spinner" />
+          Cargando lotes pendientes de revisión...
         </div>
       );
     }
 
     return (
-      <div className="expiration-widget">
-        {/* Header */}
-        <div className={`widget-header ${expiredCount > 0 ? 'header-critical' : 'header-warning'}`}>
-          <div className="header-content">
-            <span className="header-icon">
-              {expiredCount > 0 ? (
-                <AlertTriangle size={24} />
-              ) : (
-                <AlertCircle size={24} />
-              )}
-            </span>
-            <div className="header-text">
-              <h3>Control de Caducidad</h3>
-              <p>
-                {expiredCount > 0
-                  ? `Atención: ${expiredCount} vencidos y ${productRegularizationCount} productos por regularizar.`
-                  : `Tienes ${expiringCount} registros por revisar y ${productRegularizationCount} productos operativos.`}
-              </p>
-            </div>
+      <div className="expiry-pending" role="tabpanel" id="expiry-panel-alerts" aria-labelledby="expiry-tab-alerts">
+        <div className="expiry-counts" aria-label="Resumen de alertas">
+          <div className="expiry-count">
+            <span>Vencidos</span>
+            <strong className="expiry-count--danger">{counts.expired}</strong>
+          </div>
+          <div className="expiry-count">
+            <span>Por vencer</span>
+            <strong>{counts.upcoming}</strong>
+          </div>
+          <div className="expiry-count">
+            <span>Sin lote</span>
+            <strong>{counts.unbatched}</strong>
           </div>
         </div>
 
-        {/* Body - Cards Grid */}
-        <div className="widget-body">
-          <div className="expiration-cards-grid">
-            {alerts.slice(0, 10).map((item) => {
-              const productRecord = isProductRecord(item);
-              const isExpired = item.daysRemaining < 0;
-              const isLegal = item.alertType === 'CADUCIDAD_LEGAL';
-              const isMerma = item.alertType === 'REVISION_MERMA';
-              const isBatch = item.type === 'Lote' || item.recordType === 'batch';
-              const shelfLifeExpired = isShelfLifeExpiredRecord(item);
-              const regularizationRequired = isRegularizationRecord(item);
-              const actionProcessing = processingId === item.id || regularizationProcessingId === item.id;
-              const statusText = getStatusText(item);
+        <div className="expiry-tools">
+          <label className="expiry-search">
+            <Search size={18} aria-hidden="true" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Buscar producto o lote"
+              aria-label="Buscar producto o lote"
+            />
+          </label>
+          <select
+            aria-label="Filtrar caducidades"
+            className="expiry-filter"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="all">Todos los pendientes</option>
+            <option value="expired">Vencidos</option>
+            <option value="upcoming">Por vencer</option>
+            <option value="unbatched">Sin lote</option>
+          </select>
+        </div>
 
-              let cardClass = 'card-normal';
-              if (isLegal || isExpired || shelfLifeExpired) cardClass = 'card-expired';
-              else if (isMerma || regularizationRequired || item.daysRemaining <= 7) cardClass = 'card-urgent';
+        <div className="expiry-list-meta">
+          <span>{filteredAlerts.length} registros · próximos 45 días y vencidos</span>
+          <button type="button" className="expiry-link" onClick={() => refreshAlerts({ forceCloud: true })}>
+            <RotateCcw size={15} aria-hidden="true" /> Actualizar
+          </button>
+        </div>
 
-              return (
-                <div
-                  key={item.id}
-                  className={`expiration-card ${cardClass}`}
-                >
-                  {/* Card Header */}
-                  <div className="card-header">
-                    <div className="card-product-info">
-                      <Package className="card-icon" size={20} />
-                      <div>
-                        <h4 className="card-product-name">{item.productName}</h4>
-                        {isBatch && (
-                          <div className="card-batch-sku">
-                            <Barcode size={12} />
-                            <span>{item.batchSku}</span>
-                          </div>
-                        )}
-                        {productRecord && (
-                          <div className="card-batch-sku regularization-chip">
-                            <PackagePlus size={12} />
-                            <span>Producto sin lote</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className={`card-status ${isLegal || isExpired || shelfLifeExpired ? 'status-danger' : (isMerma || regularizationRequired ? 'status-warning' : 'status-info')}`}>
-                      {isExpired || shelfLifeExpired ? (
-                        <>
-                          <AlertTriangle size={14} />
-                          <span>{statusText}</span>
-                        </>
-                      ) : (
-                        <>
-                          {(isLegal || regularizationRequired) && <AlertTriangle size={14} />}
-                          <span>{productRecord ? statusText : `${isLegal ? 'Caduca en: ' : (isMerma ? 'Revisión: ' : '')}${item.daysRemaining} días`}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
+        {filteredAlerts.length === 0 ? (
+          <div className="expiry-state">
+            <CalendarCheck size={30} aria-hidden="true" />
+            <strong>{alerts.length === 0 ? 'No hay pendientes visibles' : 'No se encontraron coincidencias'}</strong>
+            <p>{alerts.length === 0
+              ? 'No se detectaron alertas en el inventario consultado. Revisa de nuevo si agregas lotes.'
+              : 'Prueba otro nombre o cambia el filtro.'}</p>
+            {ignoredCount > 0 && (
+              <button type="button" className="expiry-link" onClick={handleRestoreAll}>
+                <RotateCcw size={15} aria-hidden="true" /> Volver a mostrar alertas ocultas
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="expiry-list" aria-label="Productos por revisar">
+              {filteredAlerts.slice(0, visibleCount).map((item) => {
+                const category = getExpirationCategory(item);
+                const isBatch = !isProductRecord(item);
+                const isExpanded = expandedId === item.id;
+                const actionProcessing = processingId === item.id || regularizationProcessingId === item.id;
+                const itemDate = item.expiryDate || item.alertTargetDate;
 
-                  {/* Card Body */}
-                  <div className="card-body">
-                    <div className="card-row">
-                      <span className="card-label">Stock:</span>
-                      <span className="card-value">{item.stock} {item.type === 'Lote' ? 'unidades' : ''}</span>
-                    </div>
-
-                    <div className="card-row">
-                      <span className="card-label">{productRecord ? 'Fecha objetivo:' : 'Caducidad:'}</span>
-                      <span className="card-value">{new Date(item.expiryDate).toLocaleDateString()}</span>
-                    </div>
-
-                    {productRecord && (
-                      <>
-                        <div className="card-row regularization-warning">
-                          <span className="card-label">Situación:</span>
-                          <span className="card-value">{item.message || statusText || 'Stock sin lote registrado'}</span>
-                        </div>
-                        <div className="card-row regularization-warning">
-                          <span className="card-label">Acción:</span>
-                          <span className="card-value">Regularizar antes de vender</span>
-                        </div>
-                      </>
-                    )}
-
-                    {businessContext.isPharmacy && isBatch && (
-                      <div className="card-row pharmacy-info">
-                        <Pill size={14} />
-                        <span className="card-label">Requiere:</span>
-                        <span className="card-value">
-                          {item.prescriptionType === 'antibiotic' ? 'Antibiótico' :
-                           item.prescriptionType === 'controlled' ? 'Receta Especial' :
-                           item.prescriptionType === 'prescription' ? 'Receta' : 'Venta Libre'}
-                        </span>
-                      </div>
-                    )}
-
-                    {businessContext.isFood && isBatch && (
-                      <div className="card-row food-info">
-                        <Clock size={14} />
-                        <span className="card-label">Ubicación:</span>
-                        <span className="card-value">{item.location || 'No especificada'}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card Actions */}
-                  <div className="card-actions">
-                    {isBatch ? (
-                      <>
-                        {canManageInventory && (
-                        <button
-                          className="btn-action btn-edit"
-                          onClick={() => openEditModal(item)}
-                          disabled={actionProcessing}
-                          title="Corregir Fecha"
-                        >
-                          <CalendarCheck size={18} />
-                          <span className="btn-label">Editar</span>
-                        </button>
-                        )}
-                        {canManageInventory && item.canMoveToWaste !== false && (
-                          <button
-                            className="btn-action btn-waste"
-                            onClick={() => handleMoveToWaste(item)}
-                            disabled={actionProcessing}
-                            title="Mover a Merma"
-                          >
-                            <PackageMinus size={18} />
-                            <span className="btn-label">Merma</span>
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {canManageInventory && item.canCreateBatchFromStock === true && (
-                          <button
-                            className="btn-action btn-create-batch"
-                            onClick={() => handleOpenCreateBatch(item)}
-                            disabled={actionProcessing}
-                            title="Crear lote desde stock actual"
-                          >
-                            <PackagePlus size={18} />
-                            <span className="btn-label">Crear lote</span>
-                          </button>
-                        )}
-                        {canManageInventory && item.canAdjustStock === true && (
-                          <button
-                            className="btn-action btn-adjust-stock"
-                            onClick={() => handleAdjustStockToZero(item)}
-                            disabled={actionProcessing}
-                            title="Ajustar stock sin lote a 0"
-                          >
-                            <PackageMinus size={18} />
-                            <span className="btn-label">Ajustar a 0</span>
-                          </button>
-                        )}
-                        {item.canCreateBatchFromStock !== true && item.canAdjustStock !== true && (
-                          <div className="card-info-text">
-                            Producto general - actualiza en ficha técnica
-                          </div>
-                        )}
-                      </>
-                    )}
+                return (
+                  <article className={'expiry-row expiry-row--' + category} key={item.id}>
                     <button
-                      className="btn-action btn-ignore"
-                      onClick={() => handleIgnore(item.id)}
-                      disabled={actionProcessing}
-                      title="Ignorar por 24h"
+                      type="button"
+                      className="expiry-row-toggle"
+                      aria-expanded={isExpanded}
+                      aria-controls={isExpanded ? 'expiry-details-' + item.id : undefined}
+                      onClick={() => setExpandedId(isExpanded ? null : item.id)}
                     >
-                      <EyeOff size={18} />
-                      <span className="btn-label">Ignorar</span>
+                      <span className="expiry-row-content">
+                        <strong className="expiry-product-name">{item.productName}</strong>
+                        <span className="expiry-secondary">
+                          {isBatch ? 'Lote ' + (item.batchSku || item.id) : 'Producto sin lote asignado'}
+                          {' · '}
+                          {String(item.stock ?? 0)} unidades
+                        </span>
+                        <span className="expiry-secondary">
+                          {isBatch
+                            ? getExpirationDateTitle(item) + ': ' + formatExpirationDate(itemDate)
+                            : category === 'expired'
+                              ? getExpirationDateTitle(item) + ': ' + formatExpirationDate(itemDate)
+                              : 'Requiere registrar o ajustar su inventario por lotes'}
+                        </span>
+                      </span>
+                      <span className="expiry-row-end">
+                        <span className={'expiry-status expiry-status--' + category}>
+                          {getExpirationStatus(item)}
+                        </span>
+                        <ChevronDown className={'expiry-chevron' + (isExpanded ? ' expiry-chevron--open' : '')} size={19} aria-hidden="true" />
+                      </span>
                     </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {alerts.length > 10 && (
-            <div className="view-more">
-              <small>
-                ... y {alerts.length - 10} más.
-              </small>
+                    {isExpanded && (
+                      <div className="expiry-row-details" id={'expiry-details-' + item.id}>
+                        <p className="expiry-row-hint">
+                          {category === 'expired'
+                            ? (isBatch
+                              ? 'Este lote requiere revisión. No lo vendas si su fecha o vida útil ya venció.'
+                              : 'Este producto tiene vida útil vencida. Revisa su inventario antes de vender.')
+                            : category === 'unbatched'
+                              ? (item.message || 'Hay existencias que no están asignadas a ningún lote.')
+                              : item.alertType === 'REVISION_MERMA'
+                                ? 'Revisa físicamente este lote y determina si corresponde registrar merma.'
+                                : 'Comprueba el lote y prioriza su salida antes de la fecha indicada.'}
+                        </p>
+                        {item.location && <p className="expiry-row-extra">Ubicación: {item.location}</p>}
+                        <div className="expiry-row-actions">
+                          {isBatch ? (
+                            <>
+                              {canManageInventory && (
+                                <button type="button" className="expiry-action" disabled={actionProcessing} onClick={() => openEditModal(item)}>
+                                  <CalendarCheck size={16} aria-hidden="true" /> Corregir fecha
+                                </button>
+                              )}
+                              {canManageInventory && item.canMoveToWaste !== false && (
+                                <button type="button" className="expiry-action expiry-action--danger" disabled={actionProcessing} onClick={() => handleConfirmedWaste(item)}>
+                                  <PackageMinus size={16} aria-hidden="true" /> Registrar merma
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {canManageInventory && item.canCreateBatchFromStock === true && (
+                                <button type="button" className="expiry-action" disabled={actionProcessing} onClick={() => handleOpenCreateBatch(item)}>
+                                  <PackagePlus size={16} aria-hidden="true" /> Crear lote
+                                </button>
+                              )}
+                              {canManageInventory && item.canAdjustStock === true && cloudProductsEnabled && (
+                                <button type="button" className="expiry-action expiry-action--danger" disabled={actionProcessing} onClick={() => handleAdjustStockToZero(item)}>
+                                  <PackageMinus size={16} aria-hidden="true" /> Ajustar stock a 0
+                                </button>
+                              )}
+                            </>
+                          )}
+                          <button type="button" className="expiry-action expiry-action--quiet" disabled={actionProcessing} onClick={() => handleIgnore(item.id)}>
+                            <EyeOff size={16} aria-hidden="true" /> Ocultar 24 horas
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          )}
-
-          {/* Strategy Box */}
-          {strategyTip && (
-            <div className="strategy-box">
-              <div className="strategy-icon">
-                <StrategyIcon size={24} />
+            {visibleCount < filteredAlerts.length && (
+              <div className="expiry-more">
+                <button type="button" className="expiry-action" onClick={() => setVisibleCount((value) => value + 20)}>
+                  Mostrar más ({filteredAlerts.length - visibleCount} pendientes)
+                </button>
               </div>
-              <div className="strategy-content">
-                <strong>{strategyTip.title}</strong>
-                <p>{strategyTip.text}</p>
+            )}
+            {ignoredCount > 0 && (
+              <div className="expiry-restore">
+                <button type="button" className="expiry-link" onClick={handleRestoreAll}>
+                  <RotateCcw size={15} aria-hidden="true" /> Restaurar alertas ocultas
+                </button>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
 
         {/* Create Batch Modal */}
         {regularizationDraft && (
@@ -801,10 +746,29 @@ export default function ExpirationAlert() {
   };
 
   return (
-    <>
-      {renderAlertWidget()}
-      <ExpirationFefoPanel />
-      <ExpirationWasteHistoryPanel />
-    </>
+    <section className="expiry-workspace" aria-label="Caducidad de productos">
+      <header className="expiry-page-header">
+        <div>
+          <h2>Caducidad</h2>
+          <p>Identifica productos por revisar, prioriza lotes y consulta las bajas registradas.</p>
+        </div>
+      </header>
+
+      <div className="expiry-tabs" role="tablist" aria-label="Secciones de caducidad">
+        <button type="button" role="tab" id="expiry-tab-alerts" aria-selected={activeView === 'alerts'} aria-controls="expiry-panel-alerts" className={activeView === 'alerts' ? 'is-active' : ''} onClick={() => setActiveView('alerts')}>
+          Por atender
+        </button>
+        <button type="button" role="tab" id="expiry-tab-fefo" aria-selected={activeView === 'fefo'} aria-controls="expiry-panel-fefo" className={activeView === 'fefo' ? 'is-active' : ''} onClick={() => setActiveView('fefo')}>
+          Qué vender primero
+        </button>
+        <button type="button" role="tab" id="expiry-tab-history" aria-selected={activeView === 'history'} aria-controls="expiry-panel-history" className={activeView === 'history' ? 'is-active' : ''} onClick={() => setActiveView('history')}>
+          Historial
+        </button>
+      </div>
+
+      {activeView === 'alerts' && renderAlertWidget()}
+      {activeView === 'fefo' && <div role="tabpanel" id="expiry-panel-fefo" aria-labelledby="expiry-tab-fefo"><ExpirationFefoPanel /></div>}
+      {activeView === 'history' && <div role="tabpanel" id="expiry-panel-history" aria-labelledby="expiry-tab-history"><ExpirationWasteHistoryPanel /></div>}
+    </section>
   );
 }

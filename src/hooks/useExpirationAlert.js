@@ -230,6 +230,7 @@ export const useExpirationAlert = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [newDate, setNewDate] = useState('');
   const [processingId, setProcessingId] = useState(null);
+  const [ignoredCount, setIgnoredCount] = useState(0);
 
   // Leer ignored IDs desde localStorage
   const getIgnoredIds = useCallback(() => {
@@ -290,6 +291,7 @@ export const useExpirationAlert = () => {
 
       // Filtrar los ignorados temporalmente
       const ignoredIds = getIgnoredIds();
+      setIgnoredCount(ignoredIds.size);
       const visibleData = data.filter((item) => !ignoredIds.has(item.id));
 
       setAlerts(visibleData);
@@ -309,6 +311,7 @@ export const useExpirationAlert = () => {
 
       const ignoredObject = Object.fromEntries(currentIgnored);
       setTenantStorageItem(STORAGE_KEY, JSON.stringify(ignoredObject));
+      setIgnoredCount(currentIgnored.size);
 
       // Actualizar estado local para UI reactiva
       setAlerts((prev) => prev.filter((alert) => alert.id !== id));
@@ -322,6 +325,7 @@ export const useExpirationAlert = () => {
     try {
       // Expiration suppression is tenant-scoped; legacy unscoped data stays untouched.
       setTenantStorageItem(STORAGE_KEY, JSON.stringify({}));
+      setIgnoredCount(0);
       // Recargar alertas
       refreshAlerts();
     } catch (error) {
@@ -546,10 +550,6 @@ export const useExpirationAlert = () => {
       text: 'Etiqueta con "Últimas Piezas". Verifica cambios con proveedor.'
     };
   }, [businessContext]);
-
-  const ignoredCount = useMemo(() => {
-    return getIgnoredIds().size;
-  }, [getIgnoredIds]);
 
   return {
     // Estado
