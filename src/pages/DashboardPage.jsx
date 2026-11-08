@@ -68,10 +68,13 @@ export default function DashboardPage() {
     overviewReport: null,
     reportSource: null,
     salesHistory: [],
+    creditHistoryReport: null,
+    creditHistoryAttempted: false,
     salesHistorySource: null,
     salesHistoryHasMore: false,
     salesHistoryTotalCount: 0,
     usesRepositorySalesHistory: false,
+    salesHistoryIsLoading: false,
     isLoading: true,
     refreshKey: 0
   });
@@ -134,20 +137,18 @@ export default function DashboardPage() {
   }, []);
 
   const loadDashboardReporting = useCallback(async () => {
-    setReportingData((current) => ({ ...current, isLoading: true }));
+    const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
+    setReportingData((current) => ({
+      ...current,
+      isLoading: true,
+      creditHistoryReport: null,
+      creditHistoryAttempted: false,
+      usesRepositorySalesHistory: shouldLoadFinalHistory,
+      salesHistoryIsLoading: shouldLoadFinalHistory
+    }));
 
     try {
-      const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
-      const historyOffset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
-      const salesFinalHistoryPromise = shouldLoadFinalHistory
-        ? reportsRepository.getSalesFinalHistory({
-          scope: salesFinalHistoryScope,
-          limit: SALES_HISTORY_PAGE_SIZE,
-          offset: historyOffset
-        })
-        : Promise.resolve(null);
-
-      const [localReportResult, cloudOverviewResult, salesFinalHistoryResult] = await Promise.allSettled([
+      const [localReportResult, cloudOverviewResult] = await Promise.allSettled([
         reportingService.getDashboardReport({
           rangoFechas: null,
           rubros: features.activeRubros,
@@ -158,8 +159,7 @@ export default function DashboardPage() {
         reportsRepository.getOverviewReport({
           rubros: features.activeRubros,
           scope: 'mine'
-        }),
-        salesFinalHistoryPromise
+        })
       ]);
 
       const localReport = localReportResult.status === 'fulfilled'
@@ -168,8 +168,29 @@ export default function DashboardPage() {
       const overviewReport = cloudOverviewResult.status === 'fulfilled'
         ? cloudOverviewResult.value
         : null;
-      const salesHistoryReport = salesFinalHistoryResult.status === 'fulfilled'
-        ? salesFinalHistoryResult.value
+      const reportDateRange = overviewReport?.dateRange
+        || overviewReport?.date_range
+        || overviewReport?.raw?.date_range
+        || {};
+      const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
+      const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
+      const shouldLoadCreditHistory = shouldLoadFinalHistory
+        && Boolean(salesActorIdentity)
+        && overviewReport?.success !== false
+        && overviewReport?.source?.mode === REPORT_SOURCE_MODES.CLOUD_FINAL
+        && overviewReport?.source?.stale === false;
+      const creditHistoryResult = (await Promise.allSettled([
+        shouldLoadCreditHistory
+          ? reportsRepository.getSalesFinalHistory({
+            scope: 'mine',
+            limit: SALES_HISTORY_PAGE_SIZE,
+            offset: 0,
+            ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
+          })
+          : Promise.resolve(null)
+      ]))[0];
+      const creditHistoryReport = creditHistoryResult.status === 'fulfilled'
+        ? creditHistoryResult.value
         : null;
 
       if (localReportResult.status === 'rejected') {
@@ -178,39 +199,120 @@ export default function DashboardPage() {
       if (cloudOverviewResult.status === 'rejected') {
         Logger.warn('No se pudo cargar reporte cloud/hibrido:', cloudOverviewResult.reason);
       }
-      if (salesFinalHistoryResult.status === 'rejected') {
-        Logger.warn('No se pudo cargar historial final cloud:', salesFinalHistoryResult.reason);
+      if (creditHistoryResult.status === 'rejected') {
+        Logger.warn('No se pudo cargar historial Cloud para conciliar crédito:', creditHistoryResult.reason);
       }
 
-      const repositoryHistoryRows = salesHistoryReport?.sales || salesHistoryReport?.rows || [];
-      const usesRepositorySalesHistory = Boolean(shouldLoadFinalHistory && salesHistoryReport);
-      const effectiveSalesHistory = usesRepositorySalesHistory
-        ? repositoryHistoryRows
-        : (localReport.sales || []);
-
-      setReportingData({
+      setReportingData((current) => ({
+        ...current,
         sales: localReport.sales || [],
         wasteLogs: localReport.wasteLogs || [],
         menu: localReport.menu || [],
         overviewReport,
         reportSource: overviewReport?.source || null,
-        salesHistory: effectiveSalesHistory,
-        salesHistorySource: salesHistoryReport?.source || overviewReport?.source || null,
-        salesHistoryHasMore: Boolean(salesHistoryReport?.hasMore || salesHistoryReport?.has_more),
-        salesHistoryTotalCount: Number(salesHistoryReport?.totalCount || salesHistoryReport?.total_count || effectiveSalesHistory.length || 0),
-        usesRepositorySalesHistory,
+        salesHistorySource: shouldLoadFinalHistory
+          ? current.salesHistorySource
+          : overviewReport?.source || null,
+        creditHistoryReport,
+        creditHistoryAttempted: shouldLoadCreditHistory,
+        usesRepositorySalesHistory: shouldLoadFinalHistory,
+        salesHistoryIsLoading: shouldLoadFinalHistory,
         isLoading: false,
         refreshKey: Date.now()
-      });
+      }));
     } catch (error) {
       Logger.error('Error cargando reporte analitico del dashboard:', error);
       setReportingData((current) => ({
         ...current,
         isLoading: false,
+        salesHistoryIsLoading: Boolean(dashboardReportMode.cloudSalesFinal),
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, features.activeRubros, salesFinalHistoryPageIndex, salesFinalHistoryScope]);
+  }, [dashboardReportMode, features.activeRubros, salesActorIdentity]);
+
+  useEffect(() => {
+    if (!dashboardReportMode.cloudSalesFinal || reportingData.isLoading) return undefined;
+
+    let isActive = true;
+    const reportDateRange = reportingData.overviewReport?.dateRange
+      || reportingData.overviewReport?.date_range
+      || reportingData.overviewReport?.raw?.date_range
+      || {};
+    const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
+    const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
+    const offset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
+    const canShareCreditHistory = salesFinalHistoryScope === 'mine'
+      && offset === 0
+      && reportingData.creditHistoryAttempted;
+
+    const applySalesHistory = (salesHistoryReport) => {
+      const rows = salesHistoryReport?.sales || salesHistoryReport?.rows || [];
+      const totalCount = Number(
+        salesHistoryReport?.totalCount
+        ?? salesHistoryReport?.total_count
+        ?? rows.length
+      );
+      setReportingData((current) => ({
+        ...current,
+        salesHistory: rows,
+        salesHistorySource: salesHistoryReport?.source || current.reportSource || null,
+        salesHistoryHasMore: Boolean(salesHistoryReport?.hasMore || salesHistoryReport?.has_more),
+        salesHistoryTotalCount: Number.isFinite(totalCount) ? totalCount : rows.length,
+        usesRepositorySalesHistory: Boolean(salesHistoryReport),
+        salesHistoryIsLoading: false
+      }));
+    };
+
+    if (canShareCreditHistory) {
+      if (reportingData.creditHistoryReport) {
+        applySalesHistory(reportingData.creditHistoryReport);
+      } else {
+        setReportingData((current) => ({
+          ...current,
+          salesHistory: current.sales || [],
+          salesHistorySource: current.reportSource || null,
+          salesHistoryTotalCount: current.sales?.length || 0,
+          usesRepositorySalesHistory: false,
+          salesHistoryIsLoading: false
+        }));
+      }
+      return () => { isActive = false; };
+    }
+
+    setReportingData((current) => ({ ...current, salesHistoryIsLoading: true }));
+    reportsRepository.getSalesFinalHistory({
+      scope: salesFinalHistoryScope,
+      limit: SALES_HISTORY_PAGE_SIZE,
+      offset,
+      ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
+    }).then((salesHistoryReport) => {
+      if (isActive) applySalesHistory(salesHistoryReport);
+    }).catch((error) => {
+      Logger.warn('No se pudo cargar historial final cloud:', error);
+      if (!isActive) return;
+      setReportingData((current) => ({
+        ...current,
+        salesHistory: current.sales || [],
+        salesHistorySource: current.reportSource || null,
+        salesHistoryTotalCount: current.sales?.length || 0,
+        usesRepositorySalesHistory: false,
+        salesHistoryIsLoading: false
+      }));
+    });
+
+    return () => { isActive = false; };
+  }, [
+    dashboardReportMode.cloudSalesFinal,
+    reportingData.isLoading,
+    reportingData.refreshKey,
+    reportingData.overviewReport,
+    reportingData.creditHistoryReport,
+    reportingData.creditHistoryAttempted,
+    reportingData.sales,
+    salesFinalHistoryPageIndex,
+    salesFinalHistoryScope
+  ]);
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');
@@ -419,7 +521,9 @@ export default function DashboardPage() {
   const historyRows = reportingData.usesRepositorySalesHistory ? reportingData.salesHistory : sales;
   const historyHasMore = reportingData.usesRepositorySalesHistory ? reportingData.salesHistoryHasMore : hasMoreSales;
   const historyPageIndex = reportingData.usesRepositorySalesHistory ? salesFinalHistoryPageIndex : currentSalesPageIndex;
-  const historyIsLoading = reportingData.usesRepositorySalesHistory ? reportingData.isLoading : isSalesLoading;
+  const historyIsLoading = reportingData.usesRepositorySalesHistory
+    ? reportingData.salesHistoryIsLoading
+    : isSalesLoading;
 
   return (
     <>
@@ -442,6 +546,9 @@ export default function DashboardPage() {
           {statsIsCloudFinal ? (
             <CloudFinalStatsGrid
               reportData={reportingData.overviewReport}
+              reportSource={reportingData.reportSource}
+              creditHistoryReport={reportingData.creditHistoryReport}
+              scope="mine"
             />
           ) : (
             <StatsGrid

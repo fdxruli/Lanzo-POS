@@ -61,6 +61,18 @@ const DEFAULT_CLOUD_ERROR_LOCAL_WARNING = 'No se pudo cargar el reporte cloud y 
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
+const hasExplicitReportFailure = (payload) => {
+  let data = payload;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return false;
+    }
+  }
+  return data?.success === false || data?.raw?.success === false || data?.data?.success === false;
+};
+
 const isCloudReportsSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_reports_sync');
@@ -105,7 +117,11 @@ const applySourceState = (report, {
 };
 
 const normalizeCachedPayload = ({ cached, mapper, cacheWarning = DEFAULT_CACHE_WARNING }) => {
+  if (hasExplicitReportFailure(cached?.payload)) {
+    throw new Error('CACHED_REPORT_EXPLICITLY_FAILED');
+  }
   const mapped = mapper(cached.payload, { mode: REPORT_SOURCE_MODES.CACHE, stale: true });
+  if (mapped?.success === false) throw new Error('CACHED_REPORT_EXPLICITLY_FAILED');
   return applySourceState(mapped, {
     sourceMode: REPORT_SOURCE_MODES.CACHE,
     stale: true,
@@ -113,7 +129,7 @@ const normalizeCachedPayload = ({ cached, mapper, cacheWarning = DEFAULT_CACHE_W
   });
 };
 
-const withCacheFallback = async ({
+export const withCacheFallback = async ({
   reportType,
   filters = {},
   reportMode,
@@ -127,14 +143,18 @@ const withCacheFallback = async ({
 }) => {
   if (!reportMode?.online) {
     const cached = await reportsCacheService.getSnapshot(reportType, filters);
-    if (cached?.payload) {
-      return normalizeCachedPayload({ cached, mapper, cacheWarning });
+    if (cached?.payload && !hasExplicitReportFailure(cached.payload)) {
+      try {
+        return normalizeCachedPayload({ cached, mapper, cacheWarning });
+      } catch {
+        // Ignore a malformed or explicitly unsuccessful snapshot.
+      }
     }
 
     const local = await localFallback();
     return applySourceState(local, {
-      sourceMode: REPORT_SOURCE_MODES.CACHE,
-      stale: true,
+      sourceMode: REPORT_SOURCE_MODES.LOCAL,
+      stale: false,
       warnings: [offlineWarning]
     });
   }
@@ -142,16 +162,23 @@ const withCacheFallback = async ({
   try {
     const payload = await loader();
     const mapped = mapper(payload, { mode: REPORT_SOURCE_MODES.CLOUD, stale: false });
+    if (hasExplicitReportFailure(payload) || mapped?.success === false) {
+      throw new Error('REPORT_RPC_EXPLICITLY_FAILED');
+    }
     await reportsCacheService.saveSnapshot(reportType, filters, mapped, mapped.source);
     return mapped;
   } catch (error) {
     const cached = await reportsCacheService.getSnapshot(reportType, filters);
-    if (cached?.payload) {
-      return normalizeCachedPayload({
-        cached,
-        mapper,
-        cacheWarning: cloudErrorCacheWarning || cacheWarning
-      });
+    if (cached?.payload && !hasExplicitReportFailure(cached.payload)) {
+      try {
+        return normalizeCachedPayload({
+          cached,
+          mapper,
+          cacheWarning: cloudErrorCacheWarning || cacheWarning
+        });
+      } catch {
+        // Ignore a malformed or explicitly unsuccessful snapshot.
+      }
     }
 
     const local = await localFallback();
