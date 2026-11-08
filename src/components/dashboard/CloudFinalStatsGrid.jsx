@@ -63,21 +63,6 @@ const metricDisplay = (metric, formatter) => {
   return 'No disponible';
 };
 
-const readRangeLabel = (reportData) => {
-  const range = reportData?.dateRange || reportData?.date_range || reportData?.raw?.date_range || {};
-  const start = readText(range, ['start', 'from', 'dateFrom', 'date_from'], '');
-  const end = readText(range, ['end', 'to', 'dateTo', 'date_to'], '');
-  const dateOnly = (value) => {
-    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
-  };
-
-  if (start && end) return `Periodo Cloud: ${dateOnly(start)}–${dateOnly(end)}.`;
-  if (start) return `Periodo Cloud desde ${dateOnly(start)}.`;
-  if (end) return `Periodo Cloud hasta ${dateOnly(end)}.`;
-  return 'Periodo Cloud predeterminado (aprox. 30 días).';
-};
-
 const readOptionalMoney = (overview, keys) => {
   const metric = readMetric(overview, keys);
   return metric.has ? formatCurrency(metric.value) : 'Sin dato';
