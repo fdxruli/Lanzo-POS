@@ -527,7 +527,7 @@ export default function ExpirationAlert() {
             <div className="expiry-list" aria-label="Productos por revisar">
               {filteredAlerts.slice(0, visibleCount).map((item) => {
                 const category = getExpirationCategory(item);
-                const isBatch = category !== 'unbatched';
+                const isBatch = !isProductRecord(item);
                 const isExpanded = expandedId === item.id;
                 const actionProcessing = processingId === item.id || regularizationProcessingId === item.id;
                 const itemDate = item.expiryDate || item.alertTargetDate;
@@ -551,7 +551,9 @@ export default function ExpirationAlert() {
                         <span className="expiry-secondary">
                           {isBatch
                             ? getExpirationDateTitle(item) + ': ' + formatExpirationDate(itemDate)
-                            : 'Requiere registrar o ajustar su inventario por lotes'}
+                            : category === 'expired'
+                              ? getExpirationDateTitle(item) + ': ' + formatExpirationDate(itemDate)
+                              : 'Requiere registrar o ajustar su inventario por lotes'}
                         </span>
                       </span>
                       <span className="expiry-row-end">
@@ -566,7 +568,9 @@ export default function ExpirationAlert() {
                       <div className="expiry-row-details" id={'expiry-details-' + item.id}>
                         <p className="expiry-row-hint">
                           {category === 'expired'
-                            ? 'Este lote requiere revisión. No lo vendas si su fecha o vida útil ya venció.'
+                            ? (isBatch
+                              ? 'Este lote requiere revisión. No lo vendas si su fecha o vida útil ya venció.'
+                              : 'Este producto tiene vida útil vencida. Revisa su inventario antes de vender.')
                             : category === 'unbatched'
                               ? (item.message || 'Hay existencias que no están asignadas a ningún lote.')
                               : item.alertType === 'REVISION_MERMA'
@@ -736,7 +740,8 @@ export default function ExpirationAlert() {
               </div>
             </div>
           </div>
-        )}      </div>
+        )}
+      </div>
     );
   };
 
