@@ -68,6 +68,7 @@ export default function DashboardPage() {
     overviewReport: null,
     reportSource: null,
     salesHistory: [],
+    salesHistoryReport: null,
     salesHistorySource: null,
     salesHistoryHasMore: false,
     salesHistoryTotalCount: 0,
@@ -139,15 +140,7 @@ export default function DashboardPage() {
     try {
       const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
       const historyOffset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
-      const salesFinalHistoryPromise = shouldLoadFinalHistory
-        ? reportsRepository.getSalesFinalHistory({
-          scope: salesFinalHistoryScope,
-          limit: SALES_HISTORY_PAGE_SIZE,
-          offset: historyOffset
-        })
-        : Promise.resolve(null);
-
-      const [localReportResult, cloudOverviewResult, salesFinalHistoryResult] = await Promise.allSettled([
+      const [localReportResult, cloudOverviewResult] = await Promise.allSettled([
         reportingService.getDashboardReport({
           rangoFechas: null,
           rubros: features.activeRubros,
@@ -158,8 +151,7 @@ export default function DashboardPage() {
         reportsRepository.getOverviewReport({
           rubros: features.activeRubros,
           scope: 'mine'
-        }),
-        salesFinalHistoryPromise
+        })
       ]);
 
       const localReport = localReportResult.status === 'fulfilled'
@@ -168,6 +160,20 @@ export default function DashboardPage() {
       const overviewReport = cloudOverviewResult.status === 'fulfilled'
         ? cloudOverviewResult.value
         : null;
+      const reportDateRange = overviewReport?.dateRange
+        || overviewReport?.date_range
+        || overviewReport?.raw?.date_range
+        || {};
+      const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
+      const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
+      const salesFinalHistoryResult = shouldLoadFinalHistory
+        ? (await Promise.allSettled([reportsRepository.getSalesFinalHistory({
+          scope: salesFinalHistoryScope,
+          limit: SALES_HISTORY_PAGE_SIZE,
+          offset: historyOffset,
+          ...(dateFrom && dateTo ? { dateFrom, dateTo } : {})
+        })]))[0]
+        : { status: 'fulfilled', value: null };
       const salesHistoryReport = salesFinalHistoryResult.status === 'fulfilled'
         ? salesFinalHistoryResult.value
         : null;
@@ -195,6 +201,7 @@ export default function DashboardPage() {
         overviewReport,
         reportSource: overviewReport?.source || null,
         salesHistory: effectiveSalesHistory,
+        salesHistoryReport,
         salesHistorySource: salesHistoryReport?.source || overviewReport?.source || null,
         salesHistoryHasMore: Boolean(salesHistoryReport?.hasMore || salesHistoryReport?.has_more),
         salesHistoryTotalCount: Number(salesHistoryReport?.totalCount || salesHistoryReport?.total_count || effectiveSalesHistory.length || 0),
@@ -442,6 +449,9 @@ export default function DashboardPage() {
           {statsIsCloudFinal ? (
             <CloudFinalStatsGrid
               reportData={reportingData.overviewReport}
+              reportSource={reportingData.reportSource}
+              historyReport={reportingData.salesHistoryReport}
+              scope="mine"
             />
           ) : (
             <StatsGrid

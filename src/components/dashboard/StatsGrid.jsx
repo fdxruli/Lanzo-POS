@@ -20,6 +20,10 @@ import TopCustomers from './TopCustomers';
 import { AreaTrendChart, BarWeekdayChart } from './TrendChart';
 import { reportingService } from '../../services/db/reporting';
 import { normalizeFinancialNumber, summarizeFinancialSales } from '../../services/sales/financialPolicy';
+import {
+  summarizeLocalCustomerDebt,
+  summarizeLocalDashboardFinance
+} from '../../services/sales/dashboardFinancialSummary';
 import { useStatsStore } from '../../store/useStatsStore';
 import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 
@@ -85,7 +89,7 @@ const formatPercent = (val) => `${Number(val || 0).toFixed(1)}%`;
 
 const METRIC_OPTIONS = {
   revenue: {
-    label: 'Ventas',
+    label: 'Ventas netas',
     color: 'var(--success-color, #10b981)',
     formatter: formatCompactCurrency,
     fullFormatter: formatCurrency
@@ -314,20 +318,20 @@ const normalizeStatsGridReportData = ({ reportData, reportSource, isCloudReport,
     ]
     : [{ label: 'Cloud oficial', variant: 'cloud' }];
 
-  const localMetricBadges = isProReport
+  const usesLocalOverview = mode === REPORT_SOURCE_MODES.LOCAL
+    || (Array.isArray(source.local) && source.local.includes('all'));
+  const localMetricBadges = isProReport || usesLocalOverview
     ? [{ label: 'Local / este dispositivo', variant: 'local' }]
     : [];
 
-  const salesBadges = isProReport
-    ? [{ label: 'Ventas locales', variant: 'local' }]
+  const salesBadges = isProReport || usesLocalOverview
+    ? [{ label: usesLocalOverview ? 'Local / este dispositivo' : 'Ventas locales', variant: 'local' }]
     : [];
 
-  const summaryBadges = isProReport
-    ? [
-      { label: SOURCE_LABELS[mode] || 'Mixto', variant: mode || 'mixed' },
-      ...(stale ? [{ label: 'Desactualizado', variant: 'stale' }] : [])
-    ]
-    : [];
+  const summaryBadges = [
+    { label: SOURCE_LABELS[mode] || 'Mixto', variant: mode || 'mixed' },
+    ...(stale ? [{ label: 'Desactualizado', variant: 'stale' }] : [])
+  ];
 
   return {
     mode,
@@ -339,6 +343,7 @@ const normalizeStatsGridReportData = ({ reportData, reportSource, isCloudReport,
     localMetricBadges,
     salesBadges,
     summaryBadges,
+    usesLocalOverview,
     hasReportData: Boolean(reportData),
     shouldShowCloudCards: Boolean(isProReport && reportData)
   };
@@ -372,14 +377,15 @@ const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricK
   sales.forEach((sale) => {
     const dateKey = getDateKey(sale.timestamp);
     if (!dateKey) return;
+    const financialSummary = summarizeFinancialSales([sale]);
+    if (financialSummary.totalSales === 0) return;
     if (!dayMap.has(dateKey)) dayMap.set(dateKey, createEmptyDayMetric());
 
     const dayMetric = dayMap.get(dateKey);
-    const financialSummary = summarizeFinancialSales([sale]);
     dayMetric.revenue += financialSummary.totalRevenue;
     dayMetric.profit += financialSummary.confirmedProfit;
     dayMetric.confirmedRevenue += financialSummary.confirmedRevenue;
-    dayMetric.orders += 1;
+    dayMetric.orders += financialSummary.totalSales;
   });
 
   wasteLogs.forEach((log) => {
@@ -423,6 +429,15 @@ export default function StatsGrid({
   const [prevPeriodSales, setPrevPeriodSales] = useState([]);
   const [filteredWasteLogs, setFilteredWasteLogs] = useState([]);
   const [prevPeriodWasteLogs, setPrevPeriodWasteLogs] = useState([]);
+  const [financeEvents, setFinanceEvents] = useState({
+    customerLedger: [],
+    customers: null,
+    cancelledSales: [],
+    cashReversalMovements: [],
+    hasUnresolvedCreditCancellation: false,
+    range: null
+  });
+  const [reportStatus, setReportStatus] = useState('loading');
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const forceRecalculate = useStatsStore((state) => state.forceRecalculate);
@@ -475,6 +490,7 @@ export default function StatsGrid({
 
   useEffect(() => {
     async function loadPeriodSales() {
+      setReportStatus('loading');
       try {
         const ranges = buildPeriodRanges(timeRange);
         const [currentReport, previousReport] = await Promise.all([
@@ -483,7 +499,8 @@ export default function StatsGrid({
             rubros: activeRubros,
             incluirCanceladas: false,
             incluirMermas: true,
-            incluirProductos: false
+            incluirProductos: false,
+            incluirClientes: true
           }),
           ranges.previous
             ? reportingService.getDashboardReport({
@@ -500,9 +517,19 @@ export default function StatsGrid({
         setPrevPeriodSales(previousReport.sales || []);
         setFilteredWasteLogs(currentReport.wasteLogs || []);
         setPrevPeriodWasteLogs(previousReport.wasteLogs || []);
+        setFinanceEvents({
+          customerLedger: currentReport.customerLedger || [],
+          customers: Array.isArray(currentReport.customers) ? currentReport.customers : null,
+          cancelledSales: currentReport.cancelledSales || [],
+          cashReversalMovements: currentReport.cashReversalMovements || [],
+          hasUnresolvedCreditCancellation: Boolean(currentReport.hasUnresolvedCreditCancellation),
+          range: currentReport.meta?.rangoFechas || ranges.current
+        });
+        setReportStatus('ready');
 
       } catch (err) {
         console.error('Error loading period sales', err);
+        setReportStatus('failed');
       }
     }
     loadPeriodSales();
@@ -518,7 +545,28 @@ export default function StatsGrid({
     const profitConfirmed = financialSummary.confirmedProfit;
     const confirmedRevenue = financialSummary.confirmedRevenue;
     const unconfirmedRevenue = financialSummary.unconfirmedRevenue;
-    const orders = filteredSales.length;
+    const localCustomerDebt = summarizeLocalCustomerDebt(financeEvents.customers, {
+      authoritative: reportContext.mode === REPORT_SOURCE_MODES.LOCAL
+    });
+    const calculatedLocalFinance = summarizeLocalDashboardFinance({
+      sales: filteredSales,
+      customerLedger: financeEvents.customerLedger,
+      cancelledSales: financeEvents.cancelledSales,
+      cashReversalMovements: financeEvents.cashReversalMovements,
+      hasUnresolvedCreditCancellation: financeEvents.hasUnresolvedCreditCancellation,
+      currentDebt: localCustomerDebt.status === 'complete' ? localCustomerDebt.value : undefined,
+      range: financeEvents.range
+    });
+    const unavailableMetric = { value: null, status: 'incomplete', reason: 'local_report_unavailable' };
+    const localFinance = reportStatus === 'ready'
+      ? calculatedLocalFinance
+      : {
+        ...calculatedLocalFinance,
+        collected: unavailableMetric,
+        creditGenerated: unavailableMetric,
+        currentDebt: unavailableMetric
+      };
+    const orders = financialSummary.totalSales;
     const items = financialSummary.itemsSold;
     const hasMissingCosts = financialSummary.hasMissingCosts;
     const totalWaste = summarizeWaste(filteredWasteLogs);
@@ -528,6 +576,7 @@ export default function StatsGrid({
     const selectedMetricConfig = METRIC_OPTIONS[selectedMetric];
     const currentSummary = {
       revenue,
+      financialDataStatus: reportStatus,
       profitConfirmed,
       orders,
       avgTicket,
@@ -536,7 +585,7 @@ export default function StatsGrid({
     };
     const prevFinancialSummary = summarizeFinancialSales(prevPeriodSales);
     const prevRevenue = prevFinancialSummary.totalRevenue;
-    const prevOrders = prevPeriodSales.length;
+    const prevOrders = prevFinancialSummary.totalSales;
     const prevSummary = {
       revenue: prevRevenue,
       profitConfirmed: prevFinancialSummary.confirmedProfit,
@@ -567,6 +616,9 @@ export default function StatsGrid({
 
     return {
       revenue,
+      collected: localFinance.collected,
+      creditGenerated: localFinance.creditGenerated,
+      currentDebt: localFinance.currentDebt,
       profitConfirmed,
       unreliableProfit,
       totalProfit,
@@ -597,7 +649,7 @@ export default function StatsGrid({
       unconfirmedRevenue,
       filteredSales
     };
-  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, selectedMetric, stats, timeRange, reportContext]);
+  }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, financeEvents, reportStatus, selectedMetric, stats, timeRange, reportContext]);
 
   const cloudMetrics = reportContext.metrics;
   const cashSessionsMetric = {
@@ -622,9 +674,10 @@ export default function StatsGrid({
           <p className="stats-subtitle">
             <BarChart2 size={16} />
             {TIME_PERIODS[timeRange].label === 'Hoy'
-              ? ' Mostrando solo las ventas de HOY.'
-              : ` Mostrando últimos ${TIME_PERIODS[timeRange].label}.`}
+              ? ' Periodo: hoy.'
+              : ` Periodo: ${TIME_PERIODS[timeRange].label}.`}
           </p>
+          <small className="text-muted">Las ventas a crédito cuentan como ventas, pero no como dinero cobrado.</small>
           {renderSourceBadges(reportContext.summaryBadges)}
         </div>
 
@@ -703,15 +756,18 @@ export default function StatsGrid({
 
       {/* Grid de métricas principales */}
       <div className="stats-grid-modern">
-        {/* TARJETA 1: INGRESOS */}
+        {/* TARJETA 1: VENTAS COMERCIALES */}
         <div className="stat-card-modern revenue-card">
           <div className="card-icon-wrapper green">
             <DollarSign size={24} />
           </div>
           <div className="card-content">
-            <span className="card-label">Ventas</span>
-            <h2 className="card-value-main">{formatCurrency(metrics.revenue || 0)}</h2>
-            {metrics.revenueTrend !== null && (
+            <span className="card-label">Ventas netas</span>
+            <h2 className="card-value-main">{metrics.financialDataStatus === 'ready'
+              ? formatCurrency(metrics.revenue || 0)
+              : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
+            <small className="text-muted">Ventas válidas y cerradas del periodo.</small>
+            {metrics.financialDataStatus === 'ready' && metrics.revenueTrend !== null && (
               <div className={`card-trend ${metrics.revenueTrend >= 0 ? 'positive' : 'negative'}`}>
                 {metrics.revenueTrend >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                 <span>{`${metrics.revenueTrend >= 0 ? '+' : ''}${metrics.revenueTrend.toFixed(1)}% vs periodo anterior`}</span>
@@ -719,6 +775,72 @@ export default function StatsGrid({
             )}
             {renderSourceBadges(reportContext.salesBadges)}
           </div>
+        </div>
+
+        <div className={`stat-card-modern small-card ${metrics.collected.status !== 'complete' ? 'card-warning-state' : ''}`}>
+          <div className="card-header-small">
+            <span className="card-label">Cobrado</span>
+            <DollarSign size={18} className="icon-muted" />
+          </div>
+          <div className="card-value-small">
+            {metrics.financialDataStatus === 'loading' ? 'Cargando' : metrics.collected.status === 'complete'
+              ? formatCurrency(metrics.collected.value)
+              : 'Incompleto'}
+          </div>
+          <small className="text-muted">
+            {metrics.financialDataStatus === 'failed'
+              ? 'No se pudo leer el reporte local del periodo.'
+              : metrics.collected.status === 'complete'
+              ? 'Pagos iniciales y abonos del periodo.'
+              : 'Falta evidencia de pago o hay cancelaciones/reversos que conciliar.'}
+          </small>
+          {renderSourceBadges(reportContext.salesBadges)}
+        </div>
+
+        <div className={`stat-card-modern small-card ${metrics.creditGenerated.status !== 'complete' ? 'card-warning-state' : ''}`}>
+          <div className="card-header-small">
+            <span className="card-label">Vendido a crédito</span>
+            <Ticket size={18} className="icon-muted" />
+          </div>
+          <div className="card-value-small">
+            {metrics.financialDataStatus === 'loading' ? 'Cargando' : metrics.creditGenerated.status === 'complete'
+              ? formatCurrency(metrics.creditGenerated.value)
+              : 'Incompleto'}
+          </div>
+          <small className="text-muted">
+            {metrics.financialDataStatus === 'failed'
+              ? 'No se pudo leer el reporte local del periodo.'
+              : metrics.creditGenerated.status === 'complete'
+              ? 'Porción fiada al cerrar las ventas del periodo.'
+              : 'No se puede separar con certeza el pago inicial o los reversos.'}
+          </small>
+          {renderSourceBadges(reportContext.salesBadges)}
+        </div>
+
+        <div className={`stat-card-modern small-card ${metrics.currentDebt.status !== 'complete' ? 'card-warning-state' : ''}`}>
+          <div className="card-header-small">
+            <span className="card-label">Pendiente por cobrar</span>
+            <AlertTriangle size={18} className="icon-muted" />
+          </div>
+          <div className="card-value-small">
+            {metrics.financialDataStatus === 'loading'
+              ? 'Cargando'
+              : metrics.currentDebt.status === 'complete'
+              ? formatCurrency(metrics.currentDebt.value)
+              : metrics.currentDebt.reason === 'credit_cancellation_not_reconciled' ? 'Incompleto' : 'No disponible'}
+          </div>
+          <small className="text-muted">
+            {metrics.financialDataStatus === 'failed'
+              ? 'No se pudo leer el saldo local registrado.'
+              : metrics.financialDataStatus === 'loading'
+                ? 'Consultando el saldo local registrado.'
+                : metrics.currentDebt.status === 'complete'
+              ? 'Saldo vigente registrado en este dispositivo; no es un total del periodo.'
+              : metrics.currentDebt.reason === 'credit_cancellation_not_reconciled'
+                ? 'Hay una venta fiada cancelada sin reverso conciliado.'
+                : 'Este origen no entrega un saldo actual verificable para el alcance mostrado.'}
+          </small>
+          {renderSourceBadges(reportContext.localMetricBadges)}
         </div>
 
         {/* TARJETA 2: GANANCIA BRUTA */}
