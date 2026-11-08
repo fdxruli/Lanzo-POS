@@ -114,14 +114,14 @@ describe('SplitBillModal monetary text editing', () => {
     expect(paid).toHaveValue('50');
 
     const received = document.getElementById('splitCreditReceived-T1');
-    // Fiado starts its cash-received draft at 0.00; changing the abono does
-    // not automatically replace a separately initialized received amount.
-    expect(received).toHaveValue('0.00');
+    // When the received draft still matches the abono, changing the abono
+    // propagates the new amount to cash received; manual edits remain separate.
+    expect(received).toHaveValue('50');
     received.focus();
     expect(received.selectionStart).toBe(0);
-    expect(received.selectionEnd).toBe(4);
+    expect(received.selectionEnd).toBe(2);
     received.blur();
-    expect(received).toHaveValue('0.00');
+    expect(received).toHaveValue('50');
     received.focus();
     fireEvent.change(received, { target: { value: '60' } });
     expect(received).toHaveValue('60');
