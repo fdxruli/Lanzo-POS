@@ -12,11 +12,13 @@ describe('presentación operativa de caducidad', () => {
     expect(getExpirationCategory({ type: 'Producto', alertType: 'REGULARIZACION_STOCK' })).toBe('unbatched');
     expect(getExpirationCategory({ type: 'Lote', daysRemaining: -1 })).toBe('expired');
     expect(getExpirationCategory({ type: 'Lote', daysRemaining: 4, alertType: 'CADUCIDAD_LEGAL' })).toBe('upcoming');
+    expect(getExpirationCategory({ recordType: 'product', operationalCategory: 'vida_util_vencida', daysRemaining: -3 })).toBe('expired');
   });
 
   it('reconoce vida útil vencida incluso sin días negativos', () => {
     expect(getExpirationCategory({ alertType: 'VIDA_UTIL_VENCIDA', daysRemaining: 0 })).toBe('expired');
     expect(getExpirationStatus({ alertType: 'VIDA_UTIL_VENCIDA', daysRemaining: 0 })).toBe('Vida útil vencida');
+    expect(getExpirationStatus({ recordType: 'product', operationalCategory: 'vida_util_vencida', daysRemaining: -2 })).toBe('Vida útil vencida');
   });
 
   it('no marca como vencido cualquier lote legal vigente', () => {
@@ -32,7 +34,8 @@ describe('presentación operativa de caducidad', () => {
 
   it('distingue revisión de merma y stock sin lote', () => {
     expect(getExpirationStatus({ recordType: 'product' })).toBe('Stock sin lote');
-    expect(getExpirationStatus({ alertType: 'REVISION_MERMA', daysRemaining: 8 })).toBe('Revisar lote');
+    expect(getExpirationStatus({ alertType: 'REVISION_MERMA', daysRemaining: 8 })).toBe('Revisar merma');
+    expect(getExpirationCategory({ alertType: 'REVISION_MERMA', daysRemaining: -3 })).toBe('upcoming');
     expect(getExpirationDateTitle({ alertType: 'REVISION_MERMA' })).toBe('Fecha de revisión');
     expect(getExpirationDateTitle({ alertType: 'VIDA_UTIL_ESTIMADA' })).toBe('Vida útil estimada');
   });
