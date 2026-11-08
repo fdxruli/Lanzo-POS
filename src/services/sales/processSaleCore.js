@@ -540,7 +540,7 @@ export const processSaleCore = async ({
             batchesMap,
             roundCurrency,
             enforceExpiryStrict: !isCloudInventorySale,
-            allowDirectPartial: directPartialApproved && !isCloudInventorySale
+            allowDirectPartial: directPartialApproved
         });
 
         const stableSaleTimestamp = await resolveStableSaleTimestamp({
