@@ -5,6 +5,7 @@ import { generateIdempotencyKey } from '../../../services/sync/idempotency';
 import { isCanonicalCashStation } from '../../../services/cash/cashStation';
 import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
 import { getOpeningDeviceLabel } from '../../../services/cash/cashDeviceLabel';
+import CashDenominationCounter from '../modals/CashDenominationCounter';
 
 const REASONS = [
   ['historical_test', 'Caja historica de pruebas'],
@@ -47,6 +48,8 @@ const CajaAdminCashAuditModal = ({
   const [error, setError] = useState('');
   const [mode, setMode] = useState('');
   const [countedAmount, setCountedAmount] = useState('');
+  const [countMode, setCountMode] = useState('manual');
+  const [denominationCounts, setDenominationCounts] = useState({});
   const [nextShiftFund, setNextShiftFund] = useState('0');
   const [reasonCode, setReasonCode] = useState('');
   const [comments, setComments] = useState('');
@@ -65,6 +68,8 @@ const CajaAdminCashAuditModal = ({
     setDetail(null);
     setMode('');
     setCountedAmount('');
+    setCountMode('manual');
+    setDenominationCounts({});
     setNextShiftFund('0');
     setReasonCode('');
     setComments('');
@@ -229,7 +234,20 @@ const CajaAdminCashAuditModal = ({
                 <div className="admin-cash-audit-form">
                   <button type="button" className="btn-clear-filters" onClick={() => setMode('')}>Cambiar modalidad</button>
                   {audited ? <>
-                    <label>Efectivo contado<input type="number" min="0" step="0.01" value={countedAmount} onChange={(event) => setCountedAmount(event.target.value)} autoFocus /></label>
+                    <CashDenominationCounter
+                      value={countedAmount}
+                      onChange={setCountedAmount}
+                      expectedAmount={expected}
+                      inputId="admin-cash-counted-amount"
+                      manualLabel="Efectivo contado"
+                      autoFocus
+                      resetKey={cashSessionId}
+                      showDifference={false}
+                      mode={countMode}
+                      onModeChange={setCountMode}
+                      counts={denominationCounts}
+                      onCountsChange={setDenominationCounts}
+                    />
                     <label>Fondo siguiente turno<input type="number" min="0" step="0.01" value={nextShiftFund} onChange={(event) => setNextShiftFund(event.target.value)} /></label>
                     <p className="admin-cash-audit-difference">Diferencia orientativa: <strong>{formatMoney(difference)}</strong></p>
                   </> : <div className="caja-modal__notice caja-modal__notice--warning"><AlertTriangle size={18} /><p>Este cierre no afirma cuanto efectivo existia fisicamente. Conteo: No disponible. Diferencia: No determinada.</p></div>}

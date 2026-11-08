@@ -76,6 +76,76 @@ describe('CajaAdminCashAuditModal', () => {
     expect(screen.getByRole('button', { name: /revisar confirmacion/i })).toBeEnabled();
   });
 
+  it('sends the denomination total to PRO close and preserves the count after an authoritative totals change', async () => {
+    const onClose = vi.fn();
+    const getCashSessionDetailForAudit = vi.fn().mockResolvedValue({
+      ...detail,
+      cashSession: { ...detail.cashSession, expected_cash_total: '355.50' }
+    });
+    const closeAdmin = vi.fn()
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'CASH_TOTALS_CHANGED',
+        message: 'Los totales cambiaron.',
+        response: {
+          cash_session: {
+            ...detail.cashSession,
+            server_version: 5,
+            expected_cash_total: '356.00'
+          }
+        }
+      })
+      .mockResolvedValueOnce({ success: true });
+    render(
+      <CajaAdminCashAuditModal
+        cashSessionId="cash-1196"
+        onClose={onClose}
+        getCashSessionDetailForAudit={getCashSessionDetailForAudit}
+        cerrarCajaAdministrativamente={closeAdmin}
+      />
+    );
+
+    await screen.findByText('Caja sintetica');
+    fireEvent.click(screen.getByText(/conte fisicamente/i));
+    fireEvent.click(screen.getByRole('radio', { name: 'Conteo por denominaciones' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Billete de $200' }), { target: { value: '1' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Billete de $100' }), { target: { value: '1' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Billete de $20' }), { target: { value: '2' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Moneda de $10' }), { target: { value: '1' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Moneda de $5' }), { target: { value: '1' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Moneda de 50 centavos' }), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });
+    expect(screen.getByText('Total contado').nextElementSibling).toHaveTextContent('$355.50');
+
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(1));
+    expect(closeAdmin.mock.calls[0][0]).toMatchObject({
+      closingMode: 'admin_audited',
+      countedAmount: '355.5',
+      expectedVersion: 4
+    });
+
+    expect(await screen.findByText(/efectivo esperado cambió/i)).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'Conteo por denominaciones' })).toBeChecked();
+    expect(screen.getByLabelText('Cantidad de piezas: Moneda de 50 centavos')).toHaveValue('1');
+    expect(screen.getByText(/Diferencia orientativa/i)).toHaveTextContent('$-0.50');
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de piezas: Moneda de 50 centavos' }), { target: { value: '2' } });
+    expect(screen.getByText('Total contado').nextElementSibling).toHaveTextContent('$356.00');
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(2));
+    expect(closeAdmin.mock.calls[1][0]).toMatchObject({
+      closingMode: 'admin_audited',
+      countedAmount: '356',
+      expectedVersion: 5
+    });
+    expect(closeAdmin.mock.calls[1][0].idempotencyKey).not.toBe(closeAdmin.mock.calls[0][0].idempotencyKey);
+    expect(onClose).toHaveBeenCalledWith({ closed: true, cashSessionId: 'cash-1196' });
+  });
+
   it('represents unverified close with unavailable count and undetermined difference', async () => {
     renderModal();
     await screen.findByText('Caja sintetica');

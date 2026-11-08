@@ -1,0 +1,300 @@
+.cash-count {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  color: var(--text-dark);
+}
+
+.cash-count__mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cash-count__mode legend {
+  width: 100%;
+  margin-bottom: 0.4rem;
+  color: var(--text-light);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.cash-count__mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0.45rem 0.7rem;
+  color: var(--text-dark);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cash-count__mode-option.is-active {
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+  border-color: var(--primary-color);
+}
+
+.cash-count__mode-option input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--primary-color);
+}
+
+.cash-count__mode-option:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--ui-focus-color) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.cash-count__manual {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.cash-count__manual > label {
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.cash-count__manual-input {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-left: 0.85rem;
+  color: var(--text-light);
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+}
+
+.cash-count__manual-input:focus-within {
+  background: var(--card-background-color);
+  border-color: var(--ui-focus-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 22%, transparent);
+}
+
+.cash-count__manual-input > span {
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.cash-count__manual-input input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0.7rem 0.85rem 0.7rem 0.45rem;
+  color: var(--text-dark);
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  box-shadow: none;
+  font-size: 1.15rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-count__manual-input input:focus {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+.cash-count__manual-input input:disabled,
+.cash-count__denomination input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cash-count__assisted {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.cash-count__group {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.cash-count__group h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.cash-count__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.cash-count__denomination {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.55rem;
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+
+.cash-count__denomination > label {
+  min-height: 1.8em;
+  color: var(--text-dark);
+  font-size: 0.69rem;
+  font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cash-count__quantity {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.cash-count__quantity input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0.4rem;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.cash-count__quantity input:focus {
+  border-color: var(--ui-focus-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 22%, transparent);
+  outline: 0;
+}
+
+.cash-count__quantity > span {
+  color: var(--text-light);
+  font-size: 0.62rem;
+}
+
+.cash-count__denomination small {
+  color: var(--text-light);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-count__group-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.35rem 0.15rem 0;
+  color: var(--text-light);
+  font-size: 0.72rem;
+}
+
+.cash-count__group-total strong {
+  color: var(--text-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-count__minor-centavos {
+  min-width: 0;
+}
+
+.cash-count__minor-centavos summary {
+  min-height: 40px;
+  padding: 0.55rem 0.15rem;
+  color: var(--primary-color);
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.cash-count__minor-centavos summary:focus-visible {
+  border-radius: 6px;
+  outline: 3px solid color-mix(in srgb, var(--ui-focus-color) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.cash-count__result {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+  border: 1px solid color-mix(in srgb, var(--primary-color) 24%, var(--border-color));
+  border-radius: 11px;
+}
+
+.cash-count__result--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cash-count__result > div {
+  display: grid;
+  align-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.cash-count__result > div + div {
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border-color);
+}
+
+.cash-count__result span {
+  color: var(--text-light);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.cash-count__result strong {
+  color: var(--text-dark);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-count__hint {
+  margin: -0.35rem 0 0;
+  color: var(--text-light);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+@media (min-width: 560px) {
+  .cash-count__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .cash-count__mode-option {
+    flex: 1 1 100%;
+  }
+
+  .cash-count__grid {
+    gap: 0.35rem;
+  }
+
+  .cash-count__denomination {
+    padding: 0.45rem;
+  }
+}
