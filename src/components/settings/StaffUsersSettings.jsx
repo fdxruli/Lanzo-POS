@@ -32,7 +32,7 @@ const PERMISSION_LABELS = {
   notifications_system: 'Mensajes de sistema',
   support_center: 'Soporte Lanzo',
   ai_agents: 'Agentes IA',
-  settings: 'Configuracion (compatibilidad)',
+  settings: 'Configuración (compatibilidad)',
   settings_data: 'Datos y Apariencia',
   settings_controls: 'Controles',
   settings_maintenance: 'Datos y Mantenimiento',
@@ -44,10 +44,15 @@ const PERMISSION_LABELS = {
   discounts: 'Descuentos',
   refunds: 'Devoluciones',
   ecommerce: 'Ecommerce',
-  sync: 'Sincronizacion'
+  sync: 'Sincronización'
 };
 
 const PERMISSION_DESCRIPTIONS = {
+  pos: 'Permite abrir el Punto de venta. Otras acciones conservan sus permisos propios.',
+  orders: 'Permite consultar y atender pedidos del negocio.',
+  products: 'Permite acceder al catálogo de Productos. Las acciones de inventario conservan su autorización propia.',
+  customers: 'Permite consultar y gestionar clientes desde el apartado Clientes.',
+  reports: 'Permite consultar los reportes disponibles. Algunas exportaciones también requieren Sincronización.',
   notifications: 'Interruptor maestro. Al desactivarlo, el staff no puede abrir el Centro de Notificaciones.',
   notifications_ecommerce: 'Avisos de nuevos pedidos online y eventos del canal ecommerce.',
   notifications_support: 'Avisos de respuestas y cambios de solicitudes de soporte.',
@@ -56,16 +61,25 @@ const PERMISSION_DESCRIPTIONS = {
   notifications_operations: 'Caja, sincronizacion y otras alertas operativas del negocio.',
   notifications_system: 'Mensajes generales de Lanzo que no pertenecen a otra categoria.',
   support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.',
-  settings: 'Acceso legado para integraciones que aún usan el permiso general. Las claves de las seis secciones prevalecen cuando están presentes.',
-  settings_data: 'Permite editar los datos y la apariencia del negocio.',
-  settings_controls: 'Permite cambiar los controles operativos y preferencias de este apartado.',
-  settings_maintenance: 'Permite entrar al apartado. Cada rutina conserva además su permiso de sincronización, inventario o reportes.',
-  settings_backup: 'Permite configurar y ejecutar respaldos. La restauración permanece reservada al Administrador.'
+  ai_agents: 'Permite acceder a Agentes IA. Cada acción conserva sus confirmaciones y autorizaciones.',
+  settings: 'Compatibilidad con accesos generales anteriores. Las secciones de Configuración respetan las claves granulares cuando existen.',
+  settings_data: 'Permite cambiar los datos comerciales y la apariencia del negocio, incluidos sus datos de perfil.',
+  settings_controls: 'Permite cambiar los controles operativos y las preferencias disponibles en Configuración → Controles.',
+  license: 'Permite abrir Licencia y Rubros. La administración de usuarios Staff sigue reservada al Admin.',
+  devices: 'Permite consultar el dispositivo actual. Cambiar capacidades o liberar cupos de la licencia sigue reservado al Admin.',
+  settings_maintenance: 'Permite abrir Datos y Mantenimiento. Cada rutina conserva su permiso de Sincronización, Inventario o Reportes.',
+  settings_backup: 'Permite configurar y ejecutar respaldos. La restauración permanece reservada al Administrador.',
+  inventory: 'Permite acceder a Inventario. No habilita por sí solo Productos, Caja ni Reportes.',
+  cash_register: 'Permite acceder a Caja según las acciones habilitadas para Staff.',
+  discounts: 'Permite aplicar descuentos durante la venta, según los límites configurados.',
+  refunds: 'Permite realizar devoluciones disponibles para Staff.',
+  ecommerce: 'Permite abrir las funciones de Ecommerce disponibles para Staff; no activa servicios de la licencia.',
+  sync: 'Permite ejecutar sincronizaciones y transferencias que usan esta autorización. No concede otros permisos por sí sola.'
 };
 
 const PERMISSION_GROUPS = [
   {
-    title: 'Configuracion',
+    title: 'Configuración',
     permissions: [
       'settings_data',
       'settings_controls',
@@ -76,7 +90,7 @@ const PERMISSION_GROUPS = [
     ]
   },
   {
-    title: 'Operacion',
+    title: 'Operación',
     permissions: [
       'pos',
       'orders',
@@ -110,6 +124,7 @@ const getPermissionGroupTitle = (permission) => PERMISSION_GROUPS.find((group) =
 const EMPTY_PERMISSIONS = Object.fromEntries(
   Object.keys(PERMISSION_LABELS).map((permission) => [permission, false])
 );
+const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);
 
 const GRANULAR_SETTINGS_PERMISSIONS = [
   'settings_data',
@@ -127,10 +142,10 @@ const ROLE_LABELS = {
 };
 
 const ROLE_DESCRIPTIONS = {
-  staff: 'Acceso básico al punto de venta.',
-  cashier: 'Puede vender, cobrar y aplicar descuentos.',
-  waiter: 'Pensado para tomar pedidos.',
-  supervisor: 'Puede operar, revisar reportes, inventario, caja, notificaciones y agentes IA.',
+  staff: 'Solo Punto de venta.',
+  cashier: 'Punto de venta, pedidos, clientes, caja y descuentos.',
+  waiter: 'Punto de venta y pedidos.',
+  supervisor: 'Operación, productos, reportes, inventario, caja, notificaciones, soporte y Agentes IA. No incluye permisos de Configuración ni Ecommerce.',
   custom: 'Permisos configurados manualmente.'
 };
 
@@ -269,6 +284,52 @@ export default function StaffUsersSettings({ licenseKey }) {
   }
 
   const permissionGroups = useMemo(() => PERMISSION_GROUPS, []);
+  const permissionSummary = useMemo(() => {
+    const currentPermissions = normalizePermissions(form.permissions);
+    const activeKeys = PERMISSION_KEYS.filter((permission) => currentPermissions[permission] === true);
+    const activeByGroup = permissionGroups.map((group) => ({
+      title: group.title,
+      permissions: group.permissions
+        .filter((permission) => currentPermissions[permission] === true)
+        .map((permission) => PERMISSION_LABELS[permission])
+    })).filter((group) => group.permissions.length > 0);
+
+    if (!editing) {
+      return {
+        activeCount: activeKeys.length,
+        activeByGroup,
+        granted: [],
+        withdrawn: [],
+        unchangedActiveCount: 0,
+        hasPendingChanges: false
+      };
+    }
+
+    const originalPermissions = normalizePermissions(editing.permissions);
+    const granted = PERMISSION_KEYS
+      .filter((permission) => currentPermissions[permission] === true && originalPermissions[permission] !== true)
+      .map((permission) => PERMISSION_LABELS[permission]);
+    const withdrawn = PERMISSION_KEYS
+      .filter((permission) => originalPermissions[permission] === true && currentPermissions[permission] !== true)
+      .map((permission) => PERMISSION_LABELS[permission]);
+    const unchangedActiveCount = PERMISSION_KEYS.filter((permission) => (
+      originalPermissions[permission] === true && currentPermissions[permission] === true
+    )).length;
+    const hasPendingChanges = form.display_name.trim() !== (editing.display_name || '').trim()
+      || form.role_name !== (editing.role_name || 'custom')
+      || form.password.length > 0
+      || granted.length > 0
+      || withdrawn.length > 0;
+
+    return {
+      activeCount: activeKeys.length,
+      activeByGroup,
+      granted,
+      withdrawn,
+      unchangedActiveCount,
+      hasPendingChanges
+    };
+  }, [editing, form.display_name, form.password, form.permissions, form.role_name, permissionGroups]);
 
   const loadStaffUsers = useCallback(async ({ force = false } = {}) => {
     if (!licenseKey) return null;
@@ -476,17 +537,18 @@ export default function StaffUsersSettings({ licenseKey }) {
       permissions: normalizePermissions(form.permissions)
     };
 
-    const result = editing
-      ? await updateStaffUserService(licenseKey, editing.id, {
-        display_name: payload.display_name,
-        role_name: payload.role_name,
-        permissions: payload.permissions,
-        is_active: editing.is_active !== false,
-        new_password: payload.password || null
-      })
-      : await createStaffUserService(licenseKey, payload);
-
+    let saveConfirmed = false;
     try {
+      const result = editing
+        ? await updateStaffUserService(licenseKey, editing.id, {
+          display_name: payload.display_name,
+          role_name: payload.role_name,
+          permissions: payload.permissions,
+          is_active: editing.is_active !== false,
+          new_password: payload.password || null
+        })
+        : await createStaffUserService(licenseKey, payload);
+
       if (
         !mountedRef.current
         || licenseKeyRef.current !== mutationLicenseKey
@@ -494,11 +556,22 @@ export default function StaffUsersSettings({ licenseKey }) {
       ) return;
 
       if (result.success) {
+        saveConfirmed = true;
         showMessageModal(editing ? 'Usuario staff actualizado.' : 'Usuario staff creado.', null, { type: 'success' });
         dismissForm();
         await commitSuccessfulMutation(result, mutationContextGeneration, mutationLicenseKey);
       } else {
         setErrorMessage(result.message || 'No se pudo guardar usuario staff.');
+      }
+    } catch (error) {
+      if (
+        mountedRef.current
+        && licenseKeyRef.current === mutationLicenseKey
+        && contextGenerationRef.current === mutationContextGeneration
+      ) {
+        setErrorMessage(saveConfirmed
+          ? 'El guardado fue confirmado, pero no se pudo actualizar la lista. Pulsa Actualizar para volver a cargarla.'
+          : error?.message || 'No se pudo guardar usuario staff.');
       }
     } finally {
       if (
@@ -614,7 +687,7 @@ export default function StaffUsersSettings({ licenseKey }) {
           }}
         >
           <div
-            className="ui-modal__content ui-modal__content--lg staff-user-modal-content"
+            className="ui-modal__content ui-modal__content--xl staff-user-modal-content"
             role="dialog"
             aria-modal="true"
             aria-labelledby="staff-user-form-title"
@@ -686,6 +759,7 @@ export default function StaffUsersSettings({ licenseKey }) {
                       value={form.role_name}
                       onChange={(event) => applyRoleTemplate(event.target.value)}
                       disabled={isSaving}
+                      aria-describedby="staff-role-description staff-role-template-note"
                     >
                       {ROLE_OPTIONS.map((role) => (
                         <option key={role} value={role}>
@@ -694,8 +768,13 @@ export default function StaffUsersSettings({ licenseKey }) {
                       ))}
                     </select>
                     {ROLE_DESCRIPTIONS[form.role_name] && (
-                      <small className="form-help-text">{ROLE_DESCRIPTIONS[form.role_name]}</small>
+                      <small id="staff-role-description" className="form-help-text">
+                        {ROLE_DESCRIPTIONS[form.role_name]}
+                      </small>
                     )}
+                    <small id="staff-role-template-note" className="form-help-text staff-role-template-note">
+                      Al elegir otra plantilla, se reemplazan los permisos seleccionados en este formulario. Puedes ajustarlos antes de guardar.
+                    </small>
                   </div>
                   <div className="form-group">
                     <label className="form-label" htmlFor="staff-password">
@@ -714,6 +793,73 @@ export default function StaffUsersSettings({ licenseKey }) {
                     />
                   </div>
                 </div>
+
+                <section className="staff-permission-review" aria-labelledby="staff-permission-review-title">
+                  <header className="staff-permission-review-header">
+                    <div>
+                      <h3 id="staff-permission-review-title">Revisión de permisos</h3>
+                      <p>
+                        {editing
+                          ? `Después de guardar tendrá ${permissionSummary.activeCount} permisos activos.`
+                          : 'Estos permisos se aplicarán al crear el usuario; todavía no se han guardado.'}
+                      </p>
+                    </div>
+                    <span
+                      className={`staff-permission-review-status ${isSaving ? 'is-saving' : errorMessage ? 'has-error' : editing && permissionSummary.hasPendingChanges ? 'has-changes' : ''}`}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {isSaving
+                        ? 'Guardando…'
+                        : errorMessage
+                          ? 'Error al guardar'
+                          : editing
+                            ? permissionSummary.hasPendingChanges ? 'Cambios pendientes' : 'Sin cambios'
+                            : 'Sin guardar'}
+                    </span>
+                  </header>
+
+                  {editing ? (
+                    <>
+                      <div className="staff-permission-review-changes">
+                        <section aria-labelledby="staff-permissions-granted-title">
+                          <h4 id="staff-permissions-granted-title">
+                            Se concederán <span>{permissionSummary.granted.length}</span>
+                          </h4>
+                          {permissionSummary.granted.length > 0 ? (
+                            <ul className="staff-permission-review-list">
+                              {permissionSummary.granted.map((permission) => <li key={permission}>{permission}</li>)}
+                            </ul>
+                          ) : <p>No se agregan permisos.</p>}
+                        </section>
+                        <section aria-labelledby="staff-permissions-withdrawn-title">
+                          <h4 id="staff-permissions-withdrawn-title">
+                            Se retirarán <span>{permissionSummary.withdrawn.length}</span>
+                          </h4>
+                          {permissionSummary.withdrawn.length > 0 ? (
+                            <ul className="staff-permission-review-list">
+                              {permissionSummary.withdrawn.map((permission) => <li key={permission}>{permission}</li>)}
+                            </ul>
+                          ) : <p>No se retiran permisos.</p>}
+                        </section>
+                      </div>
+                      <p className="staff-permission-review-unchanged">
+                        Se mantienen activos sin cambios: {permissionSummary.unchangedActiveCount} permisos.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="staff-permission-review-results">
+                      {permissionSummary.activeByGroup.length > 0 ? permissionSummary.activeByGroup.map((group) => (
+                        <section key={group.title} aria-label={group.title}>
+                          <h4>{group.title}</h4>
+                          <ul className="staff-permission-review-list">
+                            {group.permissions.map((permission) => <li key={permission}>{permission}</li>)}
+                          </ul>
+                        </section>
+                      )) : <p>Este usuario no recibirá permisos de acceso.</p>}
+                    </div>
+                  )}
+                </section>
 
                 <div className="staff-permissions-groups">
                   {permissionGroups.map((group) => {
@@ -742,7 +888,7 @@ export default function StaffUsersSettings({ licenseKey }) {
                         <summary className="staff-permissions-summary">
                           <span>
                             <strong>{group.title}</strong>
-                            <small>{enabledPermissions} de {group.permissions.length} permisos activos</small>
+                            <small className="staff-permissions-count">{enabledPermissions} activos · {group.permissions.length} permisos</small>
                           </span>
                         </summary>
                         <fieldset className="staff-permissions-group">
@@ -755,7 +901,10 @@ export default function StaffUsersSettings({ licenseKey }) {
                               );
 
                               return (
-                                <label key={permission} className="staff-permission-toggle">
+                                <label
+                                  key={permission}
+                                  className={`staff-permission-toggle ${form.permissions?.[permission] === true ? 'is-enabled' : ''}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={form.permissions?.[permission] === true}
