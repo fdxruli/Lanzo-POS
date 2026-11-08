@@ -62,7 +62,7 @@ vi.mock('../utils', () => ({
   sendWhatsAppMessage: vi.fn()
 }));
 vi.mock('../pricingLogic', () => ({ calculatePricingDetails: vi.fn() }));
-vi.mock('../Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
+vi.mock('../Logger', () => ({ default: { log: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 
 import { cancelSale } from '../salesService';
 
