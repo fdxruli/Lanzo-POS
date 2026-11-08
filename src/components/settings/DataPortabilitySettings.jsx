@@ -266,13 +266,19 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
           <Download size={17} /> Descargar paquete de catálogo
         </button>
         <div className="data-portability-import">
-          <label className="btn btn-secondary" htmlFor="portable-transfer-file">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+          >
             <Upload size={17} /> Seleccionar paquete de catálogo
-          </label>
+          </button>
           <input
             ref={inputRef}
             id="portable-transfer-file"
             type="file"
+            aria-label="Archivo de catálogo a transferir"
             accept=".json,.lanzo.json,application/json"
             onChange={selectTransferFile}
             disabled={busy}
