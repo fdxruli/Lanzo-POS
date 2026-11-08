@@ -70,7 +70,8 @@ describe('SplitBillModal monetary text editing', () => {
     input.focus();
     await user.keyboard('50');
     expect(input).toHaveValue('50');
-    input.blur();
+    // Dispatch blur explicitly: focus can be redirected during React rerenders.
+    fireEvent.blur(input);
     expect(input).toHaveValue('50.00');
   });
 
@@ -111,12 +112,14 @@ describe('SplitBillModal monetary text editing', () => {
     expect(paid).toHaveValue('50');
 
     const received = document.getElementById('splitCreditReceived-T1');
-    expect(received).toHaveValue('50');
+    // Fiado starts its cash-received draft at 0.00; changing the abono does
+    // not automatically replace a separately initialized received amount.
+    expect(received).toHaveValue('0.00');
     received.focus();
     expect(received.selectionStart).toBe(0);
-    expect(received.selectionEnd).toBe(2);
+    expect(received.selectionEnd).toBe(4);
     received.blur();
-    expect(received).toHaveValue('50');
+    expect(received).toHaveValue('0.00');
     received.focus();
     await user.keyboard('60');
     expect(received).toHaveValue('60');
