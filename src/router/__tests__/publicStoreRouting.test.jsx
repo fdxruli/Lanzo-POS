@@ -11,20 +11,24 @@ vi.mock('../../services/ecommerce/ecommercePublicService', async (importOriginal
   const actual = await importOriginal();
   return {
     ...actual,
-    getPublicPortalBySlug: vi.fn().mockResolvedValue({
-      portal: {
-        slug: 'mi-negocio',
-        name: 'Mi negocio',
-        pickupEnabled: true,
-        deliveryEnabled: false,
-        orderingEnabled: true,
-        minOrderTotal: 0,
-        maxOrderItems: 30,
-        maxItemQuantity: 99,
-      },
-      hours: { weekly: [], exceptions: [] },
-      features: {},
-    }),
+    getPublicPortalBySlug: vi.fn().mockImplementation((slug) => (
+      slug === 'mi-negocio'
+        ? Promise.resolve({
+            portal: {
+              slug: 'mi-negocio',
+              name: 'Mi negocio',
+              pickupEnabled: true,
+              deliveryEnabled: false,
+              orderingEnabled: true,
+              minOrderTotal: 0,
+              maxOrderItems: 30,
+              maxItemQuantity: 99,
+            },
+            hours: { weekly: [], exceptions: [] },
+            features: {},
+          })
+        : Promise.reject(new Error('Tienda inexistente.'))
+    )),
     getPublicCatalog: vi.fn().mockResolvedValue({
       items: [],
       pagination: { limit: 100, offset: 0, hasMore: false },
@@ -42,6 +46,8 @@ describe('public store routing', () => {
     expect(isPublicStorePath('/tienda/')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio/')).toBe(true);
+    expect(isPublicStorePath('/mi-negocio')).toBe(false);
+    expect(isPublicStorePath(`/mi-negocio/pedido/trk1_${'A'.repeat(43)}`)).toBe(false);
     expect(isPublicStorePath('/conoce-lanzo')).toBe(true);
     expect(isPublicStorePath('/conoce-lanzo/')).toBe(true);
     // The standalone lanzo-store bundle owns /. The admin origin must keep / for the POS.
@@ -95,17 +101,33 @@ describe('public store routing', () => {
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
   });
 
+  it('mounts the public page for /:slug without POS shell UI', async () => {
+    const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/mi-negocio'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
+    expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
+    expect(screen.queryByText('StaffLoginModal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
+  });
+
+  it('keeps both short and legacy order tracking routes in the public router', () => {
+    const routePaths = publicStoreRoutes.map(({ path }) => path);
+    expect(routePaths).toContain('/:slug/pedido/:trackingToken');
+    expect(routePaths).toContain('/tienda/:slug/pedido/:trackingToken');
+  });
+
   it('shows a friendly public state for /tienda', () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/tienda'] });
     render(<RouterProvider router={router} />);
     expect(screen.getByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
   });
 
-  it('does not use the store home as fallback for arbitrary paths', () => {
+  it('shows the unavailable state for an unknown one-segment slug', async () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/esto-no-existe'] });
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No se pudo cargar la tienda' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', {
       name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
     })).not.toBeInTheDocument();
@@ -118,7 +140,7 @@ describe('public store routing', () => {
     expect(screen.getByRole('heading', {
       name: 'Todo lo que necesitas para vender, controlar y crecer.'
     })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/tienda/mi-negocio');
+    expect(screen.getByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/mi-negocio');
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
   });
 });

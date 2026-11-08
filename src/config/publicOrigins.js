@@ -68,18 +68,20 @@ const encodePathSegment = (value, label) => {
   return encodeURIComponent(String(value));
 };
 
+export function buildPublicStorePath(slug) {
+  return `/${encodePathSegment(slug, 'slug')}`;
+}
+
 export function buildPublicStoreUrl(slug) {
-  return new URL(
-    `/tienda/${encodePathSegment(slug, 'slug')}`,
-    PUBLIC_STORE_ORIGIN
-  ).toString();
+  return new URL(buildPublicStorePath(slug), PUBLIC_STORE_ORIGIN).toString();
+}
+
+export function buildPublicTrackingPath(slug, trackingToken) {
+  return `${buildPublicStorePath(slug)}/pedido/${encodePathSegment(trackingToken, 'trackingToken')}`;
 }
 
 export function buildPublicTrackingUrl(slug, trackingToken) {
-  return new URL(
-    `/tienda/${encodePathSegment(slug, 'slug')}/pedido/${encodePathSegment(trackingToken, 'trackingToken')}`,
-    PUBLIC_STORE_ORIGIN
-  ).toString();
+  return new URL(buildPublicTrackingPath(slug, trackingToken), PUBLIC_STORE_ORIGIN).toString();
 }
 
 export function buildPublicLandingUrl(slug) {

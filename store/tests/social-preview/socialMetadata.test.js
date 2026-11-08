@@ -353,8 +353,8 @@ describe('origen, canonical e imagen controlada', () => {
     });
     const url = new URL(canonical);
 
-    expect(canonical).toBe(`${PUBLIC_ORIGIN}/tienda/mi-tienda-2`);
-    expect(url.pathname).toBe('/tienda/mi-tienda-2');
+    expect(canonical).toBe(`${PUBLIC_ORIGIN}/mi-tienda-2`);
+    expect(url.pathname).toBe('/mi-tienda-2');
     expect(url.search).toBe('');
     expect(url.hash).toBe('');
     expect(url.pathname).not.toContain('//');
@@ -416,7 +416,7 @@ describe('buildStoreSocialMetadata', () => {
     expect(metadata).toMatchObject({
       title: 'Café Lanzo | Tienda en línea',
       description: 'Compra café mexicano en línea',
-      canonicalUrl: `${PUBLIC_ORIGIN}/tienda/cafe-lanzo`,
+      canonicalUrl: `${PUBLIC_ORIGIN}/cafe-lanzo`,
       imageUrl: `${PUBLIC_ORIGIN}/api/og/store?slug=cafe-lanzo&v=7`,
       imageAlt: 'Vista previa de Café Lanzo',
       locale: 'es_MX',

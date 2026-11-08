@@ -36,6 +36,11 @@ const INDEX_HTML = `<!doctype html><html><head>
 function validRoutes() {
   return [
     {
+      src: '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])/$',
+      status: 308,
+      headers: { Location: '/$1', 'X-Robots-Tag': 'noindex, nofollow, noarchive' },
+    },
+    {
       src: '^/(.*)/$',
       status: 308,
       headers: { Location: '/$1', 'X-Robots-Tag': 'noindex, nofollow, noarchive' },
@@ -47,17 +52,29 @@ function validRoutes() {
       continue: true,
     },
     {
-      src: '^/(?:|home\\.html|index\\.html|tienda|conoce-lanzo|tienda/[^/]+/pedido/[^/]+)$',
+      src: '^/(?:|home\\.html|index\\.html|tienda|conoce-lanzo|tienda/[^/]+/pedido/[^/]+|(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))[^/]+/pedido/[^/]+)$',
       headers: { 'Cache-Control': 'public, max-age=0, must-revalidate' },
       continue: true,
     },
     { src: '^/$', dest: '/home.html' },
     { handle: 'filesystem' },
     { src: '^/tienda/([^/]+)/pedido/([^/]+)$', dest: '/index.html' },
-    { src: '^/tienda/([^/]+)$', dest: '/api/store-page?slug=$1' },
+    {
+      src: '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$',
+      status: 308,
+      headers: { Location: '/$1' },
+    },
+    {
+      src: '^/(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))([^/]+)/pedido/([^/]+)$',
+      dest: '/index.html',
+    },
+    {
+      src: '^/(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))([^/]+)$',
+      dest: '/api/store-page?slug=$1',
+    },
     { src: '^/(?:tienda|conoce-lanzo)$', dest: '/index.html' },
     {
-      src: '^/(?!(?:api|assets)(?:/|$)|(?:home|index)\\.html$|robots[^/]*\\.txt$)(.*)$',
+      src: '^/(?!(?:api|assets)(?:/|$)|(?:home|index)\\.html$|robots[^/]*\\.txt$|(?:sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js)$|(?:\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|src(?:/|$)|_src(?:/|$)))(.*)$',
       dest: '/index.html',
     },
     { handle: 'error' },
@@ -837,7 +854,9 @@ exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
       const trackingRoute = config.routes.find(
-        (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+        (route) => route.dest === '/index.html'
+          && route.src.includes('/pedido/([^/]+)$')
+          && !route.src.startsWith('^/tienda/'),
       );
       trackingRoute.dest = '/api/store-page?slug=$1&tracking=$2';
       await writeJson(configPath, config);
@@ -845,13 +864,19 @@ exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
     ['HTML immutable', async () => {
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
-      config.routes[3].headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+      const cacheRoute = config.routes.find(
+        (route) => route.headers?.['Cache-Control'] === 'public, max-age=0, must-revalidate',
+      );
+      cacheRoute.headers['Cache-Control'] = 'public, max-age=31536000, immutable';
       await writeJson(configPath, config);
     }, 'htmlNeverImmutable'],
     ['asset sin caché', async () => {
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
-      config.routes.splice(2, 1);
+      const assetRouteIndex = config.routes.findIndex(
+        (route) => route.src === '^/assets/(.*)$',
+      );
+      config.routes.splice(assetRouteIndex, 1);
       await writeJson(configPath, config);
     }, 'immutableAssets'],
     ['loop', async () => {

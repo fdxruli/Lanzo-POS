@@ -112,7 +112,7 @@ describe('resolvePublicRequestOrigin', () => {
       slug: 'mi-tienda',
       portal: { name: 'Mi Tienda' },
     });
-    expect(metadata.canonicalUrl).toBe('https://store.example.test/tienda/mi-tienda');
+    expect(metadata.canonicalUrl).toBe('https://store.example.test/mi-tienda');
     expect(metadata.openGraph.url).toBe(metadata.canonicalUrl);
   });
 });

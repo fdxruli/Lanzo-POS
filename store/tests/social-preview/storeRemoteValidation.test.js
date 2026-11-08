@@ -1,7 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
+import { REVALIDATED_HTML_CACHE } from '../../../store/api/store-page.js';
+import { REVALIDATED_CACHE, VERSIONED_CACHE } from '../../../store/api/og/store.js';
 import {
   auditRemoteStoreDeployment,
   createPreviewDeploymentPlanValidator,
@@ -11,6 +14,8 @@ import {
   parseCacheControl,
   parseAuditArguments,
   validateCacheControl,
+  validateEdgeCacheControl,
+  validateVercelCacheEvidence,
   validatePreviewDeploymentPlan,
   validateFifthPreviewRemoteCertification,
   validatePreviewUrl,
@@ -49,7 +54,7 @@ const staticHtml = `<!doctype html><html lang="es-MX"><head>
 </head><body><div id="root"></div></body></html>`;
 
 function socialHtml(name = 'Tienda pública', effectiveSlug = slug) {
-  const canonical = `${preview}/tienda/${effectiveSlug}`;
+  const canonical = `${preview}/${effectiveSlug}`;
   const image = `${preview}/api/og/store?slug=${effectiveSlug}&v=1`;
   return `<!doctype html><html lang="es-MX"><head>
 <title>${name} | Tienda en línea</title>
@@ -75,12 +80,58 @@ function genericHtml() {
 </head><body><div id="root"></div></body></html>`;
 }
 
+let cachedPngFixture;
+
+function pngCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type, 'ascii');
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const content = Buffer.concat([name, data]);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(pngCrc32(content));
+  return Buffer.concat([length, content, checksum]);
+}
+
 function pngFixture() {
-  const bytes = Buffer.alloc(1_024, 0);
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes, 0);
-  bytes.writeUInt32BE(1200, 16);
-  bytes.writeUInt32BE(630, 20);
-  return bytes;
+  if (cachedPngFixture) return cachedPngFixture;
+  const width = 1200;
+  const height = 630;
+  const rowLength = width + 1;
+  const raw = Buffer.alloc(rowLength * height);
+  let state = 0x12345678;
+  for (let row = 0; row < height; row += 1) {
+    const start = row * rowLength;
+    raw[start] = 0;
+    for (let column = 1; column < rowLength; column += 1) {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      raw[start + column] = state & 0xff;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 0;
+  cachedPngFixture = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+  return cachedPngFixture;
 }
 
 function response(body, {
@@ -88,6 +139,8 @@ function response(body, {
   contentType = 'text/html; charset=utf-8',
   cacheControl = 'public, max-age=0, must-revalidate',
   location = '',
+  vercelCache = 'HIT',
+  age = '12',
 } = {}) {
   return new Response(body, {
     status,
@@ -95,6 +148,8 @@ function response(body, {
       'Content-Type': contentType,
       'Cache-Control': cacheControl,
       'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      'X-Vercel-Cache': vercelCache,
+      ...(age === null || age === undefined ? {} : { Age: String(age) }),
       ...(location ? { Location: location } : {}),
     },
   });
@@ -340,37 +395,50 @@ async function fixtureFetch(input, options = {}) {
   const url = new URL(input);
   if (options.method === 'HEAD') {
     const contentType = url.pathname.startsWith('/api/og/') ? 'image/png' : 'text/html; charset=utf-8';
-    const cacheControl = url.pathname.startsWith('/assets/')
-      ? 'public, max-age=31536000, immutable'
-      : (url.pathname.startsWith('/tienda/') && !url.pathname.includes('/pedido/')
-          ? 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400'
-          : 'public, max-age=0, must-revalidate');
+    const isOgVersioned = url.pathname === '/api/og/store' && url.searchParams.has('v');
+    const isDynamicHtml = url.pathname === `/${slug}`
+      || url.pathname === '/api/store-page'
+      || url.pathname === '/slug-inexistente-controlado';
+    let cacheControl = 'public, max-age=0, must-revalidate';
+    if (url.pathname.startsWith('/assets/') || isOgVersioned) {
+      cacheControl = 'public, max-age=31536000, immutable';
+    } else if (isDynamicHtml || url.pathname === '/api/og/store') {
+      cacheControl = 'public, max-age=0';
+    }
     return response(null, { contentType, cacheControl });
   }
-  if (url.pathname === `/tienda/${slug}/`) {
+  if (url.pathname === `/tienda/${slug}/` || url.pathname === `/tienda/${slug}`) {
     return response(null, {
       status: 308,
-      location: `/tienda/${slug}`,
+      location: `/${slug}${url.search}`,
       cacheControl: 'public, max-age=0, s-maxage=300',
     });
   }
+  if (url.pathname === `/${slug}/`) {
+    return response(null, {
+      status: 308,
+      location: `/${slug}${url.search}`,
+      cacheControl: 'public, max-age=0, must-revalidate',
+    });
+  }
   if (
-    url.pathname === `/tienda/${slug}`
+    url.pathname === `/${slug}`
     || (url.pathname === '/api/store-page' && url.searchParams.get('slug') === slug)
   ) {
     return response(socialHtml(), {
-      cacheControl: 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+      cacheControl: 'public, max-age=0',
     });
   }
   if (url.pathname === `/tienda/${slug}/pedido/token-ficticio`
-    || url.pathname === `/tienda/${slug}/ruta-desconocida`
+    || url.pathname === `/${slug}/pedido/token-ficticio`
+    || url.pathname === `/${slug}/ruta-desconocida`
     || url.pathname === '/'
     || url.pathname === '/tienda') {
     return response(staticHtml);
   }
-  if (url.pathname === `/tienda/${'slug-inexistente-controlado'}`
+  if (url.pathname === `/${'slug-inexistente-controlado'}`
     || (url.pathname === '/api/store-page' && url.searchParams.get('slug') === 'slug-inexistente-controlado')) {
-    return response(genericHtml(), { cacheControl: 'public, max-age=0, s-maxage=300' });
+    return response(genericHtml(), { cacheControl: 'public, max-age=0' });
   }
   if (url.pathname === '/api/store-page' && url.searchParams.get('slug') === 'INVALIDO') {
     return response('Invalid request.', {
@@ -384,7 +452,7 @@ async function fixtureFetch(input, options = {}) {
       contentType: 'image/png',
       cacheControl: url.searchParams.has('v')
         ? 'public, max-age=31536000, immutable'
-        : 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+        : 'public, max-age=0',
     });
   }
   if (url.pathname === assetPath) {
@@ -417,18 +485,40 @@ function withFixtureOverride(overrides = {}) {
       });
     }
     if (
+      Object.hasOwn(overrides, 'ogBody')
+      && url.pathname === '/api/og/store'
+      && options.method !== 'HEAD'
+    ) {
+      return response(overrides.ogBody, {
+        contentType: overrides.ogContentType || 'image/png',
+        cacheControl: url.searchParams.has('v')
+          ? 'public, max-age=31536000, immutable'
+          : 'public, max-age=0',
+      });
+    }
+    if (
       overrides.poisonHostileQuery
-      && url.pathname === `/tienda/${slug}`
+      && url.pathname === `/${slug}`
       && url.searchParams.has('slug')
     ) {
       return response(socialHtml('Tienda pública', 'externo'), {
         cacheControl: 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
       });
     }
+    if (overrides.poisonOgSlug && url.pathname === `/${slug}` && options.method !== 'HEAD') {
+      return response(socialHtml().replace('?slug=' + slug + '&v=1', '?slug=otro&v=1'), {
+        cacheControl: 'public, max-age=0',
+      });
+    }
+    if (overrides.poisonOgVersion && url.pathname === `/${slug}` && options.method !== 'HEAD') {
+      return response(socialHtml().replace('&v=1', ''), {
+        cacheControl: 'public, max-age=0',
+      });
+    }
     const original = await fixtureFetch(input, options);
     const cacheKey = url.pathname === '/api/og/store'
       ? (url.searchParams.has('v') ? 'ogVersioned' : 'ogUnversioned')
-      : (url.pathname === `/tienda/${slug}` ? 'dynamicHtml'
+      : (url.pathname === `/${slug}` ? 'dynamicHtml'
           : (url.pathname === assetPath ? 'asset' : null));
     if (cacheKey && (overrides.duplicateContentType || overrides.duplicateCacheControl)) {
       const bytes = new Uint8Array(await original.arrayBuffer());
@@ -442,12 +532,17 @@ function withFixtureOverride(overrides = {}) {
     }
     if (
       !cacheKey
-      || overrides[cacheKey] === null
-      || overrides[cacheKey] === undefined
+      || (
+        (overrides[cacheKey] === null || overrides[cacheKey] === undefined)
+        && !overrides.vercelCache
+      )
     ) return original;
     const bytes = new Uint8Array(await original.arrayBuffer());
     const headers = new Headers(original.headers);
-    headers.set('Cache-Control', overrides[cacheKey]);
+    if (overrides[cacheKey] !== null && overrides[cacheKey] !== undefined) {
+      headers.set('Cache-Control', overrides[cacheKey]);
+    }
+    if (overrides.vercelCache) headers.set('X-Vercel-Cache', overrides.vercelCache);
     return new Response(options.method === 'HEAD' ? null : bytes, {
       status: original.status,
       headers,
@@ -893,14 +988,34 @@ describe('validación remota saneada de lanzo-store', () => {
   it('cuenta metadata única, canonical e imagen sin persistir HTML', () => {
     const inspection = inspectSocialHtml(socialHtml());
     expect(Object.values(inspection.counts).every((count) => count === 1)).toBe(true);
-    expect(inspection.canonicalPath).toBe(`/tienda/${slug}`);
-    expect(inspection.ogUrlPath).toBe(`/tienda/${slug}`);
+    expect(inspection.canonicalPath).toBe(`/${slug}`);
+    expect(inspection.ogUrlPath).toBe(`/${slug}`);
+    expect(inspection).toMatchObject({
+      ogImagePath: '/api/og/store',
+      ogImageSlug: slug,
+      ogImageVersion: 1,
+    });
     expect(inspection.fullHtml).toBeUndefined();
     expect(JSON.stringify(inspection)).not.toContain('<!doctype');
   });
 
-  it('detecta PNG 1200 × 630 y marcadores de alta precisión', () => {
-    expect(inspectPng(pngFixture())).toMatchObject({ png: true, width: 1200, height: 630 });
+  it('valida el PNG completo y rechaza truncamiento o HTML disfrazado', () => {
+    const png = pngFixture();
+    expect(png.byteLength).toBeGreaterThan(1_000);
+    expect(inspectPng(png)).toMatchObject({
+      png: true,
+      complete: true,
+      width: 1200,
+      height: 630,
+    });
+    expect(inspectPng(png.subarray(0, png.byteLength - 12))).toMatchObject({
+      png: false,
+      complete: false,
+    });
+    expect(inspectPng(Buffer.from('<!doctype html><html>login</html>'))).toMatchObject({
+      png: false,
+      looksLikeHtml: true,
+    });
     expect(inspectSecurityMarkers('copy de Caja público', 'fixture')).toEqual([]);
     expect(inspectSecurityMarkers('const x = "device_security_token"', 'asset')[0])
       .toMatchObject({ marker: 'device_security_token', relativeRoute: 'asset' });
@@ -937,6 +1052,35 @@ describe('validación remota saneada de lanzo-store', () => {
     expect(parseCacheControl(value)).not.toHaveProperty('raw');
   });
 
+  it('separa la política de origen de la política observable del edge', () => {
+    expect(validateCacheControl(REVALIDATED_HTML_CACHE, 'dynamic-html')).toBe(true);
+    expect(validateCacheControl(REVALIDATED_CACHE, 'og-unversioned')).toBe(true);
+    expect(validateCacheControl(VERSIONED_CACHE, 'og-versioned')).toBe(true);
+    expect(validateEdgeCacheControl('public, max-age=0', 'dynamic-html')).toBe(true);
+    expect(validateEdgeCacheControl('public, max-age=0', 'og-unversioned')).toBe(true);
+    expect(validateVercelCacheEvidence({ xVercelCache: 'HIT', age: '17' })).toBe(true);
+    expect(validateVercelCacheEvidence({ xVercelCache: 'STALE', age: null })).toBe(true);
+    expect(validateVercelCacheEvidence({ xVercelCache: 'MISS', age: '0' })).toBe(false);
+
+    for (const policy of ['dynamic-html', 'og-unversioned']) {
+      for (const value of [
+        'private, max-age=0',
+        'public, no-store, max-age=0',
+        'public, no-cache, max-age=0',
+        'public, max-age=0, immutable',
+        'public, max-age=0, max-age=60',
+        'public, max-age=0,',
+      ]) {
+        expect(validateEdgeCacheControl(value, policy), value).toBe(false);
+      }
+    }
+    expect(validateEdgeCacheControl('public, max-age=31536000, immutable', 'og-versioned')).toBe(true);
+    expect(validateEdgeCacheControl('public, max-age=0', 'og-versioned')).toBe(false);
+    expect(validateCacheControl('public, private, max-age=0, s-maxage=300', 'dynamic-html')).toBe(false);
+    expect(validateCacheControl('public, no-store, max-age=0, s-maxage=300', 'dynamic-html')).toBe(false);
+    expect(validateCacheControl('public, max-age=0, max-age=0, s-maxage=300', 'dynamic-html')).toBe(false);
+  });
+
   it('valida routing, query hostil, tracking estático, PNG, caché y limpieza de cuerpos', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-remote-fixture-'));
     const indexPath = path.join(root, 'index.html');
@@ -956,8 +1100,9 @@ describe('validación remota saneada de lanzo-store', () => {
     expect(result.hostileQueries.slice(1).every((item) => (
       JSON.stringify(item.slugValues) === JSON.stringify([slug])
     ))).toBe(true);
-    expect(result.metadata.canonicalPath).toBe(`/tienda/${slug}`);
+    expect(result.metadata.canonicalPath).toBe(`/${slug}`);
     expect(result.ogImage).toMatchObject({ png: true, width: 1200, height: 630 });
+    expect(result.ogVersionedImage).toMatchObject({ png: true, complete: true, width: 1200, height: 630 });
     expect(result.security).toMatchObject({ passed: true, findings: [] });
     expect(result).toMatchObject({
       serverHtmlPassed: true,
@@ -983,9 +1128,12 @@ describe('validación remota saneada de lanzo-store', () => {
       [{ ogUnversioned: 'public, no-store' }, 'og:png'],
       [{ ogVersioned: 'public, max-age=31536000' }, 'og-versioned:png'],
       [{ dynamicHtml: 'public, s-maxage=300, immutable' }, 'store:metadata'],
+      [{ dynamicHtml: 'private, max-age=0' }, 'store:metadata'],
+      [{ dynamicHtml: 'public, no-store, max-age=0' }, 'store:metadata'],
       [{ asset: 'public, max-age=31536000' }, 'asset:immutable'],
       [{ duplicateContentType: true }, 'og:png'],
       [{ duplicateCacheControl: true }, 'og:png'],
+      [{ vercelCache: 'MISS' }, 'store:edge-cache-evidence'],
     ]) {
       const result = await auditRemoteStoreDeployment({
         baseUrl: preview,
@@ -1005,6 +1153,15 @@ describe('validación remota saneada de lanzo-store', () => {
     ['HTML de error OG', {
       ogHtml: true,
     }, ['og:png', 'og-versioned:png', 'og:runtime']],
+    ['la imagen OG pertenece a otro slug', {
+      poisonOgSlug: true,
+    }, ['store:metadata']],
+    ['la metadata OG omite la versión vigente', {
+      poisonOgVersion: true,
+    }, ['store:metadata']],
+    ['PNG truncado', {
+      ogBody: pngFixture().subarray(0, pngFixture().byteLength - 12),
+    }, ['og:png', 'og-versioned:png']],
   ])('bloquea el fallo remoto real: %s', async (_label, override, expectedChecks) => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-remote-runtime-fixture-'));
     const indexPath = path.join(root, 'index.html');

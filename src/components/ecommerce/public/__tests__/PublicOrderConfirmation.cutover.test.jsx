@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PublicOrderConfirmation from '../PublicOrderConfirmation';
 
 const trackingToken = `trk1_${'A'.repeat(43)}`;
-const canonicalTrackingUrl = `https://lanzo-store.vercel.app/tienda/negocio-ejemplo/pedido/${trackingToken}`;
+const canonicalTrackingUrl = `https://lanzo-store.vercel.app/negocio-ejemplo/pedido/${trackingToken}`;
 const order = {
   code: 'PED-CUTOVER-1',
   total: 120,

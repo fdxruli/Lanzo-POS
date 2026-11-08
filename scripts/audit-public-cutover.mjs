@@ -57,9 +57,10 @@ const findFiles = (sources, pattern) => sources
 async function main() {
   if (process.argv.length !== 2) throw new Error('Este auditor no acepta opciones.');
 
-  const [origins, portalSettings, confirmation, landing, main, mainStore, pwaPolicy] = await Promise.all([
+  const [origins, portalSettings, businessInformation, confirmation, landing, main, mainStore, pwaPolicy] = await Promise.all([
     readProjectFile('src/config/publicOrigins.js'),
     readProjectFile('src/components/ecommerce/EcommercePortalSettings.jsx'),
+    readProjectFile('src/components/ecommerce/EcommerceBusinessInformationPanel.jsx'),
     readProjectFile('src/components/ecommerce/public/PublicOrderConfirmation.jsx'),
     readProjectFile('src/pages/PublicLanzoLandingPage.jsx'),
     readProjectFile('src/main.jsx'),
@@ -83,7 +84,8 @@ async function main() {
     adminStoreBuilder: portalSettings.includes('buildPublicStoreUrl(portal.slug)'),
     noWindowOriginStoreBuilder: !portalSettings.includes('window.location.origin}/tienda'),
     adminShareBuilder: portalSettings.includes('navigator.share'),
-    adminQrBuilder: portalSettings.includes('<PublicStoreQrCode value={reservedLink}'),
+    adminQrBuilder: portalSettings.includes('<PublicStoreQrCode value={reservedLink}')
+      || businessInformation.includes('<PublicStoreQrCode value={reservedLink}'),
     checkoutTrackingBuilder: confirmation.includes('buildPublicTrackingUrl(slug, trackingToken)'),
     checkoutWhatsappBuilder: confirmation.includes('appendPublicTrackingToWhatsappUrl'),
     administrativeWelcomeBuilder: landing.includes('buildAdminWelcomeUrl()'),
@@ -94,12 +96,18 @@ async function main() {
     pwaLandingDenylistPreserved: pwaPolicy.includes('/^\\/conoce-lanzo'),
     noAdministrativeRedirects: !Array.isArray(adminConfig.redirects) || adminConfig.redirects.length === 0,
     administrativeFallbackPreserved: adminConfig.rewrites?.some((rule) => (
-      rule.source === '/(.*)' && rule.destination === '/index.html'
+      rule.destination === '/index.html' && rule.source.includes('(?!assets/')
     )) === true,
-    storeTrailingSlashFalse: storeConfig.trailingSlash === false,
-    storeNoindexPreserved: storeConfig.headers?.some((rule) => rule.headers?.some((header) => (
-      header.key === 'X-Robots-Tag' && header.value === 'noindex, nofollow, noarchive'
-    ))) === true,
+    storeTrailingSlashPolicy: !Object.hasOwn(storeConfig, 'trailingSlash')
+      && storeConfig.routes?.some((route) => (
+        route.src === '^/(.*)/$'
+        && route.status === 308
+        && route.headers?.Location === '/$1'
+      )) === true,
+    storeNoindexPreserved: storeConfig.routes?.some((route) => (
+      route.src === '^/(.*)$'
+      && route.headers?.['X-Robots-Tag'] === 'noindex, nofollow, noarchive'
+    )) === true,
     adminBuildContainsPublicOrigin: findFiles(adminBuild.sources, /lanzo-store\.vercel\.app/).length > 0,
     publicBuildContainsPublicOrigin: findFiles(publicBuild.sources, /lanzo-store\.vercel\.app/).length > 0,
     publicBuildContainsAdminCtaOrigin: findFiles(publicBuild.sources, /lanzo-pos\.vercel\.app/).length > 0,

@@ -169,14 +169,23 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
   const realAsset = [...staticPathSet].find((item) => /^assets\/.*-[A-Za-z0-9_-]{6,}\.js$/u.test(item)) || null;
   const assetPathname = realAsset ? `/${realAsset}` : null;
   const rootEvaluation = evaluateCompiledRoute(routes, '/', staticPathSet);
-  const unknownEvaluation = evaluateCompiledRoute(routes, '/esto-no-existe', staticPathSet);
-  const dynamicEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda', staticPathSet);
-  const trackingEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/pedido/token-ficticio', staticPathSet);
-  const nestedEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/ruta-anidada', staticPathSet);
+  const unknownEvaluation = evaluateCompiledRoute(routes, '/mi-tienda/ruta-anidada', staticPathSet);
+  const dynamicEvaluation = evaluateCompiledRoute(routes, '/mi-tienda', staticPathSet);
+  const legacyStoreEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda', staticPathSet);
+  const trackingEvaluation = evaluateCompiledRoute(routes, '/mi-tienda/pedido/token-ficticio', staticPathSet);
+  const legacyTrackingEvaluation = evaluateCompiledRoute(
+    routes,
+    '/tienda/mi-tienda/pedido/token-ficticio',
+    staticPathSet,
+  );
+  const nestedEvaluation = evaluateCompiledRoute(routes, '/mi-tienda/ruta-anidada', staticPathSet);
   const assetEvaluation = assetPathname
     ? evaluateCompiledRoute(routes, assetPathname, staticPathSet)
     : null;
   const apiEvaluation = evaluateCompiledRoute(routes, '/api/store-page', staticPathSet);
+  const apiNestedEvaluation = evaluateCompiledRoute(routes, '/api/pedido/token-ficticio', staticPathSet);
+  const assetsNestedEvaluation = evaluateCompiledRoute(routes, '/assets/pedido/token-ficticio', staticPathSet);
+  const knownLandingEvaluation = evaluateCompiledRoute(routes, '/conoce-lanzo', staticPathSet);
   const canonicalRoute = routes.find((route) => (
     route.status === 308
     && routeHeader(route, 'Location') === '/$1'
@@ -193,7 +202,7 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
     && (
       routeMatches(route, '/')
       || routeMatches(route, '/index.html')
-      || routeMatches(route, '/tienda/mi-tienda')
+      || routeMatches(route, '/mi-tienda')
     )
   ));
   const staticIndexHeader = matchingRoute(
@@ -203,10 +212,10 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
   );
 
   const cases = [
-    ['/tienda/mi-tienda', ''],
-    ['/tienda/mi-tienda', '?utm_source=whatsapp'],
-    ['/tienda/mi-tienda', '?slug=externo'],
-    ['/tienda/mi-tienda', '?slug=externo&slug=otro'],
+    ['/mi-tienda', ''],
+    ['/mi-tienda', '?utm_source=whatsapp'],
+    ['/mi-tienda', '?slug=externo'],
+    ['/mi-tienda', '?slug=externo&slug=otro'],
   ].map(([pathname, search]) => {
     const result = dynamicEvaluation.kind === 'rewrite'
       ? applyCompiledDestination(routes[dynamicEvaluation.index], pathname, search)
@@ -236,17 +245,29 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
       && unknownEvaluation.index > filesystemIndex,
     dynamicStoreRoute: dynamicEvaluation.kind === 'rewrite',
     dynamicAfterFilesystem: dynamicEvaluation.index > filesystemIndex,
+    legacyStoreRedirect: legacyStoreEvaluation.kind === 'redirect'
+      && legacyStoreEvaluation.status === 308
+      && routeHeader(routes[legacyStoreEvaluation.index], 'Location') === '/$1',
     dynamicDestination: cases.every((item) => item.destination === '/api/store-page'),
     pathSlugExactlyOnce: cases.every((item) => (
       item.slugValues.length === 1 && item.slugValues[0] === 'mi-tienda'
     )),
     trackingStatic: trackingEvaluation.kind === 'rewrite' && trackingEvaluation.pathname === '/index.html',
+    legacyTrackingStatic: legacyTrackingEvaluation.kind === 'rewrite'
+      && legacyTrackingEvaluation.pathname === '/index.html',
     nestedStoreStatic: nestedEvaluation.kind === 'rewrite' && nestedEvaluation.pathname === '/index.html',
     realAssetExists: Boolean(realAsset),
     filesystemPrecedesFallback: Boolean(assetEvaluation) && filesystemIndex >= 0
       && assetEvaluation.kind === 'filesystem' && assetEvaluation.index === filesystemIndex,
     assetsNotIntercepted: Boolean(assetEvaluation) && assetEvaluation.kind === 'filesystem',
-    apiNotIntercepted: apiEvaluation.kind !== 'rewrite' || apiEvaluation.pathname !== '/index.html',
+    apiNotIntercepted: [apiEvaluation, apiNestedEvaluation].every((result) => (
+      result.kind !== 'rewrite'
+      || (result.pathname !== '/index.html' && result.pathname !== '/api/store-page')
+    )),
+    assetsNotRewrittenAsStore: assetsNestedEvaluation.kind !== 'rewrite'
+      || assetsNestedEvaluation.pathname !== '/api/store-page',
+    knownLandingPreserved: knownLandingEvaluation.kind === 'rewrite'
+      && knownLandingEvaluation.pathname === '/index.html',
     trailingSlashCanonical: Boolean(canonicalRoute),
     trailingSlashNoindex: routeHeader(canonicalRoute, 'X-Robots-Tag') === NOINDEX,
     globalNoindex: routes.some((route) => routeHeader(route, 'X-Robots-Tag') === NOINDEX),
@@ -271,11 +292,16 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
       : null,
     compiled: {
       root: { request: '/', result: rootEvaluation },
-      unknown: { request: '/esto-no-existe', result: unknownEvaluation },
+      unknown: { request: '/mi-tienda/ruta-anidada', result: unknownEvaluation },
       asset: assetPathname ? { request: assetPathname, result: assetEvaluation } : null,
-      store: { request: '/tienda/mi-tienda', result: dynamicEvaluation },
-      tracking: { request: '/tienda/mi-tienda/pedido/token-ficticio', result: trackingEvaluation },
-      nested: { request: '/tienda/mi-tienda/ruta-anidada', result: nestedEvaluation },
+      store: { request: '/mi-tienda', result: dynamicEvaluation },
+      legacyStore: { request: '/tienda/mi-tienda', result: legacyStoreEvaluation },
+      tracking: { request: '/mi-tienda/pedido/token-ficticio', result: trackingEvaluation },
+      legacyTracking: {
+        request: '/tienda/mi-tienda/pedido/token-ficticio',
+        result: legacyTrackingEvaluation,
+      },
+      nested: { request: '/mi-tienda/ruta-anidada', result: nestedEvaluation },
       api: { request: '/api/store-page', result: apiEvaluation },
     },
   });

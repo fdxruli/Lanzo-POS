@@ -146,16 +146,25 @@ describe('standalone public Vercel deployment architecture', () => {
 
     const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
     const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
-    const tracking = config.routes.findIndex(
+    const legacyTracking = config.routes.findIndex(
       (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
     );
-    const dynamicStore = config.routes.findIndex((route) => route.src === '^/tienda/([^/]+)$');
+    const legacyStore = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$' && route.status === 308,
+    );
+    const shortTracking = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('/pedido/([^/]+)$')
+        && !route.src.startsWith('^/tienda/'),
+    );
+    const dynamicStore = config.routes.findIndex((route) => route.dest === '/api/store-page?slug=$1');
     const fallback = config.routes.findIndex(
       (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'),
     );
     expect(root).toBeLessThan(filesystem);
-    expect(tracking).toBeGreaterThan(filesystem);
-    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(legacyTracking).toBeGreaterThan(filesystem);
+    expect(legacyStore).toBeGreaterThan(legacyTracking);
+    expect(shortTracking).toBeGreaterThan(legacyStore);
+    expect(dynamicStore).toBeGreaterThan(shortTracking);
     expect(fallback).toBeGreaterThan(dynamicStore);
   });
 
@@ -176,23 +185,27 @@ describe('standalone public Vercel deployment architecture', () => {
   it.each([
     '/tienda',
     '/tienda/demo-seguro/pedido/token-seguro',
-    '/tienda/demo-seguro/ruta-anidada',
+    '/demo-seguro/ruta-anidada',
     '/conoce-lanzo',
     '/esto-no-existe',
   ])('keeps the shared or fallback public route %s on index.html', (pathname) => {
     expect(rewriteFor(config, pathname)?.destination).toBe('/index.html');
   });
 
-  it('keeps the one-segment storefront route on the HTML function', () => {
-    expect(rewriteFor(config, '/tienda/demo-seguro')?.destination).toBe('/api/store-page');
+  it('keeps the short one-segment storefront route on the HTML function', () => {
+    expect(rewriteFor(config, '/demo-seguro')?.destination).toBe('/api/store-page');
+    expect(redirectFor(config, '/tienda/demo-seguro')).toEqual({
+      status: 308,
+      location: '/demo-seguro',
+    });
   });
 
   it.each([
     ['/tienda/', '/tienda'],
-    ['/tienda/demo-seguro/', '/tienda/demo-seguro'],
+    ['/tienda/demo-seguro/', '/demo-seguro'],
     ['/tienda/demo-seguro/pedido/token-seguro/', '/tienda/demo-seguro/pedido/token-seguro'],
     ['/conoce-lanzo/', '/conoce-lanzo'],
-    ['/tienda/demo-seguro/?arch=deploy-1-1', '/tienda/demo-seguro?arch=deploy-1-1'],
+    ['/tienda/demo-seguro/?arch=deploy-1-1', '/demo-seguro?arch=deploy-1-1'],
   ])('canonicalizes %s once to %s before public routing', (source, expected) => {
     const redirect = redirectFor(config, source);
     expect(redirect).toEqual({ status: 308, location: expected });
@@ -302,7 +315,7 @@ describe('standalone public Vercel deployment architecture', () => {
       '/tienda',
       '/conoce-lanzo',
       '/tienda/demo/pedido/token',
-      '/tienda/demo',
+      '/demo',
       '/esto-no-existe',
       '/package.json',
     ]) {
@@ -317,12 +330,13 @@ describe('standalone public Vercel deployment architecture', () => {
       '/tienda',
       '/conoce-lanzo',
       '/tienda/demo/pedido/token',
+      '/demo/pedido/token',
     ]) {
       expect(headerValuesFor(config, pathname, 'Cache-Control'))
         .toContain('public, max-age=0, must-revalidate');
     }
 
-    expect(headerValuesFor(config, '/tienda/demo', 'Cache-Control')).toEqual([]);
+    expect(headerValuesFor(config, '/demo', 'Cache-Control')).toEqual([]);
     expect(headerValuesFor(config, '/assets/index-ABC123.js', 'Cache-Control')).toContain(
       'public, max-age=31536000, immutable',
     );

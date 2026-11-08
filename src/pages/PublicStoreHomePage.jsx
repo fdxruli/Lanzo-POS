@@ -212,7 +212,7 @@ function PublicStoreHomePage() {
           <div className="public-store-home-demo__desktop">
             <div className="public-store-home-demo__chrome" aria-hidden="true">
               <span /><span /><span />
-              <small>lanzo-store.vercel.app/tienda/dulce-momento</small>
+              <small>lanzo-store.vercel.app/dulce-momento</small>
             </div>
             <div className="public-store-home-demo__store-head">
               <div>
@@ -253,7 +253,7 @@ function PublicStoreHomePage() {
         <div className="public-store-home-steps">
           <article><span>01</span><h3>Crea tu negocio</h3><p>Regístrate en Lanzo y configura la información básica de tu negocio.</p></article>
           <article><span>02</span><h3>Publica tus productos</h3><p>Elige los productos que quieres mostrar y prepara su información pública.</p></article>
-          <article><span>03</span><h3>Comparte tu tienda</h3><p>Usa una dirección como <code>lanzo-store.vercel.app/tienda/tu-negocio</code> y compártela con tus clientes.</p></article>
+          <article><span>03</span><h3>Comparte tu tienda</h3><p>Usa una dirección como <code>lanzo-store.vercel.app/tu-negocio</code> y compártela con tus clientes.</p></article>
         </div>
       </section>
 
@@ -340,7 +340,7 @@ function PublicStoreHomePage() {
           <p className="public-store-home-eyebrow">Acceso a tiendas</p>
           <h2 id="looking-store-title">¿Buscas la tienda de un negocio?</h2>
           <p>Las tiendas creadas con Lanzo utilizan una dirección como:</p>
-          <code>lanzo-store.vercel.app/tienda/nombre-del-negocio</code>
+          <code>lanzo-store.vercel.app/nombre-del-negocio</code>
           <p>Solicita al negocio su enlace completo para acceder a su tienda.</p>
         </div>
         <div className="public-store-home-looking__privacy">

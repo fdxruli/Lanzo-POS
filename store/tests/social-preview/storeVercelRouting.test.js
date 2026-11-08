@@ -79,16 +79,22 @@ describe('store/vercel.json', () => {
     });
   });
 
-  it('mantiene filesystem antes de rutas virtuales, tienda dinámica antes del fallback y tracking antes de tienda', () => {
+  it('mantiene filesystem, tracking, legacy y tienda corta antes del fallback', () => {
     const filesystem = routeIndex((route) => route.handle === 'filesystem');
-    const tracking = routeIndex((route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$');
-    const dynamicStore = routeIndex((route) => route.src === '^/tienda/([^/]+)$');
+    const legacyTracking = routeIndex((route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$');
+    const legacyStore = routeIndex((route) => route.status === 308 && route.headers?.Location === '/$1'
+      && route.src === '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$');
+    const shortTracking = routeIndex((route) => route.dest === '/index.html'
+      && route.src.includes('/pedido/([^/]+)$') && !route.src.startsWith('^/tienda/'));
+    const dynamicStore = routeIndex((route) => route.dest === '/api/store-page?slug=$1');
     const fallback = routeIndex((route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'));
     const error = routeIndex((route) => route.handle === 'error');
 
     expect(filesystem).toBeGreaterThanOrEqual(0);
-    expect(tracking).toBeGreaterThan(filesystem);
-    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(legacyTracking).toBeGreaterThan(filesystem);
+    expect(legacyStore).toBeGreaterThan(legacyTracking);
+    expect(shortTracking).toBeGreaterThan(legacyStore);
+    expect(dynamicStore).toBeGreaterThan(shortTracking);
     expect(fallback).toBeGreaterThan(dynamicStore);
     expect(error).toBeGreaterThan(fallback);
   });
@@ -96,13 +102,22 @@ describe('store/vercel.json', () => {
   it.each([
     ['/', '/home.html'],
     ['/tienda', '/index.html'],
-    ['/tienda/farmacia-gary', '/api/store-page'],
     ['/tienda/farmacia-gary/pedido/token-ficticio', '/index.html'],
+    ['/farmacia-gary', '/api/store-page'],
+    ['/farmacia-gary/pedido/token-ficticio', '/index.html'],
     ['/conoce-lanzo', '/index.html'],
-    ['/tienda/farmacia-gary/ruta-desconocida', '/index.html'],
-    ['/esto-no-existe', '/index.html'],
+    ['/farmacia-gary/ruta-desconocida', '/index.html'],
+    ['/esto-no-existe', '/api/store-page'],
   ])('resuelve %s hacia %s con el orden efectivo', (pathname, destination) => {
     expect(resolve(pathname)).toMatchObject({ kind: 'rewrite', pathname: destination });
+  });
+
+  it('redirecciona el enlace legacy de tienda a la ruta corta y conserva el contrato 308', () => {
+    const result = resolve('/tienda/farmacia-gary');
+    const route = config.routes[result.index];
+    expect(result).toMatchObject({ kind: 'redirect', status: 308 });
+    expect(route.headers.Location).toBe('/$1');
+    expect(route.src).toBe('^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$');
   });
 
   it('deja assets, documentos físicos y rutas reservadas fuera del fallback público', () => {
@@ -114,6 +129,8 @@ describe('store/vercel.json', () => {
     expect(resolve('/index.html')).toMatchObject({ kind: 'filesystem', pathname: '/index.html' });
     expect(resolve('/api/store-page').kind).toBe('error');
     expect(resolve('/api/og/store').kind).toBe('error');
+    expect(resolve('/api/pedido/token').kind).toBe('error');
+    expect(resolve('/assets/pedido/token').kind).toBe('error');
     expect(resolve('/package.json').kind).toBe('error');
     expect(resolve('/_src').kind).toBe('error');
     expect(resolve('/api/store-page')).not.toMatchObject({ pathname: '/index.html' });
@@ -126,13 +143,19 @@ describe('store/vercel.json', () => {
     const route = config.routes[result.index];
     expect(route.headers.Location).toBe('/$1');
     expect(route.headers['X-Robots-Tag']).toBe(NOINDEX);
+
+    const shortStore = resolve('/farmacia-gary/');
+    expect(shortStore.kind).toBe('redirect');
+    expect(config.routes[shortStore.index].headers.Location).toBe('/$1');
   });
 
   it('no propaga el token de seguimiento a ningún destino', () => {
-    const trackingRoute = config.routes.find(
-      ({ src }) => src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+    const trackingRoutes = config.routes.filter(
+      ({ src, dest }) => dest === '/index.html' && src.includes('/pedido/([^/]+)$'),
     );
-    expect(trackingRoute?.dest).toBe('/index.html');
+    expect(trackingRoutes.some(({ src }) => src.startsWith('^/tienda/'))).toBe(true);
+    expect(trackingRoutes.some(({ src }) => !src.startsWith('^/tienda/'))).toBe(true);
+    expect(trackingRoutes.every(({ dest }) => dest === '/index.html')).toBe(true);
     for (const { dest } of config.routes) {
       expect(dest || '').not.toMatch(/trackingToken|pedido\/.*\?/u);
     }
@@ -147,6 +170,8 @@ describe('store/vercel.json', () => {
       '/conoce-lanzo',
       '/tienda/farmacia-gary/pedido/token-ficticio',
       '/tienda/farmacia-gary',
+      '/farmacia-gary',
+      '/farmacia-gary/pedido/token-ficticio',
       '/esto-no-existe',
       '/api/store-page',
     ]) {
@@ -160,6 +185,7 @@ describe('store/vercel.json', () => {
       '/tienda',
       '/conoce-lanzo',
       '/tienda/farmacia-gary/pedido/token-ficticio',
+      '/farmacia-gary/pedido/token-ficticio',
     ]) {
       expect(headerValues(pathname, 'Cache-Control')).toContain(STATIC_CACHE);
     }
@@ -171,6 +197,8 @@ describe('store/vercel.json', () => {
 
   it('mantiene las rutas públicas de React sin modificarlas', () => {
     const routerSource = readFileSync(routerPath, 'utf8');
+    expect(routerSource).toContain("path: '/:slug/pedido/:trackingToken'");
+    expect(routerSource).toContain("path: '/:slug'");
     expect(routerSource).toContain("path: '/tienda/:slug/pedido/:trackingToken'");
     expect(routerSource).toContain("path: '/tienda/:slug'");
     expect(routerSource).toContain("path: '/tienda'");

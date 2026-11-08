@@ -237,7 +237,7 @@ function requestMetrics() {
   };
 }
 
-const testPath = `/tienda/mi-negocio`;
+const testPath = `/mi-negocio`;
 await navigate(testPath);
 const cleanMetrics = requestMetrics();
 const cleanState = await evaluate(`(async () => ({

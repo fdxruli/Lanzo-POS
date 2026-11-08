@@ -786,7 +786,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
     context.fixtureState.revision = PARITY_FIXTURE_REVISIONS.A;
     await scenario('initial-pro-store', async (entry) => {
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}?arch2=initial`,
+        `/${PARITY_FIXTURE_SLUGS.pro}?arch2=initial`,
         `document.querySelectorAll('.public-product-card').length === 4`
       );
       const state = await context.collectSemantics();
@@ -838,7 +838,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
     await scenario('repeat-same-revision', async (entry) => {
       const logicalStart = context.fixtureState.logicalRequests.length;
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}?arch2=repeat`,
+        `/${PARITY_FIXTURE_SLUGS.pro}?arch2=repeat`,
         `document.querySelectorAll('.public-product-card').length === 4`
       );
       const state = await context.collectSemantics();
@@ -879,7 +879,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
 
     await scenario('cart-persistence-isolation', async (entry) => {
       await context.evaluate(`sessionStorage.removeItem('lanzo:ecommerce:cart:${PARITY_FIXTURE_SLUGS.pro}:v1')`);
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
       await context.clickButton('Agregar Taco Fixture');
       await context.waitFor(`document.querySelector('.public-store-cart-button')?.getAttribute('aria-label').includes('1 unidades')`);
       await context.clickButton('Ver carrito');
@@ -895,9 +895,9 @@ async function auditTarget({ baseUrl, browserPath, label }) {
       addCheck(entry, 'subtotal precise', cart.cart.subtotal.includes('79.80'), cart.cart.subtotal);
       await context.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
       await context.waitFor(`!document.querySelector('#public-cart-title')`);
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelector('.public-store-cart-button')?.getAttribute('aria-label').includes('2 unidades')`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelector('.public-store-cart-button')?.getAttribute('aria-label').includes('2 unidades')`);
       const persisted = await context.collectSemantics();
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.free}`, `document.querySelectorAll('.public-product-card').length === 1`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.free}`, `document.querySelectorAll('.public-product-card').length === 1`);
       const isolated = await context.collectSemantics();
       addCheck(entry, 'cart persisted on reload', persisted.cart.trigger.includes('2 unidades'));
       addCheck(entry, 'cart isolated by slug', isolated.cart.trigger.includes('0 unidades'));
@@ -912,7 +912,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
     await scenario('catalog-revision-reconciliation', async (entry) => {
       await context.evaluate(`sessionStorage.removeItem('lanzo:ecommerce:cart:${PARITY_FIXTURE_SLUGS.pro}:v1')`);
       context.fixtureState.revision = PARITY_FIXTURE_REVISIONS.A;
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
       await context.clickButton('Agregar Reconciliar Fixture');
       await context.waitFor(`document.querySelector('.public-store-cart-button')?.getAttribute('aria-label').includes('1 unidades')`);
       context.fixtureState.revision = PARITY_FIXTURE_REVISIONS.B;
@@ -930,19 +930,19 @@ async function auditTarget({ baseUrl, browserPath, label }) {
       context.fixtureState.revision = PARITY_FIXTURE_REVISIONS.B;
       context.fixtureState.offline = false;
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}?arch2=offline-prime`,
+        `/${PARITY_FIXTURE_SLUGS.pro}?arch2=offline-prime`,
         `document.querySelectorAll('.public-product-card').length === 4`
       );
       await sleep(300);
       await context.setOffline(true);
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.body.innerText.includes('Sin conexi\\u00f3n')`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.body.innerText.includes('Sin conexi\\u00f3n')`);
       const cached = await context.collectSemantics();
       addCheck(entry, 'cached catalog visible', cached.products.length === 4);
       addCheck(entry, 'offline state explicit', cached.headings.includes('Tienda Fixture PRO'));
       await context.clickButton('Ver carrito');
       const offlineCheckoutDisabled = await context.evaluate(`document.querySelector('.public-cart-checkout')?.disabled !== false`);
       addCheck(entry, 'checkout blocked offline', offlineCheckoutDisabled);
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.offlineEmpty}`, `document.body.innerText.includes('No se pudo cargar la tienda')`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.offlineEmpty}`, `document.body.innerText.includes('No se pudo cargar la tienda')`);
       const empty = await context.collectSemantics();
       addCheck(entry, 'offline empty cache controlled', empty.headings.includes('No se pudo cargar la tienda'));
       addCheck(entry, 'no infinite loading', !empty.headings.some((item) => item.includes('Cargando')));
@@ -958,9 +958,9 @@ async function auditTarget({ baseUrl, browserPath, label }) {
       context.fixtureState.revision = PARITY_FIXTURE_REVISIONS.A;
       context.fixtureState.orderMode = 'network';
       context.fixtureState.orderDelayMs = 0;
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
       await context.evaluate(`sessionStorage.clear()`);
-      await context.navigate(`/tienda/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
+      await context.navigate(`/${PARITY_FIXTURE_SLUGS.pro}`, `document.querySelectorAll('.public-product-card').length === 4`);
       await context.clickButton('Agregar Taco Fixture');
       await context.clickButton('Ver carrito');
       await context.waitFor(`Boolean(document.querySelector('#public-cart-title'))`);
@@ -1058,7 +1058,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
         context.fixtureState.trackingStatus = status;
         const token = `trk1_${String(index + 1).padStart(43, 'A')}`;
         await context.navigate(
-          `/tienda/${PARITY_FIXTURE_SLUGS.pro}/pedido/${token}`,
+          `/${PARITY_FIXTURE_SLUGS.pro}/pedido/${token}`,
           `Boolean(document.querySelector('#public-tracking-title'))`
         );
         const state = await context.collectSemantics();
@@ -1078,22 +1078,22 @@ async function auditTarget({ baseUrl, browserPath, label }) {
       addCheck(entry, 'tracking responsive', trackingResponsive.every((item) => item.legible && !item.horizontalOverflow));
       addCheck(entry, 'all supported statuses', statuses.every((item) => item.label === trackingLabels[item.status]));
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.notFound}`,
+        `/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.notFound}`,
         `document.body.innerText.includes('No se encontr\\u00f3 el seguimiento')`
       );
       const notFound = await context.collectSemantics();
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}/pedido/token-invalido`,
+        `/${PARITY_FIXTURE_SLUGS.pro}/pedido/token-invalido`,
         `document.body.innerText.includes('No se encontr\\u00f3 el seguimiento')`
       );
       const invalid = await context.collectSemantics();
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.networkError}`,
+        `/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.networkError}`,
         `document.body.innerText.includes('No se pudo cargar el seguimiento')`
       );
       const networkError = await context.collectSemantics();
       await context.navigate(
-        `/tienda/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.malformed}`,
+        `/${PARITY_FIXTURE_SLUGS.pro}/pedido/${PARITY_FIXTURE_TOKENS.malformed}`,
         `Boolean(document.querySelector('#public-tracking-title'))`
       );
       const malformed = await context.collectSemantics();
@@ -1121,7 +1121,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
         responsive.push({ width, height, horizontalOverflow: state.horizontalOverflow });
       }
       addCheck(entry, 'current landing copy', landing.headings.includes('Todo lo que necesitas para vender, controlar y crecer.'));
-      addCheck(entry, 'store return link', returnPath === `/tienda/${PARITY_FIXTURE_SLUGS.pro}`);
+      addCheck(entry, 'store return link', returnPath === `/${PARITY_FIXTURE_SLUGS.pro}`);
       addCheck(entry, 'landing responsive', responsive.every((item) => !item.horizontalOverflow));
       // /tienda without a slug is the shared public fallback understood by both
       // entries; arbitrary root paths intentionally remain administrative in dist.
@@ -1146,7 +1146,7 @@ async function auditTarget({ baseUrl, browserPath, label }) {
         PARITY_FIXTURE_SLUGS.invalid,
         PARITY_FIXTURE_SLUGS.rateLimited
       ]) {
-        await context.navigate(`/tienda/${slug}`, `!document.body.innerText.includes('Cargando tienda')`);
+        await context.navigate(`/${slug}`, `!document.body.innerText.includes('Cargando tienda')`);
         const state = await context.collectSemantics();
         outcomes.push({ slug, heading: state.headings[0] || '' });
       }

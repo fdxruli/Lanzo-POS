@@ -62,7 +62,8 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
     expect(config).not.toHaveProperty('rewrites');
     expect(config).not.toHaveProperty('headers');
     expect(config).not.toHaveProperty('trailingSlash');
-    expect(config.routes[0]).toMatchObject({
+    const canonical = config.routes.find((route) => route.src === '^/(.*)/$');
+    expect(canonical).toMatchObject({
       src: '^/(.*)/$',
       status: 308,
       headers: {
@@ -70,7 +71,8 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
         'X-Robots-Tag': 'noindex, nofollow, noarchive',
       },
     });
-    expect(config.routes[1]).toEqual({
+    const noindex = config.routes.find((route) => route.src === '^/(.*)$');
+    expect(noindex).toEqual({
       src: '^/(.*)$',
       headers: { 'X-Robots-Tag': 'noindex, nofollow, noarchive' },
       continue: true,
@@ -78,20 +80,29 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
 
     const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
     const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
-    const tracking = config.routes.findIndex(
+    const legacyTracking = config.routes.findIndex(
       (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
     );
-    const dynamicStore = config.routes.findIndex((route) => route.src === '^/tienda/([^/]+)$');
+    const legacyStore = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$' && route.status === 308,
+    );
+    const shortTracking = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('/pedido/([^/]+)$')
+        && !route.src.startsWith('^/tienda/'),
+    );
+    const dynamicStore = config.routes.findIndex((route) => route.dest === '/api/store-page?slug=$1');
     const fallback = config.routes.findIndex(
       (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'),
     );
 
     expect(root).toBeLessThan(filesystem);
-    expect(tracking).toBeGreaterThan(filesystem);
-    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(legacyTracking).toBeGreaterThan(filesystem);
+    expect(legacyStore).toBeGreaterThan(legacyTracking);
+    expect(shortTracking).toBeGreaterThan(legacyStore);
+    expect(dynamicStore).toBeGreaterThan(shortTracking);
     expect(fallback).toBeGreaterThan(dynamicStore);
     expect(config.routes[dynamicStore].dest).toBe('/api/store-page?slug=$1');
-    expect(config.routes[tracking].dest).toBe('/index.html');
+    expect(config.routes[legacyTracking].dest).toBe('/index.html');
   });
 
   it('keeps the SPA fallback constrained behind filesystem and public special routes', () => {
