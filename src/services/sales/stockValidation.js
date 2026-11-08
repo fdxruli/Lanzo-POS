@@ -222,7 +222,7 @@ export const validateStockBeforeSale = async ({
             response: {
                 success: false,
                 errorType: 'STOCK_WARNING',
-                message: 'Faltantes acumulados del pedido:\n\n' + details + '\n\nSe descontará únicamente el stock libre al confirmar.',
+                message: 'STOCK INSUFICIENTE — faltantes acumulados del pedido:\n\n' + details + '\n\nSe descontará únicamente el stock libre al confirmar.',
                 missingData: missingIngredients,
                 eligibleForPartial: Boolean(eligibleForPartial)
             }

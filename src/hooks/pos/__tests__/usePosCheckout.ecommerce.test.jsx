@@ -237,6 +237,9 @@ const mountRealToastLayer = async () => {
 beforeEach(() => {
   grantTestActor({ permissions: ['pos'] });
   vi.clearAllMocks();
+  // clearAllMocks preserves pending mockResolvedValueOnce results from an
+  // interrupted test, which can turn the next checkout into a false success.
+  mocks.processSale.mockReset();
   mocks.sales.clear();
   mocks.appState = {
     licenseDetails: { valid: true },
@@ -591,12 +594,16 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalledWith('order-b');
   });
 
-  it('keeps its lock during stock warning and Vender Igual reuses it without reacquiring', async () => {
+  it('keeps its lock during an eligible direct stock warning and reuses it with the exact approval', async () => {
     const orderA = makeOrder({ id: 'order-a' });
     setOrders([orderA]);
     const deps = makeDeps();
+    const approval = { version: 1, saleId: 'order-a', attemptId: 'same-attempt', maxMissing: { 'ingredient-1': 1 } };
     mocks.processSale
-      .mockResolvedValueOnce({ success: false, errorType: 'STOCK_WARNING', message: 'Stock cambió' })
+      .mockResolvedValueOnce({
+        success: false, errorType: 'STOCK_WARNING', message: 'Stock cambió',
+        partialAuthorizationProposal: approval
+      })
       .mockResolvedValueOnce({ success: true, saleId: 'sale-force' });
     const { result } = renderHook(() => usePosCheckout(deps.args));
 
@@ -622,11 +629,37 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.processSale).toHaveBeenCalledTimes(2);
     expect(mocks.processSale.mock.calls[1][0]).toMatchObject({
       ignoreStock: true,
+      partialAuthorization: approval,
       activeOrderId: 'order-a',
       createdAt: '2026-08-30T00:00:00.000Z'
     });
     expect(mocks.activeState.removeOrder).toHaveBeenCalledWith('order-a');
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+  });
+
+  it('does not offer forced checkout when the stock warning lacks eligible authorization', async () => {
+    setOrders([makeOrder({ id: 'order-a' })]);
+    const deps = makeDeps();
+    mocks.processSale.mockResolvedValue({
+      success: false, errorType: 'STOCK_WARNING', message: 'Stock cambió',
+      eligibleForPartial: false
+    });
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    let response;
+    await act(async () => {
+      response = await result.current.handleProcessOrder({ paymentMethod: 'tarjeta' });
+    });
+
+    expect(response).toMatchObject({ success: false, errorType: 'STOCK_WARNING' });
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'Stock cambió\n\nEsta venta no admite autorización parcial.',
+      null, expect.objectContaining({ title: 'Inventario insuficiente' })
+    );
+    expect(mocks.activeState.unlockOrder).toHaveBeenCalledTimes(1);
+    expect(mocks.processSale).toHaveBeenCalledTimes(1);
+    expect(mocks.activeState.activeOrders.get('order-a').isLockedForCheckout).toBe(false);
   });
 
   it('releases A exactly once when the user cancels the normal payment modal', async () => {
