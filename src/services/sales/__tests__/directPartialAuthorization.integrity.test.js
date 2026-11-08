@@ -28,6 +28,9 @@ describe('direct partial authorization integrity', () => {
       { productId: 'dish-1', quantity: 2, selectedModifiers: [] }
     ]);
     expect(matchesDirectPartialAuthorization(approval, context)).toBe(true);
+    context.order[0].selectedModifiers.push({ ingredientId: 'new', quantity: 1 });
+    expect(approval.approvedItems[0].selectedModifiers).toEqual([]);
+    expect(matchesDirectPartialAuthorization(approval, context)).toBe(false);
     context.order[0].quantity = 3;
     expect(matchesDirectPartialAuthorization(approval, context)).toBe(false);
   });

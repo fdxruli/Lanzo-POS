@@ -38,11 +38,11 @@ export const captureDirectPartialAuthorization = (context, shortages) => ({
   tenant: context.actorContext?.tenant?.opaqueId || null,
   exactSnapshot: snapshotOf(context),
   recipeSnapshot: JSON.parse(JSON.stringify(context.recipeSnapshot || {})),
-  approvedItems: (context.order || []).map((item) => ({
+  approvedItems: JSON.parse(JSON.stringify((context.order || []).map((item) => ({
     productId: item.productId || item.parentId || item.id,
     quantity: item.quantity,
     selectedModifiers: item.selectedModifiers || []
-  })),
+  })))),
   maxMissing: Object.fromEntries(shortages.map((row) => [row.ingredientId, row.missing]))
 });
 export const matchesDirectPartialAuthorization = (approval, context) => (

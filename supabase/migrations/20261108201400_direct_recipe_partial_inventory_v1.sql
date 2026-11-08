@@ -115,6 +115,30 @@ begin
     then
       raise exception 'SHELF_LIFE_EXPIRED_BLOCKED' using errcode='P0001';
     end if;
+    if v_product.expiration_mode='STRICT' and not private.product_uses_batches(v_product) then
+      raise exception 'DIRECT_PARTIAL_STRICT_BATCH_CONFIGURATION_REQUIRED:%',v_id using errcode='P0001';
+    end if;
+    if private.product_uses_batches(v_product) and (
+      exists(
+        select 1 from public.pos_product_batches b
+        where b.license_id=p_license_id and b.product_id=v_id and b.deleted_at is null
+          and (b.stock is null or b.committed_stock is null
+            or b.stock < 0 or b.committed_stock < 0
+            or b.committed_stock > b.stock)
+      )
+      or v_product.stock is distinct from (
+        select coalesce(sum(b.stock),0)
+        from public.pos_product_batches b
+        where b.license_id=p_license_id and b.product_id=v_id and b.deleted_at is null
+      )
+      or v_product.committed_stock is distinct from (
+        select coalesce(sum(b.committed_stock),0)
+        from public.pos_product_batches b
+        where b.license_id=p_license_id and b.product_id=v_id and b.deleted_at is null
+      )
+    ) then
+      raise exception 'DIRECT_PARTIAL_BATCH_STOCK_UNKNOWN:%',v_id using errcode='P0001';
+    end if;
 
     v_recipe_ingredient := false;
     if v_source_type='recipe' and v_source_id is not null
@@ -309,7 +333,7 @@ begin
   for v_item in select value as payload, ordinality as ord
     from pg_catalog.jsonb_array_elements(p_items) with ordinality
   loop
-    v_authorized := v_approved_items->(v_item.ord-1);
+    v_authorized := v_approved_items->((v_item.ord-1)::integer);
     v_source_id := nullif(coalesce(v_item.payload->>'product_id',v_item.payload->>'productId'),'');
     v_qty := nullif(v_item.payload->>'quantity','')::numeric;
     if v_source_id is null or v_qty is null or v_qty <= 0 or v_qty > 1000000
