@@ -156,6 +156,8 @@ describe('SalesHistory visible-page export', () => {
       />
     );
 
+    // La fecha sigue filtrando las ventas, aunque ahora reside en «Más filtros».
+    fireEvent.click(screen.getByRole('button', { name: 'Más filtros' }));
     fireEvent.change(screen.getByLabelText('Fecha final'), { target: { value: '2026-11-07' } });
 
     expect(screen.getByText(/1 de 3 registros cargados visibles/)).toBeInTheDocument();

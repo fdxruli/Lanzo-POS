@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { salesRepository } from '../../services/db/sales';
 import { getReportSourceLabel, REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 import { formatCurrencyMXN } from '../../utils/formatCurrencyMXN';
@@ -229,6 +230,7 @@ export default function SalesHistory({
   businessName = ''
 }) {
   const [expandedSplits, setExpandedSplits] = useState({});
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exportError, setExportError] = useState('');
   const [filters, setFilters] = useState({
     query: '',
@@ -424,7 +426,7 @@ export default function SalesHistory({
 
       <p className="history-export-note">
         {isLoading
-          ? 'La exportación estará disponible cuando termine la carga.'
+          ? 'Las exportaciones estarán disponibles al terminar la carga.'
           : `CSV e impresión incluirán solo ${filteredSales.length} venta(s) filtradas de las ${mainSales.length} cargadas en esta página.`}
       </p>
 
@@ -443,34 +445,20 @@ export default function SalesHistory({
       {error && <div className="ui-alert ui-alert--warning sales-history-warning" role="alert">{error}</div>}
       {exportError && <div className="ui-alert ui-alert--warning sales-history-warning" role="alert">{exportError}</div>}
 
-      <div className="history-filters">
+      <div className="history-primary-filters">
         <input
           type="search"
           value={filters.query}
           onChange={(event) => updateFilter('query', event.target.value)}
           aria-label="Buscar ventas"
-          placeholder="Folio, cliente, método..."
+          placeholder="Buscar folio, cliente o importe"
         />
-        <input
-          type="date"
-          value={filters.dateFrom}
-          onChange={(event) => updateFilter('dateFrom', event.target.value)}
-          aria-label="Fecha inicial"
-        />
-        <input
-          type="date"
-          value={filters.dateTo}
-          onChange={(event) => updateFilter('dateTo', event.target.value)}
-          aria-label="Fecha final"
-        />
-        <select value={filters.paymentMethod} onChange={(event) => updateFilter('paymentMethod', event.target.value)}>
-          <option value="all">Todos los métodos</option>
-          {paymentMethods.map((method) => (
-            <option key={method} value={method}>{method}</option>
-          ))}
-        </select>
-        <select value={filters.paymentStatus} onChange={(event) => updateFilter('paymentStatus', event.target.value)} aria-label="Filtrar por estado de pago">
-          <option value="all">Todos los estados de pago</option>
+        <select
+          value={filters.paymentStatus}
+          aria-label="Filtrar por estado de pago"
+          onChange={(event) => updateFilter('paymentStatus', event.target.value)}
+        >
+          <option value="all">Todos los pagos</option>
           <option value="paid">Pagadas</option>
           <option value="credit">Fiadas</option>
           <option value="mixed_credit">Pago mixto con crédito</option>
@@ -478,19 +466,66 @@ export default function SalesHistory({
           <option value="cancelled">Canceladas</option>
           <option value="unknown">Estado desconocido</option>
         </select>
-        <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
-          <option value="all">Todos los estados de venta</option>
-          <option value="completed">Completadas</option>
-          <option value="closed">Cerradas</option>
-          <option value="cancelled">Canceladas</option>
-          <option value="open">Abiertas</option>
-        </select>
-        <select value={filters.split} onChange={(event) => updateFilter('split', event.target.value)}>
-          <option value="all">Todas</option>
-          <option value="split">Divididas</option>
-          <option value="regular">Sin dividir</option>
-        </select>
+        <button
+          type="button"
+          className="history-secondary-btn history-filter-toggle"
+          aria-expanded={showAdvancedFilters}
+          aria-controls="history-advanced-filters"
+          onClick={() => setShowAdvancedFilters((value) => !value)}
+        >
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          {showAdvancedFilters ? 'Ocultar filtros' : 'Más filtros'}
+        </button>
       </div>
+      {showAdvancedFilters && (
+        <div className="history-filters" id="history-advanced-filters">
+          <label>
+            <span>Desde</span>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(event) => updateFilter('dateFrom', event.target.value)}
+              aria-label="Fecha inicial"
+            />
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={(event) => updateFilter('dateTo', event.target.value)}
+              aria-label="Fecha final"
+            />
+          </label>
+          <label>
+            <span>Método de pago</span>
+            <select value={filters.paymentMethod} onChange={(event) => updateFilter('paymentMethod', event.target.value)}>
+              <option value="all">Todos los métodos</option>
+              {paymentMethods.map((method) => (
+                <option key={method} value={method}>{method}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Estado de venta</span>
+            <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
+              <option value="all">Todos los estados</option>
+              <option value="completed">Completadas</option>
+              <option value="closed">Cerradas</option>
+              <option value="cancelled">Canceladas</option>
+              <option value="open">Abiertas</option>
+            </select>
+          </label>
+          <label>
+            <span>Tipo de venta</span>
+            <select value={filters.split} onChange={(event) => updateFilter('split', event.target.value)}>
+              <option value="all">Todas</option>
+              <option value="split">Divididas</option>
+              <option value="regular">Sin dividir</option>
+            </select>
+          </label>
+        </div>
+      )}
 
       <p className="history-filter-summary">
         <strong>Filtros locales:</strong> {activeFilters.length ? activeFilters.join(' · ') : 'Sin filtros locales'}
@@ -521,8 +556,8 @@ export default function SalesHistory({
 
             return (
               <div key={getSaleKey(sale, saleIndex)} className={`sale-card-wrapper ${isSplitParent ? 'split-parent-card' : ''}`}>
-                <div className="sale-item">
-                  <div className="sale-header">
+                <details className="sale-item">
+                  <summary className="sale-header">
                     <div className="sale-date">
                       <span className="sale-reference">
                         <span className="sale-folio-tag">
@@ -538,17 +573,22 @@ export default function SalesHistory({
                       {isCancelled && (
                         <span className="cancelled-sale-badge">Cancelada</span>
                       )}
-                      {badges.map((badge) => (
-                        <span key={`${getSaleKey(sale, saleIndex)}-${badge.label}`} className={`ui-badge ui-badge--sm ${getUiBadgeTone(badge.tone)}`}>{badge.label}</span>
-                      ))}
                     </div>
                     <div className={`sale-total ${isSplitParent ? 'split-total' : ''}`}>
                       <span className="sale-total-label">Total comercial</span>
                       {formatCurrencyMXN(sale.total, 'Importe no disponible')}
                     </div>
-                  </div>
+                    <ChevronDown className="sale-summary-chevron" size={19} aria-hidden="true" />
+                  </summary>
 
                   <div className="sale-item-info">
+                    {badges.length > 0 && (
+                      <div className="sales-history-effect-badges">
+                        {badges.map((badge) => (
+                          <span key={`${getSaleKey(sale, saleIndex)}-${badge.label}`} className={`ui-badge ui-badge--sm ${getUiBadgeTone(badge.tone)}`}>{badge.label}</span>
+                        ))}
+                      </div>
+                    )}
                     {items.length === 0 ? (
                       <p className="text-muted sales-history-item-note">
                         {itemsCount || itemsQuantity
@@ -658,7 +698,7 @@ export default function SalesHistory({
                       )}
                     </div>
                   )}
-                </div>
+                </details>
               </div>
             );
           })}

@@ -42,94 +42,61 @@
   font-size: 1.1rem;
 }
 
-/* ======================================================
-   SECCIÓN: HISTORIAL Y PAPELERA (NUEVO DISEÑO)
-   ====================================================== */
-
-/* Grid asimétrico: Historial (Principal) + Papelera (Lateral) */
-.history-layout-grid {
-  display: grid;
-  grid-template-columns: 1fr; /* SIEMPRE 1 COLUMNA (Uno arriba, otro abajo) */
-  gap: 2rem; /* Un poco más de espacio entre el de arriba y el de abajo */
-  margin-bottom: 2rem;
-  align-items: start; /* Alineación al inicio */
-}
-
-/* ======================================================
-   COMPONENTES: PANELES / TARJETAS
-   ====================================================== */
-
-/* Estilo base de tarjeta (hereda variables del sistema) */
-.dashboard-panel {
-  background: var(--ui-bg-surface);
-  border-radius: var(--ui-radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ui-border-color);
-  
-  /* Flexbox vertical para que el contenido ocupe todo el alto disponible */
-  display: flex;
-  flex-direction: column; 
-  height: 100%; 
-  
-  overflow: hidden; /* Mantiene bordes redondeados y contiene desbordes */
-  transition: transform 0.2s ease;
-}
-
-.dashboard-panel:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--box-shadow-lg);
-}
-
-/* Headers de los paneles */
-.panel-header {
-  flex: 0 0 auto; /* No encoger ni estirar */
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--ui-border-color);
-  background-color: var(--ui-bg-muted);
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 1.15rem;
+/* Historial y Papelera: dos vistas, una superficie sin tarjetas anidadas. */
+.dashboard-section--history { min-width: 0; }
+.sales-workspace-header { margin-bottom: 18px; }
+.sales-workspace-header h2 {
+  margin: 0 0 5px;
+  font-size: clamp(1.3rem,3vw,1.65rem);
   font-weight: 700;
   color: var(--text-dark);
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
-
-.panel-subtitle {
-  font-size: 0.85rem;
+.sales-workspace-header p {
+  margin: 0;
   color: var(--text-light);
-  font-weight: 500;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
-
-/* Cuerpo del panel */
-.panel-body {
-  flex: 1 1 auto; /* Ocupa el espacio restante */
-  padding: 1.5rem;
-  position: relative;
-  
-  /* Habilitar scroll interno si el contenido es muy grande */
-  overflow-x: auto; 
-  overflow-y: visible;
+.sales-workspace-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  min-width: 0;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
 }
-
-/* --- Variantes de Paneles --- */
-
-/* Panel Historial (Azul / Seguro) */
-.history-panel {
-  border-top: 4px solid var(--ui-color-info);
+.sales-workspace-tabs button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 10px;
+  margin: 0;
+  font: inherit;
+  font-size: 0.87rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-light);
+  cursor: pointer;
 }
-
-/* Panel Papelera (Rojo / Peligro) */
-.recycle-panel {
-  border-top: 4px solid var(--error-color); /* Rojo definido en variables */
+.sales-workspace-tabs button.is-active {
+  color: var(--ui-text-brand, var(--secondary-color));
+  border-bottom-color: var(--ui-action-primary-bg, var(--secondary-color));
 }
-
-/* Cambia el color del título en la papelera para destacar advertencia */
-.recycle-panel .panel-header h3 {
-  color: var(--error-color);
+.sales-workspace-tabs button:focus-visible {
+  outline: 2px solid var(--ui-action-primary-bg, var(--secondary-color));
+  outline-offset: -2px;
+}
+@media (min-width: 600px) {
+  .sales-workspace-tabs { gap: 14px; }
+  .sales-workspace-tabs button { padding: 12px 20px; }
 }
 
 /* ======================================================
