@@ -651,7 +651,7 @@ export default function DashboardPage() {
             <button
               type="button"
               className={historyView === 'sales' ? 'is-active' : ''}
-              aria-current={historyView === 'sales' ? 'page' : undefined}
+              aria-pressed={historyView === 'sales'}
               onClick={() => setHistoryView('sales')}
             >
               Historial de ventas
@@ -659,7 +659,7 @@ export default function DashboardPage() {
             <button
               type="button"
               className={historyView === 'trash' ? 'is-active' : ''}
-              aria-current={historyView === 'trash' ? 'page' : undefined}
+              aria-pressed={historyView === 'trash'}
               onClick={() => setHistoryView('trash')}
             >
               Papelera
