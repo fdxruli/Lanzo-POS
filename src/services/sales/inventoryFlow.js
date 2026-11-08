@@ -349,6 +349,7 @@ export const buildProcessedItemsAndDeductions = ({
     batchesMap,
     roundCurrency,
     enforceExpiryStrict = true,
+    allowDirectPartial = false,
     now = new Date()
 }) => {
     const productMap = new Map((allProducts || []).map((product) => [product.id, product]));
@@ -363,6 +364,23 @@ export const buildProcessedItemsAndDeductions = ({
         assertProductExists(product, orderItem);
 
         const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
+
+        if (allowDirectPartial) {
+            if (isTableReservation(orderItem)) throw new Error('DIRECT_PARTIAL_TABLE_FORBIDDEN');
+            const recipeIds = new Set((product.recipe || []).map(getRecipeIngredientId));
+            processedItems.push({
+                ...orderItem, image: null, base64: null,
+                cost: parseFloat(product.cost) || 0,
+                batchesUsed: [], nonBatchIngredientsUsed: [], stockDeducted: 0,
+                directPartialRequirements: requirements.map(({ targetId, neededQty }) => ({
+                    ingredientId: targetId,
+                    required: normalizeStock(neededQty),
+                    canPartial: recipeIds.has(targetId)
+                        && !(orderItem.selectedModifiers || []).some((modifier) => modifier.ingredientId === targetId)
+                }))
+            });
+            continue;
+        }
 
         if (product.trackStock === false && !hasRecipe(product) && !orderItem?.selectedModifiers?.some((modifier) => modifier?.ingredientId)) {
             processedItems.push({

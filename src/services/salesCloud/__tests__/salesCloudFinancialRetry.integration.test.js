@@ -11,6 +11,7 @@ const runtime = vi.hoisted(() => ({
   payloadCalls: 0,
   receiptResult: { status: 'NOT_FOUND' },
   projectionFailure: false,
+  partialContractEnabled: false,
   actorHandle: {
     actorKey: 'admin:actor-a',
     actorType: 'admin',
@@ -56,6 +57,11 @@ vi.mock('../../supabase', () => ({
         endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
         capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
       }, error: null };
+      if (name === 'pos_direct_partial_inventory_contract_v1') {
+        return runtime.partialContractEnabled
+          ? { data: { version: 'direct_recipe_v1', enabled: true }, error: null }
+          : { data: null, error: { code: 'PGRST202', message: 'Function missing' } };
+      }
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -226,6 +232,7 @@ vi.mock('../salesCloudLocalRepository', async (importOriginal) => {
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
 import { getFinancialIntent } from '../../financial/financialIntentLedger';
 import { salesCloudCashierService } from '../salesCloudCashierService';
+import { isCloudSalesInventoryEnabled } from '../../sync/syncConstants';
 
 const orderId = 'order-X';
 const stableCreatedAt = '2026-08-30T10:00:00.000Z';
@@ -276,6 +283,8 @@ beforeEach(async () => {
   runtime.payloadCalls = 0;
   runtime.receiptResult = { status: 'NOT_FOUND' };
   runtime.projectionFailure = false;
+  runtime.partialContractEnabled = false;
+  vi.mocked(isCloudSalesInventoryEnabled).mockReturnValue(false);
   runtime.actorHandle.assertCurrent.mockClear();
   useActiveOrders.setState({
     activeOrders: new Map([[orderId, makeActiveOrder()]]),
@@ -299,6 +308,34 @@ afterEach(async () => {
 });
 
 describe('active-order cloud retry transport', () => {
+  it('rejects authorized partial checkout before dispatch if server contract is absent', async () => {
+    vi.mocked(isCloudSalesInventoryEnabled).mockReturnValue(true);
+    const request = checkoutTransport();
+    request.sale.metadata = { directPartialInventoryAuthorization: {
+      version: 1, mode: 'direct_recipe_v1', saleId: request.sale.id,
+      actorKey: runtime.actorHandle.actorKey, attemptId: 'attempt-1', maxMissing: { flour: 2 }
+    } };
+    await expect(salesCloudCashierService.processCloudCashierSale(request))
+      .rejects.toMatchObject({ code: 'DIRECT_PARTIAL_CLOUD_CONTRACT_UNAVAILABLE' });
+    expect(runtime.executeCalls).toBe(0);
+    expect(await runtime.database.table('financial_intents').count()).toBe(0);
+  });
+
+  it('dispatches authorized partial checkout once through the normal financial ledger when server contract is present', async () => {
+    vi.mocked(isCloudSalesInventoryEnabled).mockReturnValue(true);
+    runtime.partialContractEnabled = true;
+    runtime.failNextExecute = false;
+    const request = checkoutTransport();
+    request.sale.metadata = { directPartialInventoryAuthorization: {
+      version: 1, mode: 'direct_recipe_v1', saleId: request.sale.id,
+      actorKey: runtime.actorHandle.actorKey, attemptId: 'attempt-1', maxMissing: { flour: 2 }
+    } };
+    await expect(salesCloudCashierService.processCloudCashierSale(request))
+      .resolves.toMatchObject({ success: true });
+    expect(runtime.executeCalls).toBe(1);
+    expect(await runtime.database.table('financial_intents').count()).toBe(1);
+  });
+
   it('repairs a committed split projection from durable evidence without charging again or releasing another table', async () => {
     runtime.failNextExecute = false;
     runtime.projectionFailure = true;

@@ -1167,7 +1167,7 @@ export function usePosCheckout({
         revalidateCheckoutTarget
     ]);
 
-    const handleProcessOrder = useCallback(async (paymentData, forceSale = false) => {
+    const handleProcessOrder = useCallback(async (paymentData, forceSale = false, partialAuthorization = null) => {
         const snapshot = checkoutSnapshotRef.current;
         if (snapshot?.cancellationOnly) return getPosCheckoutSnapshotStaleResult();
         const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
@@ -1361,6 +1361,7 @@ export function usePosCheckout({
                 companyName: useAppStore.getState().companyProfile?.name || 'Tu Negocio',
                 tempPrescriptionData: prescription.tempPrescriptionData,
                 ignoreStock: forceSale,
+                partialAuthorization,
                 activeOrderId: snapshot.orderId,
                 saleTimestamp: snapshot.saleTimestamp,
                 createdAt: snapshot.createdAt
@@ -1456,6 +1457,13 @@ export function usePosCheckout({
                 showMessageModal('⚠️ El sistema está muy ocupado. Por favor intenta cobrar de nuevo.');
                 await posSearch.refreshOutOfStock();
             } else if (result.errorType === 'STOCK_WARNING') {
+                if (!result.partialAuthorizationProposal) {
+                    showMessageModal(
+                        result.message + '\n\nEsta venta no admite autorización parcial.',
+                        null, { type: 'warning', title: 'Inventario insuficiente' }
+                    );
+                    return result;
+                }
                 isStockWarning = true;
                 if (checkoutSnapshotRef.current === null) checkoutSnapshotRef.current = snapshot;
 
@@ -1518,14 +1526,14 @@ export function usePosCheckout({
                                 snapshot.lockReleaseError = null;
                             }
 
-                            return handleProcessOrderRef.current?.(paymentData, true);
+                            return handleProcessOrderRef.current?.(paymentData, true, result.partialAuthorizationProposal);
                         } catch (error) {
                             return handlePosActorAuthorityError(error, 'checkout') || { success: false, code: 'CHECKOUT_FAILED' };
                         }
                     },
                     {
                         title: 'Advertencia de inventario',
-                        confirmButtonText: 'Sí, Vender Igual',
+                        confirmButtonText: 'Vender de todos modos',
                         cancelButtonText: 'Cancelar venta',
                         showCancel: true,
                         isDismissible: false,

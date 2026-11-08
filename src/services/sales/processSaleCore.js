@@ -1,6 +1,7 @@
 import { restoreAbortedCheckoutCancellation, forgetPrepaymentCheckout } from '../auth/actorOperationalHandoff';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { validateStockBeforeSale } from './stockValidation';
+import { captureDirectPartialAuthorization, matchesDirectPartialAuthorization } from './directPartialAuthorization';
 import { normalizeAndValidatePricing } from './priceSecurity';
 import {
     loadRelevantBatches,
@@ -265,6 +266,7 @@ export const processSaleCore = async ({
     companyName,
     tempPrescriptionData,
     ignoreStock = false,
+    partialAuthorization = null,
     activeOrderId,
     saleTimestamp = null,
     activeOrderCreatedAt = null,
@@ -369,26 +371,80 @@ export const processSaleCore = async ({
             CLOUD_INVENTORY_AUTHORITATIVE_MODES.has(cloudCashierDecision?.mode)
         );
 
-        if (!isCloudInventorySale) {
-            const stockValidation = await validateStockBeforeSale({
-                itemsToProcess,
-                productMap,
-                features,
-                ignoreStock,
-                loadData,
-                loadMultipleData,
-                queryBatchesByProductIdAndActive,
-                STORES
+        const directPartialContext = {
+            order: itemsToProcess,
+            total,
+            paymentData: safePaymentData,
+            saleId: activeOrderId,
+            attemptId,
+            actorContext
+        };
+        const isDirectSale = Boolean(activeOrderId && attemptId && actorContext
+            && !persistedOrder?.tableData && persistedOrder?.orderType !== 'table'
+            && !persistedOrder?.isSaved && !cloudRestaurantSettlementRequired
+            && !itemsToProcess.some((item) => item?.inventoryReservation?.source === 'table'));
+        const directPartialApproved = ignoreStock === true
+            && isDirectSale
+            && matchesDirectPartialAuthorization(partialAuthorization, directPartialContext);
+        if (ignoreStock && !directPartialApproved) {
+            return withFinancialFailure({
+                success: false, code: 'DIRECT_PARTIAL_APPROVAL_INVALID',
+                message: 'La autorización de faltantes ya no corresponde a esta venta, sesión o carrito. Vuelve a revisar el inventario.'
             });
+        }
+        if (directPartialApproved && !cloudCashierDecision?.useCloud
+            && await salesCloudCashierService.requiresCloudInventoryAuthority()) {
+            return withFinancialFailure({
+                success: false, code: 'DIRECT_PARTIAL_CLOUD_REQUIRED',
+                message: 'Este negocio requiere inventario cloud para autorizar faltantes. Conecta la caja y vuelve a intentarlo; no se cobró localmente.'
+            });
+        }
+        if (directPartialApproved && cloudCashierDecision?.useCloud && !isCloudInventorySale) {
+            return withFinancialFailure({
+                success: false, code: 'DIRECT_PARTIAL_CLOUD_INVENTORY_REQUIRED',
+                message: 'Este cobro requiere inventario autoritativo cloud. No se cobró ni se descontó stock local.'
+            });
+        }
 
+        // Cloud normal checkout remains authoritative on Supabase; the local
+        // snapshot is advisory only for detecting a known recipe shortage.
+        const needsLocalStockCheck = !isCloudInventorySale || (
+            !ignoreStock && isDirectSale && itemsToProcess.some((item) =>
+                Array.isArray(productMap.get(item.parentId || item.id)?.recipe)
+                && productMap.get(item.parentId || item.id).recipe.length > 0
+            )
+        );
+        if (needsLocalStockCheck) {
+            const stockValidation = await validateStockBeforeSale({
+                itemsToProcess, productMap, features, ignoreStock: false,
+                loadData, loadMultipleData, queryBatchesByProductIdAndActive, STORES
+            });
             if (!stockValidation.ok) {
-                return withFinancialFailure(stockValidation.response);
+                if (stockValidation.response.errorType === 'STOCK_WARNING'
+                    && isDirectSale && stockValidation.response.eligibleForPartial
+                    && !directPartialApproved) {
+                    return withFinancialFailure({
+                        ...stockValidation.response,
+                        partialAuthorizationProposal: captureDirectPartialAuthorization(
+                            directPartialContext, stockValidation.response.missingData
+                        )
+                    });
+                }
+                if (!directPartialApproved || stockValidation.response.errorType !== 'STOCK_WARNING') {
+                    // If cloud has a healthy authoritative path but local
+                    // reference data is unknown, do not mis-sell as partial.
+                    if (isCloudInventorySale && !ignoreStock
+                        && stockValidation.response.errorType === 'INVENTORY_UNKNOWN') {
+                        Logger.warn('Cloud inventory local snapshot incomplete; server remains strict.');
+                    } else {
+                        return withFinancialFailure(stockValidation.response);
+                    }
+                }
             }
-        } else {
-            Logger.info(
-                'Cloud inventory sale detected: skipping blocking local stock validation; Supabase will validate stock transactionally.',
-                { mode: cloudCashierDecision?.mode }
-            );
+        }
+
+        if (directPartialApproved && !isDirectSale) {
+            throw new Error('DIRECT_PARTIAL_TABLE_FORBIDDEN');
         }
 
         if (!isEcommerceSale) {
@@ -466,7 +522,8 @@ export const processSaleCore = async ({
             queryBatchesByProductIdAndActive,
             queryByIndex,
             STORES,
-            enforceExpiryStrict: !isCloudInventorySale
+            enforceExpiryStrict: !isCloudInventorySale,
+            allowDirectPartial: directPartialApproved
         });
 
         const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
@@ -564,7 +621,16 @@ export const processSaleCore = async ({
                 lineDiscountTotal: Money.toExactString(financialTotals.lineDiscountTotal),
                 subtotalAfterLineDiscounts: Money.toExactString(financialTotals.subtotalAfterLineDiscounts),
                 discountScope: saleDiscountAudit ? 'sale' : null,
-                ...ecommerceMetadata
+                ...ecommerceMetadata,
+                ...(directPartialApproved ? { directPartialInventoryAuthorization: {
+                    version: 1,
+                    saleId: activeOrderId,
+                    attemptId,
+                    actorKey: actorContext.actorKey,
+                    tenant: actorContext.tenant?.opaqueId || null,
+                    maxMissing: partialAuthorization.maxMissing,
+                    mode: 'direct_recipe_v1'
+                } } : {})
             },
             postEffectsCompleted: false,
             syncStatus: 'PENDING'
