@@ -555,7 +555,6 @@ export default function DashboardPage() {
     );
   }
 
-  const statsSource = reportingData.reportSource;
   const statsIsCloudFinal = dashboardReportMode.cloudSalesFinal;
   const historyContextMatches = reportingData.salesHistoryContextKey === salesHistoryContextKey;
   const historySource = dashboardReportMode.cloudSalesFinal
