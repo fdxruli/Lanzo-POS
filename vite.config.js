@@ -24,6 +24,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/App-*.{js,css}',
   'assets/databaseRuntime-*.js',
   'assets/customerLocalRepository-*.js',
+  'assets/customerMigrationService-*.js',
   'assets/actorOperationalHandoff-*.js',
   'assets/actorRuntimeController-*.js',
   'assets/actorAccessPolicy-*.js',
