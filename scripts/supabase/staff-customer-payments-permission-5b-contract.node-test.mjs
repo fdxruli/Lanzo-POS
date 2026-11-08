@@ -52,7 +52,14 @@ test('completed payment idempotency is returned before the new permission guard'
   assert.match(corePatch, /perform private\.assert_customer_payment_permission\(v_context\)/u);
   assert.match(migration, /public\.pos_record_customer_payment_v2\(/u);
   assert.match(migration, /STAFF_CUSTOMER_PAYMENTS_V2_GRANTS_MISSING/u);
-  assert.match(migration, /p\.proname = 'pos_record_customer_payment'[\s\S]*?LEGACY_RPC_EXPOSED/u);
+  // Legacy callers remain supported only through the known rate-limited
+  // wrapper that forwards into the guarded payment core.
+  assert.match(migration, /p\.proname = 'pos_record_customer_payment'[\s\S]*?LEGACY_RPC_ROUTE_MISMATCH/u);
+  assert.match(migration, /enforce_pos_rpc_rate_limit_v2[\s\S]*?pos_record_customer_payment_unlimited/u);
+  assert.match(migration, /da5ca36d00b29a3163907fed17786a7853805e79561ee4da173bd8681c90300c/u);
+  assert.match(migration, /LEGACY_RPC_CONTRACT_MISMATCH/u);
+  assert.doesNotMatch(migration, /LEGACY_RPC_EXPOSED/u);
+  assert.doesNotMatch(migration, /\b(?:grant|revoke)\s+[^;]*\bpos_record_customer_payment\s*\(/iu);
 });
 
 test('the client checks current ActorRuntime permission and preserves Cloud recovery results', () => {
