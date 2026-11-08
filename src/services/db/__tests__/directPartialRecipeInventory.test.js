@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { db, STORES } from '../dexie';
 import { salesRepository } from '../sales';
+import { productsRepository } from '../products';
 import { buildProcessedItemsAndDeductions, commitStock } from '../../sales/inventoryFlow';
 import { validateStockBeforeSale } from '../../sales/stockValidation';
 import { captureDirectPartialAuthorization, matchesDirectPartialAuthorization } from '../../sales/directPartialAuthorization';
@@ -96,6 +97,36 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
     await expect(salesRepository.executeSaleTransaction(sale,batchesToDeduct)).rejects.toThrow();
     expect((await db.table(STORES.MENU).get('flour')).stock).toBe(4);
     expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(1);
+  });
+
+  it('cancels a known shortage without writing a sale, charge or stock movement', async () => {
+    const dish=makeDish('dish',[{ingredientId:'flour',quantity:4}]);
+    const flour=makeProduct('flour',1);
+    await db.table(STORES.MENU).bulkPut([dish,flour]);
+    const checked=await validateStockBeforeSale({
+      itemsToProcess:[{id:'dish',quantity:1}],productMap:new Map([['dish',dish]]),
+      loadMultipleData:(_store,ids)=>db.table(STORES.MENU).bulkGet(ids),STORES
+    });
+    expect(checked.response.errorType).toBe('STOCK_WARNING');
+    expect(checked.response.missingData[0].missing).toBe(3);
+    expect((await db.table(STORES.MENU).get('flour')).stock).toBe(1);
+    expect(await db.table(STORES.SALES).count()).toBe(0);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+  });
+
+  it('restores exactly the physical ingredient quantities used in a partial sale on cancellation', async () => {
+    const dish=makeDish('dish',[{ingredientId:'flour',quantity:4}]);
+    const flour=makeProduct('flour',4,{committedStock:2});
+    await db.table(STORES.MENU).bulkPut([dish,flour]);
+    const {sale,batchesToDeduct}=await saleFor({
+      id:'partial-cancel',items:[{id:'dish',quantity:1}],catalog:[dish,flour],maxMissing:{flour:2}
+    });
+    expect((await salesRepository.executeSaleTransaction(sale,batchesToDeduct)).success).toBe(true);
+    expect((await db.table(STORES.MENU).get('flour')).stock).toBe(2);
+    const saved=await db.table(STORES.SALES).get('partial-cancel');
+    await productsRepository.restoreStockFromCancellation(saved.items);
+    expect((await db.table(STORES.MENU).get('flour')).stock).toBe(4);
+    expect((await db.table(STORES.MENU).get('flour')).committedStock).toBe(2);
   });
 
   it('allows all missing from a known ingredient already at zero without negative stock', async () => {

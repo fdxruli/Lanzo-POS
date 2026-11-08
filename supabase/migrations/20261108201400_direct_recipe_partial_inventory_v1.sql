@@ -219,6 +219,8 @@ begin
 end;
 $$;
 
+revoke all on function private.resolve_direct_partial_inventory_v1(uuid,jsonb,text) from public, anon, authenticated;
+
 -- Existing function called by the cashier inventory RPC. Strict paths unchanged.
 create or replace function private.resolve_sale_inventory_allocations(
   p_license_id uuid,p_items jsonb,p_sale_id text
