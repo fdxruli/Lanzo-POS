@@ -670,3 +670,6 @@
 [data-theme="dark"] .financial-quality-warning {
   color: var(--ui-text-warning-on-dark);
 }
+
+/* El origen se informa en el encabezado, no se repite en cada tarjeta. */
+.stats-grid-modern .card-mini-stats--inline { display: none; }
