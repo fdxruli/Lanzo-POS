@@ -45,6 +45,24 @@ describe('CajaHistoryList', () => {
     expect(difference).not.toHaveClass('positive', 'negative');
   });
 
+  it('keeps opening confirmation and next-shift fund separate in the session detail', () => {
+    render(<CajaHistoryList historial={[{
+      ...baseSession,
+      monto_inicial: '50',
+      monto_conteo_inicial: '50',
+      monto_fondo_sugerido: '50',
+      diferencia_apertura: '0',
+      monto_cierre: '140',
+      diferencia: '0',
+      monto_fondo_siguiente_turno: '50'
+    }]} />);
+
+    fireEvent.click(screen.getByText('Detalles'));
+    expect(screen.getByText('Contado al abrir: $50.00')).toBeVisible();
+    expect(screen.getByText('Cierre: $140.00')).toBeVisible();
+    expect(screen.getByText('Fondo declarado para el siguiente turno: $50.00')).toBeVisible();
+  });
+
   it.each([
     ['one-cent shortage', '-0.01', '99.99', '-$0.01', 'negative'],
     ['fifty-cent shortage', '-0.50', '99.50', '-$0.50', 'negative'],

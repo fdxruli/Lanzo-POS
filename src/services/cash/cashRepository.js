@@ -59,6 +59,8 @@ const fail = (message, code = 'CASH_ERROR', extra = {}) => ({
 });
 
 const ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
+const CASH_AUDIT_SESSION_PAGE_SIZE = 500;
+const CASH_AUDIT_SESSION_MAX_PAGES = 2;
 
 const cashProjectionDiagnostics = {
   invalidCashSessionRecords: 0,
@@ -324,6 +326,14 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
 };
 
 const getSessionStationId = (session) => getCloudRecordStationId(session);
+const isClosedCashSession = (session) => session?.estado === 'cerrada' || session?.status === 'closed';
+
+const findLastClosedCashSessionForStation = (sessions = [], cashStationId) => (
+  sessions.find((session) => (
+    isClosedCashSession(session)
+    && areCashStationsEquivalent(getSessionStationId(session), cashStationId)
+  )) || null
+);
 
 const assertSessionForStation = (
   session,
@@ -493,7 +503,8 @@ export const cashRepositoryInternals = Object.freeze({
   assertCloudResponseStation,
   assertAuthoritativeCashResponse,
   isCompleteCloudCashSession,
-  isCompleteCloudCashMovement
+  isCompleteCloudCashMovement,
+  findLastClosedCashSessionForStation
 });
 
 const assertCurrentFinancialSessionForMutation = async ({
@@ -1095,6 +1106,21 @@ export const cashRepository = {
         ? await cashLocalRepository.loadProjection(cashSession)
         : { movements: [], totals: { ventasContado: '0', abonosFiado: '0' } };
 
+      let previousShiftClose = null;
+      let previousShiftCloseStatus = 'not_applicable';
+      if (!cashSession && !stationOpenCashSession
+        && (stationState?.financial_status === 'NO_SESSION'
+          || stationState?.financialStatus === 'NO_SESSION'
+          || (!stationState?.financial_status && !stationState?.financialStatus))) {
+        if (!canAuditCashSessions()) {
+          previousShiftCloseStatus = 'not_authorized';
+        } else {
+          const previousCloseResult = await cashRepository.getLastClosedCashSessionForStation({ cashStationId: stationId });
+          previousShiftClose = previousCloseResult.cashSession || null;
+          previousShiftCloseStatus = previousCloseResult.status || 'unavailable';
+        }
+      }
+
       let cashSessions = [];
       try {
         const snapshot = await this.pullCashSnapshot({
@@ -1154,7 +1180,9 @@ export const cashRepository = {
           response,
           stateKnown: true,
           financialStatus: stationState?.financial_status || stationState?.financialStatus || null,
-          financialCode: stationState?.financial_code || stationState?.financialCode || null
+          financialCode: stationState?.financial_code || stationState?.financialCode || null,
+          previousShiftClose,
+          previousShiftCloseStatus
         }
       });
     } catch (error) {
@@ -1210,6 +1238,57 @@ export const cashRepository = {
           cloudEnabled: mode.cloudEnabled
         }
       };
+    }
+  },
+
+  async getLastClosedCashSessionForStation({ cashStationId } = {}) {
+    const mode = getCashMode();
+    if (!mode.cloudEnabled || !mode.online || !isCanonicalCashStation(cashStationId)) {
+      return { success: false, cashSession: null, status: 'unavailable' };
+    }
+    if (!canAuditCashSessions()) {
+      return { success: true, cashSession: null, status: 'not_authorized' };
+    }
+
+    const dateTo = new Date().toISOString();
+    let offset = 0;
+    let previousPageTailId = null;
+
+    try {
+      while (offset < CASH_AUDIT_SESSION_PAGE_SIZE * CASH_AUDIT_SESSION_MAX_PAGES) {
+        const page = await cashRepository.listCashSessionsForAudit({
+          status: 'closed',
+          dateTo,
+          limit: CASH_AUDIT_SESSION_PAGE_SIZE,
+          offset,
+          force: true,
+          allowCache: false
+        });
+        if (!page || page.success === false) {
+          return { success: false, cashSession: null, status: 'unavailable' };
+        }
+
+        const sessions = Array.isArray(page.cashSessions) ? page.cashSessions : [];
+        const cashSession = findLastClosedCashSessionForStation(sessions, cashStationId);
+        if (cashSession) return { success: true, cashSession, status: 'found' };
+        if (sessions.length < CASH_AUDIT_SESSION_PAGE_SIZE) {
+          return { success: true, cashSession: null, status: 'not_found' };
+        }
+
+        const pageTailId = sessions[sessions.length - 1]?.id || null;
+        if (pageTailId && pageTailId === previousPageTailId) {
+          Logger.warn('[Cash] La paginación de auditoría no avanzó; se omite la referencia anterior.');
+          return { success: false, cashSession: null, status: 'unavailable' };
+        }
+        previousPageTailId = pageTailId;
+        offset += CASH_AUDIT_SESSION_PAGE_SIZE;
+      }
+      return { success: true, cashSession: null, status: 'search_limit_reached' };
+    } catch (error) {
+      Logger.warn('[Cash] No se pudo consultar el cierre anterior autorizado:', {
+        code: error?.code || 'CASH_AUDIT_FAILED'
+      });
+      return { success: false, cashSession: null, status: 'unavailable' };
     }
   },
 

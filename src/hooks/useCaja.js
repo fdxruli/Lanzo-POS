@@ -16,6 +16,7 @@ import {
   isLocalStationKey
 } from '../services/cash/cashStation';
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
+import { getCashSessionStationLabel } from '../services/cash/businessCashSummary';
 import { getFinancialTimeoutMs, withFinancialTimeout } from '../services/financial/financialTimeout';
 import { useAppStore } from '../store/useAppStore';
 import { getCancellationCashRefreshRoute, isCancellationCashEventForScope } from '../services/financial/cancellationCashRefreshRoute';
@@ -52,6 +53,21 @@ const getSessionLocalStationKey = (cashSession) => [
 ].find((value) => isLocalStationKey(value)) || null;
 
 const getSessionActorKey = (cashSession) => cashSession?.actorKey || cashSession?.actor_key || null;
+
+const isSessionFromStation = (cashSession, cashStationId, localStationKey) => {
+  const expectedCloudStation = isCanonicalCashStation(cashStationId) ? cashStationId : null;
+  if (expectedCloudStation) {
+    return Boolean(
+      getSessionStationId(cashSession)
+      && areCashStationsEquivalent(getSessionStationId(cashSession), expectedCloudStation)
+    );
+  }
+  return Boolean(
+    localStationKey
+    && getSessionLocalStationKey(cashSession)
+    && areCashStationsEquivalent(getSessionLocalStationKey(cashSession), localStationKey)
+  );
+};
 
 const isSessionForStation = (cashSession, cashStationId, actorKey = null, localStationKey = null) => {
   const expectedCloudStation = isCanonicalCashStation(cashStationId) ? cashStationId : null;
@@ -103,11 +119,26 @@ const switchCashOpeningToManual = () => {
   persistCashOpeningPolicy(CASH_OPENING_POLICY.MANUAL);
 };
 
-const getNextOpeningSuggestion = (sessions = []) => {
-  const lastClosed = sessions.filter(Boolean).find((cashSession) => cashSession.estado === 'cerrada');
+const getNextOpeningSuggestion = (sessions = [], cashStationId = null, localStationKey = null) => {
+  const lastClosed = sessions.filter(Boolean).find((cashSession) => (
+    cashSession.estado === 'cerrada'
+    && isSessionFromStation(cashSession, cashStationId, localStationKey)
+  ));
   return lastClosed
     ? (lastClosed.monto_fondo_siguiente_turno ?? lastClosed.monto_cierre ?? '0')
     : '0';
+};
+
+const hasPreviousShiftFundReference = (cashSession) => {
+  if (!cashSession) return false;
+  const counted = cashSession.monto_cierre ?? cashSession.closing_counted_amount;
+  const nextShiftFund = cashSession.monto_fondo_siguiente_turno ?? cashSession.next_shift_fund;
+  return counted !== null
+    && counted !== undefined
+    && nextShiftFund !== null
+    && nextShiftFund !== undefined
+    && cashSession.closingMode !== 'admin_unverified'
+    && cashSession.closing_mode !== 'admin_unverified';
 };
 
 const normalizeRepositoryResult = (result = {}) => {
@@ -139,6 +170,8 @@ const normalizeRepositoryResult = (result = {}) => {
     cashStationId: result.cashStationId || result.cash_station_id || null,
     localStationKey: result.localStationKey || result.local_station_key || null,
     stationOpenCashSession: result.stationOpenCashSession || result.station_open_cash_session || null,
+    previousShiftClose: result.previousShiftClose || result.previous_shift_close || null,
+    previousShiftCloseStatus: result.previousShiftCloseStatus || result.previous_shift_close_status || null,
     adminOpenSessions: Array.isArray(result.adminOpenSessions || result.admin_open_sessions)
       ? (result.adminOpenSessions || result.admin_open_sessions).filter(Boolean)
       : [],
@@ -179,6 +212,8 @@ export function useCaja({ executionScope = null } = {}) {
     cashStationId: null,
     localStationKey: null,
     stationOpenCashSession: null,
+    previousShiftClose: null,
+    previousShiftCloseStatus: null,
     actor: cashActor,
     mode: cashMode,
     financialState: null
@@ -208,6 +243,8 @@ export function useCaja({ executionScope = null } = {}) {
         cashStationId: result.cashStationId || previous.cashStationId,
         localStationKey: result.localStationKey || previous.localStationKey,
         stationOpenCashSession: result.stationOpenCashSession || previous.stationOpenCashSession,
+        previousShiftClose: result.previousShiftClose || previous.previousShiftClose,
+        previousShiftCloseStatus: result.previousShiftCloseStatus || previous.previousShiftCloseStatus,
         actor: result.actor || previous.actor,
         mode: result.mode || previous.mode
       }
@@ -252,6 +289,8 @@ export function useCaja({ executionScope = null } = {}) {
       cashStationId: displayResult.cashStationId,
       localStationKey: displayResult.localStationKey,
       stationOpenCashSession: displayResult.stationOpenCashSession,
+      previousShiftClose: displayResult.previousShiftClose,
+      previousShiftCloseStatus: displayResult.previousShiftCloseStatus,
       actor: displayResult.actor || currentMode.actor,
       mode: nextMode,
       financialState: displayResult.financialState
@@ -263,14 +302,32 @@ export function useCaja({ executionScope = null } = {}) {
     setLegacyAdminCashSessions(displayResult.legacyAdminCashSessions || []);
 
     if (!current) {
-      const suggestedAmount = getNextOpeningSuggestion(history);
+      const previousShiftClose = currentMode.cloudEnabled ? displayResult.previousShiftClose : null;
+      const referenceAvailable = currentMode.cloudEnabled
+        ? hasPreviousShiftFundReference(previousShiftClose)
+        : false;
+      const suggestedAmount = currentMode.cloudEnabled
+        ? (referenceAvailable
+          ? (previousShiftClose.monto_fondo_siguiente_turno ?? previousShiftClose.next_shift_fund)
+          : '0')
+        : getNextOpeningSuggestion(history, displayResult.cashStationId, displayResult.localStationKey);
       setCajaActual(null);
       setMovimientosCaja([]);
       setTotalesTurno(zeroTotals);
       setAperturaPendiente({
         montoSugerido: Money.toExactString(Money.init(suggestedAmount)),
-        ultimaCajaId: history.find((cashSession) => cashSession.estado === 'cerrada')?.id || null,
-        motivo: history.length > 0 ? 'previous_close' : 'first_opening',
+        ultimaCajaId: previousShiftClose?.id
+          || history.find((cashSession) => (
+            cashSession.estado === 'cerrada'
+            && isSessionFromStation(cashSession, displayResult.cashStationId, displayResult.localStationKey)
+          ))?.id
+          || null,
+        motivo: referenceAvailable || (!currentMode.cloudEnabled && history.length > 0)
+          ? 'previous_close'
+          : 'first_opening',
+        previousShiftClose,
+        previousShiftCloseStatus: displayResult.previousShiftCloseStatus || null,
+        referenceAvailable,
         readOnly: nextReadOnly,
         financialStatus,
         financialCode: displayResult.financialCode,
@@ -801,6 +858,7 @@ export function useCaja({ executionScope = null } = {}) {
     try {
       const montoFisicoSafe = Money.init(montoFisicoTotal);
       const fondoSiguienteSafe = Money.init(montoFondoSiguienteTurno);
+      const totalTeoricoBeforeClose = Money.init(await calcularTotalTeorico(true));
 
       if (montoFisicoSafe.lt(0) || fondoSiguienteSafe.lt(0)) {
         return { success: false, error: new Error('Los montos de auditoria no pueden ser negativos.') };
@@ -834,12 +892,27 @@ export function useCaja({ executionScope = null } = {}) {
       }
 
       await sincronizarEstadoCaja();
-      return { success: true, diferencia };
+      return {
+        success: true,
+        diferencia,
+        summary: {
+          responsable: cajaActual.responsable_apertura
+            || cajaActual.responsibleName
+            || cajaActual.responsible_name
+            || 'Responsable no disponible',
+          estacion: getCashSessionStationLabel(cajaActual),
+          teorico: Money.toExactString(totalTeoricoBeforeClose),
+          contado: Money.toExactString(montoFisicoSafe),
+          diferencia: Money.toExactString(Money.init(diferencia ?? Money.subtract(montoFisicoSafe, totalTeoricoBeforeClose))),
+          fondoSiguiente: Money.toExactString(fondoSiguienteSafe),
+          comentarios: String(comentarios || '').trim()
+        }
+      };
     } catch (auditError) {
       Logger.error('Error en cierre de caja', auditError);
       return { success: false, error: auditError };
     }
-  }, [cajaActual, ensureMutableCloudCash, sincronizarEstadoCaja]);
+  }, [cajaActual, calcularTotalTeorico, ensureMutableCloudCash, sincronizarEstadoCaja]);
 
   const registrarAjusteCaja = useCallback(async (montoFisicoReal, comentario) => {
     if (!cajaActual) return { success: false, error: new Error('No hay caja activa para ajustar.') };

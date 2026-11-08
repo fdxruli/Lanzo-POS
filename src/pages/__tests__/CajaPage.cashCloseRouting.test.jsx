@@ -150,7 +150,19 @@ const makeHookState = ({
 beforeEach(() => {
   vi.clearAllMocks();
   fixtures.closeAdmin.mockResolvedValue({ success: true });
-  fixtures.ownerClose.mockResolvedValue({ success: true, diferencia: '0' });
+  fixtures.ownerClose.mockResolvedValue({
+    success: true,
+    diferencia: '0',
+    summary: {
+      responsable: 'Administradora A',
+      estacion: 'Mostrador 1',
+      teorico: '140',
+      contado: '140',
+      diferencia: '0',
+      fondoSiguiente: '50',
+      comentarios: 'Conteo confirmado'
+    }
+  });
   fixtures.hookState = makeHookState();
 });
 
@@ -195,6 +207,17 @@ describe('CajaPage cash close routing', () => {
 
     await waitFor(() => {
       expect(fixtures.ownerClose).toHaveBeenCalledWith('100', '0', '');
+      expect(fixtures.showMessage).toHaveBeenCalledWith(
+        expect.stringContaining('Efectivo teórico: $140.00'),
+        expect.any(Function),
+        expect.objectContaining({
+          type: 'success',
+          title: 'Cierre de turno',
+          confirmButtonText: 'Aceptar',
+          showCancel: false,
+          isDismissible: true
+        })
+      );
       expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'lanzo:cash-sync-updated')).toBe(true);
     });
   });

@@ -1390,6 +1390,7 @@
 .admin-cash-audit-summary, .admin-cash-audit-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
 .admin-cash-audit-summary span, .admin-cash-audit-totals span { display: grid; gap: .2rem; padding: .65rem; border: 1px solid var(--border-color); border-radius: 8px; }
 .admin-cash-audit-summary small, .admin-cash-audit-totals small { color: var(--text-light); font-size: .68rem; text-transform: uppercase; font-weight: 700; }
+.admin-cash-audit-comment { margin: .7rem 0; padding: .7rem; color: var(--text-dark); background: var(--light-background); border-radius: 8px; line-height: 1.5; overflow-wrap: anywhere; }
 .admin-cash-audit-choice, .admin-cash-audit-form, .admin-cash-audit-confirm { display: grid; gap: .75rem; }
 .admin-cash-audit-choice button { display: flex; align-items: center; gap: .5rem; min-height: 48px; padding: .75rem; background: var(--card-background-color); border: 1px solid var(--primary-color); border-radius: 8px; color: var(--text-dark); font-weight: 700; text-align: left; cursor: pointer; }
 .admin-cash-audit-form label { display: grid; gap: .35rem; color: var(--text-dark); font-weight: 700; }

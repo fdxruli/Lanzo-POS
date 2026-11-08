@@ -28,6 +28,10 @@ const CajaHistoryList = ({
       const rawDifference = c.diferencia ?? c.cash_difference;
       const hasPhysicalCount = rawDifference !== null && rawDifference !== undefined;
       const diffSafe = Money.init(rawDifference ?? 0);
+      const openingDifference = c.diferencia_apertura ?? c.opening_difference;
+      const openingCounted = c.monto_conteo_inicial ?? c.opening_counted_amount;
+      const openingSuggested = c.monto_fondo_sugerido ?? c.opening_suggested_amount;
+      const nextShiftFund = c.monto_fondo_siguiente_turno ?? c.next_shift_fund;
       const isCuadrada = hasPhysicalCount && diffSafe.eq(0);
       const staffUserId = c.staffUserId || c.staff_user_id || null;
       const responsible = c.responsable_apertura
@@ -66,7 +70,13 @@ const CajaHistoryList = ({
           ? 'neutral'
           : diffSafe.gt(0)
             ? 'positive'
-            : 'negative'
+            : 'negative',
+        fondoInicial: c.monto_inicial ?? c.opening_amount,
+        aperturaContada: openingCounted,
+        aperturaSugerida: openingSuggested,
+        diferenciaApertura: openingDifference,
+        fondoSiguiente: nextShiftFund,
+        comentarios: c.comentarios_auditoria || c.audit_comments || ''
       };
     });
   }, [historial, paginaActual, itemsPerPage, isCloudCash]);
@@ -133,6 +143,12 @@ const CajaHistoryList = ({
                   <summary>Detalles</summary>
                   <div className="history-technical-meta">
                     <span>Cerrada: {c.cierreFecha}</span>
+                    <span>Fondo inicial: {c.fondoInicial !== null && c.fondoInicial !== undefined ? `$${Money.toNumber(c.fondoInicial).toFixed(2)}` : 'No disponible'}</span>
+                    <span>Contado al abrir: {c.aperturaContada !== null && c.aperturaContada !== undefined ? `$${Money.toNumber(c.aperturaContada).toFixed(2)}` : 'No disponible'}</span>
+                    <span>Fondo de referencia al abrir: {c.aperturaSugerida !== null && c.aperturaSugerida !== undefined ? `$${Money.toNumber(c.aperturaSugerida).toFixed(2)}` : 'No disponible'}</span>
+                    <span>Diferencia de apertura: {c.diferenciaApertura !== null && c.diferenciaApertura !== undefined ? `$${Money.toNumber(c.diferenciaApertura).toFixed(2)}` : 'No calculada'}</span>
+                    <span>Fondo declarado para el siguiente turno: {c.fondoSiguiente !== null && c.fondoSiguiente !== undefined ? `$${Money.toNumber(c.fondoSiguiente).toFixed(2)}` : 'No declarado'}</span>
+                    {c.comentarios && <span>Comentarios: {c.comentarios}</span>}
                   </div>
                 </details>
               )}

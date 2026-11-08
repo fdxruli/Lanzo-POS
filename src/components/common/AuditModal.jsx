@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Money } from '../../utils/moneyMath';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import CashDenominationCounter from '../caja/modals/CashDenominationCounter';
+import { getCashSessionStationLabel } from '../../services/cash/businessCashSummary';
 import '../customers/AbonoModal.css';
 import './AuditModal.css';
 
@@ -13,7 +14,7 @@ const AUDIT_CONFIG = {
   SHOW_WARNING_ON_DIFERENCIA: true
 };
 
-export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja, calcularTeorico, isProcessing = false }) {
+export default function AuditModal({ show, onClose, onConfirmAudit, caja, calcularTeorico, isProcessing = false }) {
   const [montoFisicoTotal, setMontoFisicoTotal] = useState('');
   const [countMode, setCountMode] = useState('manual');
   const [denominationCounts, setDenominationCounts] = useState({});
@@ -76,6 +77,11 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
   const hayDiferenciaMayor = diferenciaPercentual.gt(AUDIT_CONFIG.MAX_DIFERENCIA_PERCENTUAL);
   const fondoMayorQueFisico = fondoSiguienteTurnoSafe.gt(fisicoSafe);
   const comentarioValido = comentarios.trim().length >= AUDIT_CONFIG.MIN_COMENTARIO_LENGTH;
+  const responsibleName = caja?.responsable_apertura
+    || caja?.responsibleName
+    || caja?.responsible_name
+    || 'Responsable no disponible';
+  const stationName = getCashSessionStationLabel(caja);
 
   const handleNext = () => {
     if (isProcessing) return;
@@ -114,6 +120,10 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
     <div className="ui-modal ui-modal--top audit-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="audit-modal-title">
       <div className="ui-modal__content ui-modal__content--md audit-modal">
         <h2 id="audit-modal-title" className="ui-modal__title modal-title">Corte de caja</h2>
+        <dl className="audit-modal__context">
+          <div><dt>Responsable</dt><dd>{responsibleName}</dd></div>
+          <div><dt>Estación</dt><dd>{stationName}</dd></div>
+        </dl>
 
         {step === 1 ? (
           <>
@@ -144,9 +154,9 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
             <div className="form-group">
               <label className="form-label" htmlFor="audit-next-shift-fund">
                 <span style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Monto Fondo Siguiente Turno ($)</span>
+                  <span>Fondo declarado para el siguiente turno ($)</span>
                   <span style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
-                    Base del próximo turno
+                    Referencia para la próxima apertura
                   </span>
                 </span>
               </label>
@@ -162,6 +172,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
                 disabled={isProcessing}
                 placeholder="0.00"
               />
+              <small>El siguiente responsable contará y confirmará el efectivo recibido.</small>
               {montoFondoSiguienteTurno && fondoMayorQueFisico && (
                 <small style={{ color: 'var(--error-color)', display: 'block', marginTop: '8px' }}>
                   ⚠️ El fondo siguiente no puede ser mayor al monto físico total.

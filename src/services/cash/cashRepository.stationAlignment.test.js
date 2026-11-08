@@ -128,9 +128,12 @@ vi.mock('../financial/financialProjectionRegistry', () => ({
 vi.mock('./cashSyncHandler', () => ({}));
 
 import { cashRepository, cashRepositoryInternals } from './cashRepository';
+import { canAuditCashSessions } from './cashPermissions';
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+  canAuditCashSessions.mockReturnValue(true);
   runtime.station = {
     deviceFingerprint: 'fp-browser-a',
     localStationKey: 'local:device:fp-browser-a',
@@ -213,6 +216,55 @@ describe('cashRepository cloud station alignment', () => {
     expect(() => cashRepositoryInternals.assertCloudResponseStation({
       response: { cash_station_id: STATION_A, resolvedCashStationId: STATION_B }
     })).toThrowError(expect.objectContaining({ code: 'CASH_SESSION_STATION_MISMATCH' }));
+  });
+
+  it('finds the latest closed session for the exact station through authorized audit pages', async () => {
+    const unrelatedPage = Array.from({ length: 500 }, (_unused, index) => ({
+      id: `closed-other-${index}`,
+      estado: 'cerrada',
+      cashStationId: STATION_B
+    }));
+    const previousClose = {
+      id: 'latest-close-on-a',
+      estado: 'cerrada',
+      cashStationId: STATION_A,
+      monto_cierre: '140',
+      monto_fondo_siguiente_turno: '50'
+    };
+    const listSpy = vi.spyOn(cashRepository, 'listCashSessionsForAudit')
+      .mockResolvedValueOnce({ success: true, cashSessions: unrelatedPage })
+      .mockResolvedValueOnce({ success: true, cashSessions: [previousClose] });
+
+    await expect(cashRepository.getLastClosedCashSessionForStation({ cashStationId: STATION_A }))
+      .resolves.toMatchObject({ success: true, status: 'found', cashSession: previousClose });
+
+    expect(listSpy).toHaveBeenNthCalledWith(1, expect.objectContaining({ status: 'closed', limit: 500, offset: 0, force: true }));
+    expect(listSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ status: 'closed', limit: 500, offset: 500, force: true }));
+  });
+
+  it('bounds the previous-close search and falls back to a fresh physical count', async () => {
+    const unrelatedPage = (prefix) => Array.from({ length: 500 }, (_unused, index) => ({
+      id: `${prefix}-${index}`,
+      estado: 'cerrada',
+      cashStationId: STATION_B
+    }));
+    const listSpy = vi.spyOn(cashRepository, 'listCashSessionsForAudit')
+      .mockResolvedValueOnce({ success: true, cashSessions: unrelatedPage('recent') })
+      .mockResolvedValueOnce({ success: true, cashSessions: unrelatedPage('older') });
+
+    await expect(cashRepository.getLastClosedCashSessionForStation({ cashStationId: STATION_A }))
+      .resolves.toMatchObject({ success: true, status: 'search_limit_reached', cashSession: null });
+
+    expect(listSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not request another actor’s close without audit permission', async () => {
+    canAuditCashSessions.mockReturnValue(false);
+    const listSpy = vi.spyOn(cashRepository, 'listCashSessionsForAudit');
+
+    await expect(cashRepository.getLastClosedCashSessionForStation({ cashStationId: STATION_A }))
+      .resolves.toMatchObject({ success: true, status: 'not_authorized', cashSession: null });
+    expect(listSpy).not.toHaveBeenCalled();
   });
 
   it('rejects a session from station B when cloud authority says the request is for station A', () => {
