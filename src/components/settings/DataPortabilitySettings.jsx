@@ -197,21 +197,38 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
   return (
     <section className="data-portability-settings backup-settings-card">
       <div className="backup-settings-card__heading">
-        <span className="backup-card-icon" aria-hidden="true"><FileSpreadsheet size={20} /></span>
+        <span className="backup-card-icon" aria-hidden="true"><FileSpreadsheet size={19} /></span>
         <div>
-          <span className="backup-card-eyebrow">Exportar o transferir</span>
-          <h4>Tu información comercial</h4>
-          <p>Estos archivos sirven para consultar tus datos o reutilizar el catálogo en otro negocio LANZO. No reemplazan el respaldo cifrado.</p>
+          <span className="backup-card-eyebrow">Información comercial</span>
+          <h4>Exportar y transferir datos</h4>
+          <p>Descarga tus registros o reutiliza el catálogo en otra licencia. Para recuperar un negocio utiliza el respaldo cifrado.</p>
         </div>
       </div>
 
-      <div className="data-portability-warning" role="note">
-        <strong>Los archivos de exportación no están cifrados.</strong>
-        <span>Incluyen datos personales y comerciales de las categorías que elijas. Guárdalos en un lugar privado.</span>
+      <p className="data-portability-warning" role="note">
+        <strong>Exportaciones sin cifrar.</strong> Los CSV y JSON pueden contener datos personales. Consérvalos en privado.
+      </p>
+
+      <div className="data-portability-csv">
+        <label htmlFor="portable-csv-table">Exportar una tabla como CSV</label>
+        <div>
+          <select id="portable-csv-table" value={csvTable} onChange={(event) => setCsvTable(event.target.value)} disabled={busy}>
+            {BACKUP_TABLE_NAMES.map((tableName) => <option key={tableName} value={tableName}>{TABLE_LABELS[tableName] || tableName}</option>)}
+          </select>
+          <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={busy}>
+            <FileSpreadsheet size={17} /> Descargar CSV
+          </button>
+        </div>
       </div>
 
-      <fieldset className="data-portability-fieldset" disabled={busy}>
-        <legend>Exportar información en JSON</legend>
+      <details className="data-portability-expand">
+        <summary>
+          <Download size={17} aria-hidden="true" />
+          <span><strong>Exportar varias categorías</strong><small>Archivo JSON con los datos seleccionados</small></span>
+        </summary>
+        <div className="data-portability-expand__body">
+      <fieldset className="data-portability-fieldset" aria-label="Categorías de datos para exportar" disabled={busy}>
+        <p>Selecciona las categorías que necesitas. El archivo contiene datos de consulta, no un respaldo recuperable.</p>
         <div className="data-portability-categories">
           {Object.entries(CATEGORY_LABELS).map(([category, label]) => (
             <label key={category}>
@@ -229,21 +246,17 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
           Descargar datos seleccionados
         </button>
       </fieldset>
-
-      <div className="data-portability-csv">
-        <label htmlFor="portable-csv-table">Exportar una tabla como CSV</label>
-        <div>
-          <select id="portable-csv-table" value={csvTable} onChange={(event) => setCsvTable(event.target.value)} disabled={busy}>
-            {BACKUP_TABLE_NAMES.map((tableName) => <option key={tableName} value={tableName}>{TABLE_LABELS[tableName] || tableName}</option>)}
-          </select>
-          <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={busy}>
-            <FileSpreadsheet size={17} /> Descargar CSV
-          </button>
         </div>
-      </div>
+      </details>
 
-      <fieldset className="data-portability-fieldset" disabled={busy}>
-        <legend><PackageOpen size={17} /> Transferir a otro negocio LANZO</legend>
+      <details className="data-portability-expand">
+        <summary>
+          <PackageOpen size={17} aria-hidden="true" />
+          <span><strong>Transferir catálogo a otra licencia</strong><small>Productos, clientes e ingredientes, sin saldos ni existencias</small></span>
+        </summary>
+        <div className="data-portability-expand__body">
+      <fieldset className="data-portability-fieldset" aria-label="Herramientas para transferir catálogo" disabled={busy}>
+
         <p>El paquete incluye categorías, productos, clientes básicos, imágenes e ingredientes. Los atributos de variantes compatibles se conservan con existencia cero. No incluye stock, costos, lotes, saldos, ventas ni movimientos financieros.</p>
         <button type="button" className="btn btn-secondary" onClick={() => runGuarded('settings_data', (assertAuthorized) => downloadPortableDataPackage({
           transferOnly: true,
@@ -283,6 +296,8 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
           </div>
         )}
       </fieldset>
+        </div>
+      </details>
       {error && <p className="backup-settings-error" role="alert">{error}</p>}
       <p className="data-portability-limit">Los archivos JSON se procesan en el navegador. Para evitar un uso excesivo de memoria, la importación de paquetes está limitada a 64 MiB.</p>
     </section>
