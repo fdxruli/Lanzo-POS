@@ -3,7 +3,6 @@ import { useExpirationAlert } from '../../hooks/useExpirationAlert';
 import { useAppStore } from '../../store/useAppStore';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import {
-  AlertTriangle,
   PackageMinus,
   PackagePlus,
   CalendarCheck,
@@ -61,18 +60,6 @@ const getAvailableProductStock = (item = {}) => toSafeNumber(
 );
 
 const isProductRecord = (item = {}) => item.recordType === 'product' || item.type === 'Producto';
-
-const isShelfLifeExpiredRecord = (item = {}) => (
-  item.operationalCategory === 'vida_util_vencida' || item.alertType === 'VIDA_UTIL_VENCIDA'
-);
-
-const isRegularizationRecord = (item = {}) => (
-  isProductRecord(item) && (
-    item.operationalCategory === 'requiere_regularizacion' ||
-    item.canCreateBatchFromStock === true ||
-    item.canAdjustStock === true
-  )
-);
 
 const getErrorCode = (errorOrResponse = {}) => (
   errorOrResponse?.code ||
