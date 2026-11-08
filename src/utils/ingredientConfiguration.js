@@ -27,3 +27,13 @@ export const getIngredientDefaultUnit = (ingredient) => {
 
   return normalizeIngredientUnit(unit || (ingredient?.saleType === 'unit' ? 'pza' : 'kg'));
 };
+
+
+// A recipe stores quantities in each ingredient's inventory unit. Reject
+// ambiguous legacy unit mismatches rather than silently double-converting them.
+export const assertValidRecipeReferences = (recipe, ingredientRecords, { productId = null, licenseId = null } = {}) => {
+  if (!Array.isArray(recipe)) throw new Error('La receta no tiene un formato vÃ¡lido.');
+  const byId = new Map((ingredientRecords || []).filter(Boolean).map((ingredient) => [ingredient.id, ingredient]));
+  const seen = new Set();
+  for (const item of recipe) {
+    const ingredientId = getRecipeIngredientI¶»§q«^
