@@ -23,6 +23,7 @@ const PERMISSION_LABELS = {
   orders: 'Pedidos',
   products: 'Productos',
   customers: 'Clientes',
+  customer_payments: 'Registrar abonos',
   reports: 'Reportes',
   notifications: 'Centro de Notificaciones',
   notifications_ecommerce: 'Mensajes de pedidos online',
@@ -54,6 +55,7 @@ const PERMISSION_DESCRIPTIONS = {
   orders: 'Permite consultar y atender pedidos del negocio.',
   products: 'Permite acceder al catálogo de Productos. Las acciones de inventario conservan su autorización propia.',
   customers: 'Permite consultar y gestionar clientes desde el apartado Clientes.',
+  customer_payments: 'Permite registrar pagos que reducen las deudas de clientes. Requiere acceso a Clientes y respeta las condiciones de caja y conexión.',
   reports: 'Permite consultar los reportes disponibles. Algunas exportaciones también requieren Sincronización.',
   notifications: 'Interruptor maestro. Al desactivarlo, el staff no puede abrir el Centro de Notificaciones.',
   notifications_ecommerce: 'Avisos de nuevos pedidos online y eventos del canal ecommerce.',
@@ -99,6 +101,7 @@ const PERMISSION_GROUPS = [
       'orders',
       'products',
       'customers',
+      'customer_payments',
       'reports',
       'settings',
       'inventory',
@@ -161,6 +164,7 @@ const ROLE_TEMPLATES = {
     pos_credit_sales: true,
     orders: true,
     customers: true,
+    customer_payments: true,
     cash_register: true,
     discounts: true
   },
@@ -171,6 +175,7 @@ const ROLE_TEMPLATES = {
     orders: true,
     products: true,
     customers: true,
+    customer_payments: true,
     reports: true,
     notifications: true,
     notifications_ecommerce: true,
@@ -221,6 +226,12 @@ const normalizePermissions = (permissions = {}) => {
   normalized.pos_credit_sales = normalized.pos === true && (hasOwn(permissionRecord, 'pos_credit_sales')
     ? permissionRecord.pos_credit_sales === true
     : permissionRecord?.pos === true);
+
+  // Before this key existed, Staff with Customers could register payments.
+  // Keep that grant only when the raw permission map has no explicit value.
+  normalized.customer_payments = normalized.customers === true && (hasOwn(permissionRecord, 'customer_payments')
+    ? permissionRecord.customer_payments === true
+    : permissionRecord?.customers === true);
 
   // Compatibility for staff created before category-level notification flags.
   // Inventory inherited Operations before Phase 5, so preserve that exact
@@ -452,6 +463,10 @@ export default function StaffUsersSettings({ licenseKey }) {
 
       if (permission === 'pos' && !nextValue) {
         nextPermissions.pos_credit_sales = false;
+      }
+
+      if (permission === 'customers' && !nextValue) {
+        nextPermissions.customer_payments = false;
       }
 
       // Preserve the old, intuitive behavior when the master switch is first
@@ -916,6 +931,8 @@ export default function StaffUsersSettings({ licenseKey }) {
                                 isNotificationDetail && form.permissions?.notifications !== true
                               ) || (
                                 permission === 'pos_credit_sales' && form.permissions?.pos !== true
+                              ) || (
+                                permission === 'customer_payments' && form.permissions?.customers !== true
                               );
 
                               return (

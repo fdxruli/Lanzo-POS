@@ -28,6 +28,21 @@ export const getExplicitActorPermissions = (actorType, actor = null) => {
     grantedPermissions.push('pos_credit_sales');
   }
 
+  // Before customer_payments existed, Customers also allowed Staff to register
+  // payments. Preserve only that missing-key legacy grant; explicit false wins.
+  if (!Array.isArray(permissions)
+    && !Object.prototype.hasOwnProperty.call(permissions || {}, 'customer_payments')
+    && permissions?.customers === true) {
+    grantedPermissions.push('customer_payments');
+  }
+
+  const hasCustomersPermission = Array.isArray(permissions)
+    ? permissions.includes('customers')
+    : permissions?.customers === true;
+  if (!hasCustomersPermission) {
+    return [...new Set(grantedPermissions.filter((permission) => permission !== 'customer_payments'))];
+  }
+
   return [...new Set(grantedPermissions.filter((permission) => (
     typeof permission === 'string' && permission.trim().length > 0
   )).map((permission) => permission.trim()))];

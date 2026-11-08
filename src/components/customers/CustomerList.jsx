@@ -85,6 +85,7 @@ export default function CustomerList({
     onDelete,
     onViewHistory,
     onAbonar,
+    canRegisterAbonos = true,
     onViewLayaways,
     onWhatsApp,
     onWhatsAppLoading,
@@ -236,6 +237,7 @@ export default function CustomerList({
                         onDelete={onDelete}
                         onViewHistory={onViewHistory}
                         onAbonar={onAbonar}
+                        canRegisterAbonos={canRegisterAbonos}
                         onViewLayaways={onViewLayaways}
                         onWhatsApp={onWhatsApp}
                         reminder={getCustomerReminder(reminders, customer.id)}

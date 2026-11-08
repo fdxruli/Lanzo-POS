@@ -1,16 +1,5 @@
 import React from 'react';
-import {
-  AlertTriangle,
-  Barcode,
-  BarChart3,
-  CheckCircle,
-  Clock,
-  DollarSign,
-  Info,
-  Package,
-  RotateCcw,
-  Trash2
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Info, RotateCcw } from 'lucide-react';
 import { useExpirationWasteHistory } from '../../hooks/useExpirationWasteHistory';
 import './ExpirationWasteHistoryPanel.css';
 
@@ -37,19 +26,6 @@ const getWasteTypeLabel = (type) => {
   return 'Sin clasificar';
 };
 
-const SummaryCard = ({ icon: Icon, label, value, helper }) => (
-  <article className="expiration-history-summary-card">
-    <span className="expiration-history-summary-icon">
-      <Icon size={18} />
-    </span>
-    <div>
-      <span className="expiration-history-summary-label">{label}</span>
-      <strong>{value}</strong>
-      {helper && <small>{helper}</small>}
-    </div>
-  </article>
-);
-
 export default function ExpirationWasteHistoryPanel() {
   const {
     items,
@@ -68,173 +44,83 @@ export default function ExpirationWasteHistoryPanel() {
   const sourceLabel = source === 'cloud' ? 'Cloud oficial' : 'Local del dispositivo';
 
   return (
-    <section className="expiration-history-widget" aria-label="Historial de mermas por caducidad">
-      <div className="expiration-history-header">
-        <div className="expiration-history-title">
-          <span className="expiration-history-title-icon">
-            <Trash2 size={22} />
-          </span>
-          <div>
-            <h3>Historial de mermas por caducidad</h3>
-            <p>Consulta pérdidas por producto, lote, responsable y tipo de merma.</p>
-          </div>
+    <section className="expiry-subview" aria-label="Historial de mermas por caducidad">
+      <header className="expiry-subview-header">
+        <div>
+          <h3>Historial de mermas</h3>
+          <p>Productos y lotes retirados del inventario por caducidad.</p>
         </div>
-
-        <div className="expiration-history-actions">
-          <span className={`expiration-history-source expiration-history-source--${source}`}>
-            {sourceLabel}
-          </span>
+        <div className="expiry-subview-toolbar">
+          <span className="expiry-source">{sourceLabel}</span>
           {hasReportsPermission && (
-            <button
-              type="button"
-              className="expiration-history-refresh"
-              onClick={refresh}
-              disabled={loading}
-            >
-              <RotateCcw size={14} />
-              {loading ? 'Cargando...' : 'Actualizar'}
+            <button type="button" className="expiry-link" onClick={refresh} disabled={loading}>
+              <RotateCcw size={15} aria-hidden="true" /> Actualizar
             </button>
           )}
         </div>
-      </div>
-
+      </header>
       {!hasReportsPermission ? (
-        <div className="expiration-history-state expiration-history-state--warning">
-          <Info size={24} />
-          <div>
-            <strong>Historial limitado</strong>
-            <p>Necesitas acceso a reportes para consultar este historial.</p>
-          </div>
+        <div className="expiry-state" role="status">
+          <Info size={22} aria-hidden="true" />
+          <strong>No tienes acceso al historial</strong>
+          <p>Solicita permiso de reportes para consultar mermas.</p>
         </div>
       ) : error ? (
-        <div className="expiration-history-state expiration-history-state--error">
-          <AlertTriangle size={24} />
-          <div>
-            <strong>No se pudo cargar el historial</strong>
-            <p>{error}</p>
-          </div>
+        <div className="expiry-state" role="alert">
+          <AlertTriangle size={22} aria-hidden="true" />
+          <strong>No se pudo cargar el historial</strong>
+          <p>{error}</p>
         </div>
       ) : loading ? (
-        <div className="expiration-history-state">
-          <Clock className="expiration-history-spinner" size={24} />
-          <span>Cargando historial de mermas por caducidad...</span>
+        <div className="expiry-state" role="status">
+          <Clock size={20} className="expiry-spinner" aria-hidden="true" />
+          Cargando movimientos registrados...
         </div>
       ) : (
         <>
-          <div className="expiration-history-summary-grid">
-            <SummaryCard
-              icon={DollarSign}
-              label="Total perdido"
-              value={formatCurrency(summary.total_loss_amount)}
-              helper={`${formatNumber(summary.total_records)} registros`}
-            />
-            <SummaryCard
-              icon={BarChart3}
-              label="Cantidad mermada"
-              value={formatNumber(summary.total_quantity)}
-              helper="Unidades registradas"
-            />
-            <SummaryCard
-              icon={Package}
-              label="Productos afectados"
-              value={formatNumber(summary.total_products)}
-            />
-            <SummaryCard
-              icon={Barcode}
-              label="Lotes afectados"
-              value={formatNumber(summary.total_batches)}
-            />
-            <SummaryCard
-              icon={Trash2}
-              label="Mermas totales"
-              value={formatNumber(summary.total_count)}
-            />
-            <SummaryCard
-              icon={Info}
-              label="Mermas parciales"
-              value={formatNumber(summary.partial_count)}
-            />
+          <div className="expiry-subview-summary">
+            <span><strong>{formatCurrency(summary.total_loss_amount)}</strong> pérdidas registradas</span>
+            <span><strong>{formatNumber(summary.total_quantity)}</strong> unidades retiradas</span>
+            <span><strong>{formatNumber(summary.total_records)}</strong> movimientos</span>
           </div>
-
           {isLimited && (
-            <div className="expiration-history-limit-note">
-              <Info size={16} />
-              <span>
-                Mostrando los últimos {formatNumber(visibleRecords || limit)} registros.
-                {totalRecords > visibleRecords && ` El resumen incluye ${formatNumber(totalRecords)} movimientos del periodo consultado.`}
-              </span>
-            </div>
+            <p className="expiry-limit-note">
+              Mostrando los últimos {formatNumber(visibleRecords || limit)} movimientos.
+              {totalRecords > visibleRecords && ' El resumen incluye ' + formatNumber(totalRecords) + ' movimientos.'}
+            </p>
           )}
-
           {items.length === 0 ? (
-            <div className="expiration-history-empty">
-              <CheckCircle size={42} />
-              <div>
-                <strong>Aún no hay mermas por caducidad registradas.</strong>
-                <p>Cuando mandes un lote a merma, aparecerá aquí.</p>
-              </div>
+            <div className="expiry-state">
+              <CheckCircle size={28} aria-hidden="true" />
+              <strong>No hay mermas por caducidad registradas</strong>
+              <p>Las bajas confirmadas de inventario aparecerán aquí.</p>
             </div>
           ) : (
-            <>
-              <div className="expiration-history-table-wrap">
-                <table className="expiration-history-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Producto</th>
-                      <th>Lote</th>
-                      <th>Cantidad</th>
-                      <th>Costo unitario</th>
-                      <th>Pérdida</th>
-                      <th>Tipo</th>
-                      <th>Responsable</th>
-                      <th>Notas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={item.id}>
-                        <td>{formatDateTime(item.timestamp)}</td>
-                        <td>{item.productName}</td>
-                        <td>{item.batchSku || item.batchId || 'Lote'}</td>
-                        <td>{formatNumber(item.quantity)} {item.unit || 'u'}</td>
-                        <td>{formatCurrency(item.costAtTime)}</td>
-                        <td className="expiration-history-loss">-{formatCurrency(item.lossAmount)}</td>
-                        <td>
-                          <span className={`expiration-history-type expiration-history-type--${item.wasteType}`}>
-                            {getWasteTypeLabel(item.wasteType)}
-                          </span>
-                        </td>
-                        <td>{item.actorName || 'No especificado'}</td>
-                        <td>{item.notes || 'Sin notas'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="expiration-history-mobile-list">
-                {items.map((item) => (
-                  <article key={item.id} className="expiration-history-mobile-card">
-                    <div className="expiration-history-mobile-head">
-                      <div>
-                        <h4>{item.productName}</h4>
-                        <span>{formatDateTime(item.timestamp)}</span>
-                      </div>
-                      <strong>-{formatCurrency(item.lossAmount)}</strong>
+            <div className="expiry-list" aria-label="Movimientos por caducidad">
+              {items.map((item) => (
+                <details className="expiry-row" key={item.id}>
+                  <summary className="expiry-row-toggle">
+                    <span className="expiry-row-content">
+                      <strong className="expiry-product-name">{item.productName}</strong>
+                      <span className="expiry-secondary">Lote {item.batchSku || item.batchId || 'sin código'} · {formatNumber(item.quantity)} {item.unit || 'u'}</span>
+                      <span className="expiry-secondary">{formatDateTime(item.timestamp)}</span>
+                    </span>
+                    <span className="expiry-row-end">
+                      <strong className="expiry-history-loss">−{formatCurrency(item.lossAmount)}</strong>
+                      <span className="expiry-summary-chevron" aria-hidden="true">⌄</span>
+                    </span>
+                  </summary>
+                  <div className="expiry-row-details">
+                    <div className="expiry-row-facts">
+                      <span>Merma: <strong>{getWasteTypeLabel(item.wasteType)}</strong></span>
+                      <span>Costo unitario: <strong>{formatCurrency(item.costAtTime)}</strong></span>
+                      <span>Responsable: <strong>{item.actorName || 'No especificado'}</strong></span>
+                      {item.notes && <span>Notas: {item.notes}</span>}
                     </div>
-                    <div className="expiration-history-mobile-grid">
-                      <span>Lote</span><b>{item.batchSku || item.batchId || 'Lote'}</b>
-                      <span>Cantidad</span><b>{formatNumber(item.quantity)} {item.unit || 'u'}</b>
-                      <span>Costo</span><b>{formatCurrency(item.costAtTime)}</b>
-                      <span>Tipo</span><b>{getWasteTypeLabel(item.wasteType)}</b>
-                      <span>Responsable</span><b>{item.actorName || 'No especificado'}</b>
-                    </div>
-                    {item.notes && <p className="expiration-history-mobile-notes">{item.notes}</p>}
-                  </article>
-                ))}
-              </div>
-            </>
+                  </div>
+                </details>
+              ))}
+            </div>
           )}
         </>
       )}

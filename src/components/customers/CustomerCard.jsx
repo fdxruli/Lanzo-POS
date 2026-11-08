@@ -28,6 +28,7 @@ const CustomerCard = memo(({
     onDelete,
     onViewHistory,
     onAbonar,
+    canRegisterAbonos = true,
     onWhatsApp,
     onViewLayaways,
     globalLimit = 0,
@@ -125,10 +126,18 @@ const CustomerCard = memo(({
                             type="button"
                             className="ui-button ui-button--primary btn btn-abono"
                             onClick={() => onAbonar(customer)}
+                            disabled={!canRegisterAbonos}
+                            aria-describedby={!canRegisterAbonos ? `customer-abono-permission-${customer.id}` : undefined}
+                            title={!canRegisterAbonos ? 'Sin autorización para registrar abonos' : undefined}
                         >
                             <Wallet size={18} aria-hidden="true" />
                             <span>Abonar</span>
                         </button>
+                    )}
+                    {hasDebt && !canRegisterAbonos && (
+                        <small className="customer-abono-permission-note" id={`customer-abono-permission-${customer.id}`}>
+                            Sin autorización para registrar abonos.
+                        </small>
                     )}
 
                     {hasLayaway && (
@@ -210,6 +219,7 @@ const CustomerCard = memo(({
     && prevProps.reminderConfigEnabled === nextProps.reminderConfigEnabled
     && prevProps.reminderConfigError === nextProps.reminderConfigError
     && prevProps.canManageReminders === nextProps.canManageReminders
+    && prevProps.canRegisterAbonos === nextProps.canRegisterAbonos
     && prevProps.reminderLoadingAction === nextProps.reminderLoadingAction
     && prevProps.reminderFeedback === nextProps.reminderFeedback
     && prevProps.globalLimit === nextProps.globalLimit

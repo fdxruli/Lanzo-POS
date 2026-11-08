@@ -321,6 +321,18 @@
   border-color: #087f61;
 }
 
+.btn-abono:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.customer-abono-permission-note {
+  grid-column: 1 / -1;
+  color: var(--text-light);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .btn-layaway,
 .btn-whatsapp,
 .btn-icon-text {
