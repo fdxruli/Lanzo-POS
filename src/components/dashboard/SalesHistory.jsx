@@ -427,7 +427,7 @@ export default function SalesHistory({
       <p className="history-export-note">
         {isLoading
           ? 'Las exportaciones estarán disponibles al terminar la carga.'
-          : 'CSV e impresión incluyen únicamente las ventas visibles y filtradas de esta página.'}
+          : `CSV e impresión incluirán solo ${filteredSales.length} venta(s) filtradas de las ${mainSales.length} cargadas en esta página.`}
       </p>
 
       <div className="history-meta" aria-label="Alcance de la consulta">
@@ -527,12 +527,10 @@ export default function SalesHistory({
         </div>
       )}
 
-      {activeFilters.length > 0 && (
-        <p className="history-filter-summary">
-          <strong>Filtros aplicados:</strong> {activeFilters.join(' · ')}
-          {' '}<span>· Solo sobre esta página</span>
-        </p>
-      )}
+      <p className="history-filter-summary">
+        <strong>Filtros locales:</strong> {activeFilters.length ? activeFilters.join(' · ') : 'Sin filtros locales'}
+        {' '}<span>(aplican solo a los registros cargados de esta página)</span>
+      </p>
 
       {isLoading && mainSales.length === 0 ? (
         <div className="empty-message" role="status">Cargando historial de ventas…</div>
