@@ -1,6 +1,7 @@
 // src/hooks/pos/usePosCheckout.js
 import { useCallback, useEffect, useRef } from 'react';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { canCreateCreditSale } from '../../services/auth/salesPermissionPolicy';
 import { rememberPrepaymentCheckout, forgetPrepaymentCheckout, recoverPrepaymentCheckout } from '../../services/auth/actorOperationalHandoff';
 import { useAppStore } from '../../store/useAppStore';
 import { broadcastDBChange } from '../../services/products/productCatalogEvents';
@@ -1227,6 +1228,24 @@ export function usePosCheckout({
         }
 
         const paymentMethod = normalizePaymentMethod(paymentData.paymentMethod);
+        const reportedBalanceDue = paymentData.saldoPendiente ?? paymentData.balanceDue ?? paymentData.balance_due;
+        const reportedAmountPaid = paymentData.amountPaid ?? paymentData.amount_paid ?? paymentData.abono;
+        const createsNewDebt = reportedBalanceDue !== undefined && reportedBalanceDue !== null
+            ? Money.init(reportedBalanceDue).gt(0)
+            : reportedAmountPaid !== undefined && reportedAmountPaid !== null
+                ? Money.init(snapshot.total).gt(Money.init(reportedAmountPaid))
+                : paymentMethod === 'credit';
+
+        if (createsNewDebt && !canCreateCreditSale(actorRuntimeController.getState())) {
+            const message = 'Tu usuario no tiene autorización para generar saldos pendientes mediante ventas.';
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: 'credit_sale_permission_denied'
+            });
+            showMessageModal(message, null, { type: 'warning' });
+            return { success: false, code: 'POS_PERMISSION_DENIED:pos_credit_sales', message };
+        }
+
         const initialPaymentMethod = normalizePaymentMethod(
             paymentData.initialPaymentMethod ||
             paymentData.abonoPaymentMethod ||

@@ -195,6 +195,107 @@ describe('processSaleCore', () => {
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
     });
 
+    it('allows a fully paid sale without the credit-sales grant', async () => {
+        const actorContext = {
+            actorType: 'staff',
+            actorKey: 'staff:staff-1',
+            sessionId: 'session-1',
+            deviceRef: 'device-1',
+            tenant: { opaqueId: 'tenant-1', databaseName: 'tenant_db', generation: 1 },
+            assertCurrent: vi.fn((permission) => {
+                if (permission === 'pos_credit_sales') {
+                    throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+                }
+                return true;
+            })
+        };
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            activeOrderId: 'sale-paid',
+            actorContext,
+            paymentData: {
+                customerId: 'cust-1',
+                paymentMethod: 'efectivo',
+                amountPaid: 10,
+                saldoPendiente: 0,
+                sendReceipt: false
+            },
+            saleTimestamp: '2026-10-01T12:00:00.000Z'
+        }), deps);
+
+        expect(result).toMatchObject({ success: true });
+        expect(actorContext.assertCurrent).not.toHaveBeenCalledWith('pos_credit_sales');
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledOnce();
+    });
+
+    it('denies a partial credit sale before the local financial transaction', async () => {
+        const actorContext = {
+            actorType: 'staff',
+            actorKey: 'staff:staff-1',
+            sessionId: 'session-1',
+            deviceRef: 'device-1',
+            tenant: { opaqueId: 'tenant-1', databaseName: 'tenant_db', generation: 1 },
+            assertCurrent: vi.fn((permission) => {
+                if (permission === 'pos_credit_sales') {
+                    throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+                }
+                return true;
+            })
+        };
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            activeOrderId: 'sale-credit-denied',
+            actorContext,
+            paymentData: {
+                customerId: 'cust-1',
+                paymentMethod: 'credit',
+                amountPaid: 10,
+                saldoPendiente: 10,
+                sendReceipt: false
+            },
+            total: 20,
+            order: [{ id: 'prod-1', name: 'Producto 1', quantity: 2, price: 10 }]
+        }), deps);
+
+        expect(result).toMatchObject({
+            success: false,
+            code: 'POS_PERMISSION_DENIED:pos_credit_sales',
+            message: expect.stringContaining('no tiene autorización')
+        });
+        expect(actorContext.assertCurrent).toHaveBeenCalledWith('pos_credit_sales');
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+        expect(deps.saveData).not.toHaveBeenCalled();
+        expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to a local commit for a Staff sale that creates debt', async () => {
+        const actorContext = {
+            actorType: 'staff',
+            actorKey: 'staff:staff-1',
+            sessionId: 'session-1',
+            deviceRef: 'device-1',
+            tenant: { opaqueId: 'tenant-1', databaseName: 'tenant_db', generation: 1 },
+            assertCurrent: vi.fn(() => true)
+        };
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            activeOrderId: 'sale-revoked',
+            actorContext,
+            paymentData: {
+                customerId: 'cust-1',
+                paymentMethod: 'credit',
+                amountPaid: 0,
+                saldoPendiente: 10,
+                sendReceipt: false
+            }
+        }), deps);
+
+        expect(result).toMatchObject({ success: false, code: 'CREDIT_SALE_CLOUD_REQUIRED' });
+        expect(actorContext.assertCurrent).toHaveBeenCalledWith('pos_credit_sales');
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+        expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['fiado', 'VIGENTE'],
         ['credit', null],

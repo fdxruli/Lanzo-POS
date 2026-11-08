@@ -1,5 +1,6 @@
 export const SALES_REPORTS_PERMISSION = 'reports';
 export const SALES_REFUNDS_PERMISSION = 'refunds';
+export const SALES_CREDIT_PERMISSION = 'pos_credit_sales';
 export const SALES_REPORTS_AUDIT_PERMISSIONS = Object.freeze([
   'reportes_globales',
   'reports_global',
@@ -91,11 +92,34 @@ export const canPerformRefunds = (authority = {}) => (
   hasSalesActorPermission(authority, SALES_REFUNDS_PERMISSION)
 );
 
+export const canCreateCreditSale = (authority = {}) => {
+  const { actorType, permissions } = resolveAuthority(authority);
+  if (actorType === 'admin') return true;
+  if (actorType !== 'staff') return false;
+
+  const hasPos = hasExplicitPermission(permissions, 'pos');
+  if (!hasPos) return false;
+
+  if (Array.isArray(permissions)) {
+    return permissions.includes(SALES_CREDIT_PERMISSION);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(permissions || {}, SALES_CREDIT_PERMISSION)) {
+    return permissions[SALES_CREDIT_PERMISSION] === true;
+  }
+
+  // Legacy raw Staff records had no separate credit-sale key. Their POS grant
+  // was sufficient, so absence inherits that grant and nothing broader.
+  return true;
+};
+
 export default Object.freeze({
   canReadSalesReports,
   canAuditSalesReports,
   getSalesFinalHistoryScope,
   canPerformRefunds,
+  canCreateCreditSale,
+  SALES_CREDIT_PERMISSION,
   hasSalesActorPermission,
   getSalesActorIdentity
 });

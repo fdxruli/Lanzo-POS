@@ -18,6 +18,16 @@ export const getExplicitActorPermissions = (actorType, actor = null) => {
     : Object.entries(permissions || {})
       .filter(([, granted]) => granted === true)
       .map(([permission]) => permission);
+
+  // Before pos_credit_sales existed, POS was the authority that enabled a
+  // Staff member to create a credit sale. Keep that legacy grant only when
+  // the raw permission object has no explicit value for the new key.
+  if (!Array.isArray(permissions)
+    && !Object.prototype.hasOwnProperty.call(permissions || {}, 'pos_credit_sales')
+    && permissions?.pos === true) {
+    grantedPermissions.push('pos_credit_sales');
+  }
+
   return [...new Set(grantedPermissions.filter((permission) => (
     typeof permission === 'string' && permission.trim().length > 0
   )).map((permission) => permission.trim()))];

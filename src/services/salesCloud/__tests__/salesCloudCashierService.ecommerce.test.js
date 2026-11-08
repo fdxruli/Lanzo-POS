@@ -520,3 +520,85 @@ it('recognizes confirmed money while the existing local projection needs repair'
     .resolves.toMatchObject({ success: true, projectionDeferred: true, financialIntentId: 'intent-1' });
   expect(mocks.pullCatalogChanges).not.toHaveBeenCalled();
 });
+
+it('blocks a cloud credit sale before financial dispatch when Staff credit sales are revoked', async () => {
+  mocks.actorHandle.assertCurrent.mockImplementation((permission) => {
+    if (permission === 'pos_credit_sales') {
+      throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+    }
+    return true;
+  });
+
+  await expect(salesCloudCashierService.processCloudCashierSale({
+    sale: { ...makeSale(), paymentMethod: 'credit', saldoPendiente: '10.00' },
+    processedItems: makeSale().items,
+    paymentData: { paymentMethod: 'credit', amountPaid: 0, saldoPendiente: '10.00', customerId: 'customer-1' },
+    total: '10.00'
+  })).rejects.toMatchObject({
+    code: 'POS_PERMISSION_DENIED:pos_credit_sales',
+    message: expect.stringContaining('no tiene autorización')
+  });
+
+  expect(mocks.actorHandle.assertCurrent).toHaveBeenCalledWith('pos_credit_sales');
+  expect(mocks.createCloudCreditSale).not.toHaveBeenCalled();
+});
+
+it('keeps an authorized debt creating sale on the Cloud credit path', async () => {
+  const response = makeResponse();
+  mocks.createCloudCreditSale.mockImplementation((options) => projectResponse(options, response, 'sale.credit'));
+
+  const result = await salesCloudCashierService.processCloudCashierSale({
+    sale: { ...makeSale(), paymentMethod: 'credit', saldoPendiente: '10.00' },
+    processedItems: makeSale().items,
+    paymentData: { paymentMethod: 'credit', amountPaid: 0, saldoPendiente: '10.00', customerId: 'customer-1' },
+    total: '10.00'
+  });
+
+  expect(result).toMatchObject({ success: true, creditSale: true });
+  expect(mocks.actorHandle.assertCurrent).toHaveBeenCalledWith('pos_credit_sales');
+  expect(mocks.createCloudCreditSale).toHaveBeenCalledOnce();
+});
+
+it('rechecks a cloud credit grant immediately before dispatch', async () => {
+  let creditChecks = 0;
+  mocks.actorHandle.assertCurrent.mockImplementation((permission) => {
+    if (permission === 'pos_credit_sales' && ++creditChecks > 1) {
+      throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+    }
+    return true;
+  });
+
+  await expect(salesCloudCashierService.processCloudCashierSale({
+    sale: { ...makeSale(), paymentMethod: 'credit', saldoPendiente: '10.00' },
+    processedItems: makeSale().items,
+    paymentData: { paymentMethod: 'credit', amountPaid: 0, saldoPendiente: '10.00', customerId: 'customer-1' },
+    total: '10.00'
+  })).rejects.toMatchObject({ code: 'POS_PERMISSION_DENIED:pos_credit_sales' });
+
+  expect(creditChecks).toBe(2);
+  expect(mocks.createCloudCreditSale).not.toHaveBeenCalled();
+});
+
+it('blocks a split-table credit child before dispatch when Staff credit sales are revoked', async () => {
+  mocks.actorHandle.assertCurrent.mockImplementation((permission) => {
+    if (permission === 'pos_credit_sales') {
+      throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+    }
+    return true;
+  });
+
+  await expect(salesCloudCashierService.processCloudSplitTableSale({
+    parentOrderId: 'table-1',
+    parentExpectedVersion: '2026-10-01T00:00:00Z',
+    splitGroupId: 'split-1',
+    total: '20.00',
+    childDefinitions: [
+      { sale: { ...makeSale(), id: 'child-a', total: '10.00', saldoPendiente: '10.00' },
+        paymentData: { paymentMethod: 'credit', amountPaid: 0, saldoPendiente: '10.00', customerId: 'customer-1' } },
+      { sale: { ...makeSale(), id: 'child-b', total: '10.00' },
+        paymentData: { paymentMethod: 'cash', amountPaid: 10, saldoPendiente: 0 } }
+    ]
+  })).rejects.toMatchObject({ code: 'POS_PERMISSION_DENIED:pos_credit_sales' });
+
+  expect(mocks.createCloudSplitTableSale).not.toHaveBeenCalled();
+});
