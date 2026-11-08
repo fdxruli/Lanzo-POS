@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
+import CashDenominationCounter from './CashDenominationCounter';
 
 const CashAdjustmentModal = ({
   show,
@@ -113,27 +114,21 @@ const CashAdjustmentModal = ({
           </div>
 
           <form onSubmit={handleSubmit}>
-            <div className="caja-modal__field">
-              <label htmlFor="monto-fisico-real-input">Monto físico real</label>
-              <div className="caja-modal__money-input">
-                <span aria-hidden="true">$</span>
-                <input
-                  id="monto-fisico-real-input"
-                  type="number"
-                  value={montoFisicoReal}
-                  onChange={(event) => {
-                    setMontoFisicoReal(event.target.value);
-                    setMostrarConfirmacionCero(false);
-                  }}
-                  step="0.01"
-                  min="0"
-                  required
-                  autoFocus
-                  disabled={isDisabled}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
+            <CashDenominationCounter
+              value={montoFisicoReal}
+              onChange={(value) => {
+                setMontoFisicoReal(value);
+                setMostrarConfirmacionCero(false);
+              }}
+              expectedAmount={teoricoSafe}
+              inputId="monto-fisico-real-input"
+              manualLabel="Monto físico real"
+              required
+              autoFocus
+              disabled={isDisabled}
+              resetKey={show}
+              showDifference={false}
+            />
 
             <div className="caja-modal__field">
               <label htmlFor="ajuste-comentario-input">

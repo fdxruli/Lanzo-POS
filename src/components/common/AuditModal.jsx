@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Money } from '../../utils/moneyMath';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
+import CashDenominationCounter from '../caja/modals/CashDenominationCounter';
 import '../customers/AbonoModal.css';
 import './AuditModal.css';
 
@@ -14,6 +15,8 @@ const AUDIT_CONFIG = {
 
 export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja, calcularTeorico, isProcessing = false }) {
   const [montoFisicoTotal, setMontoFisicoTotal] = useState('');
+  const [countMode, setCountMode] = useState('manual');
+  const [denominationCounts, setDenominationCounts] = useState({});
   const [montoFondoSiguienteTurno, setMontoFondoSiguienteTurno] = useState('');
   const [teorico, setTeorico] = useState('0');
   const [comentarios, setComentarios] = useState('');
@@ -34,6 +37,8 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
       // Forzar refresh del cálculo teórico para auditoría
       calcularTeorico(true).then((val) => setTeorico(val));
       setMontoFisicoTotal('');
+      setCountMode('manual');
+      setDenominationCounts({});
       setMontoFondoSiguienteTurno('');
       setComentarios('');
       setStep(1);
@@ -59,6 +64,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
 
   const diferenciaSafe = Money.subtract(fisicoSafe, teoricoSafe);
   const diferenciaAbsoluta = diferenciaSafe.abs();
+  const hayDiferencia = !diferenciaSafe.eq(0);
   
   // Calcular diferencia porcentual relativa al teórico
   const diferenciaPercentual = teoricoSafe.gt(0) 
@@ -117,29 +123,23 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
               <small>El sistema verificará automáticamente el cuadre con el total teórico.</small>
             </p>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="audit-physical-total">
-                <span style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Monto Físico Total ($)</span>
-                  <span style={{ color: 'var(--text-light)', fontSize: '0.85rem' }}>
-                    Efectivo real en caja
-                  </span>
-                </span>
-              </label>
-              <input
-                id="audit-physical-total"
-                type="number"
-                className="form-input"
-                style={{ fontSize: '1.2rem', textAlign: 'center', fontWeight: 'bold' }}
-                value={montoFisicoTotal}
-                onChange={(e) => setMontoFisicoTotal(e.target.value)}
-                autoFocus
-                step="0.01"
-                min="0"
-                disabled={isProcessing}
-                placeholder="0.00"
-              />
-            </div>
+            <CashDenominationCounter
+              value={montoFisicoTotal}
+              onChange={(value) => {
+                setMontoFisicoTotal(value);
+                setShowWarning(false);
+              }}
+              expectedAmount={teoricoSafe}
+              inputId="audit-physical-total"
+              manualLabel="Monto físico total ($) · efectivo real en caja"
+              autoFocus
+              disabled={isProcessing}
+              resetKey={show}
+              mode={countMode}
+              onModeChange={setCountMode}
+              counts={denominationCounts}
+              onCountsChange={setDenominationCounts}
+            />
 
             <div className="form-group">
               <label className="form-label" htmlFor="audit-next-shift-fund">
@@ -236,24 +236,22 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
                 style={{
                   padding: '20px',
                   borderRadius: '12px',
-                  backgroundColor: hayDiferenciaSignificativa ? '#FEF2F2' : '#ECFDF5',
-                  border: `2px solid ${hayDiferenciaSignificativa ? '#FCA5A5' : '#6EE7B7'}`,
+                  backgroundColor: hayDiferenciaSignificativa ? '#FEF2F2' : hayDiferencia ? '#FEF3C7' : '#ECFDF5',
+                  border: `2px solid ${hayDiferenciaSignificativa ? '#FCA5A5' : hayDiferencia ? '#FCD34D' : '#6EE7B7'}`,
                   marginBottom: '20px'
                 }}
               >
-                <div style={{ fontSize: '0.9rem', color: hayDiferenciaSignificativa ? '#991B1B' : '#065F46', marginBottom: '8px' }}>
-                  {hayDiferenciaSignificativa ? '⚠️ DIFERENCIA DETECTADA' : '✓ CAJA CUADRADA'}
+                <div style={{ fontSize: '0.9rem', color: hayDiferenciaSignificativa ? '#991B1B' : hayDiferencia ? '#92400E' : '#065F46', marginBottom: '8px' }}>
+                  {hayDiferencia ? '⚠️ DIFERENCIA DETECTADA' : '✓ CAJA CUADRADA'}
                 </div>
                 <div 
                   style={{ 
                     fontSize: '1.8rem', 
                     fontWeight: 'bold',
-                    color: hayDiferenciaSignificativa 
-                      ? (diferenciaSafe.gt(0) ? '#DC2626' : '#DC2626')
-                      : '#059669'
+                    color: hayDiferenciaSignificativa ? '#DC2626' : hayDiferencia ? '#92400E' : '#059669'
                   }}
                 >
-                  {diferenciaSafe.gt(0) ? '+' : ''}${Money.toNumber(diferenciaSafe).toFixed(2)}
+                  {diferenciaSafe.gt(0) ? '+' : diferenciaSafe.lt(0) ? '−' : ''}${Money.toNumber(diferenciaAbsoluta).toFixed(2)}
                 </div>
                 {hayDiferenciaPercentual && (
                   <div style={{ fontSize: '0.85rem', color: '#7F1D1D', marginTop: '5px' }}>
