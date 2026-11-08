@@ -482,7 +482,13 @@ function GeneralSettingsContent() {
         return;
       }
       Logger.error(error);
-      showMessageModal('Error al guardar.', null, { type: 'error' });
+      const imagePrivacyError = error?.code === 'IMAGE_PROCESSING_FAILED'
+        || error?.code === 'IMAGE_PRIVACY_UNSUPPORTED';
+      showMessageModal(
+        imagePrivacyError ? error.message : 'Error al guardar.',
+        null,
+        { type: 'error' }
+      );
     }
   };
 
