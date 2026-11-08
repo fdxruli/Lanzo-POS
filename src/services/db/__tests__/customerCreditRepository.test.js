@@ -117,6 +117,13 @@ describe('customerCreditRepository.processPayment', () => {
     const sale = await db.table(STORES.SALES).get('sale-1');
     expect(sale.saldoPendiente).toBe(70);
     expect(sale.creditStatus).toBe('PARCIAL');
+    expect(sale.paymentCollections).toEqual([expect.objectContaining({
+      paymentId: expect.any(String),
+      method: 'efectivo',
+      amount: '30',
+      cashSessionId: 'caja-1',
+      cashMovementId: expect.any(String)
+    })]);
 
     const ledgerEntries = await db.table(STORES.CUSTOMER_LEDGER).toArray();
     expect(ledgerEntries).toHaveLength(1);
@@ -124,7 +131,10 @@ describe('customerCreditRepository.processPayment', () => {
       customerId: 'cust-1',
       type: 'PAYMENT',
       amount: '-30',
-      paymentMethod: 'efectivo'
+      paymentMethod: 'efectivo',
+      allocations: [{ saleId: 'sale-1', amountApplied: '30' }],
+      cashSessionId: 'caja-1',
+      cashMovementId: expect.any(String)
     });
 
     const caja = await db.table(STORES.CAJAS).get('caja-1');
@@ -139,5 +149,44 @@ describe('customerCreditRepository.processPayment', () => {
       monto: '30',
       concepto: 'Abono de cliente: Cliente Test'
     });
+    expect(ledgerEntries[0].cashMovementId).toBe(movements[0].id);
+  });
+
+  it('conserva el medio no efectivo de un abono fiado sin crear una entrada de caja', async () => {
+    await db.table(STORES.CUSTOMERS).put({ id: 'cust-1', name: 'Cliente Test', debt: '50', debtCents: 5000 });
+    await db.table(STORES.SALES).put({
+      id: 'sale-1', customerId: 'cust-1', paymentMethod: 'fiado', saldoPendiente: 50, total: 50, abono: 0
+    });
+
+    await customerCreditRepository.processPayment(
+      'cust-1', 20, 'tarjeta', null, 'Abono con tarjeta', [{ saleId: 'sale-1', amountApplied: '20' }]
+    );
+
+    const sale = await db.table(STORES.SALES).get('sale-1');
+    const [ledger] = await db.table(STORES.CUSTOMER_LEDGER).toArray();
+    expect(sale.paymentCollections).toEqual([expect.objectContaining({ method: 'tarjeta', amount: '20', cashSessionId: null, cashMovementId: null })]);
+    expect(ledger).toMatchObject({ paymentMethod: 'tarjeta', allocations: [{ saleId: 'sale-1', amountApplied: '20' }] });
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+  });
+
+  it('no reabre el saldo de una venta fiada cancelada al reparar deudas', async () => {
+    await db.table(STORES.CUSTOMERS).put({ id: 'cust-1', name: 'Cliente Test', debt: '5', debtCents: 500 });
+    await db.table(STORES.SALES).bulkPut([
+      {
+        id: 'sale-active', customerId: 'cust-1', paymentMethod: 'fiado',
+        saldoPendiente: 5, total: 10, abono: 0, timestamp: '2026-06-16T10:00:00.000Z'
+      },
+      {
+        id: 'sale-cancelled', customerId: 'cust-1', paymentMethod: 'fiado', status: 'cancelled',
+        saldoPendiente: 0, total: 20, abono: 0, timestamp: '2026-06-16T09:00:00.000Z',
+        cancellationFinancials: { version: 1, refunds: [] }
+      }
+    ]);
+
+    await customerCreditRepository.healCustomerSalesDebt('cust-1');
+
+    expect((await db.table(STORES.SALES).get('sale-active')).saldoPendiente).toBe(5);
+    expect((await db.table(STORES.SALES).get('sale-cancelled')).saldoPendiente).toBe(0);
+    expect((await db.table(STORES.SALES).get('sale-cancelled')).creditStatus).not.toBe('PARCIAL');
   });
 });

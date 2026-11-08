@@ -352,6 +352,25 @@ describe('loadCashSessionProjection', () => {
     });
   });
 
+  it('conserva el recibo original de caja al mover una cancelación financiera a la papelera', async () => {
+    await testDb.table('deleted_sales').add({
+      id: 'sale-cancelled-archived',
+      cash_session_id: cashSession.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'cancelled',
+      fulfillmentStatus: 'cancelled',
+      paymentMethod: 'cash',
+      total: '20',
+      payments: [{ method: 'cash', amount: '20' }],
+      cancellationFinancials: { version: 1, refunds: [] }
+    });
+
+    const result = await loadCashSessionProjection(testDb, cashSession);
+
+    expect(result.totals).toEqual({ ventasContado: '20', abonosFiado: '0' });
+    expect(result.movements).toContainEqual(expect.objectContaining({ id: 'sale-cancelled-archived', tipo: 'venta', monto: '20' }));
+  });
+
   it('usa agregados cloud para abonos y total teorico sin duplicar movimientos customer_payment', async () => {
     const cloudSession = {
       ...cashSession,

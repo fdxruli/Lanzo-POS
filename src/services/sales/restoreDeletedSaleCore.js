@@ -86,10 +86,13 @@ export const restoreDeletedSaleCore = async (
         throw error;
       }
 
-      const disposition = Array.isArray(deletedSale.cancellationDisposition)
-        ? deletedSale.cancellationDisposition
-        : inferLegacyPlan(deletedSale);
-      const restockItems = disposition
+      const hasTrackedFinancialCancellation = deletedSale.cancellationFinancials?.version === 1;
+      const disposition = hasTrackedFinancialCancellation
+        ? []
+        : (Array.isArray(deletedSale.cancellationDisposition)
+          ? deletedSale.cancellationDisposition
+          : inferLegacyPlan(deletedSale));
+      const restockItems = hasTrackedFinancialCancellation ? [] : disposition
         .filter((entry) => entry.action === CANCELLATION_ACTIONS.RESTOCK)
         .map((entry) => deletedSale.items?.[entry.itemIndex])
         .filter(Boolean);
@@ -124,7 +127,7 @@ export const restoreDeletedSaleCore = async (
         await db.table(STORES.INVENTORY_EVENTS).bulkAdd(inventoryEvents);
       }
 
-      const wasteRecordIds = deletedSale.cancellationWasteRecordIds || [];
+      const wasteRecordIds = hasTrackedFinancialCancellation ? [] : (deletedSale.cancellationWasteRecordIds || []);
       if (wasteRecordIds.length > 0) {
         await db.table(STORES.WASTE).bulkUpdate(
           wasteRecordIds.map((id) => ({
@@ -151,10 +154,10 @@ export const restoreDeletedSaleCore = async (
       ].forEach((field) => delete restoredSale[field]);
 
       Object.assign(restoredSale, {
-        status: 'closed',
-        fulfillmentStatus: restoredSale.fulfillmentStatus === 'cancelled'
-          ? 'completed'
-          : restoredSale.fulfillmentStatus,
+        status: hasTrackedFinancialCancellation ? 'cancelled' : 'closed',
+        fulfillmentStatus: hasTrackedFinancialCancellation
+          ? 'cancelled'
+          : (restoredSale.fulfillmentStatus === 'cancelled' ? 'completed' : restoredSale.fulfillmentStatus),
         restoredFromTrash: true,
         restoredAt,
         restoreOperationId,

@@ -26,6 +26,9 @@ import { cancelSaleCore } from './sales/cancelSaleCore';
 import { restoreDeletedSaleCore } from './sales/restoreDeletedSaleCore';
 import { salesCloudCancellationService } from './salesCloud/salesCloudCancellationService';
 import { isCloudCommittedSale } from './salesCloud/salesCloudCancellationMapper';
+import { cashRepository } from './cash/cashRepository';
+import { captureCashActorContext } from './cash/cashFinancialGate';
+import { normalizeSaleRefunds } from './sales/saleRefunds';
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
@@ -290,6 +293,7 @@ export const cancelSale = async ({
     reason = '',
     cancelledBy = 'local-user',
     allowWaste = false,
+    refunds = [],
     actorHandle = null
 }) => runRefundsActorOperation({
     actorHandle,
@@ -328,6 +332,47 @@ export const cancelSale = async ({
         }
     }
 
+    const normalizedRefunds = normalizeSaleRefunds(refunds);
+    let mode = null;
+    let cashSession = null;
+    let cashActorContext = null;
+    if (normalizedRefunds.length > 0) {
+        mode = cashRepository.getMode();
+        if (mode.cloudEnabled) {
+            const error = new Error('Las devoluciones de ventas locales se registran solo en caja local Free.');
+            error.code = 'LOCAL_REFUND_NOT_SUPPORTED_IN_PRO';
+            throw error;
+        }
+    }
+    if (normalizedRefunds.some((refund) => refund.method === 'cash' && Number(refund.amount) > 0)) {
+        mode ||= cashRepository.getMode();
+        if (handle?.actorKey && mode.actor?.actorKey !== handle.actorKey) {
+            const error = new Error('La sesión de caja no pertenece al actor autorizado para cancelar esta venta.');
+            error.code = 'CASH_ACTOR_MISMATCH';
+            throw error;
+        }
+        const current = await cashRepository.getCurrentCashSession({ force: true });
+        assertCurrent();
+        if (
+            !current?.success
+            || current.readOnly
+            || current.stateKnown === false
+            || current.financialStatus !== 'OWN_SESSION_OPEN'
+            || !current.cashSession?.id
+        ) {
+            const error = new Error('Abre una caja local de esta estación antes de devolver efectivo.');
+            error.code = current?.financialCode || 'CASH_SESSION_REQUIRED';
+            throw error;
+        }
+        cashActorContext = captureCashActorContext();
+        cashSession = {
+            ...current.cashSession,
+            actorKey: current.actor?.actorKey || mode.actor?.actorKey || null,
+            cashStationId: current.cashStationId || current.cashSession.cashStationId || null,
+            localStationKey: current.localStationKey || current.cashSession.localStationKey || null
+        };
+    }
+
     const result = await cancelSaleCore(
         {
             saleId,
@@ -337,7 +382,10 @@ export const cancelSale = async ({
             dispositionPlan,
             reason,
             cancelledBy,
-            allowWaste
+            allowWaste,
+            refunds: normalizedRefunds,
+            cashSession,
+            cashActorContext
         },
         {
             STORES,
@@ -448,6 +496,12 @@ export const permanentlyDeleteCancelledSales = async (saleIds, { actorHandle = n
 
         await db.transaction('rw', [STORES.DELETED_SALES], async () => {
             assertCurrent();
+            const deletedSales = await db.table(STORES.DELETED_SALES).bulkGet(normalizedIds);
+            if (deletedSales.some((sale) => sale?.cancellationFinancials?.version === 1)) {
+                const error = new Error('No se puede eliminar definitivamente una cancelación con movimientos financieros trazables.');
+                error.code = 'FINANCIAL_AUDIT_RETENTION';
+                throw error;
+            }
             await db.table(STORES.DELETED_SALES).bulkDelete(normalizedIds);
             assertCurrent();
         });

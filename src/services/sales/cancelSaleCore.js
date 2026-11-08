@@ -1,3 +1,12 @@
+import { Money } from '../../utils/moneyMath';
+import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
+import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
+import {
+  allocateSaleRefunds,
+  getRefundableAmountsByMethod,
+  normalizeSaleRefunds
+} from './saleRefunds';
+
 export const CANCELLATION_ACTIONS = Object.freeze({
   RESTOCK: 'restock',
   NO_RETURN: 'no_return',
@@ -103,7 +112,10 @@ export const cancelSaleCore = async (
     dispositionPlan = null,
     reason = '',
     cancelledBy = 'local-user',
-    allowWaste = false
+    allowWaste = false,
+    refunds = [],
+    cashSession = null,
+    cashActorContext = null
   },
   deps
 ) => {
@@ -134,10 +146,14 @@ export const cancelSaleCore = async (
       STORES.MENU,
       STORES.INVENTORY_EVENTS,
       STORES.TRANSACTION_LOG,
-      STORES.WASTE
+      STORES.WASTE,
+      STORES.CUSTOMERS,
+      STORES.CUSTOMER_LEDGER,
+      STORES.CAJAS,
+      STORES.MOVIMIENTOS_CAJA
     ].filter(Boolean);
 
-    await db.transaction('rw', stores, async () => {
+    await db.transaction('rw', stores, async (tx) => {
       assertActorCurrent();
       const cachedSale = currentSales.find((sale) => (
         (saleId && sale?.id === saleId) ||
@@ -171,11 +187,74 @@ export const cancelSaleCore = async (
       }
 
       if (saleFound.status === 'cancelled') {
+        if (saleFound.cancellationFinancials?.version === 1) {
+          transactionResult = {
+            success: true,
+            code: 'ALREADY_CANCELLED',
+            alreadyCancelled: true,
+            saleId: saleFound.id,
+            sale: saleFound,
+            refunds: saleFound.cancellationFinancials.refunds || [],
+            cashRefundMovementId: saleFound.cancellationFinancials.cashRefundMovementId || null,
+            restoreStock: false,
+            restoredInventoryValue: 0,
+            warnings: [],
+            inventoryReversalEventIds: [],
+            wasteRecordIds: []
+          };
+          return;
+        }
         throw new CancellationError('ALREADY_CANCELLED', 'La venta ya fue cancelada.');
       }
 
       const cancelledAt = now();
       const cancellationId = `cancel:${saleFound.id || saleFound.timestamp}`;
+      let normalizedRefunds;
+      try {
+        normalizedRefunds = normalizeSaleRefunds(refunds);
+      } catch (error) {
+        throw new CancellationError(error.code || 'INVALID_REFUND', error.message);
+      }
+      const refundableAmounts = getRefundableAmountsByMethod(saleFound);
+      for (const refund of normalizedRefunds) {
+        if (Money.init(refund.amount).gt(refundableAmounts[refund.method] || 0)) {
+          throw new CancellationError(
+            'REFUND_EXCEEDS_PAID_AMOUNT',
+            `La devolución en ${refund.method} supera el importe cobrado y trazable en ese medio.`
+          );
+        }
+      }
+      const refundsWithSources = allocateSaleRefunds(saleFound, normalizedRefunds);
+      const cashRefund = refundsWithSources.find((refund) => refund.method === 'cash') || null;
+      if (cashRefund && !cashSession?.id) {
+        throw new CancellationError(
+          'CASH_SESSION_REQUIRED',
+          'Para registrar una devolución en efectivo se requiere una caja local abierta en esta estación.'
+        );
+      }
+
+      let creditChargeReversal = null;
+      if (Money.init(saleFound.saldoPendiente || 0).gt(0)) {
+        if (!saleFound.customerId) {
+          throw new CancellationError(
+            'CUSTOMER_CREDIT_UNAVAILABLE',
+            'No se puede revertir el saldo fiado de esta venta porque no tiene un cliente asociado.'
+          );
+        }
+        if (!STORES.CUSTOMERS || !STORES.CUSTOMER_LEDGER) {
+          throw new CancellationError('CUSTOMER_CREDIT_UNAVAILABLE', 'No se pueden ajustar los saldos de fiado de esta venta.');
+        }
+        const customer = await db.table(STORES.CUSTOMERS).get(saleFound.customerId);
+        const outstanding = Money.init(saleFound.saldoPendiente);
+        if (!customer || Money.init(customer.debt || 0).lt(outstanding)) {
+          throw new CancellationError(
+            'CUSTOMER_DEBT_MISMATCH',
+            'El saldo del cliente no cuadra con el adeudo de la venta. Concílialo antes de cancelar.'
+          );
+        }
+        creditChargeReversal = { customer, outstanding };
+      }
+
       const normalizedPlan = normalizeDispositionPlan({
         items: saleFound.items || [],
         dispositionPlan,
@@ -255,6 +334,71 @@ export const cancelSaleCore = async (
         await db.table(STORES.WASTE).bulkAdd(wasteRecords);
       }
 
+      let cashRefundMovement = null;
+      if (cashRefund) {
+        const movementResult = await registrarMovimientoCajaEnTransaccion(
+          tx,
+          cashSession.id,
+          'salida',
+          cashRefund.amount,
+          `Devolución en efectivo por cancelación ${saleFound.id}`,
+          {
+            cashMovementId: `cash-refund:${cancellationId}`,
+            idempotencyKey: `sale-cancellation-refund:${cancellationId}:cash`,
+            actorKey: cashSession.actorKey,
+            cashStationId: cashSession.cashStationId || null,
+            localStationKey: cashSession.localStationKey || null,
+            actorContext: cashActorContext,
+            createdAt: cancelledAt,
+            metadata: {
+              source: 'sale_cancellation',
+              referenceType: 'sale',
+              referenceId: saleFound.id,
+              saleId: saleFound.id,
+              cancellationId,
+              refundMethod: 'cash',
+              refundAmount: cashRefund.amount,
+              sourcePayments: cashRefund.sourcePayments
+            }
+          }
+        );
+        cashRefundMovement = movementResult?.movimiento || null;
+      }
+
+      if (creditChargeReversal) {
+        const newDebt = Money.subtract(creditChargeReversal.customer.debt || 0, creditChargeReversal.outstanding);
+        await db.table(STORES.CUSTOMER_LEDGER).add({
+          id: `cancel-credit:${cancellationId}`,
+          customerId: saleFound.customerId,
+          type: 'CANCEL_CHARGE',
+          amount: Money.toExactString(Money.multiply(creditChargeReversal.outstanding, -1)),
+          paymentMethod: 'fiado',
+          reference: saleFound.id,
+          cancellationId,
+          note: `Cancelación de venta ${saleFound.id}; se revirtió el saldo pendiente.`,
+          timestamp: cancelledAt
+        });
+        await db.table(STORES.CUSTOMERS).put({
+          ...creditChargeReversal.customer,
+          debt: Money.toExactString(newDebt),
+          debtCents: normalizeCustomerDebtCents(newDebt),
+          financialSource: 'local',
+          updatedAt: cancelledAt
+        });
+      }
+
+      const refundTotal = normalizedRefunds.reduce(
+        (total, refund) => Money.add(total, refund.amount),
+        Money.init(0)
+      );
+      const cashRefundTotal = cashRefund ? Money.init(cashRefund.amount) : Money.init(0);
+      const recordedRefunds = refundsWithSources.map((refund) => ({
+        ...refund,
+        returnedAt: cancelledAt,
+        cashSessionId: refund.method === 'cash' ? cashSession.id : null,
+        cashMovementId: refund.method === 'cash' ? cashRefundMovement?.id || null : null
+      }));
+
       const cancelledSale = {
         ...saleFound,
         status: 'cancelled',
@@ -263,6 +407,17 @@ export const cancelSaleCore = async (
         cancelledBy,
         cancelReason: reason || 'manual_cancellation',
         cancellationId,
+        ...(creditChargeReversal ? { saldoPendiente: 0, creditStatus: 'CANCELLED' } : {}),
+        cancellationFinancials: {
+          version: 1,
+          cancellationId,
+          cancelledAt,
+          refunds: recordedRefunds,
+          refundTotal: Money.toExactString(refundTotal),
+          cashRefundTotal: Money.toExactString(cashRefundTotal),
+          cashRefundSessionId: cashRefund ? cashSession.id : null,
+          cashRefundMovementId: cashRefundMovement?.id || null
+        },
         cancellationDisposition: normalizedPlan,
         inventoryRestored: restockItems.length > 0,
         inventoryReversalEventIds: reversalEvents.map((event) => event.id),
@@ -278,7 +433,9 @@ export const cancelSaleCore = async (
         saleId: saleFound.id,
         cancellationId,
         timestamp: cancelledAt,
-        disposition: normalizedPlan
+        disposition: normalizedPlan,
+        refunds: recordedRefunds,
+        cashRefundMovementId: cashRefundMovement?.id || null
       });
       assertActorCurrent();
 
@@ -290,6 +447,8 @@ export const cancelSaleCore = async (
         restoreStock: restockItems.length > 0,
         restoredInventoryValue,
         warnings,
+        refunds: recordedRefunds,
+        cashRefundMovementId: cashRefundMovement?.id || null,
         inventoryReversalEventIds: reversalEvents.map((event) => event.id),
         wasteRecordIds: wasteRecords.map((record) => record.id)
       };

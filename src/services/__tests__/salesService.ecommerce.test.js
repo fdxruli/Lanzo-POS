@@ -73,6 +73,7 @@ vi.mock('../utils', () => ({
 vi.mock('../pricingLogic', () => ({ calculatePricingDetails: vi.fn() }));
 vi.mock('../Logger', () => ({
   default: {
+    log: vi.fn(),
     info: vi.fn(),
     error: (...args) => mocks.loggerError(...args),
     warn: (...args) => mocks.loggerWarn(...args)

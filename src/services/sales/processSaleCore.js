@@ -15,6 +15,7 @@ import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
+import { buildSalePaymentSnapshot } from './saleRefunds';
 import {
     isRestaurantCloudTableShadow,
     isRestaurantCloudTableTerminal,
@@ -483,9 +484,10 @@ export const processSaleCore = async ({
         const cashStationId = isLocalStationKey(suppliedCashStationId)
             ? null
             : suppliedCashStationId;
+        const saleId = activeOrderId || generateID('sal');
 
         const sale = {
-            id: activeOrderId || generateID('sal'),
+            id: saleId,
             timestamp: stableSaleTimestamp,
             salesChannel: isEcommerceSale ? 'ecommerce' : 'local',
             ecommerceOrderId: isEcommerceSale ? ecommerceCheckout.ecommerceOrderId : null,
@@ -499,6 +501,20 @@ export const processSaleCore = async ({
             total: Money.toExactString(totalNum),
             customerId: safePaymentData.customerId,
             paymentMethod: safePaymentData.paymentMethod,
+            ...(cloudCashierDecision?.useCloud ? {} : {
+                initialPaymentMethod: safePaymentData.initialPaymentMethod
+                    || safePaymentData.abonoPaymentMethod
+                    || safePaymentData.creditPaymentMethod
+                    || safePaymentData.partialPaymentMethod
+                    || null,
+                payments: buildSalePaymentSnapshot({
+                    paymentData: safePaymentData,
+                    paymentMethod: safePaymentData.paymentMethod,
+                    total: Money.toExactString(totalNum),
+                    initialPaid: Money.toExactString(abonoSeguro),
+                    saleId
+                })
+            }),
             cash_session_id: safePaymentData.cashSessionId || safePaymentData.cash_session_id || null,
             cashStationId,
             localStationKey,

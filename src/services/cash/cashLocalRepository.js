@@ -1,7 +1,7 @@
 import { db, STORES } from '../db/dexie';
 import { generateID } from '../utils';
 import { registrarMovimientoCaja } from '../cajaService';
-import { loadCashSessionProjection, loadCashSessionTotals } from '../cajaProjection';
+import { loadCashSessionProjection, loadCashSessionTotals, resolveCashSessionAmounts } from '../cajaProjection';
 import { Money } from '../../utils/moneyMath';
 import {
   areCashStationsEquivalent,
@@ -573,7 +573,12 @@ export const cashLocalRepository = {
     if (countedSafe.lt(0) || nextFundSafe.lt(0)) throw new Error('Los montos de auditoria no pueden ser negativos.');
     if (nextFundSafe.gt(countedSafe)) throw new Error('El fondo del siguiente turno no puede ser mayor al dinero fisico contado.');
 
-    return db.transaction('rw', [db.table(STORES.CAJAS), db.table(STORES.SALES)], async () => {
+    return db.transaction('rw', [
+      db.table(STORES.CAJAS),
+      db.table(STORES.SALES),
+      db.table(STORES.MOVIMIENTOS_CAJA),
+      db.table(STORES.LAYAWAYS)
+    ], async () => {
       const cashSession = await db.table(STORES.CAJAS).get(cashSessionId);
       if (!cashSession) throw new Error('CRITICAL: La caja no existe.');
       if (cashSession.estado !== 'abierta') {
@@ -597,15 +602,10 @@ export const cashLocalRepository = {
       if (actorContext) assertCashActorContextCurrent(actorContext);
 
       const closedAt = nowIso();
-      const { ventasContado, abonosFiado } = await loadCashSessionTotals(db, cashSession, closedAt);
+      const sessionTotals = await loadCashSessionTotals(db, cashSession, closedAt);
+      const { ventasContado, abonosFiado } = sessionTotals;
       const totalSalesCashSafe = Money.add(ventasContado, abonosFiado);
-      const expectedSafe = Money.subtract(
-        Money.add(
-          Money.add(cashSession.monto_inicial || 0, totalSalesCashSafe),
-          cashSession.entradas_efectivo || 0
-        ),
-        cashSession.salidas_efectivo || 0
-      );
+      const expectedSafe = Money.init(resolveCashSessionAmounts(cashSession, sessionTotals).totalTeorico);
       const differenceSafe = Money.subtract(countedSafe, expectedSafe);
 
       const closed = {

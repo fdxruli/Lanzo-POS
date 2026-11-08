@@ -36,7 +36,7 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
   const end = sessionEnd(cashSession, endOverride);
   const salesTable = database.table(STORES.SALES);
 
-  const [taggedSales, legacySales] = await Promise.all([
+  const [taggedSales, legacySales, deletedSales] = await Promise.all([
     salesTable
       .where('cash_session_id')
       .equals(cashSession.id)
@@ -45,10 +45,18 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
       .where('timestamp')
       .between(cashSession.fecha_apertura, end, true, true)
       .filter((sale) => !sale?.cash_session_id)
-      .toArray()
+      .toArray(),
+    loadOptionalTable(database, STORES.DELETED_SALES)
   ]);
-
-  return [...records(taggedSales), ...records(legacySales)];
+  const archivedSales = records(deletedSales).filter((sale) => (
+    sale.cash_session_id === cashSession.id
+    || (!sale.cash_session_id && Date.parse(sale.timestamp || 0) >= Date.parse(cashSession.fecha_apertura || 0)
+      && Date.parse(sale.timestamp || 0) <= Date.parse(end || 0))
+  ));
+  return Array.from(new Map(
+    [...records(taggedSales), ...records(legacySales), ...archivedSales]
+      .map((sale) => [sale.id || sale.timestamp, sale])
+  ).values());
 };
 
 const sumCloudCustomerPaymentMovements = (movements = []) => {
@@ -150,7 +158,8 @@ export const calculateSessionTotals = (sales = []) => {
   let abonosFiado = Money.init(0);
 
   for (const sale of records(sales)) {
-    if (!isFinanciallyClosedSale(sale)) continue;
+    const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
+    if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
@@ -183,9 +192,53 @@ export const calculateSessionTotals = (sales = []) => {
   };
 };
 
+const loadCashSessionFinancialData = async (database, cashSession, endOverride) => {
+  if (!cashSession?.id) {
+    return {
+      cashMovements: [],
+      sales: [],
+      totals: zeroTotals,
+      reconciliation: null
+    };
+  }
+
+  const end = sessionEnd(cashSession, endOverride);
+  const [cashMovements, sales, layaways] = await Promise.all([
+    database.table(STORES.MOVIMIENTOS_CAJA)
+      .where('cash_session_id')
+      .equals(cashSession.id)
+      .toArray(),
+    loadSessionSales(database, cashSession, end),
+    loadOptionalTable(database, STORES.LAYAWAYS)
+  ]);
+  const safeCashMovements = records(cashMovements);
+  const safeSales = records(sales);
+  const reconciliation = buildCashReconciliation({
+    cashSession: { ...cashSession, fecha_cierre: end },
+    sales: safeSales,
+    layaways: records(layaways),
+    cashMovements: safeCashMovements
+  });
+  const totals = buildCashSessionTotals(
+    cashSession,
+    calculateSessionTotals(safeSales),
+    safeCashMovements
+  );
+  // Compatibilidad: los consumidores antiguos comparan exactamente este objeto.
+  // La proyección completa viaja como campo propio del resultado.
+  Object.defineProperty(totals, 'reconciliation', { value: reconciliation, enumerable: false });
+
+  return {
+    cashMovements: safeCashMovements,
+    sales: safeSales,
+    totals,
+    reconciliation
+  };
+};
+
 export async function loadCashSessionTotals(database, cashSession, endOverride) {
-  const sales = await loadSessionSales(database, cashSession, endOverride);
-  return buildCashSessionTotals(cashSession, calculateSessionTotals(sales));
+  const { totals } = await loadCashSessionFinancialData(database, cashSession, endOverride);
+  return totals;
 }
 
 const normalizeIdentity = (value) => String(value ?? '').trim().toLowerCase();
@@ -272,7 +325,8 @@ export const normalizeSaleMovements = (sales = []) => {
   const movements = [];
 
   for (const sale of records(sales)) {
-    if (!isFinanciallyClosedSale(sale)) continue;
+    const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
+    if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
@@ -433,12 +487,8 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   }
 
   const end = sessionEnd(cashSession, endOverride);
-  const [cashMovements, sales, deletedSales, wasteLogs, layaways] = await Promise.all([
-    database.table(STORES.MOVIMIENTOS_CAJA)
-      .where('cash_session_id')
-      .equals(cashSession.id)
-      .toArray(),
-    loadSessionSales(database, cashSession, end),
+  const [financialData, deletedSales, wasteLogs] = await Promise.all([
+    loadCashSessionFinancialData(database, cashSession, end),
     database.table(STORES.DELETED_SALES)
       .where('deletedAt')
       .between(cashSession.fecha_apertura, end, true, true)
@@ -447,25 +497,15 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
       .where('timestamp')
       .between(cashSession.fecha_apertura, end, true, true)
       .toArray(),
-    loadOptionalTable(database, STORES.LAYAWAYS)
   ]);
-  const safeCashMovements = records(cashMovements);
-  const safeSales = records(sales);
+  const {
+    cashMovements: safeCashMovements,
+    sales: safeSales,
+    totals,
+    reconciliation
+  } = financialData;
   const safeDeletedSales = records(deletedSales);
   const safeWasteLogs = records(wasteLogs);
-  const safeLayaways = records(layaways);
-
-  const salesTotals = calculateSessionTotals(safeSales);
-  const reconciliation = buildCashReconciliation({
-    cashSession: { ...cashSession, fecha_cierre: end },
-    sales: safeSales,
-    layaways: safeLayaways,
-    cashMovements: safeCashMovements
-  });
-  const totals = buildCashSessionTotals(cashSession, salesTotals, safeCashMovements);
-  // Compatibilidad: los consumidores antiguos comparan exactamente este objeto.
-  // La proyeccion completa viaja como campo propio del resultado.
-  Object.defineProperty(totals, 'reconciliation', { value: reconciliation, enumerable: false });
 
   const officialCashMovements = enrichOfficialCashMovements(safeCashMovements, safeSales);
   const syntheticSaleMovements = deduplicateSyntheticSaleMovements(

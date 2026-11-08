@@ -36,6 +36,76 @@ const paymentMovements = pendingLayaway.payments.map((payment) => ({
 }));
 
 describe('restaurant split cash reconciliation', () => {
+  it('counts the original cash receipt and one refund once across the complete acceptance flow', () => {
+    const cancellation = {
+      ...cashSale,
+      id: 'sale-refunded',
+      total: '20',
+      paymentMethod: 'cash',
+      status: 'cancelled',
+      cancellationFinancials: {
+        version: 1,
+        refunds: [{ method: 'cash', amount: '20', cashSessionId: 'cash-1', cashMovementId: 'refund-1' }]
+      },
+      payments: [{ method: 'cash', amount: '20' }]
+    };
+    const reconciliation = buildCashReconciliation({
+      cashSession: {
+        ...session,
+        monto_inicial: '100',
+        entradas_efectivo: '10',
+        salidas_efectivo: '35'
+      },
+      sales: [
+        cancellation,
+        { id: 'sale-fiado', timestamp: '2026-07-25T10:30:00.000Z', cash_session_id: 'cash-1', status: 'closed', paymentMethod: 'fiado', total: '20', abono: '0' },
+        { id: 'sale-card', timestamp: '2026-07-25T10:40:00.000Z', cash_session_id: 'cash-1', status: 'closed', paymentMethod: 'tarjeta', total: '30' }
+      ],
+      layaways: [],
+      cashMovements: [
+        { id: 'abono-1', cash_session_id: 'cash-1', tipo: 'entrada', monto: '10', source: 'customer_payment', fecha: '2026-07-25T11:00:00.000Z' },
+        { id: 'retiro-1', cash_session_id: 'cash-1', tipo: 'salida', monto: '15', fecha: '2026-07-25T11:30:00.000Z' },
+        { id: 'refund-1', cash_session_id: 'cash-1', tipo: 'salida', monto: '20', source: 'sale_cancellation', saleId: 'sale-refunded', fecha: '2026-07-25T12:00:00.000Z' }
+      ]
+    });
+
+    expect(reconciliation).toMatchObject({
+      directCashSales: 20,
+      customerCreditCollections: 10,
+      exits: 35,
+      theoreticalCash: 95,
+      recognizedSales: 50
+    });
+  });
+
+  it('attributes a later-turn refund to the open shift and leaves the closed sale shift unchanged', () => {
+    const sale = {
+      id: 'sale-late-refund', timestamp: session.fecha_apertura, cash_session_id: 'cash-1',
+      status: 'cancelled', paymentMethod: 'cash', total: '20',
+      payments: [{ method: 'cash', amount: '20' }], cancellationFinancials: { version: 1, refunds: [] }
+    };
+    const closedShift = buildCashReconciliation({
+      cashSession: { ...session, monto_inicial: '100', fecha_cierre: '2026-07-25T18:00:00.000Z' },
+      sales: [sale], layaways: [], cashMovements: [{
+        id: 'late-refund', cash_session_id: 'cash-2', tipo: 'salida', monto: '20',
+        source: 'sale_cancellation', fecha: '2026-07-26T10:00:00.000Z'
+      }]
+    });
+    const laterShift = buildCashReconciliation({
+      cashSession: {
+        id: 'cash-2', monto_inicial: '50', entradas_efectivo: '0', salidas_efectivo: '20',
+        fecha_apertura: '2026-07-26T08:00:00.000Z', fecha_cierre: '2026-07-26T18:00:00.000Z'
+      },
+      sales: [sale], layaways: [], cashMovements: [{
+        id: 'late-refund', cash_session_id: 'cash-2', tipo: 'salida', monto: '20',
+        source: 'sale_cancellation', fecha: '2026-07-26T10:00:00.000Z'
+      }]
+    });
+
+    expect(closedShift.theoreticalCash).toBe(120);
+    expect(laterShift).toMatchObject({ directCashSales: 0, exits: 20, theoreticalCash: 30 });
+  });
+
   it('reconciles legacy sale fields when explicit payments are empty or absent', () => {
     const reconciliation = buildCashReconciliation({
       cashSession: session,

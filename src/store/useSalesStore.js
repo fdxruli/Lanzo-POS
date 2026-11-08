@@ -181,6 +181,7 @@ export const useSalesStore = create((set, get) => ({
       reason = '',
       cancelledBy = 'local-user',
       allowWaste = false,
+      refunds = [],
       saleOverride = null,
       actorHandle = null
     } = {}
@@ -209,6 +210,7 @@ export const useSalesStore = create((set, get) => ({
         reason,
         cancelledBy,
         allowWaste,
+        refunds,
         actorHandle
       });
 
