@@ -1,8 +1,9 @@
 import { registerAdminUpdateBlocker } from '../pwa/adminUpdateSafety';
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/CajaPage.jsx
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { LockKeyhole } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Clock3, LockKeyhole } from 'lucide-react';
 import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
 import { useRecentActivity } from '../hooks/useRecentActivity';
@@ -21,8 +22,14 @@ import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import {
   canShowBusinessCashSummary,
+  getCashSessionAge,
   getCashSessionStationLabel
 } from '../services/cash/businessCashSummary';
+import {
+  getCashSessionAttentionDomId,
+  getCashSessionAttentionTargetId,
+  getNextCashSessionAgeTransitionAt
+} from '../services/cash/cashSessionAgeAttention';
 import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
 import { CASH_NETWORK_UNAVAILABLE_MESSAGE } from '../services/cash/cashNetwork';
 
@@ -54,6 +61,12 @@ import {
 import './CajaPage.css';
 
 const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
+const CASH_SESSION_ATTENTION_REFRESH_EVENT = 'lanzo:cash-sync-updated';
+
+const notifyCashSessionAttentionRefresh = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(CASH_SESSION_ATTENTION_REFRESH_EVENT));
+};
 
 const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
   <div className="ui-alert ui-alert--warning caja-network-recovery" role="alert" aria-live="polite">
@@ -69,6 +82,68 @@ const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
     </button>
   </div>
 );
+
+const CajaLocalCashAgeNotice = ({
+  enabled,
+  cajaActual,
+  isReadOnly,
+  onReview,
+  attentionSessionId
+}) => {
+  const [now, setNow] = useState(Date.now);
+  const openedAt = cajaActual?.opened_at || cajaActual?.fecha_apertura;
+  const sessionId = getCashSessionAttentionTargetId(cajaActual);
+  const age = getCashSessionAge(openedAt, now);
+
+  useEffect(() => {
+    if (!enabled || !cajaActual) return undefined;
+    const transitionAt = getNextCashSessionAgeTransitionAt([cajaActual], Date.now());
+    if (!transitionAt) return undefined;
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.max(1, transitionAt - Date.now() + 25)
+    );
+    return () => window.clearTimeout(timer);
+  }, [cajaActual, enabled, now]);
+
+  if (!enabled || !cajaActual || age.level === 'normal' || age.level === 'unknown') return null;
+
+  const needsReview = age.level === 'important' || age.level === 'review';
+  const isAttentionTarget = Boolean(
+    attentionSessionId && String(sessionId) === String(attentionSessionId)
+  );
+  const heading = age.level === 'review'
+    ? 'Caja con revisión prioritaria'
+    : needsReview
+      ? 'Caja abierta que requiere revisión'
+      : 'Caja abierta por más de 12 horas';
+  const durationLabel = age.level === 'review'
+    ? age.label + ' · ' + age.durationLabel
+    : age.label;
+
+  return (
+    <section
+      id={getCashSessionAttentionDomId(sessionId)}
+      className={[
+        'caja-session-age-notice',
+        'caja-session-age-notice--' + age.level,
+        isAttentionTarget ? 'caja-session-age-notice--attention-target' : ''
+      ].filter(Boolean).join(' ')}
+      role="status"
+      tabIndex={isAttentionTarget ? -1 : undefined}
+    >
+      <div className="caja-session-age-notice__copy">
+        <strong><AlertTriangle size={16} aria-hidden="true" />{heading}</strong>
+        <span><Clock3 size={14} aria-hidden="true" /> {durationLabel}</span>
+      </div>
+      {needsReview && (
+        <button type="button" onClick={onReview} disabled={isReadOnly}>
+          {isReadOnly ? 'Sin conexión' : 'Abrir arqueo'}
+        </button>
+      )}
+    </section>
+  );
+};
 
 const cashSessionActorKey = (cashSession) => cashSession?.actor_key || cashSession?.actorKey || null;
 
@@ -108,6 +183,9 @@ const cashSessionResponsibleLabel = (cashSession) => {
  * - Estados de UI locales que no sean de visibilidad de modales
  */
 export default function CajaPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   // ============================================================
   // ESTADO GLOBAL (useCaja)
   // ============================================================
@@ -174,6 +252,11 @@ export default function CajaPage() {
   const [visitedSections, setVisitedSections] = useState(() => new Set(['turno']));
   const [sectionContextKey, setSectionContextKey] = useState(null);
   const [hasOpenedStaffAudit, setHasOpenedStaffAudit] = useState(false);
+  const [cashSessionAttentionRequest, setCashSessionAttentionRequest] = useState(null);
+  const [attentionSessionId, setAttentionSessionId] = useState(null);
+  const [cashAttentionFocusToken, setCashAttentionFocusToken] = useState(0);
+  const handledCashAttentionLocationKeyRef = useRef(null);
+  const focusedCashAttentionRef = useRef(null);
 
   // Hooks de modales para cada modal
   const editInitialModal = useModal();
@@ -235,9 +318,10 @@ export default function CajaPage() {
     showBusinessCashSummary ? 'business' : 'standard'
   ].join(':');
   const hasSectionContextChanged = sectionContextKey !== cajaSectionContextKey;
-  const visibleVisitedSections = hasSectionContextChanged
-    ? new Set(['turno'])
-    : visitedSections;
+  const visibleVisitedSections = useMemo(
+    () => (hasSectionContextChanged ? new Set(['turno']) : visitedSections),
+    [hasSectionContextChanged, visitedSections]
+  );
   const activeCajaSection = hasSectionContextChanged
     ? 'turno'
     : cajaSections.some((section) => section.id === activeSection) ? activeSection : 'turno';
@@ -250,6 +334,80 @@ export default function CajaPage() {
     setVisitedSections(new Set(['turno']));
     setHasOpenedStaffAudit(false);
   }, [cajaSectionContextKey, hasSectionContextChanged]);
+
+  useEffect(() => {
+    const request = location.state?.cashSessionAttention;
+    if (!request || handledCashAttentionLocationKeyRef.current === location.key) return;
+    handledCashAttentionLocationKeyRef.current = location.key;
+    setCashSessionAttentionRequest({
+      section: request.section === 'negocio' ? 'negocio' : 'turno',
+      sessionId: request.sessionId || null
+    });
+    setAttentionSessionId(request.sessionId || null);
+    setCashAttentionFocusToken((current) => current + 1);
+
+    const nextState = { ...(location.state || {}) };
+    delete nextState.cashSessionAttention;
+    navigate(location.pathname + location.search + location.hash, {
+      replace: true,
+      state: Object.keys(nextState).length ? nextState : null
+    });
+  }, [location.hash, location.key, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    if (!cashSessionAttentionRequest) return;
+    if (
+      cashSessionAttentionRequest.section === 'negocio' &&
+      !showBusinessCashSummary &&
+      (isLoading || estadoCaja === 'loading')
+    ) return;
+
+    const nextSection = cashSessionAttentionRequest.section === 'negocio' && showBusinessCashSummary
+      ? 'negocio'
+      : 'turno';
+    setActiveSection(nextSection);
+    setVisitedSections((previous) => {
+      if (previous.has(nextSection)) return previous;
+      const nextVisited = new Set(previous);
+      nextVisited.add(nextSection);
+      return nextVisited;
+    });
+    setCashSessionAttentionRequest(null);
+  }, [
+    cashSessionAttentionRequest,
+    estadoCaja,
+    isLoading,
+    showBusinessCashSummary
+  ]);
+
+  useEffect(() => {
+    if (!attentionSessionId) return;
+    if (isCloudCash && (
+      activeCajaSection !== 'negocio' ||
+      !showBusinessCashSummary ||
+      !visibleVisitedSections.has('negocio')
+    )) return;
+    if (!isCloudCash && activeCajaSection !== 'turno') return;
+
+    const focusKey = cashAttentionFocusToken + ':' + attentionSessionId;
+    if (focusedCashAttentionRef.current === focusKey) return;
+    const targetId = getCashSessionAttentionDomId(attentionSessionId);
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (!target) return;
+
+    focusedCashAttentionRef.current = focusKey;
+    target.focus?.({ preventScroll: true });
+    target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [
+    activeCajaSection,
+    adminCashSessions,
+    attentionSessionId,
+    cajaActual,
+    cashAttentionFocusToken,
+    isCloudCash,
+    showBusinessCashSummary,
+    visibleVisitedSections
+  ]);
 
   const handleSectionChange = (nextSection) => {
     if (!cajaSections.some((section) => section.id === nextSection)) return;
@@ -292,6 +450,7 @@ export default function CajaPage() {
   const handleAdminCashAuditClose = (result = null) => {
     setReviewCashSessionId(null);
     if (result?.closed) {
+      notifyCashSessionAttentionRefresh();
       showMessageModal(
         result.syncPending
           ? 'Cierre administrativo confirmado. La actualización local está pendiente; verifica la Caja nuevamente.'
@@ -555,6 +714,7 @@ export default function CajaPage() {
       }
 
       await sincronizarEstadoCaja();
+      notifyCashSessionAttentionRefresh();
       setIsAuditOpen(false);
     } finally {
       setBackupLoading(false);
@@ -663,7 +823,7 @@ export default function CajaPage() {
           <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
           <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
           {showBusinessCashSummary && (
-            <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
+            <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} attentionSessionId={attentionSessionId} />
           )}
           <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
           {showAdminAuditPanel && (
@@ -709,7 +869,13 @@ export default function CajaPage() {
         <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
         <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
         {showBusinessCashSummary && (
-          <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
+          <CajaBusinessCashSummary
+            adminOpenSessions={adminCashSessions}
+            cajaActual={cajaActual}
+            onReviewSession={(session) => setReviewCashSessionId(session.id)}
+            isReadOnly={isCloudCashReadOnly}
+            attentionSessionId={attentionSessionId}
+          />
         )}
         <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
         {showAdminAuditPanel && (
@@ -762,6 +928,13 @@ export default function CajaPage() {
           className="caja-section-panel caja-section-panel--turno"
         >
           <div className="caja-turno-layout">
+            <CajaLocalCashAgeNotice
+              enabled={!isCloudCash}
+              cajaActual={cajaActual}
+              isReadOnly={isCloudCashReadOnly}
+              onReview={handlePrimaryCashClose}
+              attentionSessionId={attentionSessionId}
+            />
             <CajaStatusCard
               cajaActual={cajaActual}
               totalesTurno={totalesTurno}
@@ -848,6 +1021,7 @@ export default function CajaPage() {
                   cajaActual={cajaActual}
                   onReviewSession={(session) => setReviewCashSessionId(session.id)}
                   isReadOnly={isCloudCashReadOnly}
+                  attentionSessionId={attentionSessionId}
                 />
 
                 {showAdminAuditPanel && (
