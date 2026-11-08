@@ -16,7 +16,11 @@ import { showConfirmModal, showMessageModal } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
-import { customerCreditRepository, CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE } from '../services/customerCredit/customerCreditRepository';
+import {
+  customerCreditRepository,
+  CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE,
+  CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE
+} from '../services/customerCredit/customerCreditRepository';
 import { cashRepository } from '../services/cash/cashRepository';
 import { db } from '../services/db/dexie';
 import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
@@ -134,6 +138,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
+  const [isAbonoConfirmationPending, setIsAbonoConfirmationPending] = useState(false);
   const [abonoCashSession, setAbonoCashSession] = useState(null);
   const isCloudCredit = customerCreditRepository.getMode().cloudEnabled;
   const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
@@ -180,6 +185,9 @@ export default function CustomersPage() {
   const reminderActorType = settingsAccess.actorType || actorRuntime?.actorType || null;
   const customerActorAuthorized = settingsAccess.isAuthorizedActor === true
     && settingsAccess.canAccessPermission?.('customers') === true;
+  const canRegisterAbonos = settingsAccess.isAdmin
+    || (!isCloudCredit && (actorRuntime?.actorType === 'admin' || currentDeviceRole === 'admin'))
+    || (customerActorAuthorized && settingsAccess.canAccessPermission?.('customer_payments') === true);
   const localLicenseEligibility = useMemo(
     () => assertLocalTransactionAllowed(licenseDetails, {
       appStatus,
@@ -213,6 +221,20 @@ export default function CustomersPage() {
   useEffect(() => {
     setIsLayawayModalOpen(false);
   }, [canManageRefunds, salesActorIdentity]);
+
+  useEffect(() => {
+    if (canRegisterAbonos || !isAbonoModalOpen || isAbonoConfirmationPending) return;
+    abonoNotesRequestRef.current += 1;
+    setIsAbonoModalOpen(false);
+    setSelectedCustomer(null);
+    setAbonoCashSession(null);
+    setAbonoPendingNotes(null);
+    showMessageModal(
+      'Se retiró el permiso para registrar abonos. El formulario se cerró y no se confirmó ningún pago.',
+      null,
+      { type: 'warning' }
+    );
+  }, [canRegisterAbonos, isAbonoConfirmationPending, isAbonoModalOpen]);
 
   const customerPortfolio = useMemo(() => {
     return customers.reduce((summary, customer) => {
@@ -815,6 +837,11 @@ export default function CustomersPage() {
   };
 
   const handleOpenAbono = async (customer) => {
+    if (!canRegisterAbonos) {
+      showMessageModal(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, null, { type: 'warning' });
+      return;
+    }
+
     let cajaVigente = null;
 
     try {
@@ -910,6 +937,7 @@ export default function CustomersPage() {
 
   const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
     let result = null;
+    setIsAbonoConfirmationPending(true);
 
     // This block owns only the confirmed financial operation. Notification work
     // deliberately starts after it has completed and cannot enter this catch.
@@ -923,6 +951,7 @@ export default function CustomersPage() {
           null,
           { type: 'error' }
         );
+        setIsAbonoConfirmationPending(false);
         handleCloseModals();
         return createFinancialNotificationResult({
           financialResult: { status: 'failed', code: 'CASH_SESSION_REQUIRED' }
@@ -939,13 +968,23 @@ export default function CustomersPage() {
       );
 
       if (!result?.success) {
-        showMessageModal(result?.message || 'No se pudo registrar el abono.', null, { type: 'error' });
+        setIsAbonoConfirmationPending(false);
+        const resultNeedsReview = result?.code === 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW';
+        if (resultNeedsReview || result?.code === 'CUSTOMER_PAYMENT_PERMISSION_DENIED') {
+          handleCloseModals();
+        }
+        showMessageModal(
+          result?.message || 'No se pudo registrar el abono.',
+          null,
+          { type: resultNeedsReview || result?.code === 'CUSTOMER_PAYMENT_PERMISSION_DENIED' ? 'warning' : 'error' }
+        );
         return createFinancialNotificationResult({
           financialResult: { status: 'failed', code: result?.code || 'CUSTOMER_PAYMENT_FAILED' }
         });
       }
 
     } catch (error) {
+      setIsAbonoConfirmationPending(false);
       Logger.error('Error crítico en abono:', error);
       showMessageModal(`Transacción abortada: ${error.message || 'Error desconocido al procesar la transacción.'}`, null, { type: 'error' });
       handleCloseModals();
@@ -953,6 +992,8 @@ export default function CustomersPage() {
         financialResult: { status: 'failed', code: error?.code || 'CUSTOMER_PAYMENT_EXCEPTION' }
       });
     }
+
+    setIsAbonoConfirmationPending(false);
 
     // Refreshing UI state happens after the payment is committed. A refresh
     // failure must never make a successful financial operation look aborted.
@@ -1147,6 +1188,7 @@ export default function CustomersPage() {
                 onDelete={handleDeleteCustomer}
                 onViewHistory={handleViewHistory}
                 onAbonar={handleOpenAbono}
+                canRegisterAbonos={canRegisterAbonos}
                 onViewLayaways={handleOpenLayaways}
                 onWhatsApp={handleShareStatementImage}
                 onWhatsAppLoading={imageShareLoading}
@@ -1226,7 +1268,7 @@ export default function CustomersPage() {
       />
 
       <AbonoModal
-        show={isAbonoModalOpen}
+        show={isAbonoModalOpen && (canRegisterAbonos || isAbonoConfirmationPending)}
         onClose={handleCloseModals}
         onConfirmAbono={handleConfirmAbono}
         customer={selectedCustomer}

@@ -24,7 +24,7 @@ export const customerCreditRepository = {
      * La validación de la deuda ocurre DENTRO del candado transaccional, 
      * no confiando en el estado del cliente que viene del Frontend.
      */
-    async processPayment(customerId, amount, paymentMethod = 'efectivo', cajaId, note = '', allocations = null) {
+    async processPayment(customerId, amount, paymentMethod = 'efectivo', cajaId, note = '', allocations = null, actorHandle = null) {
         // 1. Defensa y sanitización inicial
         const amountSafe = Money.init(amount);
         const isCashPayment = isCashPaymentMethod(paymentMethod);
@@ -47,6 +47,7 @@ export const customerCreditRepository = {
             db.table(STORES.MOVIMIENTOS_CAJA),
             db.table(STORES.SALES)
         ], async (tx) => {
+            actorHandle?.assertCurrent('customer_payments');
             const customer = await db.table(STORES.CUSTOMERS).get(customerId);
             if (!customer) {
                 throw new DatabaseError(DB_ERROR_CODES.NOT_FOUND, `Cliente ${customerId} no existe.`);
@@ -135,6 +136,7 @@ export const customerCreditRepository = {
 
             let cashMovement = null;
             if (isCashPayment && cajaId) {
+                actorHandle?.assertCurrent('customer_payments');
                 const movementResult = await registrarMovimientoCajaEnTransaccion(
                     tx,
                     cajaId,
@@ -158,6 +160,7 @@ export const customerCreditRepository = {
 
             // 3. Insertar el movimiento inmutable del ledger con la asignación
             // y el vínculo de caja disponibles para auditoría futura.
+            actorHandle?.assertCurrent('customer_payments');
             await db.table(STORES.CUSTOMER_LEDGER).add({
                 id: ledgerId,
                 customerId,
@@ -173,6 +176,7 @@ export const customerCreditRepository = {
 
             // 4. Actualizar deuda del cliente y los saldos/tenders de cada nota
             const newDebtSafe = Money.subtract(currentDebtSafe, amountSafe);
+            actorHandle?.assertCurrent('customer_payments');
             await db.table(STORES.CUSTOMERS).update(customerId, {
                 debt: Money.toExactString(newDebtSafe),
                 financialSource: 'local',
@@ -195,6 +199,7 @@ export const customerCreditRepository = {
                     cashSessionId: cashMovement ? cajaId : null,
                     cashMovementId: cashMovement?.id || null
                 };
+                actorHandle?.assertCurrent('customer_payments');
                 await db.table(STORES.SALES).put({
                     ...sale,
                     saldoPendiente: Money.toNumber(newSaldo),
@@ -202,6 +207,8 @@ export const customerCreditRepository = {
                     paymentCollections: [...(sale.paymentCollections || []), collection]
                 });
             }
+
+            actorHandle?.assertCurrent('customer_payments');
 
             return { success: true, newDebt: Money.toExactString(newDebtSafe), ledgerId };
         });

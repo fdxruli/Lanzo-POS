@@ -17,10 +17,12 @@ import { customerCreditCloudRepository } from './customerCreditCloudRepository';
 import { customerCreditLocalRepository } from './customerCreditLocalRepository';
 import { salesCloudLocalRepository } from '../salesCloud/salesCloudLocalRepository';
 import { receiptPayloadToLocal } from './customerCreditMapper';
+import { actorRuntimeController, isActorRuntimeError } from '../auth/actorRuntimeController';
 
 import './customerCreditSyncHandler';
 
 export const CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE = 'Los abonos cloud requieren conexion para proteger la deuda del cliente y el dinero en caja. Revisa tu conexion e intenta de nuevo.';
+export const CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE = 'Tu usuario puede consultar clientes, pero no tiene autorización para registrar abonos. Solicita al Administrador que active “Registrar abonos”.';
 
 const fail = (message, code = 'CUSTOMER_CREDIT_ERROR', extra = {}) => ({
   success: false,
@@ -43,6 +45,8 @@ const getMode = () => {
 
   return {
     appStatus: state?.appStatus,
+    currentDeviceRole: state?.currentDeviceRole,
+    currentStaffUser: state?.currentStaffUser,
     licenseDetails,
     licenseKey,
     cloudEnabled,
@@ -50,6 +54,41 @@ const getMode = () => {
     cashMode: getCashMode()
   };
 };
+
+const capturePaymentActor = (mode) => {
+  const actorState = actorRuntimeController.getState();
+  const mustCapture = mode.cloudEnabled
+    || mode.currentDeviceRole === 'staff'
+    || Boolean(mode.currentStaffUser)
+    || actorState.actorType === 'staff';
+
+  if (!mustCapture) return { actorHandle: null, failure: null };
+
+  try {
+    const actorHandle = actorRuntimeController.capture('customers');
+    actorHandle.assertCurrent('customers');
+    if (actorHandle.actorType === 'staff') actorHandle.assertCurrent('customer_payments');
+    return { actorHandle, failure: null };
+  } catch (error) {
+    if (error?.code === 'ACTOR_PERMISSION_DENIED') {
+      return {
+        actorHandle: null,
+        failure: fail(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, 'CUSTOMER_PAYMENT_PERMISSION_DENIED')
+      };
+    }
+    if (isActorRuntimeError(error)) {
+      return {
+        actorHandle: null,
+        failure: fail('No se pudo validar la sesión actual. Vuelve a ingresar antes de registrar el abono.', 'CUSTOMER_PAYMENT_SESSION_REQUIRED')
+      };
+    }
+    throw error;
+  }
+};
+
+const isCustomerPaymentPermissionError = (error) => (
+  /POS_PERMISSION_DENIED:customer_payments/u.test(String(error?.message || ''))
+);
 
 const applyCreditCloudResponse = async (response = {}) => {
   const applied = {
@@ -116,9 +155,24 @@ export const customerCreditRepository = {
   async processPayment(customerId, amount, paymentMethod = 'efectivo', cashSessionId = null, note = '', allocations = null) {
     const mode = getMode();
     const amountSafe = Money.toExactString(Money.init(amount || 0));
+    const { actorHandle, failure } = capturePaymentActor(mode);
+
+    if (failure) return failure;
 
     if (!mode.cloudEnabled) {
-      return customerCreditLocalRepository.processPayment(customerId, amount, paymentMethod, cashSessionId, note, allocations);
+      try {
+        return await customerCreditLocalRepository.processPayment(
+          customerId, amount, paymentMethod, cashSessionId, note, allocations, actorHandle
+        );
+      } catch (error) {
+        if (error?.code === 'ACTOR_PERMISSION_DENIED') {
+          return fail(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, 'CUSTOMER_PAYMENT_PERMISSION_DENIED', { error });
+        }
+        if (isActorRuntimeError(error)) {
+          return fail('La sesión cambió durante la operación y no se pudo confirmar el resultado. Consulta el historial antes de intentar otro pago.', 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW', { error });
+        }
+        throw error;
+      }
     }
 
     if (!mode.online) {
@@ -148,6 +202,7 @@ export const customerCreditRepository = {
             'CUSTOMER_SALE_BALANCES_UNRECONCILED');
         }
       }
+      actorHandle?.assertCurrent('customer_payments');
       const response = await customerCreditCloudRepository.recordCustomerPayment({
         licenseKey: mode.licenseKey,
         customerId,
@@ -156,7 +211,8 @@ export const customerCreditRepository = {
         cashSessionId,
         note,
         allocations: allocations || [],
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
 
       if (response?.success === false) {
@@ -183,6 +239,12 @@ export const customerCreditRepository = {
       };
     } catch (error) {
       Logger.error('[CustomerCredit] Abono cloud fallo:', error);
+      if (isCustomerPaymentPermissionError(error)) {
+        return fail(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, 'CUSTOMER_PAYMENT_PERMISSION_DENIED', { error });
+      }
+      if (isActorRuntimeError(error)) {
+        return fail('No se pudo confirmar el resultado del abono. Consulta el historial antes de intentar otro pago.', 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW', { error });
+      }
       return fail(error?.message || 'No se pudo registrar el abono cloud.', error?.code || 'CUSTOMER_PAYMENT_EXCEPTION', { error });
     }
   },

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const cloud = vi.hoisted(() => ({recordCustomerPayment:vi.fn(),getCustomerCreditSummary:vi.fn()}));
+const actorRuntime = vi.hoisted(() => ({
+  getState: vi.fn(() => ({ actorType: 'admin' })),
+  capture: vi.fn(() => ({ actorType: 'admin', assertCurrent: vi.fn(() => ({ actorType: 'admin' })) }))
+}));
 vi.mock('../../../store/useAppStore', () => ({useAppStore:{getState:()=>({licenseDetails:{}})}}));
 vi.mock('../../sync/syncConstants', () => ({ getLicenseKeyFromDetails:()=> 'synthetic',
   isCloudCustomerCreditSyncEnabled:()=>true,SYNC_ENTITY_TYPES:{CUSTOMER_LEDGER:'customer_ledger'},SYNC_OPERATIONS:{CREATE:'create'} }));
@@ -8,6 +12,10 @@ vi.mock('../../sync/posSyncOrchestrator', () => ({posSyncOrchestrator:{pullIncre
 vi.mock('../../utils', () => ({showMessageModal:vi.fn()}));
 vi.mock('../../Logger', () => ({default:{error:vi.fn(),warn:vi.fn()}}));
 vi.mock('../../cash/cashActor', () => ({getCashMode:()=>({})}));
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: actorRuntime,
+  isActorRuntimeError: () => false
+}));
 vi.mock('../customerCreditSyncHandler', () => ({}));
 vi.mock('../customerCreditCloudRepository', () => ({customerCreditCloudRepository:cloud}));
 vi.mock('../customerCreditLocalRepository', () => ({customerCreditLocalRepository:{applyCloudLedger:async row=>row,applyCloudLedgers:async rows=>rows}}));
