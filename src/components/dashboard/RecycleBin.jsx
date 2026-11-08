@@ -9,9 +9,11 @@ import { getSaleDisplayReference } from '../../services/sales/saleReference';
 import { formatCurrencyMXN } from '../../utils/formatCurrencyMXN';
 
 const formatDate = (dateString) => {
-  if (!dateString) return '-';
-  return new Date(dateString).toLocaleString('es-MX', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+  if (!dateString) return 'Fecha no disponible';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
+  return date.toLocaleString('es-MX', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 };
 
@@ -25,7 +27,10 @@ const getTypeLabel = (type) => ({
 const getDeletedName = (item = {}) => {
   if (item.type === 'Pedido') {
     const reference = getSaleDisplayReference(item) || String(item.id || item.timestamp || '').slice(0, 8) || 'sin folio';
-    return 'Venta ' + reference;
+    const shortReference = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(reference)
+      ? reference.slice(0, 8) + '…'
+      : reference;
+    return 'Venta ' + shortReference;
   }
   return item.mainLabel || item.name || 'Elemento sin nombre';
 };
