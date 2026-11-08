@@ -25,6 +25,9 @@ const age = (value) => {
 };
 const sessionExpected = (session) => session?.expected_cash_total ?? session?.total_teorico_cloud ?? 0;
 const movementAmount = (movement = {}) => movement.amount ?? movement.monto ?? 0;
+const nullableMoney = (value, fallback) => (
+  value === null || value === undefined ? fallback : formatMoney(value)
+);
 const sessionStation = (session) => [
   session?.cash_station_id,
   session?.cashStationId,
@@ -91,6 +94,9 @@ const CajaAdminCashAuditModal = ({
   }, [cashSessionId, getCashSessionDetailForAudit]);
 
   const session = detail?.cashSession || null;
+  const closingEvent = detail?.auditEvents?.find((event) => /CLOS/i.test(event.event_type || '')) || null;
+  const closingActorName = closingEvent?.actor_name
+    || (session?.closedByAdminUserId ? 'Administrador' : null);
   const expected = useMemo(() => Money.init(sessionExpected(session)), [session]);
   const counted = useMemo(() => Money.init(countedAmount || 0), [countedAmount]);
   const nextFund = useMemo(() => Money.init(nextShiftFund || 0), [nextShiftFund]);
@@ -196,6 +202,7 @@ const CajaAdminCashAuditModal = ({
               <div className="admin-cash-audit-summary">
                 <DetailValue label="Estación">{getCashSessionStationLabel(session)}</DetailValue>
                 <DetailValue label="Responsable">{session.responsible_name || session.responsable_apertura || 'No disponible'}</DetailValue>
+                {closingActorName && <DetailValue label="Cierre ejecutado por">{closingActorName}</DetailValue>}
                 <DetailValue label="Identidad">{session.cash_identity_state === 'legacy' ? 'Legacy' : 'CanÃ³nica'}</DetailValue>
                 <DetailValue label="Dispositivo de apertura">{getOpeningDeviceLabel(session)}</DetailValue>
                 <DetailValue label="Abierta">{date(session.opened_at || session.fecha_apertura)}</DetailValue>
@@ -205,10 +212,18 @@ const CajaAdminCashAuditModal = ({
               </div>
               <div className="admin-cash-audit-totals">
                 <DetailValue label="Fondo inicial">{formatMoney(session.opening_amount ?? session.monto_inicial)}</DetailValue>
+                <DetailValue label="Efectivo contado al abrir">{nullableMoney(session.opening_counted_amount ?? session.monto_conteo_inicial, 'No contado')}</DetailValue>
+                <DetailValue label="Diferencia de apertura">{nullableMoney(session.opening_difference ?? session.diferencia_apertura, 'No calculada')}</DetailValue>
                 <DetailValue label="Ventas efectivo">{formatMoney(session.cash_sales_total ?? session.ventas_efectivo)}</DetailValue>
                 <DetailValue label="Abonos">{formatMoney(session.customer_payments_total ?? session.abonos_fiado)}</DetailValue>
                 <DetailValue label="Entradas / Salidas">{formatMoney(session.cash_entries_total ?? session.entradas_efectivo)} / {formatMoney(session.cash_exits_total ?? session.salidas_efectivo)}</DetailValue>
+                <DetailValue label="Efectivo contado al cerrar">{nullableMoney(session.closing_counted_amount ?? session.monto_cierre, 'No contado')}</DetailValue>
+                <DetailValue label="Diferencia de cierre">{nullableMoney(session.cash_difference ?? session.diferencia, 'No calculada')}</DetailValue>
+                <DetailValue label="Fondo declarado para el siguiente turno">{nullableMoney(session.next_shift_fund ?? session.monto_fondo_siguiente_turno, 'No declarado')}</DetailValue>
               </div>
+              {(session.audit_comments || session.comentarios_auditoria) && (
+                <p className="admin-cash-audit-comment"><strong>Comentarios:</strong> {session.audit_comments || session.comentarios_auditoria}</p>
+              )}
               <details className="admin-cash-audit-details"><summary>Movimientos ({detail.movements?.length || 0}) y eventos ({detail.auditEvents?.length || 0})</summary>
                 <div className="admin-cash-audit-stream">{detail.movements?.map((movement) => <p key={movement.id}><strong>{movement.type || movement.tipo}</strong> {formatMoney(movementAmount(movement))} · {movement.concept || movement.concepto || 'Sin concepto'} · {date(movement.created_at || movement.fecha)}</p>)}</div>
                 <div className="admin-cash-audit-stream">{detail.auditEvents?.map((event) => <p key={event.id}><strong>{event.event_type}</strong> · {event.actor_name || 'Sistema'} · {date(event.created_at)}</p>)}</div>

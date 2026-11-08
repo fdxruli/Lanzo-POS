@@ -38,7 +38,7 @@ describe('AuditModal assisted cash count', () => {
     expect(screen.getByText('Total contado').nextElementSibling).toHaveTextContent('$355.50');
     expect(screen.getByText('Diferencia')).toBeVisible();
     expect(screen.getByText('Diferencia').nextElementSibling).toHaveTextContent('$0.00');
-    fireEvent.change(screen.getByLabelText(/Monto Fondo Siguiente Turno/), {
+    fireEvent.change(screen.getByLabelText(/Fondo declarado para el siguiente turno/), {
       target: { value: '0.00' }
     });
     fireEvent.click(screen.getByRole('button', { name: /verificar cuadre/i }));
@@ -70,7 +70,7 @@ describe('AuditModal assisted cash count', () => {
     setPieces('Moneda de $10', 1);
     setPieces('Moneda de $5', 1);
     setPieces('Moneda de 50 centavos', 1);
-    fireEvent.change(screen.getByLabelText(/Monto Fondo Siguiente Turno/), {
+    fireEvent.change(screen.getByLabelText(/Fondo declarado para el siguiente turno/), {
       target: { value: '0.00' }
     });
     fireEvent.click(screen.getByRole('button', { name: /verificar cuadre/i }));

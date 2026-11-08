@@ -169,6 +169,29 @@ const cashSessionResponsibleLabel = (cashSession) => {
   return 'Otro usuario';
 };
 
+const formatCashAmount = (value) => `$${Money.toNumber(value || 0).toFixed(2)}`;
+
+const formatCashDifference = (value) => {
+  const difference = Money.init(value || 0);
+  const sign = difference.gt(0) ? '+' : difference.lt(0) ? '-' : '';
+  return `${sign}${formatCashAmount(difference.abs())}`;
+};
+
+const buildCashCloseSummary = (summary = {}) => {
+  const lines = [
+    'Cierre de turno confirmado.',
+    `Responsable: ${summary.responsable || 'Responsable no disponible'}`,
+    `Estación: ${summary.estacion || 'No disponible'}`,
+    `Efectivo teórico: ${formatCashAmount(summary.teorico)}`,
+    `Efectivo contado: ${formatCashAmount(summary.contado)}`,
+    `Diferencia: ${formatCashDifference(summary.diferencia)}`,
+    `Fondo declarado para el siguiente turno: ${formatCashAmount(summary.fondoSiguiente)}`,
+    'El siguiente responsable debe confirmar el efectivo físico recibido.'
+  ];
+  if (summary.comentarios) lines.push(`Comentario: ${summary.comentarios}`);
+  return lines.join('\n');
+};
+
 /**
  * CajaPage - Orquestador principal de la página de Caja
  *
@@ -661,6 +684,8 @@ export default function CajaPage() {
         return;
       }
 
+      let backupSummary = 'No se completó el respaldo automático.';
+      let backupWarning = false;
       try {
         const hasValidDriveSession = Boolean(
           isDriveConnected
@@ -681,6 +706,7 @@ export default function CajaPage() {
 
         if (backupResult.success === true) {
           showBackupPerformanceWarning(backupResult);
+          backupSummary = 'Respaldo local completado.';
 
           if (hasValidDriveSession) {
             try {
@@ -689,29 +715,43 @@ export default function CajaPage() {
                 backupResult.blob,
                 backupResult.fileName
               );
-              showMessageModal('Corte realizado y respaldo guardado localmente y en Google Drive.');
+              backupSummary = 'Respaldo guardado localmente y en Google Drive.';
             } catch (driveError) {
               Logger.error('Fallo respaldo automatico en Google Drive', driveError);
-              const driveMessage = driveError.status === 401
-                ? 'Corte realizado y respaldo local guardado. La sesión de Google expiró.'
-                : 'Corte realizado y respaldo local guardado, pero falló la subida a Google Drive.';
-              showMessageModal(driveMessage);
+              backupWarning = true;
+              backupSummary = driveError.status === 401
+                ? 'El respaldo local quedó guardado, pero la sesión de Google expiró.'
+                : 'El respaldo local quedó guardado, pero falló la subida a Google Drive.';
             }
           } else {
             const reauthMessage = needsDriveReauth || isDriveConnected
               ? ' La sesión de Google requiere reconexión.'
               : '';
-            showMessageModal(`Corte realizado y respaldo local completado.${reauthMessage}`);
+            backupSummary += reauthMessage;
           }
         }
       } catch (backupError) {
         if (backupError.name === 'AbortError') {
-          showMessageModal('Corte realizado con éxito.');
+          backupWarning = true;
+          backupSummary = 'El cierre se confirmó, pero el respaldo fue cancelado.';
         } else {
           Logger.error('Fallo respaldo automatico', backupError);
-          showMessageModal('Corte realizado con exito (pero fallo la descarga del respaldo).');
+          backupWarning = true;
+          backupSummary = 'El cierre se confirmó, pero falló el respaldo automático.';
         }
       }
+
+      showMessageModal(
+        `${buildCashCloseSummary(result.summary)}\n\n${backupSummary}`,
+        () => {},
+        {
+          type: backupWarning ? 'warning' : 'success',
+          title: backupWarning ? 'Cierre confirmado; revisar respaldo' : 'Cierre de turno',
+          confirmButtonText: 'Aceptar',
+          showCancel: false,
+          isDismissible: true
+        }
+      );
 
       await sincronizarEstadoCaja();
       notifyCashSessionAttentionRefresh();
@@ -799,7 +839,7 @@ export default function CajaPage() {
                 <LockKeyhole size={22} aria-hidden="true" />
                 <div>
                   <strong>Caja pendiente de cierre</strong>
-                  <p>Hay una caja abierta por otro usuario en esta estación. Lanzo no la transfirió ni la cerró automáticamente para proteger el efectivo.</p>
+                  <p>Esta estación tiene una caja abierta de otro responsable. Debe cerrarse o revisarse antes de iniciar un nuevo turno.</p>
                 </div>
               </div>
               <dl className="caja-handoff-card__summary">

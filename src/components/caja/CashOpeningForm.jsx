@@ -9,22 +9,25 @@ export default function CashOpeningForm({
   submitLabel = 'Abrir caja',
   cancelLabel = 'Cancelar',
   origin = 'manual',
+  hasSuggestedAmount = true,
+  referenceLabel = 'Fondo sugerido por el cierre anterior',
   responsibleName = '',
   lockResponsible = false,
-  readOnly = false
+  readOnly = false,
+  requirePhysicalCount = false
 }) {
   const normalizedSuggestion = Money.toExactString(Money.init(suggestedAmount || 0));
   const [montoInicial, setMontoInicial] = useState(normalizedSuggestion);
-  const [montoContado, setMontoContado] = useState(normalizedSuggestion);
+  const [montoContado, setMontoContado] = useState(requirePhysicalCount ? '' : normalizedSuggestion);
   const [responsable, setResponsable] = useState(responsibleName || '');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setMontoInicial(normalizedSuggestion);
-    setMontoContado(normalizedSuggestion);
+    setMontoContado(requirePhysicalCount ? '' : normalizedSuggestion);
     setError('');
-  }, [normalizedSuggestion]);
+  }, [normalizedSuggestion, requirePhysicalCount]);
 
   useEffect(() => {
     if (responsibleName) {
@@ -34,7 +37,7 @@ export default function CashOpeningForm({
 
   const amountsMatch = useMemo(() => {
     try {
-      return Money.init(montoInicial || 0).eq(Money.init(montoContado || 0));
+      return montoContado !== '' && Money.init(montoInicial || 0).eq(Money.init(montoContado));
     } catch {
       return false;
     }
@@ -59,6 +62,11 @@ export default function CashOpeningForm({
 
     if (!responsable.trim()) {
       setError('Escribe el nombre del empleado responsable.');
+      return;
+    }
+
+    if (requirePhysicalCount && montoContado === '') {
+      setError('Cuenta el efectivo físico recibido antes de abrir el turno.');
       return;
     }
 
@@ -88,10 +96,16 @@ export default function CashOpeningForm({
 
   return (
     <form className="cash-opening-form" onSubmit={handleSubmit}>
-      <div className="cash-opening-reference">
-        <span>Fondo sugerido por el cierre anterior</span>
-        <strong>${Money.toNumber(normalizedSuggestion).toFixed(2)}</strong>
-      </div>
+      {hasSuggestedAmount ? (
+        <div className="cash-opening-reference">
+          <span>{referenceLabel}</span>
+          <strong>${Money.toNumber(normalizedSuggestion).toFixed(2)}</strong>
+        </div>
+      ) : (
+        <p className="cash-opening-notice cash-opening-notice--warning">
+          Cuenta el efectivo físico que recibes y confirma el fondo de apertura.
+        </p>
+      )}
 
       <div className="cash-opening-fields">
         <label>
@@ -155,12 +169,12 @@ export default function CashOpeningForm({
         </div>
       )}
 
-      {amountsMatch && !Money.init(openingDifference).eq(0) && (
+      {hasSuggestedAmount && amountsMatch && !Money.init(openingDifference).eq(0) && (
         <div className="cash-opening-notice">
           <BadgeCheck size={18} aria-hidden="true" />
           <p>
             Se registrará una diferencia de apertura de
-            {' '}${Money.toNumber(openingDifference).toFixed(2)} contra el fondo sugerido.
+            {' '}${Money.toNumber(openingDifference).toFixed(2)} contra el fondo de referencia.
           </p>
         </div>
       )}
