@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { db, STORES } from './db/dexie';
 import Logger from './Logger';
+import { getBackupTenantKey } from './backup/backupMutationRevision';
+
+export const getBackupRiskStorageKey = (name, databaseName = db.name) => {
+  try {
+    return `${name}:${getBackupTenantKey(databaseName)}`;
+  } catch {
+    return `${name}:unbound`;
+  }
+};
 
 // Umbrales de riesgo basados en volumen
 export const LEVEL_1_THRESHOLD = 50;
@@ -58,8 +67,8 @@ export const useBackupRiskStore = create((set, get) => ({
       const currentTotal = salesCount + productsCount + customersCount;
 
       // 2. Leer preferencias de localStorage (Manejo de Falacia Volátil)
-      const rawLastBackup = storage.getItem('last_backup_mutation_count');
-      const rawPostponeLimit = storage.getItem('backup_postpone_limit');
+      const rawLastBackup = storage.getItem(getBackupRiskStorageKey('last_backup_mutation_count'));
+      const rawPostponeLimit = storage.getItem(getBackupRiskStorageKey('backup_postpone_limit'));
       
       const lastBackupCount = rawLastBackup ? parseInt(rawLastBackup, 10) : 0;
       const postponeLimit = rawPostponeLimit ? parseInt(rawPostponeLimit, 10) : 0;
@@ -101,7 +110,9 @@ export const useBackupRiskStore = create((set, get) => ({
     const { totalMutations } = get();
     // Posponer silencia la alerta hasta cruzar más mutaciones
     const newLimit = totalMutations + POSTPONE_MUTATIONS_AMOUNT;
-    storage.setItem('backup_postpone_limit', newLimit.toString());
+    storage.setItem(getBackupRiskStorageKey('backup_postpone_limit'), newLimit.toString());
+    const postponedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    storage.setItem(getBackupRiskStorageKey('backup_postponed_until'), postponedUntil);
     return get().ping(); // Reevaluar inmediatamente para ocultar la alerta
   },
 
@@ -111,9 +122,10 @@ export const useBackupRiskStore = create((set, get) => ({
 
     const { totalMutations } = get();
     // Reiniciar contadores y borrar posponer
-    storage.setItem('last_backup_mutation_count', totalMutations.toString());
-    storage.removeItem('backup_postpone_limit');
-    storage.setItem('last_backup_date', new Date().toISOString()); // Mantenemos compatibilidad visual si se necesita
+    storage.setItem(getBackupRiskStorageKey('last_backup_mutation_count'), totalMutations.toString());
+    storage.removeItem(getBackupRiskStorageKey('backup_postpone_limit'));
+    storage.removeItem(getBackupRiskStorageKey('backup_postponed_until'));
+    storage.setItem(getBackupRiskStorageKey('last_backup_date'), new Date().toISOString());
     return get().ping();
   }
 }));

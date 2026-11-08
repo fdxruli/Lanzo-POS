@@ -1,5 +1,7 @@
-export const BACKUP_MAGIC = 'LANZOBK1';
-export const BACKUP_FORMAT_VERSION = 1;
+export const BACKUP_MAGIC = 'LANZOBK2';
+export const BACKUP_FORMAT_VERSION = 2;
+export const LEGACY_BACKUP_MAGIC = 'LANZOBK1';
+export const LEGACY_BACKUP_FORMAT_VERSION = 1;
 export const BACKUP_CHUNK_SIZE = 4 * 1024 * 1024;
 export const BACKUP_ITERATIONS = 600000;
 export const BACKUP_EXTENSION = '.lzbk';
@@ -8,6 +10,7 @@ export const BACKUP_PREFIX = 'RESPALDO_LANZO_';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const MAGIC_BYTES = encoder.encode(BACKUP_MAGIC);
+const LEGACY_MAGIC_BYTES = encoder.encode(LEGACY_BACKUP_MAGIC);
 const IV_LENGTH = 12;
 const LENGTH_BYTES = 4;
 
@@ -32,6 +35,17 @@ export function bytesToBase64(bytes) {
 export function base64ToBytes(value) {
   const binary = atob(value);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+export async function createTenantFingerprint(tenantAliases) {
+  const aliases = [...new Set((tenantAliases || []).filter((value) => typeof value === 'string' && value))]
+    .sort();
+  if (aliases.length === 0) throw new Error('BACKUP_TENANT_ACCESS_REQUIRED');
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    'SHA-256',
+    encoder.encode(aliases.join('\n'))
+  ));
+  return Array.from(digest, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
 export function concatBytes(...parts) {
@@ -85,18 +99,51 @@ export async function parseHeader(blob) {
 
   const fixed = new Uint8Array(await blob.slice(0, fixedLength).arrayBuffer());
   const magic = decoder.decode(fixed.slice(0, MAGIC_BYTES.byteLength));
-  if (magic !== BACKUP_MAGIC) throw new Error('BACKUP_INVALID_MAGIC');
+  if (magic !== BACKUP_MAGIC && magic !== LEGACY_BACKUP_MAGIC) {
+    throw new Error('BACKUP_INVALID_MAGIC');
+  }
 
-  const headerLength = readUint32(fixed, MAGIC_BYTES.byteLength);
+  const magicLength = magic === BACKUP_MAGIC ? MAGIC_BYTES.byteLength : LEGACY_MAGIC_BYTES.byteLength;
+  const headerLength = readUint32(fixed, magicLength);
   if (headerLength <= 0 || headerLength > 1024 * 1024 || blob.size < fixedLength + headerLength) {
     throw new Error('BACKUP_INVALID_HEADER');
   }
 
   const headerBytes = new Uint8Array(await blob.slice(fixedLength, fixedLength + headerLength).arrayBuffer());
-  const header = JSON.parse(decoder.decode(headerBytes));
-  if (header.version !== BACKUP_FORMAT_VERSION || header.format !== BACKUP_MAGIC) {
+  let header;
+  try {
+    header = JSON.parse(decoder.decode(headerBytes));
+  } catch {
+    throw new Error('BACKUP_INVALID_HEADER');
+  }
+  const isLegacy = magic === LEGACY_BACKUP_MAGIC
+    && header.version === LEGACY_BACKUP_FORMAT_VERSION
+    && header.format === LEGACY_BACKUP_MAGIC;
+  const isCurrent = magic === BACKUP_MAGIC
+    && header.version === BACKUP_FORMAT_VERSION
+    && header.format === BACKUP_MAGIC;
+  if (!isLegacy && !isCurrent) {
     throw new Error('BACKUP_UNSUPPORTED_VERSION');
   }
+
+  if (
+    header.cipher !== 'AES-GCM-256'
+    || header.kdf !== 'PBKDF2-SHA-256'
+    || !Number.isInteger(header.iterations)
+    || header.iterations < 1000
+    || header.iterations > 2_000_000
+    || !Number.isInteger(header.chunkSize)
+    || header.chunkSize <= 0
+    || header.chunkSize > 16 * 1024 * 1024
+    || !Number.isFinite(header.sourceBytes)
+    || header.sourceBytes < 0
+    || (header.archiveVersion !== undefined && ![1, 2].includes(header.archiveVersion))
+  ) {
+    throw new Error('BACKUP_INVALID_HEADER');
+  }
+
+  const salt = base64ToBytes(header.salt || '');
+  if (salt.byteLength < 16 || salt.byteLength > 64) throw new Error('BACKUP_INVALID_HEADER');
   return { header, headerBytes, dataOffset: fixedLength + headerLength };
 }
 
@@ -146,6 +193,16 @@ export async function* readEncryptedChunks(blob, dataOffset) {
   }
 }
 
-export function createBackupFileName(date = new Date()) {
-  return `${BACKUP_PREFIX}${date.toISOString().replace(/[:.]/g, '-')}${BACKUP_EXTENSION}`;
+export function getTenantBackupPrefix(tenantFingerprint) {
+  if (!/^[a-f0-9]{64}$/i.test(String(tenantFingerprint || ''))) {
+    throw new Error('BACKUP_TENANT_FINGERPRINT_INVALID');
+  }
+  return `${BACKUP_PREFIX}${String(tenantFingerprint).toLowerCase()}_`;
+}
+
+export function createBackupFileName(date = new Date(), tenantFingerprint = null) {
+  const prefix = tenantFingerprint
+    ? getTenantBackupPrefix(tenantFingerprint)
+    : BACKUP_PREFIX;
+  return `${prefix}${date.toISOString().replace(/[:.]/g, '-')}${BACKUP_EXTENSION}`;
 }

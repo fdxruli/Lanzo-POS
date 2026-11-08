@@ -8,12 +8,17 @@ import {
 import {
   clearPersistedBackupKey,
   DEFAULT_BACKUP_SETTINGS,
+  getLegacyBackupConfiguration,
   getBackupSettings,
   getPersistedBackupKey,
   savePersistedBackupKey,
   saveBackupSettings
 } from './backupConfigDb';
 import { getBackupTableScope } from './backupScope';
+import {
+  getBackupTenantKey,
+  readBackupMutationRevision
+} from './backupMutationRevision';
 import {
   captureActiveTenantWorkerContext,
   isActiveTenantWorkerContext
@@ -22,8 +27,10 @@ import {
 export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
 export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
+export const BACKUP_WARNING_PARTIAL_COVERAGE = 'PARTIAL_COVERAGE';
 export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
 export const BACKUP_KEY_SESSION_MARKER = 'lanzo_backup_key_session:v1';
+const sessionMarkerFor = (tenantKey) => `${BACKUP_KEY_SESSION_MARKER}:${tenantKey}`;
 
 const requireBackupTenantContext = () => {
   try {
@@ -43,9 +50,9 @@ function clearLegacySessionPin() {
   }
 }
 
-function readKeySessionId() {
+function readKeySessionId(tenantKey) {
   try {
-    return sessionStorage.getItem(BACKUP_KEY_SESSION_MARKER);
+    return sessionStorage.getItem(sessionMarkerFor(tenantKey));
   } catch {
     return null;
   }
@@ -56,46 +63,46 @@ function createKeySessionId() {
     || bytesToBase64(crypto.getRandomValues(new Uint8Array(24)));
 }
 
-function persistKeySessionId(sessionId) {
+function persistKeySessionId(sessionId, tenantKey) {
   try {
-    sessionStorage.setItem(BACKUP_KEY_SESSION_MARKER, sessionId);
+    sessionStorage.setItem(sessionMarkerFor(tenantKey), sessionId);
     return true;
   } catch {
     return false;
   }
 }
 
-function clearKeySessionId() {
+function clearKeySessionId(tenantKey) {
   try {
-    sessionStorage.removeItem(BACKUP_KEY_SESSION_MARKER);
+    sessionStorage.removeItem(sessionMarkerFor(tenantKey));
   } catch {
     // El bloqueo del worker no depende de sessionStorage.
   }
 }
 
-async function readPersistedKey() {
+async function readPersistedKey(tenantKey) {
   try {
-    return await getPersistedBackupKey();
+    return await getPersistedBackupKey(tenantKey);
   } catch {
     return null;
   }
 }
 
-async function persistDerivedKey(keyData) {
-  const sessionId = readKeySessionId() || createKeySessionId();
-  if (!persistKeySessionId(sessionId)) return;
+async function persistDerivedKey(keyData, tenantKey) {
+  const sessionId = readKeySessionId(tenantKey) || createKeySessionId();
+  if (!persistKeySessionId(sessionId, tenantKey)) return;
   try {
-    await savePersistedBackupKey({ ...keyData, sessionId });
+    await savePersistedBackupKey({ ...keyData, sessionId }, tenantKey);
   } catch {
-    clearKeySessionId();
+    clearKeySessionId(tenantKey);
     // El desbloqueo actual sigue en memoria si el navegador no puede clonar CryptoKey.
   }
 }
 
-async function clearPersistedKey() {
-  clearKeySessionId();
+async function clearPersistedKey(tenantKey) {
+  if (tenantKey) clearKeySessionId(tenantKey);
   try {
-    await clearPersistedBackupKey();
+    if (tenantKey) await clearPersistedBackupKey(tenantKey);
   } catch {
     // El worker se bloquea aunque IndexedDB no este disponible.
   }
@@ -108,34 +115,117 @@ const WRITE_FAILURE_NAMES = new Set([
   'NoModificationAllowedError'
 ]);
 
+const countStoredEntries = (key, raw) => {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw);
+    const state = parsed?.state || parsed;
+    const collection = key === 'lanzo-active-orders-storage'
+      ? state?.activeOrders
+      : parsed;
+    if (Array.isArray(collection)) return collection.length;
+    if (collection && typeof collection === 'object') return Object.keys(collection).length;
+    return raw.length > 0 ? 1 : 0;
+  } catch {
+    return 1;
+  }
+};
+
+export const getExcludedBrowserStateSummary = (storage = null) => {
+  const keys = [
+    ['lanzo-active-orders-storage', 'activeOrders'],
+    ['lanzo-cart-storage', 'unsavedCart'],
+    ['lanzo-inventory-storage', 'unfinishedInventoryAdjustments'],
+    ['lanzo:restaurant-order-close-pending:v1', 'pendingOrderClosures'],
+    ['ignored_expirations_ttl', 'otherPendingBusinessState']
+  ];
+  try {
+    const targetStorage = storage || globalThis.localStorage;
+    if (!targetStorage) throw new Error('STORAGE_UNAVAILABLE');
+    const counts = Object.fromEntries(keys.map(([key, label]) => (
+      [label, countStoredEntries(key, targetStorage.getItem(key))]
+    )));
+    return { inspectionComplete: true, counts };
+  } catch {
+    return {
+      inspectionComplete: false,
+      counts: Object.fromEntries(keys.map(([, label]) => [label, 0]))
+    };
+  }
+};
+
 class BackupManager {
   constructor() {
     this.worker = null;
     this.pending = new Map();
     this.nextId = 1;
     this.settings = { ...DEFAULT_BACKUP_SETTINGS };
+    this.tenantKey = null;
+    this.tenantContext = null;
     this.state = {
       initialized: false,
       configured: false,
       unlocked: false,
+      legacyConfiguration: null,
       permission: 'unsupported',
       supported: typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function',
       busy: false,
       progress: 0,
       phase: '',
-      lastError: ''
+      lastError: '',
+      lastCoverage: null
     };
   }
 
   async initialize() {
-    if (this.state.initialized) return this.getStatus();
-    this.settings = await getBackupSettings();
-    this.state.configured = this.settings.configured;
-    this.state.initialized = true;
-    await this.refreshPermission();
     clearLegacySessionPin();
-    const keySessionId = readKeySessionId();
-    const persistedKey = await readPersistedKey();
+    let context;
+    try {
+      context = requireBackupTenantContext();
+    } catch {
+      if (this.tenantKey && !this.state.busy) {
+        try { await this.callWorker('lock'); } catch { /* best effort */ }
+      }
+      this.tenantKey = null;
+      this.tenantContext = null;
+      this.settings = { ...DEFAULT_BACKUP_SETTINGS };
+      this.state.configured = false;
+      this.state.unlocked = false;
+      this.state.legacyConfiguration = null;
+      this.state.initialized = true;
+      await this.refreshPermission();
+      this.emit();
+      return this.getStatus();
+    }
+    await this.ensureTenantContext(context);
+    return this.getStatus();
+  }
+
+  async ensureTenantContext(context = requireBackupTenantContext()) {
+    if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    const tenantKey = getBackupTenantKey(context.databaseName);
+    if (this.tenantKey === tenantKey && this.state.initialized) {
+      this.tenantContext = context;
+      return context;
+    }
+    if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
+    if (this.worker && this.state.unlocked) {
+      try { await this.callWorker('lock'); } catch { /* reset below */ }
+    }
+
+    this.tenantKey = tenantKey;
+    this.tenantContext = context;
+    this.settings = await getBackupSettings(tenantKey);
+    this.state.legacyConfiguration = await getLegacyBackupConfiguration().catch(() => null);
+    this.state.configured = this.settings.configured === true;
+    this.state.unlocked = false;
+    this.state.initialized = true;
+    this.state.lastError = '';
+    this.state.lastCoverage = null;
+    await this.refreshPermission();
+
+    const keySessionId = readKeySessionId(tenantKey);
+    const persistedKey = await readPersistedKey(tenantKey);
     const canResume = this.state.configured
       && persistedKey
       && keySessionId
@@ -153,13 +243,13 @@ class BackupManager {
         });
         this.state.unlocked = true;
       } catch {
-        await clearPersistedKey();
+        await clearPersistedKey(tenantKey);
       }
     } else if (persistedKey) {
-      await clearPersistedKey();
+      await clearPersistedKey(tenantKey);
     }
     this.emit();
-    return this.getStatus();
+    return context;
   }
 
   ensureWorker() {
@@ -260,7 +350,8 @@ class BackupManager {
   }
 
   async requestPermission() {
-    if (!this.state.initialized) await this.initialize();
+    const context = await this.ensureTenantContext();
+    if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     const handle = this.settings.directoryHandle;
     if (!handle) return this.chooseDirectory();
     try {
@@ -274,6 +365,8 @@ class BackupManager {
   }
 
   async chooseDirectory() {
+    const context = await this.ensureTenantContext();
+    if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     if (!this.state.supported) return null;
     try {
       const directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -282,7 +375,7 @@ class BackupManager {
         directoryName: directoryHandle.name,
         cronBlocked: false,
         lastError: ''
-      });
+      }, this.tenantKey);
       this.state.configured = this.settings.configured;
       await this.refreshPermission();
       this.emit();
@@ -300,6 +393,8 @@ class BackupManager {
   }
 
   async configure(pin, directoryHandle = null) {
+    const context = await this.ensureTenantContext();
+    if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     this.validatePin(pin);
     this.state.busy = true;
     this.state.phase = 'Derivando clave';
@@ -325,7 +420,7 @@ class BackupManager {
         cronBlocked: false,
         cronPending: !directoryHandle && !this.state.supported,
         lastError: ''
-      });
+      }, this.tenantKey);
       this.state.configured = true;
       this.state.unlocked = true;
       await persistDerivedKey({
@@ -333,7 +428,7 @@ class BackupManager {
         verifier: result.verifier,
         salt: saltBase64,
         iterations: BACKUP_ITERATIONS
-      });
+      }, this.tenantKey);
       await this.refreshPermission();
       this.emit();
       return this.getStatus();
@@ -348,7 +443,7 @@ class BackupManager {
   }
 
   async unlock(pin) {
-    await this.initialize();
+    await this.ensureTenantContext();
     if (!this.settings.configured) throw new Error('BACKUP_NOT_CONFIGURED');
     this.validatePin(pin);
     const result = await this.callWorker('unlock', {
@@ -364,14 +459,15 @@ class BackupManager {
       verifier: result.verifier,
       salt: this.settings.salt,
       iterations: this.settings.iterations
-    });
+    }, this.tenantKey);
     this.emit();
     return true;
   }
 
   async lock() {
+    await this.ensureTenantContext();
     clearLegacySessionPin();
-    await clearPersistedKey();
+    await clearPersistedKey(this.tenantKey);
     try {
       if (this.worker) await this.callWorker('lock');
     } finally {
@@ -381,13 +477,24 @@ class BackupManager {
   }
 
   async getMutationCount(context) {
+    const snapshot = await this.getMutationSnapshot(context);
+    return snapshot.total;
+  }
+
+  async getMutationSnapshot(context) {
     if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     await db.open();
     const { includedTables } = getBackupTableScope(db);
-    const counts = await db.transaction('r', includedTables, () => (
-      Promise.all(includedTables.map((table) => table.count()))
+    const counts = await db.transaction('r', includedTables, async () => (
+      Object.fromEntries(await Promise.all(includedTables.map(async (table) => (
+        [table.name, await table.count()]
+      ))))
     ));
-    return counts.reduce((total, count) => total + count, 0);
+    return {
+      counts,
+      total: Object.values(counts).reduce((total, count) => total + count, 0),
+      revision: readBackupMutationRevision(context.databaseName)
+    };
   }
 
   triggerDownload(blob, fileName) {
@@ -403,12 +510,18 @@ class BackupManager {
 
   async backup({ reason = 'manual', manual = true, includeBlob = false } = {}) {
     const tenantContext = requireBackupTenantContext();
-    await this.initialize();
+    await this.ensureTenantContext(tenantContext);
     if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
     if (!this.state.unlocked) throw new Error('BACKUP_SESSION_LOCKED');
 
-    const mutationCount = await this.getMutationCount(tenantContext);
-    if (!manual && mutationCount <= this.settings.lastMutationCount) {
+    const mutationSnapshot = await this.getMutationSnapshot(tenantContext);
+    const mutationCount = mutationSnapshot.total;
+    const currentTableCounts = JSON.stringify(mutationSnapshot.counts);
+    const revisionIsReliable = Boolean(mutationSnapshot.revision);
+    const noChanges = revisionIsReliable
+      && this.settings.lastRevision === mutationSnapshot.revision
+      && this.settings.lastTableCounts === currentTableCounts;
+    if (!manual && noChanges && this.settings.lastResult === 'success') {
       return { success: true, skipped: true, reason: 'NO_CHANGES' };
     }
 
@@ -417,7 +530,7 @@ class BackupManager {
       const permission = await this.refreshPermission();
       if (permission !== 'granted') {
         if (!manual) {
-          this.settings = await saveBackupSettings({ cronPending: true });
+          this.settings = await saveBackupSettings({ cronPending: true }, this.tenantKey);
           this.emit();
           return { success: false, reason: 'PERMISSION_REQUIRED' };
         }
@@ -425,7 +538,7 @@ class BackupManager {
       }
       directoryHandle = this.settings.directoryHandle;
     } else if (!manual) {
-      this.settings = await saveBackupSettings({ cronPending: true });
+      this.settings = await saveBackupSettings({ cronPending: true }, this.tenantKey);
       this.emit();
       return { success: false, reason: 'DOWNLOAD_REQUIRED' };
     }
@@ -442,7 +555,8 @@ class BackupManager {
         directoryHandle,
         reason,
         includeBlob,
-        context: tenantContext
+        context: tenantContext,
+        excludedBrowserState: getExcludedBrowserStateSummary()
       });
       if (!isActiveTenantWorkerContext(tenantContext)) {
         throw new Error('BACKUP_TENANT_CONTEXT_STALE');
@@ -456,21 +570,28 @@ class BackupManager {
         lastError: '',
         cronBlocked: false,
         cronPending: false,
-        lastMutationCount: mutationCount
-      });
-      localStorage.setItem('last_backup_date', completedAt);
+        lastMutationCount: mutationCount,
+        lastRevision: mutationSnapshot.revision,
+        lastTableCounts: currentTableCounts,
+        lastCoverage: result.header?.coverage || null
+      }, this.tenantKey);
       window.dispatchEvent(new Event('backup_status_changed'));
       await evaluator.markBackupCompleted();
       this.state.lastError = '';
+      this.state.lastCoverage = result.header?.coverage || null;
       return {
         success: true,
         mode: result.mode === 'DOWNLOAD' ? 'BLOB_FALLBACK' : 'FS_API',
         fileName: result.fileName,
         ...(includeBlob && { blob: result.blob }),
-        warnings: result.mode === 'DOWNLOAD' ? [BACKUP_WARNING_BLOB_PERF] : []
+        coverage: result.header?.coverage || null,
+        warnings: [
+          ...(result.mode === 'DOWNLOAD' ? [BACKUP_WARNING_BLOB_PERF] : []),
+          ...(result.header?.coverage?.complete === false ? [BACKUP_WARNING_PARTIAL_COVERAGE] : [])
+        ]
       };
     } catch (error) {
-      await this.recordFailure(error, true);
+      await this.recordFailure(error, false);
       throw error;
     } finally {
       this.state.busy = false;
@@ -481,21 +602,59 @@ class BackupManager {
   }
 
   async recordFailure(error, blockCron) {
-    const shouldBlock = blockCron || WRITE_FAILURE_NAMES.has(error.name);
+    const shouldBlock = blockCron === true || WRITE_FAILURE_NAMES.has(error.name);
     this.state.lastError = error.message || String(error);
     this.settings = await saveBackupSettings({
       lastResult: 'error',
       lastError: this.state.lastError,
       cronBlocked: shouldBlock ? true : this.settings.cronBlocked
-    });
+    }, this.tenantKey);
     this.emit();
   }
 
-  async restore(file, pin) {
-    const tenantContext = requireBackupTenantContext();
+  async inspectRestore(file, pin) {
     if (!file) throw new Error('Selecciona un archivo de respaldo.');
     this.validatePin(pin);
-    await this.backup({ reason: 'pre_restore', manual: true });
+    const tenantContext = requireBackupTenantContext();
+    await this.ensureTenantContext(tenantContext);
+    if (!isActiveTenantWorkerContext(tenantContext)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
+    this.state.busy = true;
+    this.state.progress = 0;
+    this.state.phase = 'Validando archivo';
+    this.emit();
+    try {
+      const preview = await this.callWorker('inspect', { file, pin, context: tenantContext });
+      if (!isActiveTenantWorkerContext(tenantContext)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      return preview;
+    } finally {
+      this.state.busy = false;
+      this.state.phase = '';
+      this.emit();
+    }
+  }
+
+  async restore(file, pin, preview = null) {
+    const tenantContext = requireBackupTenantContext();
+    await this.ensureTenantContext(tenantContext);
+    if (!file) throw new Error('Selecciona un archivo de respaldo.');
+    this.validatePin(pin);
+    const inspected = preview || await this.inspectRestore(file, pin);
+    if (!isActiveTenantWorkerContext(tenantContext)) {
+      throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    }
+    if (Object.values(inspected.destinationPendingOperationCounts || {}).some((count) => Number(count) > 0)) {
+      throw new Error('BACKUP_RESTORE_PENDING_OPERATIONS');
+    }
+    if (inspected.destinationHasBusinessData) {
+      if (!this.state.configured || !this.state.unlocked) {
+        throw new Error('BACKUP_DESTINATION_PROTECTION_REQUIRED');
+      }
+      const preRestoreBackup = await this.backup({ reason: 'pre_restore', manual: true });
+      if (!preRestoreBackup.success || preRestoreBackup.skipped) {
+        throw new Error('BACKUP_PRE_RESTORE_FAILED');
+      }
+    }
     if (!isActiveTenantWorkerContext(tenantContext)) {
       throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     }
@@ -507,10 +666,23 @@ class BackupManager {
         throw new Error('BACKUP_TENANT_CONTEXT_STALE');
       }
       db.close();
-      const result = await this.callWorker('restore', { file, pin, context: tenantContext });
+      const result = await this.callWorker('restore', {
+        file,
+        pin,
+        context: tenantContext,
+        expectedDestinationHasBusinessData: inspected.destinationHasBusinessData === true
+      });
       if (!isActiveTenantWorkerContext(tenantContext)) {
         throw new Error('BACKUP_TENANT_CONTEXT_STALE');
       }
+      this.settings = await saveBackupSettings({
+        lastResult: 'restore',
+        lastRevision: null,
+        lastTableCounts: null,
+        lastCoverage: result.coverage || null
+      }, this.tenantKey);
+      this.state.lastCoverage = result.coverage || null;
+      this.emit();
       return result;
     } catch (error) {
       await this.recordFailure(error, false);
@@ -522,9 +694,11 @@ class BackupManager {
   }
 
   async changePin(currentPin, newPin) {
+    const tenantContext = await this.ensureTenantContext();
+    if (!isActiveTenantWorkerContext(tenantContext)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     this.validatePin(newPin);
     await this.unlock(currentPin);
-    await clearPersistedKey();
+    await clearPersistedKey(this.tenantKey);
     if (!this.state.supported || !this.settings.directoryHandle) {
       throw new Error('El recifrado requiere una carpeta compatible configurada.');
     }
@@ -539,7 +713,9 @@ class BackupManager {
         directoryHandle: this.settings.directoryHandle,
         newPin,
         newSalt,
-        iterations: BACKUP_ITERATIONS
+        iterations: BACKUP_ITERATIONS,
+        databaseName: tenantContext.databaseName,
+        tenantAliases: tenantContext.tenantAliases
       });
       this.settings = await saveBackupSettings({
         salt: newSalt,
@@ -548,14 +724,14 @@ class BackupManager {
         lastBackupFile: result.lastFileName || this.settings.lastBackupFile,
         cronBlocked: false,
         lastError: ''
-      });
+      }, this.tenantKey);
       this.state.unlocked = true;
       await persistDerivedKey({
         key: result.key,
         verifier: result.verifier,
         salt: newSalt,
         iterations: BACKUP_ITERATIONS
-      });
+      }, this.tenantKey);
       return {
         verifier: result.verifier,
         files: result.files,

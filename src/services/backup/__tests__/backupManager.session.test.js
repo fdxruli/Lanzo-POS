@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   clearPersistedBackupKey: vi.fn(),
+  getLegacyBackupConfiguration: vi.fn(),
   getBackupSettings: vi.fn(),
   getPersistedBackupKey: vi.fn(),
   savePersistedBackupKey: vi.fn(),
-  saveBackupSettings: vi.fn()
+  saveBackupSettings: vi.fn(),
+  tenantContext: null
 }));
 
 vi.mock('../../db/dexie', () => ({
@@ -30,12 +32,23 @@ vi.mock('../../Logger', () => ({
   }
 }));
 
+vi.mock('../../tenant/tenantWorkerContext', () => ({
+  captureActiveTenantWorkerContext: () => {
+    if (!mocks.tenantContext) throw new Error('LOCAL_TENANT_WORKER_CONTEXT_REQUIRED');
+    return mocks.tenantContext;
+  },
+  isActiveTenantWorkerContext: (context) => Boolean(mocks.tenantContext)
+    && context?.databaseName === mocks.tenantContext.databaseName
+    && context?.generation === mocks.tenantContext.generation
+}));
+
 vi.mock('../backupConfigDb', () => ({
   clearPersistedBackupKey: mocks.clearPersistedBackupKey,
   DEFAULT_BACKUP_SETTINGS: {
     configured: false,
     directoryHandle: null
   },
+  getLegacyBackupConfiguration: mocks.getLegacyBackupConfiguration,
   getBackupSettings: mocks.getBackupSettings,
   getPersistedBackupKey: mocks.getPersistedBackupKey,
   savePersistedBackupKey: mocks.savePersistedBackupKey,
@@ -67,19 +80,28 @@ const persistedCryptoKey = {
 describe('BackupManager persisted key', () => {
   beforeEach(() => {
     localTenantAccessController.reset();
+    mocks.tenantContext = {
+      databaseName: `LanzoDB_t_t_${'a'.repeat(32)}`,
+      generation: 1,
+      tenantAliases: ['license-id:test-license']
+    };
     sessionStorage.clear();
     mocks.clearPersistedBackupKey.mockReset();
+    mocks.getLegacyBackupConfiguration.mockReset();
     mocks.getBackupSettings.mockReset();
     mocks.getPersistedBackupKey.mockReset();
     mocks.savePersistedBackupKey.mockReset();
     mocks.saveBackupSettings.mockReset();
     mocks.getBackupSettings.mockResolvedValue({ ...configuredSettings });
+    mocks.getLegacyBackupConfiguration.mockResolvedValue({ available: false });
     mocks.getPersistedBackupKey.mockResolvedValue(null);
     mocks.savePersistedBackupKey.mockResolvedValue();
     mocks.clearPersistedBackupKey.mockResolvedValue();
     backupManager.worker = null;
     backupManager.pending.clear();
     backupManager.settings = {};
+    backupManager.tenantKey = null;
+    backupManager.tenantContext = null;
     backupManager.state.initialized = false;
     backupManager.state.configured = false;
     backupManager.state.unlocked = false;
@@ -89,11 +111,87 @@ describe('BackupManager persisted key', () => {
   });
 
   it('bloquea backup antes de tocar el worker si no hay tenant concedido', async () => {
-    localTenantAccessController.enable('logout');
+    mocks.tenantContext = null;
     const workerSpy = vi.spyOn(backupManager, 'callWorker');
 
     await expect(backupManager.backup()).rejects.toThrow('BACKUP_TENANT_ACCESS_REQUIRED');
     expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it('restores on a clean device without requiring prior backup configuration', async () => {
+    mocks.getBackupSettings.mockResolvedValue({ configured: false, directoryHandle: null });
+    mocks.getPersistedBackupKey.mockResolvedValue(null);
+    const workerSpy = vi.spyOn(backupManager, 'callWorker').mockResolvedValue({
+      restored: true,
+      partial: false,
+      coverage: { complete: true }
+    });
+    const file = new Blob(['encrypted archive']);
+    const preview = { destinationHasBusinessData: false };
+
+    const result = await backupManager.restore(file, '12345678', preview);
+
+    expect(result.restored).toBe(true);
+    expect(workerSpy).toHaveBeenCalledWith('restore', expect.objectContaining({
+      file,
+      pin: '12345678',
+      expectedDestinationHasBusinessData: false
+    }));
+    expect(workerSpy).not.toHaveBeenCalledWith('backup', expect.anything());
+  });
+
+  it('rejects restore with pending destination operations before making a pre-restore copy', async () => {
+    const workerSpy = vi.spyOn(backupManager, 'callWorker');
+
+    await expect(backupManager.restore(new Blob(['encrypted archive']), '12345678', {
+      destinationHasBusinessData: true,
+      destinationPendingOperationCounts: { sync_outbox: 1, financial_intents: 0 }
+    })).rejects.toThrow('BACKUP_RESTORE_PENDING_OPERATIONS');
+
+    expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an unassigned prior configuration without reading its key into the active business', async () => {
+    mocks.getBackupSettings.mockResolvedValue({ configured: false, directoryHandle: null });
+    mocks.getLegacyBackupConfiguration.mockResolvedValue({
+      available: true,
+      configured: true,
+      hasPersistedKey: true,
+      directoryName: 'Respaldos anteriores',
+      lastBackupFile: 'RESPALDO_LANZO_legacy.lzbk'
+    });
+    const workerSpy = vi.spyOn(backupManager, 'callWorker');
+
+    const status = await backupManager.initialize();
+
+    expect(status.configured).toBe(false);
+    expect(status.legacyConfiguration).toMatchObject({
+      available: true,
+      hasPersistedKey: true,
+      directoryName: 'Respaldos anteriores'
+    });
+    expect(mocks.getPersistedBackupKey).toHaveBeenCalledWith(`t_${'a'.repeat(32)}`);
+    expect(mocks.getPersistedBackupKey).not.toHaveBeenCalledWith('primary');
+    expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it('loads a separate configuration after the active business changes', async () => {
+    const configurationKeys = [];
+    mocks.getBackupSettings.mockImplementation(async (tenantKey) => {
+      configurationKeys.push(tenantKey);
+      return { configured: tenantKey === `t_${'a'.repeat(32)}`, directoryHandle: null };
+    });
+    await backupManager.initialize();
+    mocks.tenantContext = {
+      databaseName: `LanzoDB_t_t_${'b'.repeat(32)}`,
+      generation: 2,
+      tenantAliases: ['license-id:second-business']
+    };
+
+    await backupManager.ensureTenantContext(mocks.tenantContext);
+
+    expect(configurationKeys).toEqual([`t_${'a'.repeat(32)}`, `t_${'b'.repeat(32)}`]);
+    expect(backupManager.state.configured).toBe(false);
   });
 
   it('persiste solo la CryptoKey despues de desbloquear correctamente', async () => {
@@ -111,12 +209,12 @@ describe('BackupManager persisted key', () => {
       salt: 'salt',
       iterations: 1000,
       sessionId: expect.any(String)
-    });
+    }, `t_${'a'.repeat(32)}`);
     expect(backupManager.state.unlocked).toBe(true);
   });
 
   it('reanuda silenciosamente con una CryptoKey persistida', async () => {
-    sessionStorage.setItem(BACKUP_KEY_SESSION_MARKER, 'session-1');
+    sessionStorage.setItem(`${BACKUP_KEY_SESSION_MARKER}:t_${'a'.repeat(32)}`, 'session-1');
     mocks.getPersistedBackupKey.mockResolvedValue({
       key: persistedCryptoKey,
       verifier: 'verifier',
@@ -148,7 +246,7 @@ describe('BackupManager persisted key', () => {
   });
 
   it('descarta una clave persistida que no coincide con la configuracion', async () => {
-    sessionStorage.setItem(BACKUP_KEY_SESSION_MARKER, 'session-1');
+    sessionStorage.setItem(`${BACKUP_KEY_SESSION_MARKER}:t_${'a'.repeat(32)}`, 'session-1');
     mocks.getPersistedBackupKey.mockResolvedValue({
       key: persistedCryptoKey,
       verifier: 'old-verifier',
@@ -208,6 +306,7 @@ describe('BackupManager persisted key', () => {
       ...configuredSettings,
       directoryHandle
     };
+    mocks.getBackupSettings.mockResolvedValue({ ...configuredSettings, directoryHandle });
     backupManager.state.initialized = true;
     backupManager.state.configured = true;
     backupManager.state.supported = true;
@@ -232,7 +331,7 @@ describe('BackupManager persisted key', () => {
       salt: expect.any(String),
       iterations: expect.any(Number),
       sessionId: expect.any(String)
-    });
+    }, `t_${'a'.repeat(32)}`);
     expect(backupManager.state.unlocked).toBe(true);
   });
 });

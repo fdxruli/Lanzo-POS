@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
 
@@ -8,6 +8,7 @@ const access = vi.hoisted(() => ({ isAdmin: false }));
 const backupStatus = {
   initialized: true,
   configured: false,
+  legacyConfiguration: null,
   supported: true,
   busy: false,
   permission: 'granted',
@@ -30,6 +31,7 @@ const backupManager = {
   unlock: vi.fn(),
   backup: vi.fn(),
   restore: vi.fn(),
+  inspectRestore: vi.fn(),
   changePin: vi.fn(),
   requestPermission: vi.fn()
 };
@@ -81,10 +83,12 @@ describe('BackupSettings copy by license mode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    backupManager.inspectRestore.mockReset();
     access.isAdmin = false;
     Object.assign(backupStatus, {
       initialized: true,
       configured: false,
+      legacyConfiguration: null,
       supported: true,
       busy: false,
       permission: 'granted',
@@ -118,6 +122,21 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.queryByTestId('google-drive-settings')).not.toBeNull();
   });
 
+  it('shows the recovery path for an unassigned prior backup configuration', () => {
+    backupStatus.legacyConfiguration = {
+      available: true,
+      configured: true,
+      hasPersistedKey: true,
+      directoryName: 'Respaldos V1'
+    };
+
+    render(<BackupSettings isCloudLicense={false} />);
+
+    expect(screen.getByText('Se encontró una configuración de respaldo anterior.')).toBeInTheDocument();
+    expect(screen.getByText(/no se asignó al negocio activo porque no se puede comprobar su propietario/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Configurar respaldo para este negocio' })).toBeInTheDocument();
+  });
+
   it('shows manual copy action for PRO cloud when configured', () => {
     backupStatus.configured = true;
 
@@ -147,5 +166,26 @@ describe('BackupSettings copy by license mode', () => {
     render(<BackupSettings isCloudLicense />);
 
     expect(screen.getByText('Restaurar respaldo')).toBeInTheDocument();
+  });
+
+  it('blocks and explains restore when the destination has pending operations', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    backupManager.inspectRestore.mockResolvedValue({
+      formatVersion: 2,
+      destinationHasBusinessData: true,
+      destinationPendingOperationCounts: { sync_outbox: 1, financial_intents: 1 },
+      coverage: { complete: true, categoryCounts: {} }
+    });
+    render(<BackupSettings />);
+
+    fireEvent.change(screen.getByLabelText('Archivo de respaldo a restaurar'), {
+      target: { files: [new File(['encrypted archive'], 'business.lzbk')] }
+    });
+    fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' }));
+
+    await waitFor(() => expect(screen.getByText(/Restauración bloqueada: el negocio destino tiene 1 sincronización pendiente, 1 intenciones financieras sin recibo confirmado/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeDisabled();
   });
 });
