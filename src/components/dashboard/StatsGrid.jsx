@@ -489,6 +489,7 @@ export default function StatsGrid({
   };
 
   useEffect(() => {
+    let isActive = true;
     async function loadPeriodSales() {
       setReportStatus('loading');
       try {
@@ -513,6 +514,7 @@ export default function StatsGrid({
             : Promise.resolve({ sales: [], wasteLogs: [] })
         ]);
 
+        if (!isActive) return;
         setFilteredSales(currentReport.sales || []);
         setPrevPeriodSales(previousReport.sales || []);
         setFilteredWasteLogs(currentReport.wasteLogs || []);
@@ -528,11 +530,13 @@ export default function StatsGrid({
         setReportStatus('ready');
 
       } catch (err) {
+        if (!isActive) return;
         console.error('Error loading period sales', err);
         setReportStatus('failed');
       }
     }
     loadPeriodSales();
+    return () => { isActive = false; };
   }, [activeRubros, localRefreshKey, reportRefreshKey, timeRange]);
 
   // Calcular métricas para el periodo seleccionado
@@ -651,6 +655,8 @@ export default function StatsGrid({
     };
   }, [filteredSales, filteredWasteLogs, prevPeriodSales, prevPeriodWasteLogs, financeEvents, reportStatus, selectedMetric, stats, timeRange, reportContext]);
 
+  const periodRange = buildPeriodRanges(timeRange);
+  const formatPeriodDate = (date) => new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
   const cloudMetrics = reportContext.metrics;
   const cashSessionsMetric = {
     has: Boolean(cloudMetrics.cashSessionsOpen?.has || cloudMetrics.cashSessionsClosed?.has),
@@ -673,9 +679,9 @@ export default function StatsGrid({
           <h3>Resumen de Negocio</h3>
           <p className="stats-subtitle">
             <BarChart2 size={16} />
-            {TIME_PERIODS[timeRange].label === 'Hoy'
-              ? ' Periodo: hoy.'
-              : ` Periodo: ${TIME_PERIODS[timeRange].label}.`}
+            {TIME_PERIODS[timeRange].label} · {periodRange.current
+              ? `${formatPeriodDate(periodRange.current.start)} – ${formatPeriodDate(periodRange.current.end)}`
+              : 'Todo el historial disponible en este dispositivo'}
           </p>
           <small className="text-muted">Las ventas a crédito cuentan como ventas, pero no como dinero cobrado.</small>
           {renderSourceBadges(reportContext.summaryBadges)}
@@ -690,7 +696,8 @@ export default function StatsGrid({
                 type="button"
                 className={`filter-pill ${timeRange === key ? 'active' : ''}`}
                 onClick={() => setTimeRange(key)}
-                title={`Ver últimos ${label}`}
+                aria-pressed={timeRange === key}
+                title={`Ver ${label}`}
               >
                 {label === 'Hoy' && <Calendar size={14} />}
                 {label === 'Total' && <Globe size={14} />}
@@ -710,49 +717,6 @@ export default function StatsGrid({
           </button>
         </div>
       </div>
-
-      {/* Gráfica de evolución temporal */}
-      {metrics.evolutionData.length > 0 && (
-        <div className="stats-evolution-card">
-          <div className="evolution-header">
-            <div className="evolution-title">
-              <Activity size={18} />
-              <span>{`Tendencia de ${metrics.selectedMetricLabel}`}</span>
-              <strong className="evolution-metric-value">
-                {metrics.selectedMetricFullFormatter(metrics.selectedMetricValue)}
-              </strong>
-            </div>
-            {metrics.metricTrend !== null && (
-              <div className={`evolution-trend ${metrics.metricTrend >= 0 ? 'positive' : 'negative'}`}>
-                {metrics.metricTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                <span>{`${metrics.metricTrend >= 0 ? '+' : ''}${metrics.metricTrend.toFixed(1)}%`}</span>
-              </div>
-            )}
-          </div>
-          <div className="chart-metric-controls">
-            <span className="chart-metric-label">Métrica de gráfica</span>
-            <div className="metric-filter-scroll" aria-label="Metrica de grafica">
-              {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`metric-pill ${selectedMetric === key ? 'active' : ''}`}
-                  onClick={() => setSelectedMetric(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <AreaTrendChart
-            data={metrics.evolutionData}
-            height={200}
-            color={metrics.selectedMetricColor}
-            valueFormatter={metrics.selectedMetricFormatter}
-          />
-          {renderSourceBadges(reportContext.salesBadges)}
-        </div>
-      )}
 
       {/* Grid de métricas principales */}
       <div className="stats-grid-modern">
@@ -777,24 +741,16 @@ export default function StatsGrid({
           </div>
         </div>
 
-        <div className={`stat-card-modern small-card ${metrics.collected.status !== 'complete' ? 'card-warning-state' : ''}`}>
-          <div className="card-header-small">
+        <div className={`stat-card-modern revenue-card stats-primary-card ${metrics.collected.status !== 'complete' && metrics.financialDataStatus === 'ready' ? 'card-warning-state' : ''}`}>
+          <div className="card-content">
             <span className="card-label">Cobrado</span>
-            <DollarSign size={18} className="icon-muted" />
+            <h2 className="card-value-main">
+              {metrics.financialDataStatus !== 'ready'
+                ? (metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible')
+                : metrics.collected.status === 'complete' ? formatCurrency(metrics.collected.value) : 'Incompleto'}
+            </h2>
+            <small className="text-muted">Pagos iniciales y abonos registrados en este período.</small>
           </div>
-          <div className="card-value-small">
-            {metrics.financialDataStatus === 'loading' ? 'Cargando' : metrics.collected.status === 'complete'
-              ? formatCurrency(metrics.collected.value)
-              : 'Incompleto'}
-          </div>
-          <small className="text-muted">
-            {metrics.financialDataStatus === 'failed'
-              ? 'No se pudo leer el reporte local del periodo.'
-              : metrics.collected.status === 'complete'
-              ? 'Pagos iniciales y abonos del periodo.'
-              : 'Falta evidencia de pago o hay cancelaciones/reversos que conciliar.'}
-          </small>
-          {renderSourceBadges(reportContext.salesBadges)}
         </div>
 
         <div className={`stat-card-modern small-card ${metrics.creditGenerated.status !== 'complete' ? 'card-warning-state' : ''}`}>
@@ -803,7 +759,7 @@ export default function StatsGrid({
             <Ticket size={18} className="icon-muted" />
           </div>
           <div className="card-value-small">
-            {metrics.financialDataStatus === 'loading' ? 'Cargando' : metrics.creditGenerated.status === 'complete'
+            {metrics.financialDataStatus !== 'ready' ? (metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible') : metrics.creditGenerated.status === 'complete'
               ? formatCurrency(metrics.creditGenerated.value)
               : 'Incompleto'}
           </div>
@@ -823,8 +779,8 @@ export default function StatsGrid({
             <AlertTriangle size={18} className="icon-muted" />
           </div>
           <div className="card-value-small">
-            {metrics.financialDataStatus === 'loading'
-              ? 'Cargando'
+            {metrics.financialDataStatus !== 'ready'
+              ? (metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible')
               : metrics.currentDebt.status === 'complete'
               ? formatCurrency(metrics.currentDebt.value)
               : metrics.currentDebt.reason === 'credit_cancellation_not_reconciled' ? 'Incompleto' : 'No disponible'}
@@ -850,7 +806,7 @@ export default function StatsGrid({
           </div>
           <div className="card-content">
             <span className="card-label">Ganancia bruta confirmada</span>
-            <h2 className="card-value-main">{formatCurrency(metrics.profitConfirmed || 0)}</h2>
+            <h2 className="card-value-main">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.profitConfirmed) : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
 
             {metrics.shouldWarnFinancialQuality ? (
               <div className="financial-quality-warning">
@@ -881,7 +837,7 @@ export default function StatsGrid({
             <span className="card-label">Utilidad no confiable</span>
             <AlertTriangle size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{formatCurrency(metrics.unreliableProfit || 0)}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.unreliableProfit) : 'No disponible'}</div>
           <small className="text-muted">
             {`${metrics.missingCostRevenuePct.toFixed(1)}% de ventas sin costo`}
           </small>
@@ -915,7 +871,7 @@ export default function StatsGrid({
             <span className="card-label">Pedidos</span>
             <ShoppingBag size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.orders || 0}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? metrics.orders : 'No disponible'}</div>
           <small className="text-muted">Tickets cobrados</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -926,7 +882,7 @@ export default function StatsGrid({
             <span className="card-label">Ticket Promedio</span>
             <Ticket size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{formatCurrency(metrics.avgTicket)}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? formatCurrency(metrics.avgTicket) : 'No disponible'}</div>
           <small className="text-muted">Gasto por cliente</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -937,7 +893,7 @@ export default function StatsGrid({
             <span className="card-label">Prod. Vendidos</span>
             <Package size={18} className="icon-muted" />
           </div>
-          <div className="card-value-small">{metrics.items || 0}</div>
+          <div className="card-value-small">{metrics.financialDataStatus === 'ready' ? metrics.items : 'No disponible'}</div>
           <small className="text-muted">Unidades entregadas</small>
           {renderSourceBadges(reportContext.salesBadges)}
         </div>
@@ -1049,6 +1005,49 @@ export default function StatsGrid({
           </>
         )}
       </div>
+
+      {/* Gráfica de evolución temporal */}
+      {metrics.evolutionData.length > 0 && (
+        <div className="stats-evolution-card">
+          <div className="evolution-header">
+            <div className="evolution-title">
+              <Activity size={18} />
+              <span>{`Tendencia de ${metrics.selectedMetricLabel}`}</span>
+              <strong className="evolution-metric-value">
+                {metrics.selectedMetricFullFormatter(metrics.selectedMetricValue)}
+              </strong>
+            </div>
+            {metrics.metricTrend !== null && (
+              <div className={`evolution-trend ${metrics.metricTrend >= 0 ? 'positive' : 'negative'}`}>
+                {metrics.metricTrend >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                <span>{`${metrics.metricTrend >= 0 ? '+' : ''}${metrics.metricTrend.toFixed(1)}%`}</span>
+              </div>
+            )}
+          </div>
+          <div className="chart-metric-controls">
+            <span className="chart-metric-label">Métrica de gráfica</span>
+            <div className="metric-filter-scroll" aria-label="Metrica de grafica">
+              {Object.entries(METRIC_OPTIONS).map(([key, { label }]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`metric-pill ${selectedMetric === key ? 'active' : ''}`}
+                  onClick={() => setSelectedMetric(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <AreaTrendChart
+            data={metrics.evolutionData}
+            height={200}
+            color={metrics.selectedMetricColor}
+            valueFormatter={metrics.selectedMetricFormatter}
+          />
+          {renderSourceBadges(reportContext.salesBadges)}
+        </div>
+      )}
 
       {/* Sección de gráficas y datos adicionales */}
       <div className="stats-insights-section stats-insights-section--top">
