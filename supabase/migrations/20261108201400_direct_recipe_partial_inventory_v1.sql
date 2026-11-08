@@ -40,6 +40,8 @@ declare
   v_component jsonb;
   v_allocations jsonb := '[]'::jsonb;
   v_recipe_ingredient boolean;
+  v_storage_unit text;
+  v_declared_unit text;
   v_excess numeric;
 begin
   if v_context is null
@@ -83,11 +85,13 @@ begin
     v_norm := private.normalize_sale_inventory_item(v_entry.item, v_entry.ord);
     v_id := nullif(v_norm->>'product_id','');
     v_line_id := nullif(v_norm->>'item_id','');
-    v_needed := coalesce(nullif(v_norm->>'quantity','')::numeric,0);
+    v_needed := pg_catalog.round(coalesce(nullif(v_norm->>'quantity','')::numeric,0),4);
     v_cost := nullif(v_norm->>'unit_cost','')::numeric;
     v_metadata := coalesce(v_entry.item->'metadata','{}'::jsonb);
     v_source_type := coalesce(v_metadata->>'inventorySource','product');
     v_source_id := nullif(v_metadata->>'sourceProductId','');
+    v_storage_unit := null;
+    v_declared_unit := null;
     if v_id is null or v_line_id is null or v_needed <= 0 or v_needed > 1000000
       or v_source_type not in ('recipe','product','modifier')
       or nullif(v_norm->>'batch_id','') is not null
@@ -128,8 +132,28 @@ begin
       end if;
     end if;
 
-    if v_recipe_ingredient and v_product.product_type is distinct from 'ingredient' then
-      raise exception 'DIRECT_PARTIAL_NOT_AN_INGREDIENT:%',v_id using errcode='P0001';
+    if v_source_type='recipe' and not v_recipe_ingredient then
+      raise exception 'DIRECT_PARTIAL_RECIPE_CHANGED_RECONFIRM:%',v_source_id using errcode='P0001';
+    end if;
+    if v_recipe_ingredient then
+      if v_product.product_type is distinct from 'ingredient' then
+        raise exception 'DIRECT_PARTIAL_NOT_AN_INGREDIENT:%',v_id using errcode='P0001';
+      end if;
+      -- Revalidate the unit under the ingredient row lock; a concurrent
+      -- catalog edit must not change the unit after approval.
+      v_storage_unit := coalesce(
+        nullif(v_product.metadata->>'unit',''),
+        nullif(v_product.bulk_data->'purchase'->>'unit',''),
+        nullif(v_product.bulk_data->>'unit',''),
+        nullif(v_product.metadata->>'measurementUnit',''),
+        nullif(v_product.metadata->>'saleUnit',''),
+        case when v_product.sale_type='unit' then 'pza' else null end
+      );
+      v_declared_unit := coalesce(nullif(v_metadata->>'componentUnit',''),v_storage_unit);
+      if v_storage_unit is null or v_storage_unit not in ('pza','kg','g','lt','ml')
+        or v_declared_unit is distinct from v_storage_unit then
+        raise exception 'DIRECT_PARTIAL_INGREDIENT_CHANGED_RECONFIRM:%',v_id using errcode='P0001';
+      end if;
     end if;
 
     v_pending := v_needed;
@@ -139,7 +163,7 @@ begin
         select 1 from public.pos_product_batches b
           where b.license_id=p_license_id and b.product_id=v_id
             and b.deleted_at is null and b.is_active=true
-            and b.stock > coalesce(b.committed_stock,0)
+            and b.stock > 0
             and (b.expiry_date is null or private.is_pos_batch_expired_for_sale(b.expiry_date))
       ) then
         raise exception 'STRICT_EXPIRED_BATCH_BLOCKED' using errcode='P0001';
@@ -147,6 +171,7 @@ begin
       for v_batch in select b.* from public.pos_product_batches b
         where b.license_id=p_license_id and b.product_id=v_id
           and b.deleted_at is null and b.is_active=true and b.track_stock=true
+          and b.status='active'
           and ((v_product.expiration_mode <> 'STRICT' and b.expiry_date is null)
                or (b.expiry_date is not null and not private.is_pos_batch_expired_for_sale(b.expiry_date)))
         order by b.expiry_date asc nulls last,b.created_at,b.id
@@ -191,12 +216,24 @@ begin
     end if;
 
     v_missing := pg_catalog.greatest(v_needed-v_consumed,0);
+    -- Never turn freely available expired inventory into an authorizable shortage.
+    if v_missing > 0 and private.product_uses_batches(v_product) and exists(
+      select 1 from public.pos_product_batches b
+      where b.license_id=p_license_id and b.product_id=v_id
+        and b.deleted_at is null and b.is_active=true and b.status='active'
+        and b.stock > coalesce(b.committed_stock,0)
+        and b.expiry_date is not null
+        and private.is_pos_batch_expired_for_sale(b.expiry_date)
+    ) then
+      raise exception 'DIRECT_PARTIAL_EXPIRED_STOCK_REQUIRES_REVIEW:%',v_id using errcode='P0001';
+    end if;
     if v_missing > 0 and not v_recipe_ingredient then
       raise exception 'DIRECT_PARTIAL_STRICT_STOCK_REQUIRED:%',v_id using errcode='P0001';
     end if;
     v_component := coalesce(v_summary->v_id,pg_catalog.jsonb_build_object(
       'ingredient_id',v_id,'ingredient_name',v_product.name,
-      'unit',coalesce(nullif(v_metadata->>'componentUnit',''),v_product.metadata->>'unit','pza'),
+      'unit',coalesce(v_storage_unit,nullif(v_metadata->>'componentUnit',''),
+        v_product.metadata->>'unit',v_product.bulk_data->'purchase'->>'unit','pza'),
       'required',0,'consumed',0,'missing',0
     ));
     v_summary := pg_catalog.jsonb_set(v_summary,array[v_id],v_component || pg_catalog.jsonb_build_object(
@@ -221,6 +258,141 @@ $$;
 
 revoke all on function private.resolve_direct_partial_inventory_v1(uuid,jsonb,text) from public, anon, authenticated;
 
+
+-- Solo se llama desde la asignacion parcial, despues de que R2B verifica
+-- identidad, licencia, lineas y pago. La cantidad de la venta NO cambia:
+-- la conversion se aplica exclusivamente a la entrada de inventario.
+create or replace function private.prepare_direct_partial_inventory_items_v1(
+  p_license_id uuid, p_items jsonb
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $
+declare
+  v_context jsonb := nullif(pg_catalog.current_setting('lanzo.direct_partial_recipe_v1',true),'')::jsonb;
+  v_approved_items jsonb;
+  v_recipe_snapshots jsonb;
+  v_item record;
+  v_component record;
+  v_authorized jsonb;
+  v_source public.pos_products;
+  v_ingredient public.pos_products;
+  v_source_id text;
+  v_ingredient_id text;
+  v_snapshot jsonb;
+  v_qty numeric;
+  v_effective numeric;
+  v_component_qty numeric;
+  v_factor numeric;
+  v_storage_unit text;
+  v_declared_unit text;
+  v_items_for_inventory jsonb := '[]'::jsonb;
+begin
+  v_approved_items := v_context->'approval'->'approvedItems';
+  v_recipe_snapshots := v_context->'approval'->'recipeSnapshot';
+  if v_context is null or pg_catalog.jsonb_typeof(p_items) <> 'array'
+    or pg_catalog.jsonb_typeof(v_approved_items) <> 'array'
+    or pg_catalog.jsonb_typeof(v_recipe_snapshots) <> 'object'
+    or pg_catalog.jsonb_array_length(p_items) = 0
+    or pg_catalog.jsonb_array_length(p_items) > 200
+    or pg_catalog.jsonb_array_length(v_approved_items) <> pg_catalog.jsonb_array_length(p_items)
+  then
+    raise exception 'DIRECT_PARTIAL_ITEMS_MISMATCH_RECONFIRM' using errcode='P0001';
+  end if;
+  -- Bloquear productos originales por orden determinista. Los ingredientes
+  -- se bloquearan posteriormente en el resolver antes de asignar existencias.
+  perform p.id from public.pos_products p
+    where p.license_id=p_license_id and p.id in (
+      select distinct nullif(coalesce(i.value->>'product_id',i.value->>'productId'), '')
+      from pg_catalog.jsonb_array_elements(p_items) i
+    ) order by p.id for update;
+
+  for v_item in select value as payload, ordinality as ord
+    from pg_catalog.jsonb_array_elements(p_items) with ordinality
+  loop
+    v_authorized := v_approved_items->(v_item.ord-1);
+    v_source_id := nullif(coalesce(v_item.payload->>'product_id',v_item.payload->>'productId'),'');
+    v_qty := nullif(v_item.payload->>'quantity','')::numeric;
+    if v_source_id is null or v_qty is null or v_qty <= 0 or v_qty > 1000000
+      or pg_catalog.jsonb_typeof(v_authorized) <> 'object'
+      or v_authorized->>'productId' is distinct from v_source_id
+      or nullif(v_authorized->>'quantity','')::numeric is distinct from v_qty
+      or coalesce(v_authorized->'selectedModifiers','[]'::jsonb)
+        is distinct from coalesce(v_item.payload->'selected_modifiers',
+          v_item.payload->'selectedModifiers','[]'::jsonb)
+    then
+      raise exception 'DIRECT_PARTIAL_ITEMS_MISMATCH_RECONFIRM' using errcode='P0001';
+    end if;
+
+    select * into v_source from public.pos_products p
+      where p.license_id=p_license_id and p.id=v_source_id
+        and p.deleted_at is null and p.is_active=true for update;
+    v_snapshot := v_recipe_snapshots->v_source_id;
+    if v_source.id is null or pg_catalog.jsonb_typeof(v_snapshot) <> 'object'
+      or v_snapshot->>'productId' is distinct from v_source_id
+      or v_snapshot->'recipe' is distinct from coalesce(v_source.recipe,'[]'::jsonb)
+      or coalesce(v_snapshot->'conversionFactor','null'::jsonb)
+        is distinct from coalesce(v_source.conversion_factor,'null'::jsonb)
+      or pg_catalog.jsonb_typeof(coalesce(v_source.recipe,'[]'::jsonb)) <> 'array'
+    then
+      raise exception 'DIRECT_PARTIAL_RECIPE_CHANGED_RECONFIRM:%',v_source_id using errcode='P0001';
+    end if;
+
+    -- No aceptar recetas legacy ambiguas ni confiar en unidades del cliente.
+    for v_component in select value as ingredient from pg_catalog.jsonb_array_elements(
+      coalesce(v_source.recipe,'[]'::jsonb)
+    ) loop
+      v_ingredient_id := nullif(coalesce(v_component.ingredient->>'ingredientId',
+        v_component.ingredient->>'productId'),'');
+      v_component_qty := nullif(v_component.ingredient->>'quantity','')::numeric;
+      if v_ingredient_id is null or v_component_qty is null or v_component_qty <= 0
+        or v_ingredient_id=v_source_id
+      then
+        raise exception 'DIRECT_PARTIAL_RECIPE_UNSUPPORTED:%',v_source_id using errcode='P0001';
+      end if;
+      select * into v_ingredient from public.pos_products p
+        where p.license_id=p_license_id and p.id=v_ingredient_id
+          and p.deleted_at is null and p.is_active=true;
+      if v_ingredient.id is null or v_ingredient.product_type is distinct from 'ingredient'
+        or v_ingredient.track_stock is not true
+      then
+        raise exception 'DIRECT_PARTIAL_INGREDIENT_UNKNOWN:%',v_ingredient_id using errcode='P0001';
+      end if;
+      v_storage_unit := coalesce(
+        nullif(v_ingredient.metadata->>'unit',''),
+        nullif(v_ingredient.bulk_data->'purchase'->>'unit',''),
+        nullif(v_ingredient.bulk_data->>'unit',''),
+        nullif(v_ingredient.metadata->>'measurementUnit',''),
+        nullif(v_ingredient.metadata->>'saleUnit',''),
+        case when v_ingredient.sale_type='unit' then 'pza' else null end
+      );
+      v_declared_unit := coalesce(nullif(v_component.ingredient->>'unit',''),v_storage_unit);
+      if v_storage_unit is null or v_storage_unit not in ('pza','kg','g','lt','ml')
+        or v_declared_unit is distinct from v_storage_unit
+      then
+        raise exception 'DIRECT_PARTIAL_RECIPE_UNIT_UNSUPPORTED:%',v_ingredient_id using errcode='P0001';
+      end if;
+    end loop;
+
+    v_effective := pg_catalog.round(v_qty,4);
+    if coalesce(v_source.conversion_factor->>'enabled','false')='true' then
+      v_factor := nullif(v_source.conversion_factor->>'factor','')::numeric;
+      if v_factor is null or v_factor <= 1 or v_factor > 1000000 then
+        raise exception 'DIRECT_PARTIAL_CONVERSION_UNSUPPORTED:%',v_source_id using errcode='P0001';
+      end if;
+      v_effective := pg_catalog.round(v_qty/v_factor,4);
+    end if;
+    if v_effective <= 0 then
+      raise exception 'DIRECT_PARTIAL_QUANTITY_TOO_SMALL:%',v_source_id using errcode='P0001';
+    end if;
+    v_items_for_inventory := v_items_for_inventory || pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_set(v_item.payload,'{quantity}',pg_catalog.to_jsonb(v_effective),true)
+    );
+  end loop;
+  return v_items_for_inventory;
+end;
+$;
+revoke all on function private.prepare_direct_partial_inventory_items_v1(uuid,jsonb) from public, anon, authenticated;
+
 -- Existing function called by the cashier inventory RPC. Strict paths unchanged.
 create or replace function private.resolve_sale_inventory_allocations(
   p_license_id uuid,p_items jsonb,p_sale_id text
@@ -233,10 +405,13 @@ declare
   v_response jsonb;
   v_context jsonb := nullif(pg_catalog.current_setting('lanzo.direct_partial_recipe_v1',true),'')::jsonb;
 begin
-  v_expanded_items := private.rest_inv5_expand_sale_inventory_items(p_license_id,p_items,p_sale_id);
   if v_context is not null then
+    v_expanded_items := private.rest_inv5_expand_sale_inventory_items(
+      p_license_id,private.prepare_direct_partial_inventory_items_v1(p_license_id,p_items),p_sale_id
+    );
     v_response := private.resolve_direct_partial_inventory_v1(p_license_id,v_expanded_items,p_sale_id);
   else
+    v_expanded_items := private.rest_inv5_expand_sale_inventory_items(p_license_id,p_items,p_sale_id);
     v_response := private.resolve_sale_inventory_allocations_direct_rest_inv5(p_license_id,v_expanded_items,p_sale_id);
   end if;
   return private.rest_inv5_enrich_inventory_allocations(v_expanded_items,v_response);
@@ -261,6 +436,8 @@ declare
   v_auth jsonb := p_sale->'metadata'->'directPartialInventoryAuthorization';
   v_response jsonb;
   v_summary jsonb;
+  v_previous jsonb;
+  v_sale_version bigint;
   v_sale_id text;
 begin
   v_rate_limit := public.enforce_pos_rpc_rate_limit_v2(
@@ -292,6 +469,8 @@ begin
       or v_auth->>'mode' is distinct from 'direct_recipe_v1'
       or v_auth->>'saleId' is distinct from v_sale_id
       or nullif(v_auth->>'attemptId','') is null
+      or pg_catalog.jsonb_typeof(v_auth->'approvedItems') is distinct from 'array'
+      or pg_catalog.jsonb_typeof(v_auth->'recipeSnapshot') is distinct from 'object'
       or v_auth->>'actorKey' is distinct from v_context->>'actor_key'
       or nullif(p_idempotency_key,'') is null
       or v_sale_id is null
@@ -307,6 +486,7 @@ begin
     then
       raise exception 'DIRECT_PARTIAL_CONTEXT_FORBIDDEN' using errcode='P0001';
     end if;
+    perform pg_catalog.set_config('lanzo.direct_partial_summary_v1','',true);
     perform pg_catalog.set_config('lanzo.direct_partial_recipe_v1',
       pg_catalog.jsonb_build_object(
         'sale_id',v_sale_id,'license_id',v_context->>'license_id',
@@ -322,30 +502,67 @@ begin
   );
   if v_auth is not null and coalesce((v_response->>'success')::boolean,false) then
     v_summary := nullif(pg_catalog.current_setting('lanzo.direct_partial_summary_v1',true),'')::jsonb;
-    if v_summary is not null then
-      update public.pos_sales s set
-        metadata=coalesce(s.metadata,'{}'::jsonb) ||
-          pg_catalog.jsonb_build_object('directPartialInventory',
-            pg_catalog.jsonb_build_object(
-              'version',1,'actor_key',v_context->>'actor_key',
-              'attempt_id',v_auth->>'attemptId',
-              'idempotency_key',p_idempotency_key,'components',v_summary
-            )),
-        server_version=s.server_version+1,updated_at=now()
-      where s.license_id=(v_context->>'license_id')::uuid and s.id=v_sale_id;
-      if not found then raise exception 'DIRECT_PARTIAL_SALE_NOT_FOUND' using errcode='P0001'; end if;
-      perform private.record_pos_sale_audit_event(
-        (v_context->>'license_id')::uuid,v_sale_id,
-        'sale.direct_recipe_partial_inventory_authorized',
-        (v_context->>'device_id')::uuid,
-        nullif(v_context->>'staff_user_id','')::uuid,
-        v_context->>'actor_key',
-        pg_catalog.jsonb_build_object(
-          'actor_key',v_context->>'actor_key','attempt_id',v_auth->>'attemptId',
-          'idempotency_key',p_idempotency_key,'required_consumed_missing',v_summary
-        )
-      );
+    if v_summary is null then
+      -- R2B may return the already committed receipt without allocating again.
+      -- Accept only the matching previous result, never create a second event.
+      select s.metadata->'directPartialInventory' into v_previous
+        from public.pos_sales s
+        where s.license_id=(v_context->>'license_id')::uuid and s.id=v_sale_id
+        for update;
+      if v_previous is null
+        or v_previous->>'attempt_id' is distinct from v_auth->>'attemptId'
+        or v_previous->>'actor_key' is distinct from v_context->>'actor_key'
+        or v_previous->>'idempotency_key' is distinct from p_idempotency_key
+        or pg_catalog.jsonb_typeof(v_previous->'components') <> 'object'
+        or v_previous->'components' = '{}'::jsonb
+      then
+        raise exception 'DIRECT_PARTIAL_SUMMARY_MISSING' using errcode='P0001';
+      end if;
+      return v_response || pg_catalog.jsonb_build_object('directPartialInventory',v_previous);
     end if;
+    if pg_catalog.jsonb_typeof(v_summary) <> 'object' or v_summary='{}'::jsonb then
+      raise exception 'DIRECT_PARTIAL_SUMMARY_MISSING' using errcode='P0001';
+    end if;
+    update public.pos_sales s set
+      metadata=coalesce(s.metadata,'{}'::jsonb) ||
+        pg_catalog.jsonb_build_object('directPartialInventory',
+          pg_catalog.jsonb_build_object(
+            'version',1,'actor_key',v_context->>'actor_key',
+            'attempt_id',v_auth->>'attemptId',
+            'idempotency_key',p_idempotency_key,'components',v_summary
+          )),
+      server_version=s.server_version+1,updated_at=now()
+    where s.license_id=(v_context->>'license_id')::uuid and s.id=v_sale_id
+    returning s.server_version into v_sale_version;
+    if v_sale_version is null then
+      raise exception 'DIRECT_PARTIAL_SALE_NOT_FOUND' using errcode='P0001';
+    end if;
+    perform private.record_pos_sale_audit_event(
+      (v_context->>'license_id')::uuid,v_sale_id,
+      'sale.direct_recipe_partial_inventory_authorized',
+      (v_context->>'device_id')::uuid,
+      nullif(v_context->>'staff_user_id','')::uuid,
+      v_context->>'actor_key',
+      pg_catalog.jsonb_build_object(
+        'actor_key',v_context->>'actor_key','attempt_id',v_auth->>'attemptId',
+        'idempotency_key',p_idempotency_key,'required_consumed_missing',v_summary
+      )
+    );
+    -- Publish the metadata update through the existing sync ledger + Broadcast.
+    perform private.record_pos_sync_event(
+      (v_context->>'license_id')::uuid,'sale',v_sale_id,'update',
+      (v_context->>'device_id')::uuid,
+      nullif(v_context->>'staff_user_id','')::uuid,
+      p_idempotency_key,
+      pg_catalog.jsonb_build_object('source','direct_recipe_partial_inventory_v1'),
+      v_sale_version::integer
+    );
+    return v_response || pg_catalog.jsonb_build_object('directPartialInventory',
+      pg_catalog.jsonb_build_object(
+        'version',1,'actor_key',v_context->>'actor_key',
+        'attempt_id',v_auth->>'attemptId',
+        'idempotency_key',p_idempotency_key,'components',v_summary
+      ));
   end if;
   return v_response;
 end;

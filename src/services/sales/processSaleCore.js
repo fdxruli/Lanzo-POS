@@ -639,6 +639,7 @@ export const processSaleCore = async ({
                     tenant: actorContext.tenant?.opaqueId || null,
                     maxMissing: partialAuthorization.maxMissing,
                     recipeSnapshot: partialAuthorization.recipeSnapshot,
+                    approvedItems: partialAuthorization.approvedItems,
                     mode: 'direct_recipe_v1'
                 } } : {})
             },
