@@ -2,6 +2,11 @@ import { Money } from '../../utils/moneyMath';
 
 const OPEN_STATUSES = new Set(['open', 'abierta']);
 const HOUR_MS = 60 * 60 * 1000;
+export const CASH_SESSION_AGE_THRESHOLDS_HOURS = Object.freeze({
+  warning: 12,
+  important: 24,
+  review: 72
+});
 
 export const canShowBusinessCashSummary = ({
   isCloudCash = false,
@@ -128,7 +133,9 @@ export const buildBusinessCashSummary = (openSessions = [], currentCashSession =
 
 export const getCashSessionAge = (openedAt, now = Date.now()) => {
   const openedTime = Date.parse(openedAt || '');
-  if (Number.isNaN(openedTime)) return { level: 'unknown', label: 'Fecha de apertura no disponible' };
+  if (Number.isNaN(openedTime) || openedTime > now) {
+    return { level: 'unknown', label: 'Fecha de apertura no disponible' };
+  }
 
   const hours = Math.max(0, Math.floor((now - openedTime) / HOUR_MS));
   const days = Math.floor(hours / 24);
@@ -136,8 +143,14 @@ export const getCashSessionAge = (openedAt, now = Date.now()) => {
     ? `Abierta hace ${days} ${days === 1 ? 'día' : 'días'}`
     : `Abierta hace ${Math.max(hours, 1)} h`;
 
-  if (days >= 3) return { level: 'review', label: 'Requiere revisión', detail: `${label}. Esta caja lleva varios días abierta.` };
-  if (hours >= 24) return { level: 'important', label, detail: 'Caja abierta por más de 24 horas.' };
-  if (hours >= 12) return { level: 'warning', label, detail: 'Caja abierta por más de 12 horas.' };
-  return { level: 'normal', label };
+  if (hours >= CASH_SESSION_AGE_THRESHOLDS_HOURS.review) {
+    return { level: 'review', label: 'Requiere revisión', durationLabel: label, detail: `${label}. Esta caja lleva varios días abierta.` };
+  }
+  if (hours >= CASH_SESSION_AGE_THRESHOLDS_HOURS.important) {
+    return { level: 'important', label, durationLabel: label, detail: 'Caja abierta por más de 24 horas.' };
+  }
+  if (hours >= CASH_SESSION_AGE_THRESHOLDS_HOURS.warning) {
+    return { level: 'warning', label, durationLabel: label, detail: 'Caja abierta por más de 12 horas.' };
+  }
+  return { level: 'normal', label, durationLabel: label };
 };

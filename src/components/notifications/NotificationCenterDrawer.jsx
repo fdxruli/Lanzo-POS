@@ -21,6 +21,7 @@ import NotificationTabs from './NotificationTabs';
 import SupportTicketForm from './support/SupportTicketForm';
 import SupportTicketList from './support/SupportTicketList';
 import SupportTicketThread from './support/SupportTicketThread';
+import CashSessionAgeAttention from './CashSessionAgeAttention';
 
 const isUnreadNotification = (notification) => (
   notification?.is_read !== true && notification?.is_archived !== true
@@ -53,7 +54,9 @@ const getNotificationPriorityRank = (notification, preferences) => {
 export default function NotificationCenterDrawer({
   isOpen,
   onClose,
-  unreadCount = 0
+  unreadCount = 0,
+  cashSessionAgeAttention = null,
+  onReviewCashSessions
 }) {
   const actorAccess = useActorAccess();
   const drawerRef = useRef(null);
@@ -533,6 +536,10 @@ export default function NotificationCenterDrawer({
         />
 
         <div className="notification-center-body">
+          <CashSessionAgeAttention
+            attention={cashSessionAgeAttention}
+            onReview={onReviewCashSessions}
+          />
           {activeTab === 'support' && supportCenterEnabled ? (
             renderSupportContent()
           ) : (

@@ -12,6 +12,7 @@ import {
 } from '../../services/localInventoryOperationalAlerts';
 import { markPostDowngradeCashAttentionRead } from '../../services/cash/postDowngradeCashAttention';
 import LocalBackupAttentionSection from './LocalBackupAttentionSection';
+import CashSessionAgeAttention from './CashSessionAgeAttention';
 
 const STOCK_TYPES = new Set([
   INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK,
@@ -80,6 +81,8 @@ export default function LocalInventoryOperationalAlertsDrawer({
   cashAttentionKey,
   cashAttentionRecord,
   onCashAttentionRecordChange,
+  cashSessionAgeAttention,
+  onReviewCashSessions,
   backupAttention,
   inventoryEnabled = true
 }) {
@@ -233,6 +236,11 @@ export default function LocalInventoryOperationalAlertsDrawer({
         </header>
 
         <LocalBackupAttentionSection attention={backupAttention} onClose={onClose} />
+
+        <CashSessionAgeAttention
+          attention={cashSessionAgeAttention}
+          onReview={onReviewCashSessions}
+        />
 
         {hasPendingCash && (
           <section

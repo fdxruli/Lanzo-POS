@@ -7,8 +7,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useEcommercePublishedStockAlerts } from '../../hooks/useEcommercePublishedStockAlerts';
 import { useInventoryOperationalAlertsSnapshot } from '../../hooks/useInventoryOperationalAlertsSnapshot';
+import useCashSessionAgeAttention from '../../hooks/useCashSessionAgeAttention';
 import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import { useLocalBackupAttention } from '../../hooks/useLocalBackupAttention';
+import {
+  getLicenseKeyFromDetails,
+  isCloudCashSyncEnabled
+} from '../../services/sync/syncConstants';
 import {
   buildPostDowngradeCashAttentionKey,
   POST_DOWNGRADE_CASH_ATTENTION_EVENT,
@@ -37,6 +42,7 @@ export default function NotificationBell({
   const closeLocal = useCallback(() => setIsLocalOpen(false), []);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentAdminUser = useAppStore((state) => state.currentAdminUser);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const syncNotificationRuntime = useAppStore((state) => state.syncNotificationRuntime);
   const notificationAuthorizationKey = getNotificationAuthorizationKey({ licenseDetails }, actorAccess);
@@ -55,12 +61,55 @@ export default function NotificationBell({
   const staffSession = { currentDeviceRole, currentStaffUser };
 
   const cloudEnabled = canAccessCloudNotificationCenter(licenseDetails, actorAccess);
+  const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+  const isCloudCash = Boolean(licenseKey && isCloudCashSyncEnabled(licenseDetails));
+  const cashActorKey = currentAdminUser?.id ? 'admin:' + currentAdminUser.id : null;
+  const isCurrentOwner = Boolean(
+    actorAccess.isAdmin &&
+    currentDeviceRole === 'admin' &&
+    currentAdminUser?.is_owner === true
+  );
+  const canLoadCashSessionAgeAttention = Boolean(
+    isCurrentOwner &&
+    (!isCloudCash || (cloudEnabled && !localOnly && !notificationsAccessDenied))
+  );
+  const cashSessionAgeScopeKey = canLoadCashSessionAgeAttention
+    ? JSON.stringify([
+      licenseDetails?.license_id || licenseDetails?.id || null,
+      licenseKey,
+      currentAdminUser?.id || null,
+      actorAccess.runtimeSnapshot?.sessionId || null,
+      actorAccess.runtimeSnapshot?.generation || null,
+      actorAccess.runtimeSnapshot?.tenant || null,
+      actorAccess.runtimeSnapshot?.deviceRef || null,
+      cashActorKey,
+      isCloudCash ? 'cloud' : 'local'
+    ])
+    : null;
+  const cashSessionAgeAttention = useCashSessionAgeAttention({
+    enabled: canLoadCashSessionAgeAttention,
+    scopeKey: cashSessionAgeScopeKey,
+    isCloudCash,
+    actorKey: cashActorKey
+  });
   const localInventoryEnabled = (
     shouldUseLocalInventoryOperationalBell(licenseDetails) &&
     canStaffAccessLocalInventoryOperationalAlerts(licenseDetails, staffSession)
   );
+  const hasLocalAgedCashSessions = Boolean(
+    canLoadCashSessionAgeAttention &&
+    !isCloudCash &&
+    cashSessionAgeAttention.status === 'success' &&
+    cashSessionAgeAttention.pendingCount > 0
+  );
+  const hasCloudAgedCashSessions = Boolean(
+    canLoadCashSessionAgeAttention &&
+    isCloudCash &&
+    cashSessionAgeAttention.status === 'success' &&
+    cashSessionAgeAttention.pendingCount > 0
+  );
   const backupAttention = useLocalBackupAttention();
-  const localEnabled = localInventoryEnabled || backupAttention.enabled;
+  const localEnabled = localInventoryEnabled || backupAttention.enabled || hasLocalAgedCashSessions;
   const hasBackupAttention = Boolean(backupAttention.ready && backupAttention.condition?.active);
   const hasConfirmedCashAttention = Boolean(
     postDowngradeCashPending.eligible
@@ -116,7 +165,22 @@ export default function NotificationBell({
 
   const handleCashAttentionRead = useCallback((record) => {
     setCashAttentionRecord(record);
-  }, []);
+  }, [setCashAttentionRecord]);
+
+  const handleReviewCashSessions = useCallback(() => {
+    const session = cashSessionAgeAttention.agedSessions[0]?.session;
+    const sessionId = session?.id || session?.cash_session_id || null;
+    setIsLocalOpen(false);
+    closeNotificationCenter?.();
+    navigate('/caja', {
+      state: {
+        cashSessionAttention: {
+          section: isCloudCash ? 'negocio' : 'turno',
+          sessionId
+        }
+      }
+    });
+  }, [cashSessionAgeAttention.agedSessions, closeNotificationCenter, isCloudCash, navigate]);
 
   const canShowLocalOperationalAlert = (
     !localOnly
@@ -139,7 +203,8 @@ export default function NotificationBell({
 
   if (localEnabled) {
     const safeActiveCount = localInventoryEnabled ? Math.max(Number(localSnapshot?.activeCount || 0), 0) : 0;
-    const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0) + (hasBackupAttention ? 1 : 0);
+    const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0)
+      + (hasLocalAgedCashSessions ? 1 : 0) + (hasBackupAttention ? 1 : 0);
     const badge = localIncidentCount > 99 ? '99+' : localIncidentCount;
     const localOpenLabel = backupAttention.enabled || !localInventoryEnabled
       ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}${hasBackupAttention ? '; respaldos necesitan atención' : ''}`
@@ -162,6 +227,10 @@ export default function NotificationBell({
         onCashAttentionRecordChange={handleCashAttentionRead}
         backupAttention={backupAttention}
         inventoryEnabled={localInventoryEnabled}
+        cashSessionAgeAttention={canLoadCashSessionAgeAttention && !isCloudCash
+          ? cashSessionAgeAttention
+          : null}
+        onReviewCashSessions={handleReviewCashSessions}
       />
     );
 
@@ -181,7 +250,12 @@ export default function NotificationBell({
           aria-label={
             isLocalOpen
               ? 'Cerrar alertas locales'
-              : localOpenLabel
+              : hasLocalAgedCashSessions
+                ? 'Abrir alertas locales, ' + localIncidentCount
+                  + (localIncidentCount === 1 ? ' incidencia activa' : ' incidencias activas')
+                  + '; una agrupa '
+                  + cashSessionAgeAttention.pendingCount + ' cajas abiertas antiguas'
+                : localOpenLabel
           }
           aria-haspopup="dialog"
           aria-expanded={isLocalOpen}
@@ -217,6 +291,7 @@ export default function NotificationBell({
   const buttonClassName = [
     'notification-bell',
     hasLocalOperationalWarning ? 'has-local-operational-warning' : '',
+    hasCloudAgedCashSessions ? 'has-cash-session-attention' : '',
     className
   ].filter(Boolean).join(' ');
   const runtimeCurrent = storedAuthorizationKey === notificationAuthorizationKey;
@@ -228,6 +303,10 @@ export default function NotificationBell({
         isOpen={isOpen}
         onClose={closeNotificationCenter}
         unreadCount={safeUnreadCount}
+        cashSessionAgeAttention={canLoadCashSessionAgeAttention && isCloudCash
+          ? cashSessionAgeAttention
+          : null}
+        onReviewCashSessions={handleReviewCashSessions}
       />
       <EcommercePublishedStockOperationalAlert
         isOpen={isOpen}
@@ -241,6 +320,7 @@ export default function NotificationBell({
   );
 
   const openLabel = [
+    hasCloudAgedCashSessions ? 'una incidencia de Caja abierta requiere revisión' : '',
     `Abrir centro de notificaciones, ${safeUnseenCount} nuevas`,
     hasLocalOperationalWarning ? 'alerta operacional de ecommerce activa' : ''
   ].filter(Boolean).join(', ');
@@ -258,22 +338,34 @@ export default function NotificationBell({
           onOpen?.();
           openNotificationCenter?.();
         }}
-        aria-label={isOpen ? 'Cerrar centro de notificaciones' : openLabel}
+        aria-label={isOpen
+          ? 'Cerrar centro de notificaciones'
+          : hasCloudAgedCashSessions
+            ? openLabel + ', hay cajas abiertas que requieren revisión'
+            : openLabel}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls="notification-center-drawer"
       >
         <Bell size={20} strokeWidth={2.35} aria-hidden="true" />
         {showLabel && <span className="notification-bell__label">Notificaciones</span>}
-        {safeUnseenCount > 0 && (
-          <span className="notification-bell__badge" aria-label={`${safeUnseenCount} notificaciones nuevas`}>
-            {safeUnseenCount > 99 ? '99+' : safeUnseenCount}
+        {(safeUnseenCount > 0 || hasCloudAgedCashSessions) && (
+          <span className="notification-bell__badge" aria-label={hasCloudAgedCashSessions
+            ? safeUnseenCount > 0
+              ? safeUnseenCount + ' notificaciones nuevas y 1 incidencia de Caja'
+              : '1 incidencia de Caja requiere revisión'
+            : safeUnseenCount + ' notificaciones nuevas'}>
+            {safeUnseenCount + (hasCloudAgedCashSessions ? 1 : 0) > 99
+              ? '99+'
+              : safeUnseenCount + (hasCloudAgedCashSessions ? 1 : 0)}
           </span>
         )}
-        {hasLocalOperationalWarning && !isOpen && (
+        {(hasLocalOperationalWarning || hasCloudAgedCashSessions) && !isOpen && (
           <span
             className="notification-bell__warning-dot"
-            aria-label="Alerta operacional: productos publicados sin stock"
+            aria-label={hasCloudAgedCashSessions
+              ? 'Alerta de Caja: sesiones abiertas que requieren revisión'
+              : 'Alerta operacional: productos publicados sin stock'}
           />
         )}
       </button>

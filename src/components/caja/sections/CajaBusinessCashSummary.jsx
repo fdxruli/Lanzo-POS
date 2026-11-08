@@ -6,6 +6,7 @@ import {
   getCashSessionStationLabel,
   isStaffCashSession
 } from '../../../services/cash/businessCashSummary';
+import { getCashSessionAttentionDomId } from '../../../services/cash/cashSessionAgeAttention';
 
 const formatMoney = (value) => `$${Money.toNumber(value || 0).toFixed(2)}`;
 
@@ -36,7 +37,8 @@ const CajaBusinessCashSummary = ({
   adminOpenSessions = [],
   cajaActual = null,
   onReviewSession = null,
-  isReadOnly = false
+  isReadOnly = false,
+  attentionSessionId = null
 }) => {
   const summary = buildBusinessCashSummary(adminOpenSessions, cajaActual);
 
@@ -72,8 +74,26 @@ const CajaBusinessCashSummary = ({
           const age = getCashSessionAge(getOpenedAt(session));
           const isStaff = isStaffCashSession(session);
           const type = isStaff ? 'Staff' : 'Admin';
+          const sessionId = session.id || session.cash_session_id;
+          const isAttentionTarget = Boolean(attentionSessionId && String(sessionId) === String(attentionSessionId));
+          const needsReview = age.level === 'important' || age.level === 'review';
+          const ageLabel = age.level === 'important'
+            ? 'Requiere revisión · ' + age.label
+            : age.level === 'review'
+              ? 'Revisión prioritaria · ' + age.durationLabel
+              : age.label;
           return (
-            <article key={session.id || session.cash_session_id} className="business-cash-session">
+            <article
+              key={sessionId}
+              id={getCashSessionAttentionDomId(sessionId)}
+              tabIndex={isAttentionTarget ? -1 : undefined}
+              className={[
+                'business-cash-session',
+                needsReview ? 'business-cash-session--needs-review' : '',
+                age.level === 'review' ? 'business-cash-session--review' : '',
+                isAttentionTarget ? 'business-cash-session--attention-target' : ''
+              ].filter(Boolean).join(' ')}
+            >
               <div>
                 <strong>{getCashSessionStationLabel(session)}</strong>
                 <span className="business-cash-session-meta"><UserRound size={13} aria-hidden="true" />{type}</span>
@@ -84,9 +104,9 @@ const CajaBusinessCashSummary = ({
                 <strong>{formatMoney(getExpectedCash(session))}</strong>
                 <span>Efectivo teórico</span>
                 <span>Estado: Abierta</span>
-                <span className={`business-cash-age business-cash-age--${age.level}`} title={age.detail || age.label}>
+                <span className={['business-cash-age', 'business-cash-age--' + age.level].join(' ')} title={age.detail || age.label}>
                   {age.level !== 'normal' && <AlertTriangle size={13} aria-hidden="true" />}
-                  <Clock3 size={13} aria-hidden="true" />{age.label}
+                  <Clock3 size={13} aria-hidden="true" />{ageLabel}
                 </span>
               </div>
               {onReviewSession && (

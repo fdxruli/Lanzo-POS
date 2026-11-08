@@ -1362,6 +1362,10 @@
 .caja-grid .business-cash-list { display: grid; gap: 0.55rem; }
 .caja-grid .business-cash-list h3 { margin: 0; color: var(--text-dark); font-size: 0.9rem; }
 .caja-grid .business-cash-session { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 0; border-top: 1px solid var(--border-color); }
+.caja-grid .business-cash-session--needs-review { padding-inline: 0.65rem; border-inline-start: 3px solid var(--ui-border-warning, var(--error-color)); border-radius: 8px; background: var(--ui-bg-warning-soft, var(--light-background)); }
+.caja-grid .business-cash-session--review { border-inline-start-color: var(--ui-border-danger, var(--error-color)); }
+.caja-grid .business-cash-session--attention-target { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.caja-grid .business-cash-session--attention-target:focus { outline: 3px solid var(--primary-color); }
 .caja-grid .business-cash-session > div { display: grid; gap: 0.25rem; min-width: 0; }
 .caja-grid .business-cash-session > div > strong { color: var(--text-dark); overflow-wrap: anywhere; }
 .caja-grid .business-cash-session-meta, .caja-grid .business-cash-age { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-light); font-size: 0.72rem; }
@@ -1372,6 +1376,14 @@
 .caja-grid .business-cash-session { grid-template-columns: minmax(0, 1fr) auto auto; }
 .caja-grid .business-cash-review { min-height: 36px; padding: 0.45rem 0.7rem; border: 1px solid var(--primary-color); border-radius: 7px; color: var(--primary-color); background: transparent; font-weight: 700; cursor: pointer; }
 .caja-grid .business-cash-review:disabled { opacity: .55; cursor: not-allowed; }
+.caja-grid .caja-session-age-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; padding: .75rem; border: 1px solid var(--ui-border-warning, var(--border-color)); border-radius: 10px; background: var(--ui-bg-warning-soft, var(--light-background)); color: var(--text-dark); }
+.caja-grid .caja-session-age-notice--important, .caja-grid .caja-session-age-notice--review { border-inline-start: 3px solid var(--ui-border-danger, var(--error-color)); }
+.caja-grid .caja-session-age-notice--attention-target { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.caja-grid .caja-session-age-notice__copy { display: grid; gap: .2rem; min-width: 0; }
+.caja-grid .caja-session-age-notice__copy strong { display: inline-flex; align-items: center; gap: .35rem; color: var(--text-dark); font-size: .85rem; }
+.caja-grid .caja-session-age-notice__copy span { color: var(--text-light); font-size: .78rem; }
+.caja-grid .caja-session-age-notice button { min-height: 40px; padding: .5rem .75rem; border: 1px solid var(--primary-color); border-radius: 7px; background: transparent; color: var(--primary-color); font-weight: 700; cursor: pointer; }
+.caja-grid .caja-session-age-notice button:disabled { opacity: .55; cursor: not-allowed; }
 .caja-modal--admin-audit { z-index: 1200; overflow-y: auto; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }
 .admin-cash-audit-body { display: grid; gap: .9rem; }
 .admin-cash-audit-loading { display: inline-flex; gap: .5rem; align-items: center; }

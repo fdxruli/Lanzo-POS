@@ -12,7 +12,27 @@ const store = vi.hoisted(() => ({
   state: null
 }));
 const backup = vi.hoisted(() => ({ attention: { enabled: false, ready: false } }));
+const cashAge = vi.hoisted(() => ({
+  mode: { cloudEnabled: false, online: true, actor: { actorKey: 'admin:admin-1' } },
+  attention: {
+    scopeKey: null,
+    status: 'idle',
+    isCloudCash: false,
+    sessions: [],
+    agedSessions: [],
+    pendingCount: 0,
+    reviewCount: 0
+  }
+}));
 vi.mock('../../../hooks/useLocalBackupAttention', () => ({ useLocalBackupAttention: () => backup.attention }));
+vi.mock('../../../hooks/useCashSessionAgeAttention', () => ({
+  default: () => cashAge.attention
+}));
+vi.mock('../../../services/cash/cashRepository', () => ({
+  cashRepository: {
+    getMode: () => cashAge.mode
+  }
+}));
 
 const local = vi.hoisted(() => ({
   snapshot: null,
@@ -176,6 +196,16 @@ beforeEach(() => {
     scopeKey: null,
     refresh: vi.fn()
   };
+  cashAge.mode = { cloudEnabled: false, online: true, actor: { actorKey: 'admin:admin-1' } };
+  cashAge.attention = {
+    scopeKey: null,
+    status: 'idle',
+    isCloudCash: false,
+    sessions: [],
+    agedSessions: [],
+    pendingCount: 0,
+    reviewCount: 0
+  };
 });
 
 describe('backup attention in the existing local bell', () => {
@@ -234,6 +264,31 @@ describe('backup attention in the existing local bell', () => {
 });
 
 describe('NotificationBell', () => {
+  it('adds one grouped local attention for multiple old open sessions', () => {
+    store.state.currentAdminUser = { ...store.state.currentAdminUser, is_owner: true };
+    cashAge.attention = {
+      scopeKey: 'owner-local',
+      status: 'success',
+      isCloudCash: false,
+      sessions: [],
+      agedSessions: [
+        { session: { id: 'old-a' }, age: { level: 'important' } },
+        { session: { id: 'old-b' }, age: { level: 'review' } }
+      ],
+      pendingCount: 2,
+      reviewCount: 1
+    };
+    renderBell();
+
+    expect(screen.getByRole('button', {
+      name: /Abrir alertas locales, 1 incidencia activa; una agrupa 2 cajas abiertas antiguas/
+    })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Abrir alertas locales/ }));
+    expect(screen.getByText('Tienes 2 cajas abiertas que requieren revisión')).toBeInTheDocument();
+    expect(screen.getByText(/1 caja lleva 3 días o más abierta/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revisar cajas' })).toBeInTheDocument();
+  });
+
   it('renders the dedicated local inventory bell for Free/Local', () => {
     renderBell();
 
