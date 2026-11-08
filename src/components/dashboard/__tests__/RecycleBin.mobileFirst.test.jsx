@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({
@@ -88,7 +88,7 @@ describe('Papelera mobile-first', () => {
   it('no elimina un elemento cuando se cancela su confirmación', async () => {
     render(<RecycleBin />);
     fireEvent.click(screen.getByRole('button', { name: /Eliminar definitivamente/ }));
-    await vi.waitFor(() => expect(harness.showConfirmModal).toHaveBeenCalledOnce());
+    await waitFor(() => expect(harness.showConfirmModal).toHaveBeenCalledOnce());
     expect(harness.permanentlyDelete).not.toHaveBeenCalled();
   });
 });
