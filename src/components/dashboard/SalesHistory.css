@@ -22,16 +22,57 @@
   flex-wrap: wrap;
 }
 
+.history-heading {
+  min-width: 0;
+}
+
+.history-heading .subtitle {
+  margin-bottom: 2px;
+}
+
+.history-result-summary,
+.history-export-note,
+.history-filter-summary {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.history-export-note {
+  margin: 4px 0;
+}
+
+.history-filter-summary {
+  margin: 4px 0 var(--spacing-sm);
+  overflow-wrap: anywhere;
+}
+
+.history-filter-summary strong {
+  color: var(--text-dark);
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 3px 0 8px;
+  color: var(--text-light);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
 .history-export-actions,
 .history-pagination {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .history-filters {
   display: grid;
-  grid-template-columns: minmax(160px, 1.5fr) repeat(5, minmax(110px, 1fr));
+  grid-template-columns: minmax(160px, 1.5fr) repeat(6, minmax(110px, 1fr));
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-sm);
 }
@@ -158,6 +199,17 @@
   color: var(--success-color);
   font-size: 1rem;
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.sale-total-label {
+  color: var(--text-light);
+  font-size: 0.62rem;
+  font-weight: 500;
 }
 
 /* Info del cuerpo */
@@ -434,5 +486,22 @@
   .sale-header,
   .sale-date {
     align-items: flex-start;
+  }
+
+  .sales-history-topbar {
+    align-items: flex-start;
+  }
+
+  .history-export-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .history-export-actions .history-secondary-btn {
+    min-height: 36px;
+  }
+
+  .history-pagination {
+    justify-content: space-between;
   }
 }

@@ -108,4 +108,40 @@ describe('reportsMapper sales final history', () => {
       status: 'closed'
     });
   });
+
+  it('preserves missing financial values and unknown totals instead of filling them with zero or page size', () => {
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      rows: [{ sale_id: 'sale-without-financial-values', status: 'closed' }],
+      limit: 50,
+      offset: 0
+    });
+
+    expect(mapped.rows[0].total).toBeNull();
+    expect(mapped.rows[0].amountPaid).toBeNull();
+    expect(mapped.rows[0].balanceDue).toBeNull();
+    expect(mapped.totalCount).toBeNull();
+    expect(mapped.total_count).toBeNull();
+    expect(mapped.hasMore).toBe(false);
+  });
+
+  it('does not assign the current time to a sale whose date is missing', () => {
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      rows: [{ sale_id: 'sale-without-date', status: 'closed' }]
+    });
+
+    expect(mapped.rows[0].timestamp).toBeNull();
+    expect(mapped.rows[0].soldAt).toBeNull();
+  });
+
+  it('marks local fallback rows as local when cloud source fields are absent', () => {
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      rows: [{ id: 'local-sale', status: 'closed', total: 15 }],
+      total_count: 1
+    }, { mode: 'local' });
+
+    expect(mapped.rows[0]).toMatchObject({
+      sourceMode: 'local',
+      sourceModeKnown: false
+    });
+  });
 });

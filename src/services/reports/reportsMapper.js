@@ -80,14 +80,16 @@ const normalizeSource = (payload = {}, modeOverride = null, { stale = false } = 
   };
 };
 
-const normalizeSalesFinalHistoryRow = (row = {}) => {
+const normalizeSalesFinalHistoryRow = (row = {}, mode = REPORT_SOURCE_MODES.CLOUD_FINAL) => {
   const cloudSaleId = pick(row, ['cloudSaleId', 'cloud_sale_id', 'sale_id', 'id']);
   const localSaleId = pick(row, ['localSaleId', 'local_sale_id', 'local_id']);
   const explicitSourceMode = pick(row, ['sourceMode', 'source_mode'], null);
   const sourceModeKnown = explicitSourceMode !== null && explicitSourceMode !== undefined && String(explicitSourceMode).trim() !== '';
   const sourceMode = sourceModeKnown
     ? explicitSourceMode
-    : (row.status === 'shadow' ? 'shadow' : 'cloud_committed');
+    : (row.status === 'shadow'
+      ? 'shadow'
+      : (mode === REPORT_SOURCE_MODES.LOCAL ? 'local' : 'cloud_committed'));
   const status = String(pick(row, ['status', 'sale_status'], 'closed') || 'closed').toLowerCase();
   const soldAt = pick(row, ['soldAt', 'sold_at', 'timestamp', 'created_at']);
   const cancelledAt = pick(row, ['cancelledAt', 'cancelled_at']);
@@ -120,7 +122,7 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
     salesChannel: traceability.salesChannel,
     ecommerceOrderId: traceability.ecommerceOrderId,
     ecommerceOrderCode: traceability.ecommerceOrderCode,
-    timestamp: soldAt || cancelledAt || new Date().toISOString(),
+    timestamp: soldAt || cancelledAt || null,
     soldAt,
     sourceMode,
     source_mode: sourceMode,
@@ -130,9 +132,9 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
     customerName: pick(row, ['customerName', 'customer_name', 'customer_snapshot_name'], 'Publico general'),
     paymentMethod: pick(row, ['paymentMethod', 'payment_method'], ''),
     paymentStatus: pick(row, ['paymentStatus', 'payment_status'], ''),
-    total: toNumber(pick(row, ['total', 'net_total', 'net_sales_total'], 0), 0),
-    amountPaid: toNumber(pick(row, ['amountPaid', 'amount_paid', 'paid_total'], 0), 0),
-    balanceDue: toNumber(pick(row, ['balanceDue', 'balance_due', 'debt_total'], 0), 0),
+    total: toNumber(pick(row, ['total', 'net_total', 'net_sales_total'], null), null),
+    amountPaid: toNumber(pick(row, ['amountPaid', 'amount_paid'], null), null),
+    balanceDue: toNumber(pick(row, ['balanceDue', 'balance_due'], null), null),
     actorName: pick(row, ['actorName', 'actor_name', 'staff_name', 'device_name'], ''),
     staffUserId: pick(row, ['staffUserId', 'staff_user_id'], null),
     deviceId: pick(row, ['deviceId', 'device_id'], null),
@@ -205,13 +207,19 @@ export const reportsMapper = {
   normalizeSalesFinalHistoryPayload(payload, { mode = REPORT_SOURCE_MODES.CLOUD_FINAL, stale = false } = {}) {
     const data = parsePayload(payload);
     const rows = normalizeArray(data.rows || data.sales || data.history || data.data)
-      .map(normalizeSalesFinalHistoryRow);
+      .map((row) => normalizeSalesFinalHistoryRow(row, mode));
     const offset = Math.max(Number(data.offset || data.page_offset || 0) || 0, 0);
     const limit = Math.max(Number(data.limit || data.page_limit || rows.length || 50) || 50, 1);
-    const totalCount = Math.max(Number(data.total_count ?? data.totalCount ?? rows.length) || rows.length, rows.length);
+    const rawTotalCount = data.total_count ?? data.totalCount;
+    const parsedTotalCount = rawTotalCount === null || rawTotalCount === undefined || rawTotalCount === ''
+      ? Number.NaN
+      : Number(rawTotalCount);
+    const totalCount = Number.isFinite(parsedTotalCount) && parsedTotalCount >= rows.length
+      ? parsedTotalCount
+      : null;
     const hasMore = data.has_more !== undefined
       ? Boolean(data.has_more)
-      : offset + rows.length < totalCount;
+      : (totalCount === null ? false : offset + rows.length < totalCount);
 
     return {
       ...data,

@@ -173,7 +173,7 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(harness.historyRequests.some((request) => request.scope === 'mine' && request.offset === 50)).toBe(false);
   });
 
-  it('shares page zero for staff without audit permission and never requests license scope', async () => {
+  it('keeps the visible history query separate and never requests license scope for staff without audit permission', async () => {
     const actor = {
       status: 'granted', actorType: 'staff', actorId: 'staff-basic', sessionId: 'session-a', permissions: ['reports']
     };
@@ -182,19 +182,21 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(await screen.findByTestId('credit-scope')).toHaveTextContent('mine');
     fireEvent.click(screen.getByRole('button', { name: 'Historial y Papelera' }));
     expect(await screen.findByTestId('sales-history')).toBeVisible();
-    await waitFor(() => expect(harness.historyRequests).toHaveLength(1));
+    await waitFor(() => expect(harness.historyRequests).toHaveLength(2));
     expect(harness.historyRequests[0]).toMatchObject({ scope: 'mine', limit: 50, offset: 0 });
     expectExactReportRange(harness.historyRequests[0]);
+    expect(harness.historyRequests[1]).toMatchObject({ scope: 'mine', limit: 50, offset: 0 });
+    expectExactReportRange(harness.historyRequests[1]);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Siguiente página' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
-    await waitFor(() => expect(harness.historyRequests).toHaveLength(2));
-    expect(harness.historyRequests[1]).toMatchObject({ scope: 'mine', limit: 50, offset: 50 });
+    await waitFor(() => expect(harness.historyRequests).toHaveLength(3));
+    expect(harness.historyRequests[2]).toMatchObject({ scope: 'mine', limit: 50, offset: 50 });
     expect(harness.historyRequests.some((request) => request.scope === 'license')).toBe(false);
     expect(harness.getOverviewReport).toHaveBeenCalledTimes(1);
   });
 
-  it('does not retry the same page-zero request after a failed shared financial history request', async () => {
+  it('keeps a failed credit reconciliation request separate from the visible sales history request', async () => {
     harness.actor = {
       status: 'granted', actorType: 'staff', actorId: 'staff-basic', sessionId: 'session-a', permissions: ['reports']
     };
@@ -210,7 +212,9 @@ describe('Dashboard Cloud final scope and history pagination', () => {
     expect(await screen.findByTestId('credit-scope')).toHaveTextContent('unavailable');
     fireEvent.click(screen.getByRole('button', { name: 'Historial y Papelera' }));
     expect(await screen.findByTestId('sales-history')).toBeVisible();
-    await waitFor(() => expect(harness.getSalesFinalHistory).toHaveBeenCalledTimes(1));
-    expect(harness.getSalesFinalHistory).toHaveBeenCalledWith(expect.objectContaining({ scope: 'mine', offset: 0 }));
+    await waitFor(() => expect(harness.getSalesFinalHistory).toHaveBeenCalledTimes(2));
+    expect(harness.getSalesFinalHistory.mock.calls.every(([filters]) => (
+      filters.scope === 'mine' && filters.offset === 0
+    ))).toBe(true);
   });
 });
