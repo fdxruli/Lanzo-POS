@@ -43,6 +43,29 @@ const RESTORE_PARTIAL_REASON_LABELS = {
   legacy_v1_backup_contains_only_original_tables: 'El formato V1 solo contiene productos, ventas y clientes.'
 };
 
+const RESTORE_PENDING_OPERATION_LABELS = {
+  sync_outbox: 'sincronización pendiente',
+  sync_conflicts: 'conflictos de sincronización',
+  financial_intents: 'intenciones financieras sin recibo confirmado',
+  transaction_log: 'transacciones locales sin resolver'
+};
+
+const LegacyBackupConfigurationNotice = ({ status }) => {
+  const legacy = status.legacyConfiguration;
+  if (!legacy?.available) return null;
+  return (
+    <div className="backup-settings-notice" role="status">
+      <strong>Se encontró una configuración de respaldo anterior.</strong>
+      <p>
+        Sigue guardada en este navegador, incluidos los archivos existentes, pero no se asignó al negocio activo porque no se puede comprobar su propietario.
+        {!status.configured && ' Para este negocio, configura un PIN y una carpeta propios en el formulario siguiente.'}
+        {status.configured && ' Este negocio conserva su configuración separada.'}
+      </p>
+      {legacy.directoryName && <p>Carpeta anterior registrada: {legacy.directoryName}.</p>}
+    </div>
+  );
+};
+
 function RestoreBackupPanel({
   isAdmin,
   status,
@@ -62,6 +85,8 @@ function RestoreBackupPanel({
     : Object.entries(restorePreview?.sourceTableCounts || {})
       .map(([table, count]) => [table, count]);
   const partialReasons = restorePreview?.coverage?.partialReasons || [];
+  const pendingDestinationOperations = Object.entries(restorePreview?.destinationPendingOperationCounts || {})
+    .filter(([, count]) => Number(count) > 0);
 
   return (
     <div className="backup-settings-danger">
@@ -112,6 +137,13 @@ function RestoreBackupPanel({
               {Object.values(restorePreview.coverage?.pendingOperationCounts || {}).some((count) => Number(count) > 0) && (
                 <p>Se detectaron operaciones financieras o de sincronización sin resolver. Se omiten del archivo para evitar repetir cargos o movimientos; concílialas antes de sincronizar.</p>
               )}
+              {pendingDestinationOperations.length > 0 && (
+                <p className="backup-restore-preview__warning">
+                  Restauración bloqueada: el negocio destino tiene {pendingDestinationOperations
+                    .map(([name, count]) => `${count} ${RESTORE_PENDING_OPERATION_LABELS[name] || name}`)
+                    .join(', ')}. Sincroniza las operaciones pendientes y resuelve los conflictos o recibos inciertos antes de volver a revisar el archivo. No se modificaron registros.
+                </p>
+              )}
               {partialReasons.length > 0 && (
                 <ul>
                   {partialReasons.map((reason) => <li key={reason}>{RESTORE_PARTIAL_REASON_LABELS[reason] || 'El archivo requiere una revisión adicional.'}</li>)}
@@ -132,7 +164,7 @@ function RestoreBackupPanel({
               type="button"
               className="btn btn-primary"
               onClick={executeRestore}
-              disabled={status.busy || !restorePreview || (restorePreview.destinationHasBusinessData && (!status.configured || !status.unlocked))}
+              disabled={status.busy || !restorePreview || pendingDestinationOperations.length > 0 || (restorePreview.destinationHasBusinessData && (!status.configured || !status.unlocked))}
             >
               <RotateCcw size={17} /> Restaurar datos
             </button>
@@ -264,6 +296,8 @@ function LocalBackupSettings({
       }
       const message = actionError.message === 'BACKUP_PIN_INVALID'
         ? 'PIN incorrecto.'
+        : actionError.message === 'BACKUP_RESTORE_PENDING_OPERATIONS'
+          ? 'No se restauró: el negocio destino tiene operaciones de sincronización o financieras pendientes. Sincronízalas y resuelve recibos inciertos antes de volver a revisar el archivo.'
         : actionError.message;
       setError(message);
       toast.error(message);
@@ -469,6 +503,8 @@ function LocalBackupSettings({
           description={initialDescription}
         />
 
+        <LegacyBackupConfigurationNotice status={status} />
+
         {!status.supported && (
           <div className="backup-settings-notice">
             Este navegador no admite escritura silenciosa en carpetas. Cada respaldo generara una descarga manual.
@@ -498,7 +534,7 @@ function LocalBackupSettings({
 
         <div className="backup-settings-actions">
           <button type="button" className="btn btn-primary" onClick={configure} disabled={status.busy || pin.length < 8 || pin !== pinConfirm}>
-            {status.busy ? <><Loader2 size={17} className="animate-spin" /> Configurando...</> : configureButtonLabel}
+            {status.busy ? <><Loader2 size={17} className="animate-spin" /> Configurando...</> : status.legacyConfiguration?.available ? 'Configurar respaldo para este negocio' : configureButtonLabel}
           </button>
         </div>
         <RestoreBackupPanel
@@ -525,6 +561,8 @@ function LocalBackupSettings({
         title={configuredTitle}
         description={configuredDescription}
       />
+
+      <LegacyBackupConfigurationNotice status={status} />
 
       {!status.supported && (
         <div className="backup-settings-notice">

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   clearPersistedBackupKey: vi.fn(),
+  getLegacyBackupConfiguration: vi.fn(),
   getBackupSettings: vi.fn(),
   getPersistedBackupKey: vi.fn(),
   savePersistedBackupKey: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('../backupConfigDb', () => ({
     configured: false,
     directoryHandle: null
   },
+  getLegacyBackupConfiguration: mocks.getLegacyBackupConfiguration,
   getBackupSettings: mocks.getBackupSettings,
   getPersistedBackupKey: mocks.getPersistedBackupKey,
   savePersistedBackupKey: mocks.savePersistedBackupKey,
@@ -85,11 +87,13 @@ describe('BackupManager persisted key', () => {
     };
     sessionStorage.clear();
     mocks.clearPersistedBackupKey.mockReset();
+    mocks.getLegacyBackupConfiguration.mockReset();
     mocks.getBackupSettings.mockReset();
     mocks.getPersistedBackupKey.mockReset();
     mocks.savePersistedBackupKey.mockReset();
     mocks.saveBackupSettings.mockReset();
     mocks.getBackupSettings.mockResolvedValue({ ...configuredSettings });
+    mocks.getLegacyBackupConfiguration.mockResolvedValue({ available: false });
     mocks.getPersistedBackupKey.mockResolvedValue(null);
     mocks.savePersistedBackupKey.mockResolvedValue();
     mocks.clearPersistedBackupKey.mockResolvedValue();
@@ -134,6 +138,41 @@ describe('BackupManager persisted key', () => {
       expectedDestinationHasBusinessData: false
     }));
     expect(workerSpy).not.toHaveBeenCalledWith('backup', expect.anything());
+  });
+
+  it('rejects restore with pending destination operations before making a pre-restore copy', async () => {
+    const workerSpy = vi.spyOn(backupManager, 'callWorker');
+
+    await expect(backupManager.restore(new Blob(['encrypted archive']), '12345678', {
+      destinationHasBusinessData: true,
+      destinationPendingOperationCounts: { sync_outbox: 1, financial_intents: 0 }
+    })).rejects.toThrow('BACKUP_RESTORE_PENDING_OPERATIONS');
+
+    expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an unassigned prior configuration without reading its key into the active business', async () => {
+    mocks.getBackupSettings.mockResolvedValue({ configured: false, directoryHandle: null });
+    mocks.getLegacyBackupConfiguration.mockResolvedValue({
+      available: true,
+      configured: true,
+      hasPersistedKey: true,
+      directoryName: 'Respaldos anteriores',
+      lastBackupFile: 'RESPALDO_LANZO_legacy.lzbk'
+    });
+    const workerSpy = vi.spyOn(backupManager, 'callWorker');
+
+    const status = await backupManager.initialize();
+
+    expect(status.configured).toBe(false);
+    expect(status.legacyConfiguration).toMatchObject({
+      available: true,
+      hasPersistedKey: true,
+      directoryName: 'Respaldos anteriores'
+    });
+    expect(mocks.getPersistedBackupKey).toHaveBeenCalledWith(`t_${'a'.repeat(32)}`);
+    expect(mocks.getPersistedBackupKey).not.toHaveBeenCalledWith('primary');
+    expect(workerSpy).not.toHaveBeenCalled();
   });
 
   it('loads a separate configuration after the active business changes', async () => {

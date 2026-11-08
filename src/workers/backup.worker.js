@@ -19,7 +19,11 @@ import {
   inspectBackupArchive,
   restoreWhitelistedDatabase
 } from '../services/backup/backupRestore.js';
-import { BACKUP_DATA_CATEGORIES } from '../services/backup/backupScope.js';
+import {
+  BACKUP_DATA_CATEGORIES,
+  BACKUP_MONITORED_TABLE_NAMES
+} from '../services/backup/backupScope.js';
+import { countPendingRestoreOperations } from '../services/backup/backupRestore.js';
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
@@ -321,9 +325,13 @@ async function inspectBackup(file, pin, context = null) {
 
     const targetCounts = {};
     const targetNames = archive.safeSourceNames.filter((name) => database.tables.some((table) => table.name === name));
-    await database.transaction('r', targetNames, async () => {
+    const monitoredNames = BACKUP_MONITORED_TABLE_NAMES.filter((name) => database.tables.some((table) => table.name === name));
+    const pendingRows = {};
+    await database.transaction('r', [...new Set([...targetNames, ...monitoredNames])].map((name) => database.table(name)), async () => {
       for (const tableName of targetNames) targetCounts[tableName] = await database.table(tableName).count();
+      for (const tableName of monitoredNames) pendingRows[tableName] = await database.table(tableName).toArray();
     });
+    const destinationPendingOperationCounts = countPendingRestoreOperations(pendingRows);
     const destinationHasBusinessData = Object.values(targetCounts).some((count) => count > 0);
     return {
       header: decrypted.header,
@@ -339,7 +347,8 @@ async function inspectBackup(file, pin, context = null) {
         partialReasons: ['legacy_v1_backup_contains_only_original_tables']
       },
       targetTableCounts: targetCounts,
-      destinationHasBusinessData
+      destinationHasBusinessData,
+      destinationPendingOperationCounts
     };
   } finally {
     database.close();
@@ -357,13 +366,20 @@ async function restoreBackup(file, pin, context = null, expectedDestinationHasBu
     if (archive.metadata?.data?.databaseName !== context.databaseName) throw new Error('BACKUP_DATABASE_MISMATCH');
     const targetNames = archive.safeSourceNames.filter((name) => database.tables.some((table) => table.name === name));
     let destinationHasBusinessData = false;
-    await database.transaction('r', targetNames, async () => {
+    const monitoredNames = BACKUP_MONITORED_TABLE_NAMES.filter((name) => database.tables.some((table) => table.name === name));
+    const pendingRows = {};
+    await database.transaction('r', [...new Set([...targetNames, ...monitoredNames])].map((name) => database.table(name)), async () => {
       for (const tableName of targetNames) {
         if (await database.table(tableName).count() > 0) destinationHasBusinessData = true;
       }
+      for (const tableName of monitoredNames) pendingRows[tableName] = await database.table(tableName).toArray();
     });
+    const destinationPendingOperationCounts = countPendingRestoreOperations(pendingRows);
     if (destinationHasBusinessData !== (expectedDestinationHasBusinessData === true)) {
       throw new Error('BACKUP_DESTINATION_CHANGED_REVIEW_AGAIN');
+    }
+    if (Object.values(destinationPendingOperationCounts).some((count) => count > 0)) {
+      throw new Error('BACKUP_RESTORE_PENDING_OPERATIONS');
     }
     const restored = await restoreWhitelistedDatabase(database, decrypted.blob, {
       expectedDatabaseName: context.databaseName,

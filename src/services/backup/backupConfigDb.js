@@ -52,6 +52,30 @@ export async function getBackupSettings(tenantKey = 'primary') {
   return { ...defaultSettingsFor(tenantKey), ...(stored || {}) };
 }
 
+export async function getLegacyBackupConfiguration() {
+  const [settings, persistedKey] = await Promise.all([
+    configDb.settings.get(LEGACY_SETTINGS_KEY),
+    configDb.secrets.get(LEGACY_SESSION_KEY)
+  ]);
+  const available = Boolean(settings && (
+    settings.configured === true
+    || settings.directoryHandle
+    || settings.directoryName
+    || settings.salt
+    || settings.verifier
+    || settings.lastBackupAt
+    || settings.lastBackupFile
+  )) || Boolean(persistedKey);
+  return {
+    available,
+    configured: settings?.configured === true,
+    hasPersistedKey: Boolean(persistedKey),
+    directoryName: String(settings?.directoryName || ''),
+    lastBackupAt: settings?.lastBackupAt || null,
+    lastBackupFile: String(settings?.lastBackupFile || '')
+  };
+}
+
 export async function saveBackupSettings(patch, tenantKey = 'primary') {
   const current = await getBackupSettings(tenantKey);
   const next = {

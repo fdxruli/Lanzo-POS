@@ -315,6 +315,22 @@ const stableHash = async (value) => {
   return Array.from(digest.slice(0, 12), (byte) => byte.toString(16).padStart(2, '0')).join('');
 };
 
+const csvDestinationSnapshot = ({ existingProducts = [], existingCategories = [], existingBatches = [] }) => JSON.stringify({
+  products: existingProducts.map((product) => ({
+    id: product.id,
+    name: product.name,
+    barcode: product.barcode,
+    transferSourceKey: product.transferSourceKey,
+    stock: product.stock,
+    committedStock: product.committedStock,
+    cost: product.cost,
+    hasBatches: product.hasBatches
+  })).sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  categories: existingCategories.map(({ id, name }) => ({ id, name }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  batchIds: existingBatches.map(({ id }) => id).sort((left, right) => String(left).localeCompare(String(right)))
+});
+
 const safeProductFields = (source) => {
   const result = { ...source };
   for (const field of [
@@ -392,7 +408,7 @@ const makeProductFromCsv = (entry, id, categoryId, marker) => {
   return product;
 };
 
-async function buildCsvImportPlan(csvContent, { existingProducts, existingCategories }) {
+async function buildCsvImportPlan(csvContent, { existingProducts, existingCategories, existingBatches = [] }) {
   const entries = readCsvRows(csvContent);
   const errors = [];
   const existingByMarker = new Map(existingProducts
@@ -446,6 +462,12 @@ async function buildCsvImportPlan(csvContent, { existingProducts, existingCatego
         let category = categoryCreates.get(entry.normalizedCategory);
         if (!category) {
           const id = `transfer-category-${await stableHash(entry.normalizedCategory)}`;
+          const occupiedId = existingCategories.find((candidate) => candidate.id === id);
+          if (occupiedId) {
+            conflicts.push(entry);
+            errors.push(`Fila ${entry.rowNumber}: El identificador generado para la categoría ya está ocupado.`);
+            continue;
+          }
           category = { id, name: entry.categoryName, isActive: true };
           categoryCreates.set(entry.normalizedCategory, category);
         }
@@ -479,7 +501,13 @@ async function buildCsvImportPlan(csvContent, { existingProducts, existingCatego
       errors.push(`Fila ${entry.rowNumber}: El identificador interno ya existe; revisa el archivo antes de importar.`);
       continue;
     }
-    accepted.push({ entry, id, categoryId, marker });
+    const batchId = entry.stock > 0 ? `transfer-batch-${await stableHash(marker)}` : null;
+    if (batchId && existingBatches.some((batch) => batch.id === batchId)) {
+      conflicts.push(entry);
+      errors.push(`Fila ${entry.rowNumber}: El identificador del lote inicial ya está ocupado.`);
+      continue;
+    }
+    accepted.push({ entry, id, categoryId, marker, batchId });
   }
   return {
     accepted,
@@ -507,9 +535,10 @@ export async function previewProductCsvImport(csvContent, { assertAuthorized = (
   const context = getContext();
   assertAuthorized();
   await db.open();
-  const snapshot = await db.transaction('r', [db.table(STORES.MENU), db.table(STORES.CATEGORIES)], async () => ({
+  const snapshot = await db.transaction('r', [db.table(STORES.MENU), db.table(STORES.CATEGORIES), db.table(STORES.PRODUCT_BATCHES)], async () => ({
     existingProducts: await db.table(STORES.MENU).toArray(),
-    existingCategories: await db.table(STORES.CATEGORIES).toArray()
+    existingCategories: await db.table(STORES.CATEGORIES).toArray(),
+    existingBatches: await db.table(STORES.PRODUCT_BATCHES).toArray()
   }));
   assertAuthorized();
   assertCurrentContext(context);
@@ -521,24 +550,38 @@ export async function importProductCsv(csvContent, { assertAuthorized = () => {}
   assertAuthorized();
   await db.open();
   assertCurrentContext(context);
+  const snapshot = await db.transaction('r', [
+    db.table(STORES.MENU), db.table(STORES.CATEGORIES), db.table(STORES.PRODUCT_BATCHES)
+  ], async () => ({
+    existingProducts: await db.table(STORES.MENU).toArray(),
+    existingCategories: await db.table(STORES.CATEGORIES).toArray(),
+    existingBatches: await db.table(STORES.PRODUCT_BATCHES).toArray()
+  }));
+  assertAuthorized();
+  assertCurrentContext(context);
+  const plan = await buildCsvImportPlan(csvContent, snapshot);
+  if (plan.conflicts.length > 0) throw new Error('DATA_TRANSFER_CONFLICTS_REVIEW');
   let result;
   await db.transaction('rw', [
     db.table(STORES.MENU), db.table(STORES.CATEGORIES), db.table(STORES.PRODUCT_BATCHES)
   ], async () => {
     assertAuthorized();
     assertCurrentContext(context);
-    const plan = await buildCsvImportPlan(csvContent, {
+    const currentSnapshot = {
       existingProducts: await db.table(STORES.MENU).toArray(),
-      existingCategories: await db.table(STORES.CATEGORIES).toArray()
-    });
-    if (plan.conflicts.length > 0) throw new Error('DATA_TRANSFER_CONFLICTS_REVIEW');
+      existingCategories: await db.table(STORES.CATEGORIES).toArray(),
+      existingBatches: await db.table(STORES.PRODUCT_BATCHES).toArray()
+    };
+    if (csvDestinationSnapshot(currentSnapshot) !== csvDestinationSnapshot(snapshot)) {
+      throw new Error('DATA_TRANSFER_DESTINATION_CHANGED_REVIEW_AGAIN');
+    }
+    const currentProductsById = new Map(currentSnapshot.existingProducts.map((product) => [product.id, product]));
     for (const category of plan.categoryCreates) {
       assertAuthorized();
       await db.table(STORES.CATEGORIES).put(category);
     }
-    for (const { entry, id, categoryId, marker } of plan.accepted) {
+    for (const { entry, id, categoryId, marker, batchId } of plan.accepted) {
       const product = makeProductFromCsv(entry, id, categoryId, marker);
-      const batchId = `transfer-batch-${await stableHash(marker)}`;
       const batches = entry.stock > 0 ? [{
         id: batchId,
         productId: id,
@@ -557,14 +600,16 @@ export async function importProductCsv(csvContent, { assertAuthorized = () => {}
       assertCurrentContext(context);
     }
     for (const { entry, existing, marker, categoryId } of plan.updates) {
+      const currentExisting = currentProductsById.get(existing.id);
+      if (!currentExisting) throw new Error('DATA_TRANSFER_DESTINATION_CHANGED_REVIEW_AGAIN');
       const updated = {
-        ...existing,
-        ...safeProductFields(makeProductFromCsv(entry, existing.id, categoryId || existing.categoryId || '', marker)),
-        id: existing.id,
-        stock: existing.stock,
-        committedStock: existing.committedStock,
-        cost: existing.cost,
-        hasBatches: existing.hasBatches,
+        ...currentExisting,
+        ...safeProductFields(makeProductFromCsv(entry, currentExisting.id, categoryId || currentExisting.categoryId || '', marker)),
+        id: currentExisting.id,
+        stock: currentExisting.stock,
+        committedStock: currentExisting.committedStock,
+        cost: currentExisting.cost,
+        hasBatches: currentExisting.hasBatches,
         updatedAt: new Date().toISOString()
       };
       assertAuthorized();
@@ -621,6 +666,23 @@ const getPortableTables = (bundle) => {
   return Object.fromEntries(PORTABLE_TRANSFER_TABLES.map((name) => [name, Array.isArray(tables[name]) ? tables[name] : []]));
 };
 
+const catalogDestinationReviewSnapshot = (existing) => ({
+  categories: existing.categories.map(({ id, name, isActive }) => ({ id, name, isActive }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  products: existing.products.map(({ id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey }) => ({
+    id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey
+  })).sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  customers: existing.customers.map(({ id, name, phone, updatedAt, metadata }) => ({
+    id, name, phone, updatedAt, portabilitySourceKey: metadata?.portabilitySourceKey || ''
+  })).sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  images: existing.images.map(({ id, transferSourceKey }) => ({ id, transferSourceKey }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  ingredients: existing.ingredients.map(({ id, name, transferSourceKey }) => ({ id, name, transferSourceKey }))
+    .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  productBatches: (existing.productBatches || []).map(({ id }) => id)
+    .sort((left, right) => String(left).localeCompare(String(right)))
+});
+
 async function buildCatalogTransferPlan(bundle, existing) {
   const source = getPortableTables(bundle);
   const datasetId = String(bundle.transfer.datasetId);
@@ -656,6 +718,10 @@ async function buildCatalogTransferPlan(bundle, existing) {
     } else {
       const duplicateInFile = categoryCreates.find((row) => normalizeName(row.name) === normalized);
       const id = `transfer-category-${await stableHash(`${datasetId}:category:${category.id}`)}`;
+      if (!duplicateInFile && existingCategories.some((candidate) => candidate.id === id)) {
+        conflicts.push(`Categoría “${category.name}”: el identificador generado ya está ocupado en este negocio.`);
+        continue;
+      }
       const target = duplicateInFile || { id, name: String(category.name).trim(), isActive: category.isActive !== false };
       if (!duplicateInFile) categoryCreates.push(target);
       categoryIdMap.set(category.id, target.id);
@@ -758,12 +824,37 @@ async function buildCatalogTransferPlan(bundle, existing) {
         ? Number(variant.price)
         : Number(product.price)
     })).filter((variant) => variant.talla || variant.color);
-    newProducts.push({ source: product, targetId, marker, variants });
+    const variantBatches = await Promise.all(variants.map(async (variant) => ({
+      id: `transfer-variant-${await stableHash(`${datasetId}:variant:${product.id}:${variant.talla}:${variant.color}:${variant.sku}`)}`,
+      productId: targetId,
+      stock: 0,
+      committedStock: 0,
+      cost: 0,
+      price: variant.price,
+      sku: variant.sku || null,
+      attributes: { talla: variant.talla, color: variant.color },
+      trackStock: true,
+      isActive: true,
+      status: 'active',
+      notes: 'Variante transferida sin existencias'
+    })));
+    const existingBatchIds = new Set((existing.productBatches || []).map(({ id: batchId }) => batchId));
+    const plannedBatchIds = new Set();
+    if (variantBatches.some(({ id: batchId }) => {
+      if (existingBatchIds.has(batchId) || plannedBatchIds.has(batchId)) return true;
+      plannedBatchIds.add(batchId);
+      return false;
+    })) {
+      productConflicts.push(`Producto ${product.name}: el identificador de una variante ya está ocupado.`);
+      continue;
+    }
+    newProducts.push({ source: product, targetId, marker, variants, variantBatches });
   }
 
   const existingCustomersByMarker = new Map(existing.customers
     .filter((customer) => customer.metadata?.portabilitySourceKey)
     .map((customer) => [customer.metadata.portabilitySourceKey, customer]));
+  const existingCustomersById = new Map(existing.customers.map((customer) => [customer.id, customer]));
   const existingCustomersByPhone = new Map();
   for (const customer of existing.customers) {
     const key = String(customer.phone || '').replace(/\D/g, '');
@@ -800,17 +891,19 @@ async function buildCatalogTransferPlan(bundle, existing) {
       }
       continue;
     }
-    customerCreates.push({
-      source: customer,
-      targetId: `transfer-customer-${await stableHash(marker)}`,
-      marker
-    });
+    const targetId = `transfer-customer-${await stableHash(marker)}`;
+    if (existingCustomersById.has(targetId)) {
+      customerConflicts.push(`Cliente ${customer.name}: el identificador generado ya está ocupado en este negocio.`);
+      continue;
+    }
+    customerCreates.push({ source: customer, targetId, marker });
   }
 
   const sourceImages = source.images;
   const existingImagesByMarker = new Map(existing.images
     .filter((image) => image.transferSourceKey)
     .map((image) => [image.transferSourceKey, image]));
+  const existingImagesById = new Map(existing.images.map((image) => [image.id, image]));
   const imageIdMap = new Map();
   const imageCreates = [];
   const imageDuplicates = [];
@@ -821,12 +914,14 @@ async function buildCatalogTransferPlan(bundle, existing) {
     const id = found?.id || `transfer-image-${await stableHash(marker)}`;
     imageIdMap.set(image.id, id);
     if (found) imageDuplicates.push(image);
+    else if (existingImagesById.has(id)) conflicts.push(`Imagen ${image.id}: el identificador generado ya está ocupado en este negocio.`);
     else if (image.blob) imageCreates.push({ source: image, targetId: id, marker });
   }
 
   const existingIngredientsByMarker = new Map(existing.ingredients
     .filter((ingredient) => ingredient.transferSourceKey)
     .map((ingredient) => [ingredient.transferSourceKey, ingredient]));
+  const existingIngredientsById = new Map(existing.ingredients.map((ingredient) => [ingredient.id, ingredient]));
   const ingredientIdMap = new Map();
   const ingredientCreates = [];
   const ingredientDuplicates = [];
@@ -843,6 +938,10 @@ async function buildCatalogTransferPlan(bundle, existing) {
       ingredientDuplicates.push(ingredient);
       continue;
     }
+    if (existingIngredientsById.has(targetId)) {
+      conflicts.push(`Insumo ${ingredient.name}: el identificador generado ya está ocupado en este negocio.`);
+      continue;
+    }
     ingredientCreates.push({
       source: ingredient,
       targetId,
@@ -850,17 +949,8 @@ async function buildCatalogTransferPlan(bundle, existing) {
     });
   }
 
-  const reviewSnapshot = {
-    categories: existing.categories.map(({ id, name, isActive }) => ({ id, name, isActive })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
-    products: existing.products.map(({ id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey }) => ({
-      id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey
-    })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
-    customers: existing.customers.map(({ id, name, phone, updatedAt, metadata }) => ({
-      id, name, phone, updatedAt, portabilitySourceKey: metadata?.portabilitySourceKey || ''
-    })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
-    images: existing.images.map(({ id, transferSourceKey }) => ({ id, transferSourceKey })).sort((a, b) => String(a.id).localeCompare(String(b.id))),
-    ingredients: existing.ingredients.map(({ id, name, transferSourceKey }) => ({ id, name, transferSourceKey })).sort((a, b) => String(a.id).localeCompare(String(b.id)))
-  };
+  const reviewSnapshot = catalogDestinationReviewSnapshot(existing);
+  const reviewSnapshotJson = JSON.stringify(reviewSnapshot);
   const reviewToken = await stableHash(JSON.stringify({ datasetId, reviewSnapshot }));
 
   const excludedTableCounts = Object.fromEntries(Object.keys(bundle.tableCounts || {})
@@ -888,6 +978,7 @@ async function buildCatalogTransferPlan(bundle, existing) {
     conflicts: [...conflicts, ...productConflicts, ...customerConflicts],
     errors,
     reviewToken,
+    reviewSnapshotJson,
     summary: {
       categories: { create: categoryCreates.length, reuse: categoryIdMap.size - categoryCreates.length, conflicts: conflicts.length },
       products: { create: newProducts.length, update: productUpdates.length, duplicates: productDuplicates.length, conflicts: productConflicts.length },
@@ -905,7 +996,8 @@ const loadCatalogDestination = async () => ({
   products: await db.table(STORES.MENU).toArray(),
   customers: await db.table(STORES.CUSTOMERS).toArray(),
   images: await db.table(STORES.IMAGES).toArray(),
-  ingredients: await db.table(STORES.INGREDIENTS).toArray()
+  ingredients: await db.table(STORES.INGREDIENTS).toArray(),
+  productBatches: await db.table(STORES.PRODUCT_BATCHES).toArray()
 });
 
 export async function previewCatalogTransfer(bundle, { assertAuthorized = () => {} } = {}) {
@@ -913,8 +1005,9 @@ export async function previewCatalogTransfer(bundle, { assertAuthorized = () => 
   assertAuthorized();
   getPortableTables(bundle);
   await db.open();
-  const tables = [db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.CUSTOMERS), db.table(STORES.IMAGES), db.table(STORES.INGREDIENTS)];
-  const plan = await db.transaction('r', tables, async () => buildCatalogTransferPlan(bundle, await loadCatalogDestination()));
+  const tables = [db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.CUSTOMERS), db.table(STORES.IMAGES), db.table(STORES.INGREDIENTS), db.table(STORES.PRODUCT_BATCHES)];
+  const snapshot = await db.transaction('r', tables, loadCatalogDestination);
+  const plan = await buildCatalogTransferPlan(bundle, snapshot);
   assertAuthorized();
   assertCurrentContext(context);
   return { summary: plan.summary, conflicts: plan.conflicts, errors: plan.errors, reviewToken: plan.reviewToken };
@@ -982,15 +1075,23 @@ export async function importCatalogTransfer(bundle, expectedPreview = null, { as
     db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.CUSTOMERS),
     db.table(STORES.IMAGES), db.table(STORES.INGREDIENTS), db.table(STORES.PRODUCT_BATCHES)
   ];
+  const snapshot = await db.transaction('r', tables, loadCatalogDestination);
+  const plan = await buildCatalogTransferPlan(bundle, snapshot);
+  if (expectedPreview?.reviewToken && plan.reviewToken !== expectedPreview.reviewToken) {
+    throw new Error('DATA_TRANSFER_DESTINATION_CHANGED_REVIEW_AGAIN');
+  }
+  if (plan.conflicts.length > 0 || plan.errors.length > 0) {
+    throw new Error('DATA_TRANSFER_CONFLICTS_REVIEW');
+  }
+  assertAuthorized();
+  assertCurrentContext(context);
   await db.transaction('rw', tables, async () => {
     assertAuthorized();
     assertCurrentContext(context);
-    const plan = await buildCatalogTransferPlan(bundle, await loadCatalogDestination());
-    if (expectedPreview?.reviewToken && plan.reviewToken !== expectedPreview.reviewToken) {
+    const currentSnapshot = await loadCatalogDestination();
+    const currentReviewSnapshotJson = JSON.stringify(catalogDestinationReviewSnapshot(currentSnapshot));
+    if (currentReviewSnapshotJson !== plan.reviewSnapshotJson) {
       throw new Error('DATA_TRANSFER_DESTINATION_CHANGED_REVIEW_AGAIN');
-    }
-    if (plan.conflicts.length > 0 || plan.errors.length > 0) {
-      throw new Error('DATA_TRANSFER_CONFLICTS_REVIEW');
     }
     for (const category of plan.categoryCreates) {
       assertAuthorized();
@@ -1025,21 +1126,7 @@ export async function importCatalogTransfer(bundle, expectedPreview = null, { as
         plan.ingredientIdMap,
         item.variants
       );
-      const variantBatches = await Promise.all(item.variants.map(async (variant) => ({
-        id: `transfer-variant-${await stableHash(`${plan.datasetId}:variant:${item.source.id}:${variant.talla}:${variant.color}:${variant.sku}`)}`,
-        productId: item.targetId,
-        stock: 0,
-        committedStock: 0,
-        cost: 0,
-        price: variant.price,
-        sku: variant.sku || null,
-        attributes: { talla: variant.talla, color: variant.color },
-        trackStock: true,
-        isActive: true,
-        status: 'active',
-        notes: 'Variante transferida sin existencias'
-      })));
-      await productsRepository.createProductWithInitialInventory(product, variantBatches);
+      await productsRepository.createProductWithInitialInventory(product, item.variantBatches);
       assertCurrentContext(context);
     }
     for (const item of plan.productUpdates) {

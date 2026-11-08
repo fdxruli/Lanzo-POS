@@ -8,6 +8,7 @@ import {
 import {
   clearPersistedBackupKey,
   DEFAULT_BACKUP_SETTINGS,
+  getLegacyBackupConfiguration,
   getBackupSettings,
   getPersistedBackupKey,
   savePersistedBackupKey,
@@ -165,6 +166,7 @@ class BackupManager {
       initialized: false,
       configured: false,
       unlocked: false,
+      legacyConfiguration: null,
       permission: 'unsupported',
       supported: typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function',
       busy: false,
@@ -189,6 +191,7 @@ class BackupManager {
       this.settings = { ...DEFAULT_BACKUP_SETTINGS };
       this.state.configured = false;
       this.state.unlocked = false;
+      this.state.legacyConfiguration = null;
       this.state.initialized = true;
       await this.refreshPermission();
       this.emit();
@@ -213,6 +216,7 @@ class BackupManager {
     this.tenantKey = tenantKey;
     this.tenantContext = context;
     this.settings = await getBackupSettings(tenantKey);
+    this.state.legacyConfiguration = await getLegacyBackupConfiguration().catch(() => null);
     this.state.configured = this.settings.configured === true;
     this.state.unlocked = false;
     this.state.initialized = true;
@@ -638,6 +642,9 @@ class BackupManager {
     const inspected = preview || await this.inspectRestore(file, pin);
     if (!isActiveTenantWorkerContext(tenantContext)) {
       throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    }
+    if (Object.values(inspected.destinationPendingOperationCounts || {}).some((count) => Number(count) > 0)) {
+      throw new Error('BACKUP_RESTORE_PENDING_OPERATIONS');
     }
     if (inspected.destinationHasBusinessData) {
       if (!this.state.configured || !this.state.unlocked) {

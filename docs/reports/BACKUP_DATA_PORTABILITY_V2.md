@@ -6,7 +6,7 @@ Este documento describe la cobertura implementada en el cliente y el recorrido m
 
 El respaldo recupera las tablas de negocio incluidas en la lista explícita de `backupScope.js`. No copia colas de sincronización, intenciones financieras pendientes, credenciales del dispositivo ni estado temporal del navegador. Cuando detecta trabajo pendiente o una caja abierta, marca la cobertura como parcial y lo muestra durante la revisión del archivo.
 
-La restauración comprueba el PIN, la integridad autenticada del archivo, la identidad de la licencia, el nombre de la base, las tablas requeridas y el estado actual del destino. Prepara el archivo en una base temporal y reemplaza las tablas aprobadas en una transacción del negocio. La transacción evita que un fallo de escritura deje la base destino a medias. La restauración conserva identificadores y referencias tal como aparecen en el archivo; no ejecuta una validación general de relaciones contables ni reconcilia saldos contra Cloud.
+La restauración comprueba el PIN, la integridad autenticada del archivo, la identidad de la licencia, el nombre de la base, las tablas requeridas y las operaciones pendientes del destino. Si detecta trabajo de sincronización o una intención financiera sin resolver, la bloquea antes de reemplazar registros. Prepara el archivo en una base temporal y reemplaza las tablas aprobadas en una transacción del negocio. La restauración conserva identificadores y referencias tal como aparecen en el archivo; no ejecuta una validación general de relaciones contables ni reconcilia saldos contra Cloud.
 
 ## Matriz de cobertura
 
@@ -57,7 +57,7 @@ La etiqueta `completa` indica que las tablas aprobadas se exportaron y que los i
 
 La revisión automática no compara solo conteos: las tablas de negocio actualizan una revisión tenant-local ante altas, cambios y borrados. El proceso compara revisión y conteos ligeros; si la revisión no puede persistirse o el respaldo anterior falló, vuelve a intentar en vez de omitir el respaldo. En navegadores sin escritura automática disponible, el usuario debe descargar manualmente. El intervalo automático es de cuatro horas con la aplicación abierta.
 
-La configuración y la sesión criptográfica se guardan con IDs separados por negocio. La retención filtra por el prefijo de huella del negocio. Al cambiar PIN se migran archivos antiguos genéricos solo después de descifrarlos y validar su identidad; los archivos de otros negocios no se migran.
+La configuración y la sesión criptográfica se guardan con IDs separados por negocio. La configuración global anterior (`primary`) permanece intacta y se muestra como configuración sin propietario verificado; no se copia su clave a una licencia nueva. El usuario puede configurar un PIN y destino propios para el negocio activo. La retención filtra por el prefijo de huella del negocio. Los archivos antiguos no se eliminan al iniciar ni al cambiar de negocio.
 
 ## Evidencia automatizada
 
@@ -67,11 +67,12 @@ Las pruebas focalizadas cubren whitelist y exclusiones, snapshot con conteos de 
 
 ### Requisitos y estado seguro
 
-1. Usa el URL Preview del commit que contiene este documento. Confirma que indica entorno Preview y que no redirige a Production.
-2. Usa únicamente una licencia Free de prueba aprobada y desechable, y un negocio sin información que deba conservarse. Antes de activar, confirma que el entorno Preview está conectado a un servicio de licencias autorizado para QA. Si la activación escribiría en Supabase Production, detén la prueba: esta tarea no autorizó esas escrituras.
-3. Usa un perfil de navegador dedicado para el negocio origen y otro perfil limpio para destino. No limpies almacenamiento de un perfil con datos reales.
-4. Guarda PIN y archivos de prueba en un medio privado temporal. No adjuntes respaldos ni datos personales en el PR o en evidencia pública.
-5. En Chrome o Edge prueba tanto pestaña como PWA instalada. Para móvil usa Android/PWA con descarga manual cuando no aparezca el selector persistente de carpetas.
+1. Usa el URL Vercel Preview del commit que contiene este documento. Confirma que indica entorno Preview y que está conectado al proyecto Supabase Production autorizado para esta prueba.
+2. Usa exclusivamente licencias y negocios de prueba aprobados dentro de ese proyecto. No abras ni modifiques negocios reales.
+3. No ejecutes migraciones, SQL ni escrituras administrativas en Supabase Production. Las operaciones de la aplicación Preview deben limitarse a los negocios de prueba autorizados.
+4. Usa un perfil de navegador dedicado para el negocio origen y otro perfil limpio para destino. No limpies almacenamiento de un perfil con datos reales.
+5. Guarda PIN y archivos de prueba en un medio privado temporal. No adjuntes respaldos ni datos personales en el PR o en evidencia pública.
+6. En Chrome o Edge prueba tanto pestaña como PWA instalada. Para móvil usa Android/PWA con descarga manual cuando no aparezca el selector persistente de carpetas.
 
 ### Recorrido principal — mismo negocio, equipo limpio
 
@@ -105,14 +106,15 @@ Las pruebas focalizadas cubren whitelist y exclusiones, snapshot con conteos de 
 ### Archivos inválidos, versiones y PWA
 
 21. Prueba un PIN incorrecto y después un duplicado de archivo con un byte alterado. Ambos deben rechazarse antes de escribir datos. Prueba un archivo de otra licencia autorizada y confirma que se rechace por identidad aunque el PIN sea correcto.
-22. Si se dispone de una copia V1 de prueba, confirma la etiqueta parcial, la restauración de `menu`, `sales`, `customers` y que `categories`/otras tablas ya existentes en destino no se borran.
-23. Instala la Preview como PWA en el perfil de prueba. Tras un nuevo build Preview, vuelve a abrirla y confirma que la versión se actualiza y las pantallas de respaldo/portabilidad siguen disponibles. No fuerces una actualización mientras haya una operación financiera en curso.
+22. En un negocio de prueba, deja una operación de sincronización pendiente o una intención financiera incierta usando los flujos normales. Revisa el archivo en el destino: la restauración debe quedar bloqueada, explicar cómo resolverla y conservar intactos los registros actuales. Resuelve el pendiente por el flujo normal y vuelve a revisar. No uses SQL ni cambios administrativos para fabricar el estado.
+23. Si se dispone de una copia V1 de prueba, confirma la etiqueta parcial, la restauración de `menu`, `sales`, `customers` y que `categories`/otras tablas ya existentes en destino no se borran. Si existe configuración antigua `primary`, confirma que se informa sin asignarla al negocio y que los archivos anteriores siguen disponibles.
+24. Instala la Preview como PWA en el perfil de prueba. Tras un nuevo build Preview, vuelve a abrirla y confirma que la versión se actualiza y las pantallas de respaldo/portabilidad siguen disponibles. No fuerces una actualización mientras haya una operación financiera en curso.
 
 ### Evidencia, criterios de fallo y limpieza
 
-24. Guarda capturas de Preview URL/commit, cobertura del respaldo, vista previa de restauración, saldo del cliente, detalle de apartado, inventario por lote, cierre y movimientos de caja, archivos CSV/JSON, vista previa del catálogo transferido y mensaje de rechazo de archivo alterado. Oculta licencia, teléfonos y datos del negocio.
-25. Marca fallo si cambia algún saldo o existencia, faltan referencias, se duplica un pago/venta/lote, la caja anterior se convierte en caja actual, el archivo de otra licencia se acepta, o se limpian datos destino antes de confirmar.
-26. Al terminar, cierra caja, conserva el archivo cifrado solo si forma parte de QA aprobado y borra datos locales únicamente de los perfiles desechables. No borres ni modifiques registros de licencias/negocios reales para “limpiar” la prueba.
+25. Guarda capturas de Preview URL/commit, cobertura del respaldo, vista previa de restauración, rechazo por pendientes, saldo del cliente, detalle de apartado, inventario por lote, cierre y movimientos de caja, archivos CSV/JSON, vista previa del catálogo transferido y mensaje de rechazo de archivo alterado. Oculta licencia, teléfonos y datos del negocio.
+26. Marca fallo si cambia algún saldo o existencia, faltan referencias, se duplica un pago/venta/lote, la caja anterior se convierte en caja actual, el archivo de otra licencia se acepta, se restaura con pendientes o se limpian datos destino antes de confirmar.
+27. Al terminar, cierra caja, conserva el archivo cifrado solo si forma parte de QA aprobado y borra datos locales únicamente de los perfiles desechables. No borres ni modifiques registros de licencias/negocios reales para “limpiar” la prueba.
 
 ### Resultado actual
 

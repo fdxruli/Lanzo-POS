@@ -3,6 +3,7 @@ import { importInto, peakImportFile } from 'dexie-export-import';
 import { createBackupCashIdentitySanitizer } from './backupCashIdentity';
 import {
   BACKUP_TABLE_NAMES,
+  BACKUP_MONITORED_TABLE_NAMES,
   getBackupTableScope
 } from './backupScope';
 
@@ -11,6 +12,37 @@ export const LEGACY_BACKUP_TABLE_NAMES = Object.freeze([
   'sales',
   'customers'
 ]);
+
+const isPendingRestoreOperation = (tableName, row) => {
+  const status = String(row?.status || '').toLowerCase();
+  if (tableName === 'sync_outbox') return !['synced', 'completed', 'done'].includes(status);
+  if (tableName === 'sync_conflicts') return ['pending', 'open', 'unresolved'].includes(status);
+  if (tableName === 'financial_intents') {
+    return String(row?.status || '').toUpperCase() !== 'COMPLETED'
+      || ['PENDING', 'FAILED'].includes(String(row?.projectionStatus || '').toUpperCase());
+  }
+  if (tableName === 'transaction_log') {
+    return !['committed', 'completed', 'done', 'success', 'succeeded'].includes(status);
+  }
+  return false;
+};
+
+export const countPendingRestoreOperations = (rowsByTable = {}) => Object.fromEntries(
+  BACKUP_MONITORED_TABLE_NAMES.map((tableName) => [
+    tableName,
+    (rowsByTable[tableName] || []).filter((row) => isPendingRestoreOperation(tableName, row)).length
+  ])
+);
+
+const readPendingOperationRows = async (database) => {
+  const rowsByTable = {};
+  for (const tableName of BACKUP_MONITORED_TABLE_NAMES) {
+    if (database.tables.some((table) => table.name === tableName)) {
+      rowsByTable[tableName] = await database.table(tableName).toArray();
+    }
+  }
+  return rowsByTable;
+};
 
 const validateSourceTables = (metadata, formatVersion) => {
   const sourceTables = metadata?.data?.tables;
@@ -69,8 +101,9 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
     throw new Error(`BACKUP_TARGET_TABLES_MISSING:${unavailableTables.join(',')}`);
   }
 
-  // Clear only whitelisted tables present in the file. A v1 file is partial;
-  // tables absent from it are skipped and retain their current contents.
+  // Replace only whitelisted tables present in the file. V1 is partial and
+  // sequences is restricted to sale_folio, so all other destination sequence
+  // entries must retain their current values.
   const skipTables = database.tables
     .map((table) => table.name)
     .filter((tableName) => !safeSourceNames.includes(tableName));
@@ -102,7 +135,10 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
       transform: sanitizeCashIdentity
     });
     for (const tableName of safeSourceNames) {
-      restoredRows[tableName] = await stagingDatabase.table(tableName).toArray();
+      const rows = await stagingDatabase.table(tableName).toArray();
+      restoredRows[tableName] = tableName === 'sequences'
+        ? rows.filter((row) => row?.id === 'sale_folio')
+        : rows;
     }
   } finally {
     stagingDatabase.close();
@@ -110,8 +146,17 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
   }
 
   await database.transaction('rw', database.tables, async () => {
+    const pendingOperationCounts = countPendingRestoreOperations(await readPendingOperationRows(database));
+    if (Object.values(pendingOperationCounts).some((count) => count > 0)) {
+      throw new Error('BACKUP_RESTORE_PENDING_OPERATIONS');
+    }
+
     for (const tableName of safeSourceNames) {
-      await database.table(tableName).clear();
+      if (tableName === 'sequences') {
+        await database.table(tableName).delete('sale_folio');
+      } else {
+        await database.table(tableName).clear();
+      }
       if (restoredRows[tableName].length > 0) {
         await database.table(tableName).bulkPut(restoredRows[tableName]);
       }

@@ -1,13 +1,23 @@
 /* @vitest-environment jsdom */
 
-import { describe, expect, it } from 'vitest';
+import 'fake-indexeddb/auto';
+
+import Dexie from 'dexie';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   PORTABLE_DATA_FORMAT,
   PORTABLE_DATA_VERSION,
   PORTABLE_TRANSFER_TABLES,
+  importCatalogTransfer,
+  importProductCsv,
   parseCsvDocument,
+  previewCatalogTransfer,
+  previewProductCsvImport,
   portableDataTransferInternals
 } from '../portableDataTransfer';
+import { closeTenantRuntime, openTenantRuntime } from '../../db/tenantRuntimeRouter';
+import { STORES } from '../../db/dexie';
+import { localTenantAccessController } from '../../tenant/localTenantPolicy';
 
 const emptyDestination = () => ({
   categories: [],
@@ -54,6 +64,23 @@ describe('portableDataTransfer', () => {
     portableTransferRow,
     buildTransferCatalogVariants
   } = portableDataTransferInternals;
+  let activeDatabaseName = null;
+
+  afterEach(async () => {
+    closeTenantRuntime();
+    localTenantAccessController.reset();
+    if (activeDatabaseName) await Dexie.delete(activeDatabaseName);
+    activeDatabaseName = null;
+  });
+
+  const activateTestBusiness = async () => {
+    const alias = `license-id:portable-import-${crypto.randomUUID()}`;
+    const identity = { primary: alias, aliases: [alias] };
+    localTenantAccessController.grant(identity, 'portable-import-test');
+    const runtime = await openTenantRuntime(identity);
+    activeDatabaseName = runtime.database.name;
+    return runtime.database;
+  };
 
   it('parses quoted commas, accents and newlines in CSV cells', () => {
     expect(parseCsvDocument('nombre,descripción\r\n"Camisa, azul","Línea uno\nLínea dos con acento: á"'))
@@ -175,5 +202,134 @@ describe('portableDataTransfer', () => {
     expect(plan.updates).toHaveLength(1);
     expect(plan.accepted).toHaveLength(0);
     expect(plan.summary.initialInventoryProducts).toBe(0);
+  });
+
+  it('imports CSV against IndexedDB, is idempotent on retry, and rolls back all writes on failure', async () => {
+    const database = await activateTestBusiness();
+    const csv = 'id,name,price,barcode,stock,cost,category\nitem-1,Café molido,15,7500001,5,4,Café';
+    const preview = await previewProductCsvImport(csv);
+    expect(preview.summary).toMatchObject({ create: 1, categoriesCreated: 1, initialInventoryProducts: 1 });
+
+    const first = await importProductCsv(csv);
+    expect(first).toMatchObject({ importedCount: 1, updatedCount: 0 });
+    const product = (await database.table(STORES.MENU).toArray())[0];
+    const batch = (await database.table(STORES.PRODUCT_BATCHES).toArray())[0];
+    expect(product).toMatchObject({ name: 'Café molido', stock: 5, transferSourceKey: 'csv:id:item-1' });
+    expect(batch).toMatchObject({ productId: product.id, stock: 5, cost: 4 });
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(1);
+
+    const second = await importProductCsv(csv);
+    expect(second).toMatchObject({ importedCount: 0, updatedCount: 1, summary: { initialInventoryProducts: 0 } });
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+    expect(await database.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
+    expect((await database.table(STORES.MENU).get(product.id)).stock).toBe(5);
+
+    const menuTable = database.table(STORES.MENU);
+    const failProductCreate = (_key, row) => {
+      if (row.name === 'Rollback trigger') throw new Error('simulated product validation failure');
+    };
+    menuTable.hook('creating', failProductCreate);
+    try {
+      const rollbackCsv = 'id,name,price,barcode,stock,cost,category\nitem-2,First product,20,7500002,2,8,New category\nitem-3,Rollback trigger,25,7500003,3,10,New category';
+      await expect(importProductCsv(rollbackCsv)).rejects.toThrow();
+    } finally {
+      menuTable.hook('creating').unsubscribe(failProductCreate);
+    }
+
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(1);
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+    expect(await database.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
+    expect(await database.table(STORES.CATEGORIES).where('name').equals('New category').count()).toBe(0);
+  });
+
+  it('imports catalog transfer through IndexedDB and keeps the second attempt idempotent', async () => {
+    const database = await activateTestBusiness();
+    const bundle = {
+      format: PORTABLE_DATA_FORMAT,
+      version: PORTABLE_DATA_VERSION,
+      dataKind: 'catalog-transfer',
+      datasetId: 'indexeddb-catalog-dataset',
+      tableCounts: { categories: 1, menu: 1, customers: 0, images: 1, ingredients: 1 },
+      transfer: {
+        datasetId: 'indexeddb-catalog-dataset',
+        tables: [...PORTABLE_TRANSFER_TABLES],
+        catalogVariants: { 'source-shirt': [{ talla: 'M', color: 'Azul', sku: 'SHIRT-M-AZ', price: 225 }] }
+      },
+      data: { tables: {
+        categories: [{ id: 'source-category', name: 'Ropa' }],
+        menu: [{
+          id: 'source-shirt', name: 'Camisa', barcode: '7500100', categoryId: 'source-category',
+          price: 250, cost: 80, stock: 12, committedStock: 2, image: 'source-image',
+          trackStock: true, batchManagement: { enabled: true, selectionStrategy: 'fifo' },
+          recipe: [{ ingredientId: 'source-ingredient', quantity: 1 }]
+        }],
+        customers: [],
+        images: [{ id: 'source-image', blob: { __lanzoBinary: true, data: 'AQ==', type: 'image/png' }, type: 'image/png' }],
+        ingredients: [{ id: 'source-ingredient', name: 'Tela', unit: 'm', isActive: true }]
+      } }
+    };
+
+    const preview = await previewCatalogTransfer(bundle);
+    expect(preview.summary).toMatchObject({
+      categories: { create: 1 },
+      products: { create: 1 },
+      images: { create: 1 },
+      ingredients: { create: 1 }
+    });
+    await importCatalogTransfer(bundle, preview);
+    expect({
+      categories: await database.table(STORES.CATEGORIES).count(),
+      products: await database.table(STORES.MENU).count(),
+      images: await database.table(STORES.IMAGES).count(),
+      ingredients: await database.table(STORES.INGREDIENTS).count(),
+      batches: await database.table(STORES.PRODUCT_BATCHES).count()
+    }).toEqual({ categories: 1, products: 1, images: 1, ingredients: 1, batches: 1 });
+    const importedProduct = (await database.table(STORES.MENU).toArray())[0];
+    expect(importedProduct).toMatchObject({ stock: 0, cost: 0, transferSourceKey: 'indexeddb-catalog-dataset:menu:source-shirt' });
+
+    const secondPreview = await previewCatalogTransfer(bundle);
+    expect(secondPreview.summary.products).toMatchObject({ create: 0, update: 1 });
+    await importCatalogTransfer(bundle, secondPreview);
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(1);
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+    expect(await database.table(STORES.IMAGES).count()).toBe(1);
+    expect(await database.table(STORES.INGREDIENTS).count()).toBe(1);
+    expect(await database.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
+
+    const rollbackBundle = {
+      ...bundle,
+      datasetId: 'indexeddb-catalog-rollback',
+      tableCounts: { categories: 1, menu: 2, customers: 0, images: 1, ingredients: 1 },
+      transfer: {
+        ...bundle.transfer,
+        datasetId: 'indexeddb-catalog-rollback',
+        catalogVariants: {}
+      },
+      data: { tables: {
+        categories: [{ id: 'rollback-category', name: 'Rollback category' }],
+        menu: [
+          { id: 'rollback-first', name: 'First product', categoryId: 'rollback-category', price: 20, recipe: [] },
+          { id: 'rollback-trigger', name: 'Rollback trigger', categoryId: 'rollback-category', price: 25, recipe: [] }
+        ],
+        customers: [],
+        images: [{ id: 'rollback-image', blob: { __lanzoBinary: true, data: 'AQ==', type: 'image/png' } }],
+        ingredients: [{ id: 'rollback-ingredient', name: 'Rollback ingredient' }]
+      } }
+    };
+    const menuTable = database.table(STORES.MENU);
+    const failProductCreate = (_key, row) => {
+      if (row.name === 'Rollback trigger') throw new Error('simulated product validation failure');
+    };
+    menuTable.hook('creating', failProductCreate);
+    try {
+      await expect(importCatalogTransfer(rollbackBundle)).rejects.toThrow();
+    } finally {
+      menuTable.hook('creating').unsubscribe(failProductCreate);
+    }
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(1);
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+    expect(await database.table(STORES.IMAGES).count()).toBe(1);
+    expect(await database.table(STORES.INGREDIENTS).count()).toBe(1);
+    expect(await database.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
   });
 });
