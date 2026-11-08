@@ -1,6 +1,6 @@
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/DashboardPage.jsx
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Logger from '../services/Logger';
 
@@ -43,6 +43,7 @@ import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthoriz
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
+import { buildCloudStatsRange } from '../services/reports/dashboardPeriodRange';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
 
@@ -69,6 +70,7 @@ export default function DashboardPage() {
     menu: [],
     overviewReport: null,
     reportSource: null,
+    statsRequestedRange: null,
     salesHistory: [],
     creditHistoryReport: null,
     creditHistoryAttempted: false,
@@ -87,6 +89,9 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState(() => readAIReportUiState().activeTab || 'stats');
   usePublishBotScreen('/ventas', activeTab);
   const [hasCompletedInitialStatsLoad, setHasCompletedInitialStatsLoad] = useState(false);
+  const [cloudStatsPeriod, setCloudStatsPeriod] = useState('today');
+  const reportRequestRef = useRef(0);
+  const [visibleHistoryRefresh, setVisibleHistoryRefresh] = useState(0);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [salesFinalHistoryPageIndex, setSalesFinalHistoryPageIndex] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,6 +114,11 @@ export default function DashboardPage() {
   ]);
   const salesHistoryCacheContextKey = salesActorIdentity ? salesHistoryContextKey : null;
   const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(licenseDetails), [licenseDetails]);
+  // Historial independiente de las métricas: mismo rango fijo entre sus páginas.
+  const visibleHistoryRange = useMemo(() => {
+    const dateTo = new Date();
+    return { dateFrom: new Date(dateTo.getTime() - 30 * 86400000).toISOString(), dateTo: dateTo.toISOString() };
+  }, [salesHistoryContextKey]);
 
   // 1. ESTADISTICAS
   const stats = useStatsStore((state) => state.stats);
@@ -155,21 +165,16 @@ export default function DashboardPage() {
   }, []);
 
   const loadDashboardReporting = useCallback(async () => {
+    const requestId = ++reportRequestRef.current;
     const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
+    const statsRequestedRange = shouldLoadFinalHistory ? buildCloudStatsRange(cloudStatsPeriod) : null;
     setReportingData((current) => ({
       ...current,
       isLoading: true,
+      statsRequestedRange,
       creditHistoryReport: null,
       creditHistoryAttempted: false,
-      usesRepositorySalesHistory: shouldLoadFinalHistory,
-      salesHistoryIsLoading: shouldLoadFinalHistory,
-      salesHistory: shouldLoadFinalHistory ? [] : current.salesHistory,
-      salesHistorySource: shouldLoadFinalHistory ? null : current.salesHistorySource,
-      salesHistoryTotalCount: shouldLoadFinalHistory ? null : current.salesHistoryTotalCount,
-      salesHistoryDateRange: shouldLoadFinalHistory ? null : current.salesHistoryDateRange,
-      salesHistoryScope: shouldLoadFinalHistory ? null : current.salesHistoryScope,
-      salesHistoryContextKey: shouldLoadFinalHistory ? null : salesHistoryContextKey,
-      salesHistoryError: null
+      usesRepositorySalesHistory: shouldLoadFinalHistory
     }));
 
     try {
@@ -183,7 +188,8 @@ export default function DashboardPage() {
         }),
         reportsRepository.getOverviewReport({
           rubros: features.activeRubros,
-          scope: 'mine'
+          scope: 'mine',
+          ...(statsRequestedRange || {})
         })
       ]);
 
@@ -228,6 +234,7 @@ export default function DashboardPage() {
         Logger.warn('No se pudo cargar historial Cloud para conciliar crédito:', creditHistoryResult.reason);
       }
 
+      if (requestId !== reportRequestRef.current) return;
       setReportingData((current) => ({
         ...current,
         sales: localReport.sales || [],
@@ -235,39 +242,32 @@ export default function DashboardPage() {
         menu: localReport.menu || [],
         overviewReport,
         reportSource: overviewReport?.source || null,
-        salesHistorySource: shouldLoadFinalHistory
-          ? null
-          : { mode: REPORT_SOURCE_MODES.LOCAL, local: ['sales'], warnings: ['Ventas cargadas desde este dispositivo.'] },
-        salesHistoryContextKey: shouldLoadFinalHistory ? null : salesHistoryContextKey,
-        salesHistoryError: null,
+        statsRequestedRange,
         creditHistoryReport,
         creditHistoryAttempted: shouldLoadCreditHistory,
         usesRepositorySalesHistory: shouldLoadFinalHistory,
-        salesHistoryIsLoading: shouldLoadFinalHistory,
         isLoading: false,
         refreshKey: Date.now()
       }));
     } catch (error) {
+      if (requestId !== reportRequestRef.current) return;
       Logger.error('Error cargando reporte analitico del dashboard:', error);
       setReportingData((current) => ({
         ...current,
+        overviewReport: null,
+        reportSource: null,
+        creditHistoryReport: null,
         isLoading: false,
-        salesHistoryIsLoading: Boolean(dashboardReportMode.cloudSalesFinal),
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey]);
+  }, [dashboardReportMode, cloudStatsPeriod, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey]);
 
   useEffect(() => {
-    if (!dashboardReportMode.cloudSalesFinal || reportingData.isLoading) return undefined;
+    if (!dashboardReportMode.cloudSalesFinal) return undefined;
 
     let isActive = true;
-    const reportDateRange = reportingData.overviewReport?.dateRange
-      || reportingData.overviewReport?.date_range
-      || reportingData.overviewReport?.raw?.date_range
-      || {};
-    const dateFrom = reportDateRange.date_from || reportDateRange.start || reportDateRange.from || null;
-    const dateTo = reportDateRange.date_to || reportDateRange.end || reportDateRange.to || null;
+    const { dateFrom, dateTo } = visibleHistoryRange;
     const offset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
 
     const applySalesHistory = (salesHistoryReport) => {
@@ -333,9 +333,8 @@ export default function DashboardPage() {
     return () => { isActive = false; };
   }, [
     dashboardReportMode.cloudSalesFinal,
-    reportingData.isLoading,
-    reportingData.refreshKey,
-    reportingData.overviewReport,
+    visibleHistoryRefresh,
+    visibleHistoryRange,
     salesFinalHistoryPageIndex,
     salesFinalHistoryScope,
     salesHistoryCacheContextKey,
@@ -355,17 +354,21 @@ export default function DashboardPage() {
 
     Promise.resolve().then(loadStats).then(markInitialStatsLoadComplete, markInitialStatsLoadComplete);
     loadRecentSales();
-    loadDashboardReporting();
     loadCustomers();
 
     return () => {
       isActive = false;
     };
-  }, [loadDashboardReporting, loadRecentSales, loadStats, loadCustomers]);
+  }, [loadRecentSales, loadStats, loadCustomers]);
+
+  useEffect(() => { loadDashboardReporting(); }, [loadDashboardReporting]);
 
   useEffect(() => {
     const refreshReportSources = () => {
-      if (dashboardReportMode.cloudSalesFinal) setSalesFinalHistoryPageIndex(0);
+      if (dashboardReportMode.cloudSalesFinal) {
+        setSalesFinalHistoryPageIndex(0);
+        setVisibleHistoryRefresh((current) => current + 1);
+      }
       loadDashboardReporting();
       loadCustomers();
       loadStats();
@@ -447,6 +450,7 @@ export default function DashboardPage() {
       loadRecycleBin(),
       loadDashboardReporting()
     ]);
+    setVisibleHistoryRefresh((current) => current + 1);
     showMessageModal('Venta cancelada movida a la papelera.');
   };
 
@@ -473,6 +477,7 @@ export default function DashboardPage() {
         loadRecentSales(),
         loadDashboardReporting()
       ]);
+      setVisibleHistoryRefresh((current) => current + 1);
       const warnings = Array.isArray(result.warnings) ? result.warnings : [];
       if (warnings.length > 0) {
         showMessageModal(
@@ -550,8 +555,7 @@ export default function DashboardPage() {
     );
   }
 
-  const statsSource = reportingData.reportSource;
-  const statsIsCloudFinal = isCloudFinalReportSource(statsSource);
+  const statsIsCloudFinal = dashboardReportMode.cloudSalesFinal;
   const historyContextMatches = reportingData.salesHistoryContextKey === salesHistoryContextKey;
   const historySource = dashboardReportMode.cloudSalesFinal
     ? (historyContextMatches ? reportingData.salesHistorySource : null)
@@ -608,6 +612,10 @@ export default function DashboardPage() {
               reportSource={reportingData.reportSource}
               creditHistoryReport={reportingData.creditHistoryReport}
               scope="mine"
+              period={cloudStatsPeriod}
+              onPeriodChange={setCloudStatsPeriod}
+              requestedRange={reportingData.statsRequestedRange}
+              isLoading={reportingData.isLoading}
             />
           ) : (
             <StatsGrid
