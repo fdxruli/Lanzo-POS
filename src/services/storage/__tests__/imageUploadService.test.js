@@ -127,7 +127,7 @@ describe('imageUploadService image normalization', () => {
       'signed-token',
       optimized,
       {
-        cacheControl: '3600',
+        cacheControl: '31536000',
         contentType: 'image/webp',
         upsert: false
       }
@@ -287,5 +287,28 @@ describe('imageUploadService image normalization', () => {
 
     await expect(uploadProductImage(source, 'license-fixture'))
       .rejects.toMatchObject({ code: 'STORAGE_UPLOAD_FAILED' });
+  });
+
+  it('keeps a short cache TTL for non-catalog image purposes', async () => {
+    const original = new TestFile(['avatar'], 'avatar.webp', { type: 'image/webp' });
+    const path = authorizeUpload({
+      purpose: 'profile-image',
+      filename: 'avatar.webp',
+      maxSizeBytes: 2 * 1024 * 1024
+    });
+
+    await uploadImageFile({
+      file: original,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PROFILE_IMAGE,
+      imageOptimizer: vi.fn(async () => original)
+    });
+
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
+      path,
+      'signed-token',
+      original,
+      expect.objectContaining({ cacheControl: '3600', upsert: false })
+    );
   });
 });

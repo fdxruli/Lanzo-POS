@@ -75,6 +75,15 @@ const captureProfileSettingsAction = (get) => {
 
 const getProfileCacheKey = (licenseKey) => `company:${licenseKey}`;
 
+// Use the original for cloud WebP optimization, but preserve uploads from
+// >20 MB sources through the existing small local thumbnail fallback.
+const chooseCloudLogoFile = (preview, source) => (
+  source instanceof File && Number.isFinite(source.size)
+    && source.size > 0 && source.size <= 20 * 1024 * 1024
+    ? source
+    : preview
+);
+
 const normalizeBusinessTypes = (businessType) => {
   let rawTypes = [];
 
@@ -517,11 +526,12 @@ export const createProfileSlice = (set, get) => {
     const sessionGeneration = _profileSessionGeneration;
 
     try {
-      let logoUrl = setupData.logo_url || setupData.logo || null;
+      const { logoUploadSource, ...setupPayload } = setupData;
+      let logoUrl = setupPayload.logo_url || setupPayload.logo || null;
 
-      if (setupData.logo instanceof File) {
+      if (setupPayload.logo instanceof File) {
         const uploadResult = await uploadImageFile({
-          file: setupData.logo,
+          file: chooseCloudLogoFile(setupPayload.logo, logoUploadSource),
           licenseKey,
           purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO
         });
@@ -532,7 +542,7 @@ export const createProfileSlice = (set, get) => {
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       const profileData = {
-        ...setupData,
+        ...setupPayload,
         logo: logoUrl,
         business_type: normalizeBusinessTypes(setupData.business_type)
       };
@@ -588,10 +598,12 @@ export const createProfileSlice = (set, get) => {
 
     try {
       const nextCompanyData = { ...companyData };
+      const logoUploadSource = nextCompanyData.logoUploadSource;
+      delete nextCompanyData.logoUploadSource;
 
       if (nextCompanyData.logo instanceof File) {
         const uploadResult = await uploadImageFile({
-          file: nextCompanyData.logo,
+          file: chooseCloudLogoFile(nextCompanyData.logo, logoUploadSource),
           licenseKey,
           purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO
         });

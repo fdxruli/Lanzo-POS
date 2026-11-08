@@ -11,6 +11,8 @@ import { optimizeBrandingImageToWebp } from './brandingImageOptimizer';
 const IMAGE_BUCKET = 'images';
 const AUTHORIZE_FUNCTION = 'authorize-image-upload';
 const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
+const IMMUTABLE_IMAGE_CACHE_SECONDS = '31536000';
+const DEFAULT_IMAGE_CACHE_SECONDS = '3600';
 
 export const IMAGE_UPLOAD_PURPOSES = Object.freeze({
   BUSINESS_LOGO: 'business-logo',
@@ -21,6 +23,15 @@ export const IMAGE_UPLOAD_PURPOSES = Object.freeze({
   PROFILE_IMAGE: 'profile-image',
   MISC: 'misc'
 });
+
+// These public images are uploaded under fresh UUID paths, never overwritten.
+const LONG_LIVED_IMAGE_PURPOSES = new Set([
+  IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO,
+  IMAGE_UPLOAD_PURPOSES.BUSINESS_COVER,
+  IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
+  IMAGE_UPLOAD_PURPOSES.CATEGORY_IMAGE,
+  IMAGE_UPLOAD_PURPOSES.RESTAURANT_ITEM_IMAGE
+]);
 
 const PURPOSE_ALIASES = Object.freeze({
   logo: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO,
@@ -244,7 +255,9 @@ export async function uploadImageFile({
     .storage
     .from(authorization.bucket)
     .uploadToSignedUrl(authorization.path, authorization.token, uploadFile, {
-      cacheControl: '3600',
+      cacheControl: LONG_LIVED_IMAGE_PURPOSES.has(normalizedPurpose)
+        ? IMMUTABLE_IMAGE_CACHE_SECONDS
+        : DEFAULT_IMAGE_CACHE_SECONDS,
       contentType: authorization.mime_type || uploadFile.type,
       upsert: false
     });

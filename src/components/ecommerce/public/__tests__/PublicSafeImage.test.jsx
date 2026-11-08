@@ -70,4 +70,30 @@ describe('PublicSafeImage', () => {
     expect(placeholder).toHaveClass('public-safe-image--fallback');
     expect(placeholder.querySelector('.public-safe-image__logo-mark')).toBeInTheDocument();
   });
+
+  it('recovers from an image error when the catalog publishes a new URL', () => {
+    const { rerender } = render(
+      <PublicSafeImage
+        src="https://example.com/product-old.webp"
+        alt="Foto del producto"
+        fallbackLabel="Producto sin imagen"
+      />
+    );
+
+    fireEvent.error(screen.getByRole('img', { name: 'Foto del producto' }));
+    expect(screen.getByRole('img', { name: 'Producto sin imagen' })).toBeInTheDocument();
+
+    rerender(
+      <PublicSafeImage
+        src="https://example.com/product-new.webp"
+        alt="Foto del producto"
+        fallbackLabel="Producto sin imagen"
+      />
+    );
+    expect(screen.getByRole('img', { name: 'Foto del producto' }))
+      .toHaveAttribute('src', 'https://example.com/product-new.webp');
+
+    fireEvent.error(screen.getByRole('img', { name: 'Foto del producto' }));
+    expect(screen.getByRole('img', { name: 'Producto sin imagen' })).toBeInTheDocument();
+  });
 });

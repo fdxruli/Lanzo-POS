@@ -73,6 +73,7 @@ export default function SetupModal() {
   const [address, setAddress] = useState('');
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
+  const [logoUploadSource, setLogoUploadSource] = useState(null);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
@@ -185,6 +186,7 @@ export default function SetupModal() {
         const compressedFile = await compressImage(file);
         setLogoPreview(URL.createObjectURL(compressedFile));
         setLogoData(compressedFile);
+        setLogoUploadSource(file);
       } catch (imageError) {
         Logger.error('Error imagen:', imageError);
       }
@@ -277,6 +279,7 @@ export default function SetupModal() {
         phone,
         address,
         logo: logoData,
+        logoUploadSource,
         business_type: selectedTypes
       });
     } catch (err) {
