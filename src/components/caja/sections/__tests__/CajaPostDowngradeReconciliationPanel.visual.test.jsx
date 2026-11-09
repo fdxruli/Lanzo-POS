@@ -12,16 +12,16 @@ const sessions = [
   { id: 'cash-4', responsible_name: 'Tania', opening_device_name: 'Windows', expected_cash_total: 800 }
 ];
 
-vi.mock('../../../store/useAppStore', () => ({
+vi.mock('../../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector({ licenseDetails: {} })
 }));
-vi.mock('../../../services/sync/syncConstants', () => ({
+vi.mock('../../../../services/sync/syncConstants', () => ({
   getLicenseKeyFromDetails: () => 'TEST'
 }));
-vi.mock('../../../services/cash/postDowngradeCashReconciliation', () => ({
+vi.mock('../../../../services/cash/postDowngradeCashReconciliation', () => ({
   postDowngradeCashReconciliation: { detail: vi.fn(), close: vi.fn() }
 }));
-vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+vi.mock('../../../../hooks/usePostDowngradeCashPending', () => ({
   default: () => ({
     eligible: true,
     online: state.online,
