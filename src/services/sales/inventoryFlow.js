@@ -443,9 +443,11 @@ export const buildProcessedItemsAndDeductions = ({
                 itemTotalCost += roundCurrency((Number(batchUsage.cost) || 0) * normalizedQty);
             }
 
-            if (committedBatches.length === 0) {
-                const authoritativeCost = parseFloat(product.cost) || 0;
-                itemTotalCost = roundCurrency(authoritativeCost * quantityToDeduct);
+            // A committed table can use both batches and simple-stock ingredients.
+            // Cost only the recorded physical component allocations.
+            for (const usage of nonBatchIngredientsUsed) {
+                const component = productMap.get(usage.ingredientId);
+                itemTotalCost += roundCurrency((Number(component?.cost) || 0) * Number(usage.quantity || 0));
             }
 
             const calculatedAvgCost = orderItem.quantity > 0
