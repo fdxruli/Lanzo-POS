@@ -77,8 +77,8 @@ export default function BatchProductDirectory({ onSelectProduct }) {
       {!loading && products.length === 0 && !error && (
         <div className="batch-directory-empty">
           <Layers3 size={30} aria-hidden="true" />
-          <strong>Todavía no hay productos con lotes registrados</strong>
-          <p>Utiliza el buscador de arriba para seleccionar un producto y registrar su primer ingreso.</p>
+          <strong>No hay productos con lotes disponibles en este dispositivo</strong>
+          <p>Busca un producto para registrar su primer ingreso. En PRO/Nube, comprueba que la sincronización haya terminado si faltan productos.</p>
         </div>
       )}
 
