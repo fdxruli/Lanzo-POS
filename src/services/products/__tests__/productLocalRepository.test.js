@@ -144,3 +144,42 @@ describe('productLocalRepository.prepareProduct', () => {
     expect(prepared.batches).toEqual([]);
   });
 });
+
+describe('recipe ingredient dependency protection', () => {
+  afterEach(() => {
+    vi.mocked(db.table).mockReset();
+    vi.mocked(loadData).mockReset();
+    vi.mocked(softDeleteWithCascadeSafe).mockReset();
+    vi.mocked(updateProductSafe).mockReset();
+  });
+
+  it('blocks deleting, deactivating and changing the unit of an ingredient in an active dish', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const ingredient = { id: 'flour', name: 'Harina', productType: 'ingredient',
+      isActive: true, trackStock: true, unit: 'kg' };
+    const dish = { id: 'pizza', name: 'Pizza', productType: 'sellable', isActive: true,
+      recipe: [{ ingredientId: 'flour', quantity: 0.2, unit: 'kg' }] };
+    vi.mocked(loadData).mockResolvedValue(ingredient);
+    vi.mocked(db.table).mockImplementation(() => ({
+      filter: vi.fn(() => ({ first: vi.fn(async () => dish) }))
+    }));
+    await expect(productLocalRepository.deleteProductLocal('flour')).rejects.toThrow('Pizza');
+    await expect(productLocalRepository.toggleProductStatusLocal(ingredient, false)).rejects.toThrow('Pizza');
+    await expect(productLocalRepository.prepareProduct({ ...ingredient, unit: 'g' }, ingredient)).rejects.toThrow('Pizza');
+    expect(softDeleteWithCascadeSafe).not.toHaveBeenCalled();
+    expect(updateProductSafe).not.toHaveBeenCalled();
+  });
+
+  it('allows deleting an unreferenced ingredient', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const ingredient = { id: 'salt', name: 'Sal', productType: 'ingredient', isActive: true };
+    vi.mocked(loadData).mockResolvedValue(ingredient);
+    vi.mocked(db.table).mockImplementation(() => ({
+      filter: vi.fn(() => ({ first: vi.fn(async () => undefined) })),
+      update: vi.fn(async () => 1)
+    }));
+    vi.mocked(softDeleteWithCascadeSafe).mockResolvedValue({ success: true });
+    await expect(productLocalRepository.deleteProductLocal('salt')).resolves.toMatchObject({ success: true });
+    expect(softDeleteWithCascadeSafe).toHaveBeenCalledOnce();
+  });
+});
