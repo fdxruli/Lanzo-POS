@@ -17,7 +17,11 @@ export default function BatchProductSearch({
         id={inputId}
         type="text"
         className="form-input product-search-input"
-        placeholder="Nombre, código o SKU..."\n        autoComplete="off"\n        aria-autocomplete="list"\n        aria-expanded={Boolean(showSuggestions && searchTerm && filteredProducts.length > 0)}\n        aria-controls="batch-product-suggestions"
+        placeholder="Nombre, código o SKU..."
+        autoComplete="off"
+        aria-autocomplete="list"
+        aria-expanded={Boolean(showSuggestions && searchTerm && filteredProducts.length > 0)}
+        aria-controls="batch-product-suggestions"
         value={searchTerm}
         onChange={(event) => {
           onSearchTermChange(event.target.value);
@@ -45,7 +49,11 @@ export default function BatchProductSearch({
               type="button"
               key={product.id}
               className="product-suggestion-item"
-              onPointerDown={(event) => {\n                event.preventDefault();\n                onSelectProduct(product);\n              }}\n              onClick={() => onSelectProduct(product)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onSelectProduct(product);
+              }}
+              onClick={() => onSelectProduct(product)}
             >
               <span className="suggestion-name">{product.name}</span>
               <span className="suggestion-meta">Stock: {product.stock || 0}</span>
