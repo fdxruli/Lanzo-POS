@@ -59,8 +59,8 @@ describe('restaurant recipe simple-stock atomic sale', () => {
   it('turns a saved table ingredient reservation into physical consumption once', async () => {
     const dish = product('dish', 0, { productType: 'sellable', trackStock: false,
       recipe: [{ ingredientId: 'chicken', quantity: 0.15 }, { ingredientId: 'bread', quantity: 1 }] });
-    const chicken = product('chicken', 1);
-    const bread = product('bread', 10);
+    const chicken = product('chicken', 1, { cost: 10 });
+    const bread = product('bread', 10, { cost: 2 });
     await db.table(STORES.MENU).bulkPut([dish, chicken, bread]);
 
     const [reserved] = await commitStock([{ id: 'dish', quantity: 2 }], {
@@ -72,6 +72,7 @@ describe('restaurant recipe simple-stock atomic sale', () => {
       itemsToProcess: [reserved], allProducts: [dish, chicken, bread], batchesMap: new Map(),
       roundCurrency: (v) => Math.round(v * 100) / 100
     });
+    expect(processedItems[0].cost).toBe(3.5);
     const sale = { id: 'reserved-recipe-sale', items: processedItems, total: '200.00',
       timestamp: new Date().toISOString(), abono: '200.00', saldoPendiente: '0.00',
       paymentMethod: 'tarjeta', status: 'closed' };
