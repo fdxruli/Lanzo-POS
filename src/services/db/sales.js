@@ -518,6 +518,7 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
     }
     const summaries = [];
     const batchDeductions = [];
+    const lineCosts = sale.items.map(() => 0);
     for (const productId of Array.from(grouped.keys()).sort()) {
         const requirements = grouped.get(productId);
         const product = await tables.menu.get(productId);
@@ -579,6 +580,7 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
                 item.nonBatchIngredientsUsed.push({
                     ingredientId: productId, quantity: use, fromCommittedStock: false
                 });
+                lineCosts[req.lineIndex] += (Number(product.cost) || 0) * use;
             } else {
                 let pending = use;
                 for (const batch of eligibleBatches) {
@@ -589,6 +591,7 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
                     availability.set(batch.id, normalizeStock(available - quantity));
                     pending = normalizeStock(pending - quantity);
                     batchDeductions.push({ batchId: batch.id, productId, quantity, fromCommittedStock: false });
+                    lineCosts[req.lineIndex] += (Number(batch.cost) || Number(product.cost) || 0) * quantity;
                     item.batchesUsed.push({
                         batchId: batch.id, ingredientId: productId, quantity,
                         cost: batch.cost, expiryDate: batch.expiryDate || null,
@@ -607,6 +610,14 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
                 ? batches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
                 : getCommittedStock(product)
         });
+    }
+    for (const [index, item] of sale.items.entries()) {
+        const saleQuantity = Number(item.quantity);
+        if (!Number.isFinite(saleQuantity) || saleQuantity <= 0) {
+            throw buildInventoryError('DIRECT_PARTIAL_QUANTITY_INVALID');
+        }
+        // Record actual ingredient cost, never the cost of missing stock.
+        item.cost = Number((lineCosts[index] / saleQuantity).toFixed(2));
     }
     // The existing sale row is the idempotency barrier. Sale + components,
     // inventory_events, batches, ledger, cash/folio and audit persist atomically.
