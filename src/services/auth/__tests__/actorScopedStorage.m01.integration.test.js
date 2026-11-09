@@ -2,6 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({ tenant: null, session: 'session-a', device: 'device-a', authorize: vi.fn() }));
+// This suite models runtime transitions without a physical IndexedDB.
+// The real atomic closed-sale/receipt reconciliation has its own Dexie tests.
+vi.mock('../committedCheckoutLockReconciliation', () => ({
+  reconcileCommittedCheckoutLocks: vi.fn(async () => ({ reconciled: 0 }))
+}));
 vi.mock('../../db/tenantRuntimeRouter', () => ({
   getTenantRuntimeReadiness: () => ({ ready: true, runtime: fixture.tenant }),
   db: { table: (name) => {
