@@ -21,7 +21,7 @@ import {
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
-import { assertValidRecipeReferences, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { assertValidRecipeReferences, getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const nowIso = () => new Date().toISOString();
 
@@ -57,6 +57,24 @@ const isUnsyncedCatalogRecord = (record) => {
     !record.serverVersion ||
     !record.lastSyncedAt
   );
+};
+
+// Guard catalog edits that would silently orphan an active recipe (Free/Local).
+const assertIngredientChangeDoesNotBreakRecipes = async (current, next = null) => {
+  if (!current?.id || current.productType !== 'ingredient') return;
+  const unavailable = !next || next.isActive === false || next.deletedAt || next.deletedTimestamp
+    || next.productType !== 'ingredient' || next.trackStock === false;
+  const unitChanged = next && getIngredientDefaultUnit(current) !== getIngredientDefaultUnit(next);
+  if (!unavailable && !unitChanged) return;
+  const dependent = await db.table(STORES.MENU).filter((dish) => (
+    dish.id !== current.id && dish.productType === 'sellable'
+    && dish.isActive !== false && !dish.deletedAt && !dish.deletedTimestamp
+    && Array.isArray(dish.recipe)
+    && dish.recipe.some((component) => getRecipeIngredientId(component) === current.id)
+  )).first();
+  if (dependent) {
+    throw new Error(`El insumo "${current.name}" se utiliza en la receta "${dependent.name}". Modifica primero esa receta.`);
+  }
 };
 
 const markLocalDeletionPending = async (storeName, id) => {
@@ -218,6 +236,9 @@ export const productLocalRepository = {
       : null;
 
     const productId = editing ? hydratedExisting.id : (productData.id || generateID('prod'));
+    if (editing) {
+      await assertIngredientChangeDoesNotBreakRecipes(hydratedExisting, { ...hydratedExisting, ...productData });
+    }
     if (productData.restaurantType === 'dish' || (Array.isArray(productData.recipe) && productData.recipe.length)) {
       const recipe = productData.recipe;
       if (!Array.isArray(recipe)) throw new Error('La receta no tiene un formato válido.');
@@ -368,6 +389,7 @@ export const productLocalRepository = {
 
   async deleteProductLocal(product, sync = null) {
     const productId = typeof product === 'string' ? product : product?.id;
+    await assertIngredientChangeDoesNotBreakRecipes(await this.getProductById(productId));
     if (!sync) {
       const result = await softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, productId, {
         reason: 'Eliminado desde Catalogo de Productos'
@@ -390,6 +412,7 @@ export const productLocalRepository = {
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
     const current = typeof product === 'string' ? await this.getProductById(productId) : product;
+    await assertIngredientChangeDoesNotBreakRecipes(current, { ...current, isActive });
     const mutationSync = createLocalMutationSync();
     return updateProductSafe(productId, {
       ...current,
