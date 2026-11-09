@@ -5,6 +5,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 const h = vi.hoisted(() => ({
   stale: false,
   pending: false,
+  persisted: false,
+  bootstrapBusy: false,
+  initialize: vi.fn(),
   check: { status: 'idle' },
   worker: { waiting: false, reloadDeferred: false },
   checkListeners: new Set(),
@@ -15,12 +18,16 @@ const h = vi.hoisted(() => ({
   copy: vi.fn()
 }));
 
-vi.mock('../../services/diagnostics/recoveryContext', () => ({
-  createRecoveryContextGuard: () => () => !h.stale
-}));
-vi.mock('../../services/auth/actorOperationalHandoff', () => ({
-  getPendingActorOperations: () => h.pending ? [{ label: 'venta' }] : [],
-  getActorCheckoutOwnerships: () => []
+vi.mock('../../services/diagnostics/bootRecoverySafety', () => ({
+  getBootRetrySafety: () => ({
+    canRetry: !h.stale && !h.pending && !h.bootstrapBusy,
+    canUpdate: !h.stale && !h.pending && !h.bootstrapBusy && !h.persisted,
+    reason: h.bootstrapBusy ? 'bootstrap_active' : h.pending ? 'operation_active' : h.stale ? 'unverified' : null,
+    pendingCount: h.pending ? 1 : 0,
+    liveCheckouts: 0,
+    savedCheckouts: h.persisted ? 1 : 0,
+    phase: h.bootstrapBusy ? 'admin_verification' : 'not_started'
+  })
 }));
 vi.mock('../../pwa/adminServiceWorkerUpdateMonitor', () => ({
   getAdminUpdateCheckState: () => h.check,
@@ -56,6 +63,8 @@ describe('recuperación de inicio de Lanzo POS', () => {
   beforeEach(() => {
     h.pending = false;
     h.stale = false;
+    h.persisted = false;
+    h.bootstrapBusy = false;
     h.check = { status: 'idle' };
     h.worker = { waiting: false, reloadDeferred: false };
     h.checkListeners.clear();
@@ -66,11 +75,12 @@ describe('recuperación de inicio de Lanzo POS', () => {
       return { status: 'current' };
     });
     h.copy.mockResolvedValue(true);
+    h.initialize.mockResolvedValue({ status: 'admin_login_required' });
   });
   afterEach(() => cleanup());
 
   it('prioriza el reintento y no comprueba actualizaciones automáticamente', async () => {
-    render(<AppBootRecovery />);
+    render(<AppBootRecovery initializeApp={h.initialize} />);
     expect(screen.getByRole('button', { name: 'Reintentar inicio' })).toBeEnabled();
     expect(h.requestCheck).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Comprobar actualización' }));
@@ -86,7 +96,7 @@ describe('recuperación de inicio de Lanzo POS', () => {
       publishCheck('available');
       return { status: 'available' };
     });
-    render(<AppBootRecovery />);
+    render(<AppBootRecovery initializeApp={h.initialize} />);
     expect(screen.getByRole('button', { name: 'Reintentar inicio' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Comprobar actualización' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Actualizar ahora' })).toBeDisabled());
@@ -101,7 +111,7 @@ describe('recuperación de inicio de Lanzo POS', () => {
       publishCheck('available');
       return { status: 'available' };
     });
-    render(<AppBootRecovery />);
+    render(<AppBootRecovery initializeApp={h.initialize} />);
     fireEvent.click(screen.getByRole('button', { name: 'Comprobar actualización' }));
     const apply = await screen.findByRole('button', { name: 'Actualizar ahora' });
     expect(h.activate).not.toHaveBeenCalled();
@@ -111,7 +121,7 @@ describe('recuperación de inicio de Lanzo POS', () => {
 
   it('ofrece diagnóstico seguro y soporte aun sin acceso al POS', async () => {
     h.stale = true;
-    render(<AppBootRecovery />);
+    render(<AppBootRecovery initializeApp={h.initialize} />);
     expect(screen.getByRole('button', { name: 'Reintentar inicio' })).toBeDisabled();
     expect(screen.getByRole('link', { name: 'Contactar soporte' })).toHaveAttribute('href', expect.stringMatching(/^mailto:/));
     fireEvent.click(screen.getByText('Ver diagnóstico'));
@@ -119,5 +129,24 @@ describe('recuperación de inicio de Lanzo POS', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
     await waitFor(() => expect(h.copy).toHaveBeenCalledWith(expect.stringContaining('REPORTE_SEGURO')));
     expect(screen.getByText('Diagnóstico copiado')).toBeInTheDocument();
+  });
+
+  it('reintenta dentro de la aplicación sin recargar ni borrar cobros persistidos', async () => {
+    h.persisted = true;
+    render(<AppBootRecovery initializeApp={h.initialize} />);
+    expect(screen.getByText(/Hay 1 cobro\(s\) guardado\(s\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar inicio' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar inicio' }));
+    await waitFor(() => expect(h.initialize).toHaveBeenCalledTimes(1));
+    expect(h.activate).not.toHaveBeenCalled();
+    expect(h.webReload).not.toHaveBeenCalled();
+  });
+
+  it('bloquea un segundo intento mientras el bootstrap anterior sigue activo', () => {
+    h.bootstrapBusy = true;
+    render(<AppBootRecovery initializeApp={h.initialize} />);
+    expect(screen.getByRole('button', { name: 'Reintentar inicio' })).toBeDisabled();
+    expect(screen.getByText(/El inicio anterior sigue trabajando/)).toBeInTheDocument();
+    expect(h.initialize).not.toHaveBeenCalled();
   });
 });

@@ -238,7 +238,7 @@ function App() {
   }), []);
 
   if (bootTimedOut && appStatus === 'loading') {
-    return <AppBootRecovery />;
+    return <AppBootRecovery initializeApp={initializeApp} />;
   }
 
   switch (appStatus) {

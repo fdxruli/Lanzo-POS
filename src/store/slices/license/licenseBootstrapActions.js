@@ -2,6 +2,7 @@ import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifec
 // src/store/slices/license/licenseBootstrapActions.js
 
 import Logger from '../../../services/Logger';
+import { startBootProgress, setBootProgressPhase, finishBootProgress } from '../../../services/diagnostics/bootProgress';
 import { prepareLocalDatabase } from '../../../services/db/databaseRuntime';
 import {
     DATABASE_RECOVERY_STATUS,
@@ -263,6 +264,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
         }
 
         const force = options?.force === true;
+        startBootProgress();
         coordinatorState = 'running';
         set({ _isInitializing: true });
         Logger.log('[AppStore] Iniciando aplicación (coordinador idempotente)...');
@@ -285,6 +287,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     Logger.warn('[AdminAuth]', { phase: 'operation_slow', operation: 'actor_runtime_restore', durationMs: 15_000 });
                 }, 15_000);
                 try {
+                    setBootProgressPhase('actor_restoration');
                     const restored = await restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
                     bootstrapActorGeneration = restored.generation;
                     assertBootstrapActorCurrent();
@@ -348,6 +351,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                             throw error;
                         }
                     };
+                    setBootProgressPhase('reusing_session');
                     const stored = await getLicenseFromStorage();
                     assertReusableContext();
                     if (stored?.license_key && canonicalLicense(stored) === licenseAtStart
@@ -410,6 +414,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                 lockActorRuntime('application_bootstrap');
                 bootstrapActorGeneration = actorRuntimeController.getState().generation;
                 initializeLocalTenantGuard('application_bootstrap');
+                setBootProgressPhase('reading_license');
                 const localLicense = await getLicenseFromStorage();
                 assertBootstrapActorCurrent();
 
@@ -423,13 +428,16 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                 // This is the first tenant-owned boundary. It intentionally
                 // precedes actor-token reads, profile loading, catalog startup
                 // and every sync coordinator.
+                setBootProgressPhase('tenant_authority');
                 await assertLocalTenantAccess(localLicense, { reason: 'stored_license_bootstrap' });
                 assertBootstrapActorCurrent();
+                setBootProgressPhase('opening_database');
                 await prepareLocalDatabase({ force });
                 assertBootstrapActorCurrent();
 
                 Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 
+                setBootProgressPhase('reading_session');
                 const hasStoredStaffSession = await hasStaffSessionToken();
                 assertBootstrapActorCurrent();
                 Logger.log(`[AppStore] Sesión staff local: ${hasStoredStaffSession ? 'encontrada' : 'no encontrada'}`);
@@ -444,6 +452,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                             currentAdminUser: null,
                             currentStaffUser: null
                         });
+                        setBootProgressPhase('device_discovery');
                         await get().discoverAdminAccess(localLicense.license_key);
                         coordinatorState = 'ready';
                         return { status: get().appStatus };
@@ -480,6 +489,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                         return { status: 'staff_login_required' };
                     }
 
+                    setBootProgressPhase('staff_verification');
                     const staffSession = await runWithLocalTenantSyncLease(
                         localLicense,
                         { reason: 'staff_session_restore' },
@@ -553,6 +563,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     }
 
                     assertBootstrapActorCurrent();
+                    setBootProgressPhase('loading_profile');
                     await loadBootstrapProfile(get()._loadProfile, restoredLicense.license_key, {}, options?.lifecycle, 'bootstrap_profile_nested_work');
                     assertBootstrapActorCurrent();
                     get()._validateInBackground(restoredLicense.license_key, {
@@ -603,6 +614,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                     : get()._processOfflineMode(actorBoundAdminLicense));
                                 assertBootstrapActorCurrent();
                                 if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
+                                    setBootProgressPhase('loading_profile');
                                     await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key, { lifecycle: options?.lifecycle });
                                     assertBootstrapActorCurrent();
                                 }
@@ -628,6 +640,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                         return { status: get().appStatus };
                     }
 
+                    setBootProgressPhase('admin_verification');
                     const adminSession = await verifyAdminSession(actorBoundAdminLicense.license_key, {
                         beforeLocalPersistence: async (tenantSource) => {
                             assertBootstrapActorCurrent();
@@ -672,6 +685,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                     assertBootstrapActorCurrent();
                                     if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
                                         restorationPhase = 'restored_admin_preparation';
+                                        setBootProgressPhase('loading_profile');
                                         await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key, { lifecycle: options?.lifecycle });
                                         assertBootstrapActorCurrent();
                                     }
@@ -704,6 +718,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                         if (adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING
                             && adminSession.missingCredentials?.includes('admin_session_token')) {
                             assertBootstrapActorCurrent();
+                            setBootProgressPhase('device_discovery');
                             await get().discoverAdminAccess(actorBoundAdminLicense.license_key);
                             coordinatorState = 'ready';
                             return { status: get().appStatus };
@@ -765,9 +780,11 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     }
 
                     if (get()._completeRestoredAdminPreparation) {
+                        setBootProgressPhase('loading_profile');
                         await get()._completeRestoredAdminPreparation(restoredLicense.license_key, { lifecycle: options?.lifecycle });
                         assertBootstrapActorCurrent();
                     } else {
+                        setBootProgressPhase('loading_profile');
                         await loadBootstrapProfile(get()._loadProfile, restoredLicense.license_key, {}, options?.lifecycle, 'bootstrap_profile_nested_work');
                         assertBootstrapActorCurrent();
                         get()._validateInBackground(restoredLicense.license_key, {
@@ -804,6 +821,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
 
                 // Discovery uses the existing RPC enrollment/login path. It must
                 // not mark the app ready or grant authority from device validation.
+                setBootProgressPhase('device_discovery');
                 await get().discoverAdminAccess(localLicense.license_key);
                 coordinatorState = 'ready';
                 return { status: get().appStatus };
@@ -853,11 +871,13 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                 : runBootstrap();
         } catch (error) {
             set({ _isInitializing: false });
+            finishBootProgress();
             coordinatorState = 'failed';
             return Promise.reject(error);
         }
         // Also clear a flight rejected before its factory could start.
         initializePromise = initializePromise.finally(() => {
+            finishBootProgress();
             initializePromise = null;
             set({ _isInitializing: false });
         });

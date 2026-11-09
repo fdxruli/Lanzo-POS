@@ -1,8 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, Check, Copy, Mail, RefreshCw } from 'lucide-react';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
+import { getBootRetrySafety } from '../../services/diagnostics/bootRecoverySafety';
 import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
-import { getActorCheckoutOwnerships, getPendingActorOperations } from '../../services/auth/actorOperationalHandoff';
 import {
   buildAdminBootSupportReport,
   buildSupportMailtoUrl,
@@ -29,25 +29,37 @@ const UPDATE_MESSAGES = {
   error: 'No pudimos comprobar las actualizaciones. Inténtalo con conexión.',
 };
 
-const readRecoverySafety = (isContextCurrent) => {
-  try {
-    return {
-      contextCurrent: isContextCurrent() === true,
-      operationsIdle: getActorCheckoutOwnerships().length === 0 && getPendingActorOperations().length === 0
-    };
-  } catch {
-    return { contextCurrent: false, operationsIdle: false };
-  }
-};
+const BLOCK_REASON = Object.freeze({
+  bootstrap_active: 'El inicio anterior sigue trabajando. No ejecutaremos otro intento mientras continúe.',
+  operation_active: 'Hay una operación en curso. Debe terminar antes de volver a iniciar.',
+  checkout_active: 'Hay un cobro activo sin resolver. No lo interrumpiremos.',
+  database_active: 'El almacenamiento local está ocupado. No es seguro reintentar todavía.',
+  backup_active: 'Espera a que termine el respaldo o la restauración.',
+  write_active: 'Lanzo sigue guardando información local.',
+  draft_active: 'Hay una operación protegida pendiente.',
+  unverified: 'No pudimos comprobar el estado operativo. Contacta a soporte.'
+});
+const PHASE_LABEL = Object.freeze({
+  starting: 'Inicio',
+  reading_license: 'Lectura de licencia guardada',
+  tenant_authority: 'Verificación del negocio',
+  opening_database: 'Apertura de datos locales',
+  reading_session: 'Lectura de sesión',
+  staff_verification: 'Verificación de Staff',
+  admin_verification: 'Verificación de Admin',
+  actor_restoration: 'Restauración de sesión y cobros protegidos',
+  loading_profile: 'Preparación del perfil del negocio',
+  device_discovery: 'Verificación del dispositivo',
+  reusing_session: 'Revalidación de sesión',
+  not_started: 'No determinada',
+  unknown: 'No determinada'
+});
 
-export default function AppBootRecovery() {
-  const [isContextCurrent] = useState(() => {
-    const guard = createRecoveryContextGuard();
-    return () => {
-      try { return guard() === true; } catch { return false; }
-    };
-  });
-  const [safety, setSafety] = useState(() => readRecoverySafety(isContextCurrent));
+export default function AppBootRecovery({ initializeApp }) {
+  const [isUpdateContextCurrent] = useState(() => createRecoveryContextGuard());
+  const [safety, setSafety] = useState(getBootRetrySafety);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryNotice, setRetryNotice] = useState('');
   const [online, setOnline] = useState(() => navigator.onLine !== false);
   const [hasChecked, setHasChecked] = useState(false);
   const [checkBusy, setCheckBusy] = useState(false);
@@ -64,11 +76,7 @@ export default function AppBootRecovery() {
 
   useEffect(() => {
     const refresh = () => {
-      const next = readRecoverySafety(isContextCurrent);
-      setSafety(previous => (
-        previous.contextCurrent === next.contextCurrent && previous.operationsIdle === next.operationsIdle
-          ? previous : next
-      ));
+      setSafety(getBootRetrySafety());
     };
     const handleConnection = () => setOnline(navigator.onLine !== false);
     const intervalId = window.setInterval(refresh, 1000);
@@ -81,18 +89,38 @@ export default function AppBootRecovery() {
       window.removeEventListener('offline', handleConnection);
       unsubscribeWorker();
     };
-  }, [isContextCurrent]);
+  }, []);
 
-  const canRestart = safety.contextCurrent && safety.operationsIdle;
+  const canRestart = safety.canRetry && !retryBusy && typeof initializeApp === 'function';
   const canOfferUpdate = check.status === 'available' || check.status === 'pending'
     || worker.waiting || worker.reloadDeferred;
-  const canApplyUpdate = canRestart && online
+  const canApplyUpdate = safety.canUpdate && isUpdateContextCurrent() && !retryBusy && online
     && (worker.waiting || worker.reloadDeferred || !navigator.serviceWorker?.controller);
 
-  const retry = () => {
-    const current = readRecoverySafety(isContextCurrent);
-    if (!current.contextCurrent || !current.operationsIdle) return;
-    window.location.reload();
+  const retry = async () => {
+    if (retryBusy || typeof initializeApp !== 'function') return;
+    const current = getBootRetrySafety();
+    if (!current.canRetry) {
+      setSafety(current);
+      return;
+    }
+    setRetryBusy(true);
+    setRetryNotice('');
+    try {
+      // Reuse the existing session/tenant validator; no forced reload,
+      // checkout release, database reset or replay of a sale.
+      const result = await initializeApp();
+      if (result?.status === 'loading' || result?.status === 'failed') {
+        setRetryNotice('No se pudo recuperar el inicio. Copia el diagnóstico para soporte.');
+      } else if (result?.code === 'BOOTSTRAP_CONTEXT_STALE') {
+        setRetryNotice('El contexto de acceso cambió durante el reintento. Se mantuvo bloqueado.');
+      }
+    } catch {
+      setRetryNotice('Falló el reintento. Tus datos permanecen intactos; envía el diagnóstico a soporte.');
+    } finally {
+      setSafety(getBootRetrySafety());
+      setRetryBusy(false);
+    }
   };
 
   const checkUpdate = async () => {
@@ -110,8 +138,8 @@ export default function AppBootRecovery() {
   };
 
   const applyUpdate = async () => {
-    const current = readRecoverySafety(isContextCurrent);
-    if (!current.contextCurrent || !current.operationsIdle || navigator.onLine === false || applyBusy) return;
+    const current = getBootRetrySafety();
+    if (!current.canUpdate || !isUpdateContextCurrent() || navigator.onLine === false || applyBusy) return;
     setApplyBusy(true);
     setUpdateNotice('');
     try {
@@ -136,9 +164,12 @@ export default function AppBootRecovery() {
       errorCode: 'ADMIN_RUNTIME_BOOT_TIMEOUT',
       stage: 'ready_runtime_loading'
     }),
-    `Reintento seguro: ${canRestart ? 'Disponible' : 'Bloqueado'}`,
-    `Contexto actual: ${safety.contextCurrent ? 'Sí' : 'No'}`,
-    `Operaciones en memoria sin terminar: ${safety.operationsIdle ? 'No detectadas' : 'No se puede descartar'}`,
+    `Reintento interno: ${safety.canRetry ? 'Disponible' : 'Bloqueado'}`,
+    `Motivo del bloqueo: ${safety.reason || 'ninguno'}`,
+    `Fase de inicio: ${safety.phase}`,
+    `Operaciones activas: ${safety.pendingCount ?? 'no verificable'}`,
+    `Cobros activos: ${safety.liveCheckouts ?? 'no verificable'}`,
+    `Cobros protegidos persistidos: ${safety.savedCheckouts ?? 'no verificable'}`,
     `Comprobación de actualización: ${hasChecked ? check.status : 'No solicitada'}`
   ].join('\n');
   const supportUrl = buildSupportMailtoUrl({
@@ -164,15 +195,15 @@ export default function AppBootRecovery() {
           <button type="button" className="ui-button ui-button--primary" onClick={retry}
             disabled={!canRestart} aria-describedby={!canRestart ? 'app-boot-recovery-disabled' : undefined}>
             <RefreshCw size={18} aria-hidden="true" />
-            Reintentar inicio
+            {retryBusy ? 'Reintentando inicio…' : 'Reintentar inicio'}
           </button>
           {!canRestart && (
             <p className="app-boot-recovery__note" id="app-boot-recovery-disabled" role="status">
-              {safety.operationsIdle
-                ? 'La sesión o el negocio cambió durante el inicio. Por seguridad, no podemos reiniciar desde esta pantalla.'
-                : 'No podemos confirmar que las operaciones locales hayan terminado. El reinicio está protegido.'}
+              {BLOCK_REASON[safety.reason] || 'Reintento no disponible.'}
             </p>
           )}
+          {retryNotice && <p role="status" className="app-boot-recovery__note">{retryNotice}</p>}
+          {safety.savedCheckouts > 0 && <p role="status" className="app-boot-recovery__note">Hay {safety.savedCheckouts} cobro(s) guardado(s) y protegido(s). El reintento no los desbloqueará ni repetirá.</p>}
         </div>
 
         <div className="app-boot-recovery__secondary" aria-label="Otras opciones de recuperación">
@@ -210,7 +241,10 @@ export default function AppBootRecovery() {
             <summary>Ver diagnóstico</summary>
             <div className="app-boot-recovery__details">
               <p><strong>Código:</strong> ADMIN_RUNTIME_BOOT_TIMEOUT</p>
-              <p><strong>Etapa:</strong> Preparación de la aplicación</p>
+              <p><strong>Etapa:</strong> {PHASE_LABEL[safety.phase] || 'No determinada'}</p>
+              <p><strong>Motivo:</strong> {safety.reason || 'Ninguno'}</p>
+              <p><strong>Operaciones activas:</strong> {safety.pendingCount ?? 'No verificable'}</p>
+              <p><strong>Cobros protegidos guardados:</strong> {safety.savedCheckouts ?? 'No verificable'}</p>
               <p><strong>Versión:</strong> {APP_VERSION_LABEL}</p>
               <p><strong>Conexión:</strong> {online ? 'En línea' : 'Sin conexión'}</p>
               <p><strong>Reintento:</strong> {canRestart ? 'Disponible' : 'Bloqueado por seguridad'}</p>
