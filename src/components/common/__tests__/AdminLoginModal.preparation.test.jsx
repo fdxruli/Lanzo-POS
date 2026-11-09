@@ -17,6 +17,11 @@ vi.mock('../../../store/useAppStore', () => {
   return { useAppStore };
 });
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({ markFreeDeviceTakeoverCompleted: vi.fn() }));
+const supportMocks = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
+vi.mock('../../../services/support/supportContact', async (importOriginal) => ({
+  ...(await importOriginal()),
+  copyTextToClipboard: supportMocks.copyTextToClipboard
+}));
 import AdminLoginModal from '../AdminLoginModal';
 
 const fill = () => {
@@ -30,6 +35,7 @@ beforeEach(() => {
   state.adminLoginMessage = null;
   state.adminLoginError = null;
   state.actorAuthorityRecovery = null;
+  supportMocks.copyTextToClipboard.mockResolvedValue(true);
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 afterEach(cleanup);
@@ -74,6 +80,65 @@ describe('Admin preparation recovery UI', () => {
     expect(screen.getByRole('status')).toHaveTextContent(message);
     expect(screen.getByRole('button', { name: actionLabel })).toBeEnabled();
     expect(screen.queryByText(/INTERNAL_TOKEN=secret/)).not.toBeInTheDocument();
+  });
+
+  it('shows a whitelisted checkout ownership reason and copies safe evidence from Android recovery', async () => {
+    state.adminLoginError = {
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_HANDOFF_CHECKOUT_OWNED',
+      verificationStatus: 'verified',
+      message: 'private-message=TOKEN_DO_NOT_COPY'
+    };
+    state.adminLoginMessage = 'actor=secret_owner token=DO_NOT_COPY';
+    render(<AdminLoginModal />);
+
+    expect(screen.getByText('ACTOR_HANDOFF_CHECKOUT_OWNED')).toBeInTheDocument();
+    expect(screen.getByText(/Hay cobros protegidos de otra sesión/i)).toBeInTheDocument();
+    expect(screen.queryByText(/secret_owner|TOKEN_DO_NOT_COPY|private-message/)).not.toBeInTheDocument();
+    expect(state.initializeApp).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
+    await waitFor(() => expect(supportMocks.copyTextToClipboard).toHaveBeenCalledTimes(1));
+    const report = supportMocks.copyTextToClipboard.mock.calls[0][0];
+    expect(report).toContain('ACTOR_HANDOFF_CHECKOUT_OWNED');
+    expect(report).toContain('ACTOR_RUNTIME_RESTORE_FAILED');
+    expect(report).toContain('Verificación: verified');
+    expect(report).not.toMatch(/secret_owner|TOKEN_DO_NOT_COPY|private-message|QA-LICENSE/);
+    expect(await screen.findByText('Diagnóstico copiado')).toBeInTheDocument();
+  });
+
+  it('redacts unknown reason text instead of copying raw identifiers', async () => {
+    state.adminLoginError = {
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_token=secret-metadata',
+      verificationStatus: 'opaque-secret-verification',
+      message: 'private incident'
+    };
+    render(<AdminLoginModal />);
+    expect(screen.getByText('NO_CLASIFICADO')).toBeInTheDocument();
+    expect(screen.queryByText(/secret-metadata/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
+    await waitFor(() => expect(supportMocks.copyTextToClipboard).toHaveBeenCalledTimes(1));
+    const report = supportMocks.copyTextToClipboard.mock.calls[0][0];
+    expect(report).toContain('Motivo: NO_CLASIFICADO');
+    expect(report).toContain('Verificación: NO_CLASIFICADO');
+    expect(report).not.toMatch(/secret-metadata|private incident|QA-LICENSE/);
+  });
+
+  it('does not show a technical diagnostic on normal login', () => {
+    render(<AdminLoginModal />);
+    expect(screen.queryByText('Diagnóstico de acceso')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copiar diagnóstico' })).not.toBeInTheDocument();
+  });
+
+  it('reports clipboard failure without changing session or retrying', async () => {
+    state.adminLoginError = { code: 'ACTOR_RUNTIME_RESTORE_FAILED' };
+    supportMocks.copyTextToClipboard.mockResolvedValue(false);
+    render(<AdminLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
+    expect(await screen.findByText(/No se pudo copiar/)).toBeInTheDocument();
+    expect(state.initializeApp).not.toHaveBeenCalled();
+    expect(state.resumeAdminSessionPreparation).not.toHaveBeenCalled();
   });
 
   it.each([
