@@ -27,8 +27,8 @@ describe('restaurant recipe simple-stock atomic sale', () => {
       productType: 'sellable', trackStock: false,
       recipe: [{ ingredientId: 'chicken', quantity: 0.15 }, { ingredientId: 'bread', quantity: 1 }]
     });
-    const chicken = product('chicken', 1);
-    const bread = product('bread', 10);
+    const chicken = product('chicken', 1, { cost: 10 });
+    const bread = product('bread', 10, { cost: 2 });
     await db.table(STORES.MENU).bulkPut([dish, chicken, bread]);
 
     const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
@@ -37,6 +37,7 @@ describe('restaurant recipe simple-stock atomic sale', () => {
       batchesMap: new Map(),
       roundCurrency: (v) => Math.round(v * 100) / 100
     });
+    expect(processedItems[0].cost).toBe(3.5); // ($10 * 0.3 + $2 * 2) / 2 plates
     const sale = {
       id: 'recipe-sale-1', items: processedItems, timestamp: new Date().toISOString(),
       total: '200.00', abono: '200.00', saldoPendiente: '0.00',
