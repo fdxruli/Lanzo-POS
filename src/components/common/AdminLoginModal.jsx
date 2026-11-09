@@ -10,6 +10,7 @@ import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCas
 import AdminAccountRecovery from './AdminAccountRecovery';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
 import { copyTextToClipboard } from '../../services/support/supportContact';
+import { readProtectedCheckoutDiagnosis } from '../../services/diagnostics/protectedCheckoutDiagnosis';
 import './AdminAuthModal.css';
 
 const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
@@ -56,6 +57,35 @@ const safeRecoveryReason = value => SAFE_RECOVERY_REASON_CODES.has(value)
 const safeVerificationState = value => SAFE_RECOVERY_VERIFICATION_STATES.has(value)
   ? value : 'NO_CLASIFICADO';
 
+const LOCK_OWNER_LABELS = Object.freeze({
+  matching_admin: 'Coincide con Admin verificado',
+  other_admin: 'Otro Admin',
+  staff: 'Staff',
+  no_owner_proof: 'Sin propietario verificable',
+  unrecognized_owner: 'Propietario no reconocible'
+});
+const LOCAL_SALE_LABELS = Object.freeze({
+  open: 'Abierto',
+  closed: 'Cerrado localmente',
+  cancelled: 'Cancelado localmente',
+  requires_review: 'Requiere revisión',
+  unknown: 'No determinado'
+});
+const LOCAL_DIAG_CODES = new Set([
+  'ADMIN_IDENTITY_UNAVAILABLE',
+  'TENANT_RUNTIME_UNAVAILABLE',
+  'ACTOR_CONTEXT_CHANGED',
+  'CONTEXT_CHANGED_DURING_READ',
+  'LOCAL_READ_UNAVAILABLE',
+  'VERIFICATION_NOT_CURRENT'
+]);
+const safeLockOwner = value => Object.hasOwn(LOCK_OWNER_LABELS, value)
+  ? LOCK_OWNER_LABELS[value] : 'No clasificable';
+const safeLocalSaleState = value => Object.hasOwn(LOCAL_SALE_LABELS, value)
+  ? LOCAL_SALE_LABELS[value] : 'No determinado';
+const safeLocalDiagCode = value => LOCAL_DIAG_CODES.has(value) ? value : 'LOCAL_READ_UNAVAILABLE';
+
+
 
 const describeLoginError = (error, result = null) => {
   const code = result?.code || error?.code || null;
@@ -97,6 +127,8 @@ export default function AdminLoginModal() {
   const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState('');
   const [diagnosticCopyStatus, setDiagnosticCopyStatus] = useState('');
+  const [localLockDiagnosis, setLocalLockDiagnosis] = useState(null);
+  const [localInspectionBusy, setLocalInspectionBusy] = useState(false);
   const [accountRecovery, setAccountRecovery] = useState(false);
   const [takeoverRequired, setTakeoverRequired] = useState(false);
   const usernameRef = useRef(null);
@@ -104,6 +136,7 @@ export default function AdminLoginModal() {
   const takeoverFocusHandledRef = useRef(false);
   const busyRef = useRef(false);
   const recoveryButtonRef = useRef(null);
+  const localInspectionGeneration = useRef(0);
   const previousRecoveryRef = useRef(false);
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
@@ -130,6 +163,7 @@ export default function AdminLoginModal() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const licenseKey = useAppStore((state) => state.adminLoginLicenseKey || state.licenseDetails?.license_key);
+  const canInspectLocalLocks = isProtectedCheckoutRejection && recoveryVerification === 'verified';
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
   const verificationStatusMessage = adminLoginError?.verificationStatus === 'transport_unavailable'
@@ -162,6 +196,13 @@ export default function AdminLoginModal() {
     else if (previousRecoveryRef.current) usernameRef.current?.focus();
     previousRecoveryRef.current = recoveryAvailable;
   }, [recoveryAvailable, loading]);
+
+  useEffect(() => {
+    // Drop read-only results if this view changes to a new authority context.
+    localInspectionGeneration.current += 1;
+    setLocalLockDiagnosis(null);
+    setLocalInspectionBusy(false);
+  }, [canInspectLocalLocks, licenseKey]);
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -257,6 +298,39 @@ export default function AdminLoginModal() {
     }
   };
 
+  const inspectLocalCheckoutLocks = async () => {
+    if (localInspectionBusy || !canInspectLocalLocks) return;
+    const request = ++localInspectionGeneration.current;
+    setLocalInspectionBusy(true);
+    setLocalLockDiagnosis(null);
+    setDiagnosticCopyStatus('');
+    try {
+      const before = useAppStore.getState();
+      const hasVerifiedRecovery = before.appStatus === 'admin_login_required'
+        && before.currentDeviceRole === 'admin'
+        && before.adminLoginError?.code === 'ACTOR_RUNTIME_RESTORE_FAILED'
+        && before.adminLoginError?.reasonCode === 'ACTOR_HANDOFF_CHECKOUT_OWNED'
+        && before.adminLoginError?.verificationStatus === 'verified';
+      const result = hasVerifiedRecovery
+        ? await readProtectedCheckoutDiagnosis({ verifiedAdminActor: before.licenseDetails?.admin_user })
+        : { status: 'unavailable', code: 'VERIFICATION_NOT_CURRENT' };
+      const after = useAppStore.getState();
+      if (request !== localInspectionGeneration.current) return;
+      if (before.licenseDetails !== after.licenseDetails || before.adminLoginError !== after.adminLoginError
+          || after.appStatus !== 'admin_login_required' || after.currentDeviceRole !== 'admin') {
+        setLocalLockDiagnosis({ status: 'unavailable', code: 'VERIFICATION_NOT_CURRENT' });
+      } else {
+        setLocalLockDiagnosis(result);
+      }
+    } catch {
+      if (request === localInspectionGeneration.current) {
+        setLocalLockDiagnosis({ status: 'unavailable', code: 'LOCAL_READ_UNAVAILABLE' });
+      }
+    } finally {
+      if (request === localInspectionGeneration.current) setLocalInspectionBusy(false);
+    }
+  };
+
   const copyRecoveryDiagnostic = async () => {
     setDiagnosticCopyStatus('');
     const report = [
@@ -266,6 +340,13 @@ export default function AdminLoginModal() {
       `Motivo: ${recoveryReason}`,
       `Verificación: ${recoveryVerification}`,
       `Conexión: ${online ? 'Online' : 'Offline'}`,
+      ...(localLockDiagnosis?.status === 'ready' ? [
+        `Bloqueos locales: ${localLockDiagnosis.total}`,
+        ...localLockDiagnosis.entries.map((item, index) =>
+          `Registro ${index + 1}: propietario=${safeLockOwner(item.owner)}; estado local=${safeLocalSaleState(item.localStatus)}; intento registrado=${item.attemptMarked === true ? 'sí' : 'no'}; resultado financiero=no verificable`),
+        ...(localLockDiagnosis.truncated ? ['Hay más bloqueos no detallados en este diagnóstico.'] : [])
+      ] : [`Inspección local: ${localLockDiagnosis ? safeLocalDiagCode(localLockDiagnosis.code) : 'NO_EJECUTADA'}`]),
+      'La lectura local no demuestra si un pago se realizó ni permite liberar cobros.',
       'Los datos de ventas y cobros no se han modificado.',
       'Sin credenciales, identificadores de licencia, negocio, dispositivo, usuario ni detalles de operaciones.'
     ].join('\n');
@@ -521,6 +602,33 @@ export default function AdminLoginModal() {
             <p><strong>Motivo:</strong> <code>{recoveryReason}</code></p>
             {isProtectedCheckoutRejection && (
               <p>Hay cobros protegidos de otra sesión o sin propietario verificable. No se liberarán ni repetirán.</p>
+            )}
+            {canInspectLocalLocks && (
+              <>
+                <button type="button" className="admin-auth-recovery-link"
+                  disabled={localInspectionBusy || loading}
+                  onClick={() => { void inspectLocalCheckoutLocks(); }}>
+                  {localInspectionBusy ? 'Inspeccionando…' : 'Inspeccionar bloqueos locales'}
+                </button>
+                {localInspectionBusy && <p role="status">Consultando registros locales sin modificarlos…</p>}
+                {localLockDiagnosis?.status === 'ready' && (
+                  <div role="status" aria-label="Resultado de la inspección local">
+                    <p><strong>Bloqueos guardados:</strong> {localLockDiagnosis.total}</p>
+                    {localLockDiagnosis.entries.map((item, index) => (
+                      <p key={index}>
+                        <strong>Registro {index + 1}:</strong>{' '}
+                        {safeLockOwner(item.owner)} · {safeLocalSaleState(item.localStatus)}
+                        {' · '}Intento registrado: {item.attemptMarked === true ? 'Sí' : 'No'}
+                      </p>
+                    ))}
+                    {localLockDiagnosis.truncated && <p>Hay más registros protegidos no detallados.</p>}
+                    <p>Resultado financiero: no verificable solo con la información local. No se ha liberado ningún cobro.</p>
+                  </div>
+                )}
+                {localLockDiagnosis?.status === 'unavailable' && (
+                  <p role="status">No fue posible realizar la lectura segura ({safeLocalDiagCode(localLockDiagnosis.code)}). Los datos siguen protegidos.</p>
+                )}
+              </>
             )}
             <button type="button" className="admin-auth-recovery-link" onClick={() => { void copyRecoveryDiagnostic(); }}>
               <Copy size={16} aria-hidden="true" /> Copiar diagnóstico
