@@ -45,13 +45,17 @@ export default function BatchTable({
 }) {
   const showExpiry = Boolean(features.hasLots || features.hasExpiry);
   const showVariants = Boolean(features.hasVariants);
+  const isCommercialVariant = isCommercialVariantProduct({
+    ...product,
+    activeBatches: product?.activeBatches?.length ? product.activeBatches : productBatches
+  });
 
   return (
     <div className="batch-details-container">
       <dl className="batch-stats-grid" aria-label="Resumen de inventario del producto">
         <div className="batch-stat-card">
           <dt>Registros</dt>
-          <dd>{loadedCount} <span>de {totalCount}</span></dd>
+          <dd>{loadedCount} de {totalCount}</dd>
         </div>
         <div className="batch-stat-card">
           <dt>Existencias físicas</dt>
@@ -136,7 +140,7 @@ export default function BatchTable({
                     {showExpiry && (
                       <div><dt>Caducidad</dt><dd>{formatDate(batch.expiryDate)}</dd></div>
                     )}
-                    <div><dt>Precio de venta</dt><dd>{formatMoney(getDisplayedBatchSalePrice(product, batch))}</dd></div>
+                    <div><dt>{isCommercialVariant ? 'Precio de variante' : 'Precio del producto'}</dt><dd>{formatMoney(getDisplayedBatchSalePrice(product, batch))}</dd></div>
                     {supplier && <div><dt>Proveedor</dt><dd>{supplier}</dd></div>}
                     {batch.location && <div><dt>Ubicación</dt><dd>{batch.location}</dd></div>}
                   </dl>
@@ -149,6 +153,7 @@ export default function BatchTable({
                     onClick={() => onEditBatch(batch)}
                     disabled={archived}
                     aria-label={`Editar ${primaryLabel}`}
+                    title={archived ? "No se puede editar un lote archivado" : "Editar información"}
                   >
                     <Edit2 size={15} aria-hidden="true" /> Editar
                   </button>
@@ -158,6 +163,7 @@ export default function BatchTable({
                     onClick={() => onDeleteBatch(batch)}
                     disabled={archived}
                     aria-label={`Archivar ${primaryLabel}`}
+                    title={archived ? "Este lote ya está archivado" : "Archivar"}
                   >
                     <Archive size={15} aria-hidden="true" /> Archivar
                   </button>
