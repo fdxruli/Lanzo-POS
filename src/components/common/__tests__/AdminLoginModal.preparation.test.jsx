@@ -133,8 +133,8 @@ describe('Admin preparation recovery UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspeccionar bloqueos locales' }));
     expect(await screen.findByRole('status', { name: 'Resultado de la inspección local' }))
       .toHaveTextContent(/Bloqueos guardados: 2/);
-    expect(screen.getByText(/Registro 1:/)).toHaveTextContent(/Staff.*Abierto.*Intento registrado: Sí/);
-    expect(screen.getByText(/Registro 2:/)).toHaveTextContent(/Sin propietario verificable.*No determinado/);
+    expect(screen.getByText(/Registro 1:/).closest('p')).toHaveTextContent(/Staff.*Abierto.*Intento registrado: Sí/);
+    expect(screen.getByText(/Registro 2:/).closest('p')).toHaveTextContent(/Sin propietario verificable.*No determinado/);
     expect(diagnosisMocks.readProtectedCheckoutDiagnosis).toHaveBeenCalledWith({
       verifiedAdminActor: { id: 'secret-admin' }
     });
