@@ -18,6 +18,8 @@ vi.mock('../../../store/useAppStore', () => {
 });
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({ markFreeDeviceTakeoverCompleted: vi.fn() }));
 const supportMocks = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
+const diagnosisMocks = vi.hoisted(() => ({ readProtectedCheckoutDiagnosis: vi.fn() }));
+vi.mock('../../../services/diagnostics/protectedCheckoutDiagnosis', () => diagnosisMocks);
 vi.mock('../../../services/support/supportContact', async (importOriginal) => ({
   ...(await importOriginal()),
   copyTextToClipboard: supportMocks.copyTextToClipboard
@@ -36,6 +38,10 @@ beforeEach(() => {
   state.adminLoginError = null;
   state.actorAuthorityRecovery = null;
   supportMocks.copyTextToClipboard.mockResolvedValue(true);
+  diagnosisMocks.readProtectedCheckoutDiagnosis.mockReset();
+  state.appStatus = 'admin_login_required';
+  state.currentDeviceRole = 'admin';
+  state.licenseDetails = { plan_code: 'free_trial', license_key: 'QA-LICENSE' };
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 afterEach(cleanup);
@@ -105,6 +111,70 @@ describe('Admin preparation recovery UI', () => {
     expect(report).toContain('Verificación: verified');
     expect(report).not.toMatch(/secret_owner|TOKEN_DO_NOT_COPY|private-message|QA-LICENSE/);
     expect(await screen.findByText('Diagnóstico copiado')).toBeInTheDocument();
+  });
+
+  it('inspects two checkout locks without retrying, leaking identities or altering the session', async () => {
+    state.licenseDetails = {
+      plan_code: 'pro', license_key: 'QA-LICENSE', admin_user: { id: 'secret-admin' }
+    };
+    state.adminLoginError = {
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_HANDOFF_CHECKOUT_OWNED',
+      verificationStatus: 'verified'
+    };
+    diagnosisMocks.readProtectedCheckoutDiagnosis.mockResolvedValue({
+      status: 'ready', total: 2, truncated: false,
+      entries: [
+        { owner: 'staff', localStatus: 'open', attemptMarked: true, financialOutcome: 'unverified' },
+        { owner: 'no_owner_proof', localStatus: 'unknown', attemptMarked: false, financialOutcome: 'unverified' }
+      ]
+    });
+    render(<AdminLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Inspeccionar bloqueos locales' }));
+    expect(await screen.findByRole('status', { name: 'Resultado de la inspección local' }))
+      .toHaveTextContent(/Bloqueos guardados: 2/);
+    expect(screen.getByText(/Registro 1:/)).toHaveTextContent(/Staff.*Abierto.*Intento registrado: Sí/);
+    expect(screen.getByText(/Registro 2:/)).toHaveTextContent(/Sin propietario verificable.*No determinado/);
+    expect(diagnosisMocks.readProtectedCheckoutDiagnosis).toHaveBeenCalledWith({
+      verifiedAdminActor: { id: 'secret-admin' }
+    });
+    expect(state.initializeApp).not.toHaveBeenCalled();
+    expect(state.handleAdminLogin).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
+    await waitFor(() => expect(supportMocks.copyTextToClipboard).toHaveBeenCalledTimes(1));
+    const report = supportMocks.copyTextToClipboard.mock.calls[0][0];
+    expect(report).toContain('Bloqueos locales: 2');
+    expect(report).toContain('propietario=Staff');
+    expect(report).toContain('resultado financiero=no verificable');
+    expect(report).not.toMatch(/secret-admin|QA-LICENSE|checkoutAttemptId|customerId|deviceId/);
+  });
+
+  it('does not inspect when verification or actor context is not current', async () => {
+    state.adminLoginError = {
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_HANDOFF_CHECKOUT_OWNED',
+      verificationStatus: 'invalid_response'
+    };
+    render(<AdminLoginModal />);
+    expect(screen.queryByRole('button', { name: 'Inspeccionar bloqueos locales' })).not.toBeInTheDocument();
+    expect(diagnosisMocks.readProtectedCheckoutDiagnosis).not.toHaveBeenCalled();
+  });
+
+  it('does not expose a stale inspection result after the Admin context changes', async () => {
+    state.licenseDetails = { license_key: 'QA-LICENSE', admin_user: { id: 'admin' } };
+    state.adminLoginError = { code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_HANDOFF_CHECKOUT_OWNED', verificationStatus: 'verified' };
+    diagnosisMocks.readProtectedCheckoutDiagnosis.mockImplementation(async () => {
+      state.currentDeviceRole = 'staff';
+      return { status: 'ready', total: 1, entries: [
+        { owner: 'staff', localStatus: 'open', attemptMarked: false }
+      ] };
+    });
+    render(<AdminLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Inspeccionar bloqueos locales' }));
+    expect(await screen.findByText(/VERIFICATION_NOT_CURRENT/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bloqueos guardados: 1/)).not.toBeInTheDocument();
   });
 
   it('redacts unknown reason text instead of copying raw identifiers', async () => {
