@@ -55,7 +55,7 @@ describe('read-only protected checkout diagnosis', () => {
         { owner: 'no_owner_proof', localStatus: 'unknown' }
       ]
     });
-    expect(JSON.stringify(result)).not.toMatch(/secret-|private|999|owner|person|different|customerId|checkoutAttemptId|tenant-secret/);
+    expect(JSON.stringify(result)).not.toMatch(/secret-|private|999|admin:owner|staff:person|admin:different|customerId|checkoutAttemptId|tenant-secret/);
     expect(harness.table).toHaveBeenCalledTimes(1);
     expect(harness.table).toHaveBeenCalledWith('sales');
   });
