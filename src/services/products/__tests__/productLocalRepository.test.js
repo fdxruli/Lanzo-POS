@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { db } from '../../db/dexie';
+import { loadData, softDeleteWithCascadeSafe, updateProductSafe } from '../../database';
 
 vi.mock('../../db/dexie', () => ({
   db: {
