@@ -71,8 +71,10 @@ const notifyCashSessionAttentionRefresh = () => {
 
 const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
   <div className="ui-alert ui-alert--warning caja-network-recovery" role="alert" aria-live="polite">
-    <strong>No se puede verificar Caja</strong>
-    <p>{CASH_NETWORK_UNAVAILABLE_MESSAGE}</p>
+    <div className="caja-network-recovery__content">
+      <strong>No se puede verificar Caja</strong>
+      <p>{CASH_NETWORK_UNAVAILABLE_MESSAGE}</p>
+    </div>
     <button
       type="button"
       className="ui-button ui-button--secondary btn btn-secondary"
@@ -823,13 +825,15 @@ export default function CajaPage() {
     const stationSession = aperturaPendiente?.stationOpenCashSession || null;
     return (
       <main className="ui-page caja-page" aria-label="Caja">
-        <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
-          <div className="ui-section__actions">
-            <span className="ui-badge ui-badge--warning">
-              {networkUnavailable ? 'Sin conexión con Supabase' : handoffRequired ? 'Caja pendiente de cierre' : 'Estado financiero bloqueado'}
-            </span>
-          </div>
-        </header>
+        {!networkUnavailable && (
+          <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
+            <div className="ui-section__actions">
+              <span className="ui-badge ui-badge--warning">
+                {handoffRequired ? 'Caja pendiente de cierre' : 'Estado financiero bloqueado'}
+              </span>
+            </div>
+          </header>
+        )}
         <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Resolución financiera">
           <CajaPostDowngradeReconciliationPanel />
           {networkUnavailable ? (
@@ -853,7 +857,7 @@ export default function CajaPage() {
           ) : stationMismatch ? (
             <div className="ui-alert ui-alert--warning" role="alert">
               <strong>Inconsistencia de estación financiera</strong>
-              <p>Supabase devolvió una sesión asociada a otra estación. La Caja permanece bloqueada hasta resolver la identidad de estación explícitamente.</p>
+              <p>Se recibió una caja asociada a otra estación. Por seguridad, Caja permanece bloqueada hasta verificar la estación correcta.</p>
             </div>
           ) : (
             <div className="ui-alert ui-alert--warning" role="alert">

@@ -172,6 +172,23 @@ afterEach(() => {
 });
 
 describe('CajaPage cash close routing', () => {
+
+  it('muestra un solo aviso de conexión accesible en vez de duplicar el encabezado técnico', () => {
+    fixtures.hookState = {
+      ...makeHookState({ estadoCaja: 'financial_blocked', cajaActual: null }),
+      networkUnavailable: true
+    };
+    renderCajaPage();
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('No se puede verificar Caja');
+    expect(alert).toHaveTextContent('modo de solo consulta');
+    expect(alert).not.toHaveTextContent(/Supabase/i);
+    expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeVisible();
+    expect(document.querySelectorAll('.caja-network-recovery')).toHaveLength(1);
+    expect(document.querySelector('.caja-page__header')).toBeNull();
+  });
+
   it('compares the stable actor key across both cash session field aliases', () => {
     expect(isCashSessionOwnedByActor({ actor_key: 'admin:a' }, { actorKey: 'admin:a' })).toBe(true);
     expect(isCashSessionOwnedByActor({ actorKey: 'staff:b' }, { actorKey: 'staff:b' })).toBe(true);
