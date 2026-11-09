@@ -6,6 +6,11 @@ const fixture = vi.hoisted(() => ({ tenant: null, session: 'session-a', device: 
 vi.mock('../../licenseService', () => ({ renewLicenseService: vi.fn() }));
 vi.mock('../../licenseStorage', () => ({ saveLicenseToStorage: vi.fn() }));
 vi.mock('../../tenant/localTenantGuard', () => ({ assertLocalTenantSyncAccess: vi.fn() }));
+// This suite models runtime transitions without a physical IndexedDB.
+// The real atomic closed-sale/receipt reconciliation has its own Dexie tests.
+vi.mock('../committedCheckoutLockReconciliation', () => ({
+  reconcileCommittedCheckoutLocks: vi.fn(async () => ({ reconciled: 0 }))
+}));
 vi.mock('../../db/tenantRuntimeRouter', () => ({
   getTenantRuntimeReadiness: () => ({ ready: fixture.ready, runtime: fixture.tenant }),
   db: { table: (name) => {
