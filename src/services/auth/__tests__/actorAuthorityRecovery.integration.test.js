@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => {
     })
   };
 });
+// This suite models runtime transitions without a physical IndexedDB.
+// The real atomic closed-sale/receipt reconciliation has its own Dexie tests.
+vi.mock('../committedCheckoutLockReconciliation', () => ({
+  reconcileCommittedCheckoutLocks: vi.fn(async () => ({ reconciled: 0 }))
+}));
 vi.mock('../../db/tenantRuntimeRouter', () => ({
   db: { table: () => ({ get: async (key) => ({ value: mocks.cache.get(key) }) }) },
   getTenantRuntimeReadiness: () => ({ ready: true, runtime: mocks.tenant })
