@@ -102,7 +102,7 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
 
   it('consumes only free physical stock, preserves other table commitments, and records required/used/missing', async () => {
     const dish = makeDish('dish', [{ ingredientId:'flour',quantity:2 }]);
-    const flour = makeProduct('flour',7,{committedStock:4});
+    const flour = makeProduct('flour',7,{committedStock:4,cost:12});
     await db.table(STORES.MENU).bulkPut([dish,flour]);
     const {sale,batchesToDeduct} = await saleFor({
       id:'partial-a',items:[{id:'dish',quantity:3}],catalog:[dish,flour],maxMissing:{flour:3}
@@ -111,6 +111,7 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
     expect((await db.table(STORES.MENU).get('flour')).stock).toBe(4);
     expect((await db.table(STORES.MENU).get('flour')).committedStock).toBe(4);
     const saved=await db.table(STORES.SALES).get('partial-a');
+    expect(saved.items[0].cost).toBe(12); // only 3 consumed, never 6 required
     expect(saved.metadata.directPartialInventory.components[0]).toMatchObject({
       required:6, consumed:3, missing:3, committedBefore:4
     });
@@ -152,11 +153,12 @@ describe('PR441 direct recipe partial authorization in Dexie', () => {
 
   it('allows all missing from a known ingredient already at zero without negative stock', async () => {
     const dish=makeDish('dish',[{ingredientId:'flour',quantity:2}]);
-    const flour=makeProduct('flour',0);
+    const flour=makeProduct('flour',0,{cost:12});
     await db.table(STORES.MENU).bulkPut([dish,flour]);
     const {sale,batchesToDeduct}=await saleFor({id:'zero',items:[{id:'dish',quantity:1}],catalog:[dish,flour],maxMissing:{flour:2}});
     expect((await salesRepository.executeSaleTransaction(sale,batchesToDeduct)).success).toBe(true);
     expect((await db.table(STORES.MENU).get('flour')).stock).toBe(0);
+    expect((await db.table(STORES.SALES).get('zero')).items[0].cost).toBe(0);
     expect((await db.table(STORES.SALES).get('zero')).metadata.directPartialInventory.components[0]).toMatchObject({ required:2,consumed:0,missing:2 });
     expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
   });
