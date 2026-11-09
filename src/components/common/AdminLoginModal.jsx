@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
+import { ArrowLeft, Copy, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
@@ -8,6 +8,8 @@ import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
 import AdminAccountRecovery from './AdminAccountRecovery';
+import { APP_VERSION_LABEL } from '../../config/appVersion';
+import { copyTextToClipboard } from '../../services/support/supportContact';
 import './AdminAuthModal.css';
 
 const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
@@ -25,6 +27,35 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   ADMIN_AUTH_IN_PROGRESS: 'Estamos recuperando tu sesión de forma segura.'
 });
 const LOCAL_PLAN_OWNER_MESSAGE = 'Tu plan cambió a Lanzo Local. Inicia sesión como propietario para usar este dispositivo.';
+
+// The store can receive arbitrary server/exception messages. Publish only
+// explicitly reviewed error identifiers, never messages, token-like strings,
+// actor IDs, session IDs, license keys or checkout row details.
+const SAFE_RECOVERY_REASON_CODES = new Set([
+  'ACTOR_HANDOFF_CHECKOUT_OWNED',
+  'ACTOR_HANDOFF_PENDING_OPERATIONS',
+  'ACTOR_SESSION_AMBIGUOUS',
+  'ACTOR_SESSION_REQUIRED',
+  'ACTOR_CONTEXT_STALE',
+  'ACTOR_CONTEXT_LOCKED',
+  'ACTOR_HANDOFF_REQUIRED',
+  'ACTOR_IDENTITY_INVALID',
+  'ACTOR_TENANT_NOT_READY',
+  'ACTOR_TENANT_MISMATCH',
+  'ACTOR_DEVICE_REQUIRED',
+  'ACTOR_RUNTIME_RESTORE_FAILED',
+  'ACTOR_SESSION_RESTORE_FAILED',
+  'SESSION_VERIFICATION_CONTEXT_STALE'
+]);
+const SAFE_RECOVERY_VERIFICATION_STATES = new Set([
+  'verified', 'transport_unavailable', 'server_error', 'invalid_response',
+  'authoritative_denial', 'local_storage_error', 'local_credentials_missing'
+]);
+const safeRecoveryReason = value => SAFE_RECOVERY_REASON_CODES.has(value)
+  ? value : 'NO_CLASIFICADO';
+const safeVerificationState = value => SAFE_RECOVERY_VERIFICATION_STATES.has(value)
+  ? value : 'NO_CLASIFICADO';
+
 
 const describeLoginError = (error, result = null) => {
   const code = result?.code || error?.code || null;
@@ -65,6 +96,7 @@ export default function AdminLoginModal() {
   const [loading, setLoading] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState('');
+  const [diagnosticCopyStatus, setDiagnosticCopyStatus] = useState('');
   const [accountRecovery, setAccountRecovery] = useState(false);
   const [takeoverRequired, setTakeoverRequired] = useState(false);
   const usernameRef = useRef(null);
@@ -84,6 +116,10 @@ export default function AdminLoginModal() {
   const actorRuntimeRestoreFailed = adminLoginError?.code === 'ACTOR_RUNTIME_RESTORE_FAILED';
   const offlineEvidencePending = adminLoginError?.code === 'ADMIN_OFFLINE_EVIDENCE_PENDING';
   const verificationRecoveryRequired = actorRuntimeRestoreFailed || offlineEvidencePending;
+  const recoveryReason = safeRecoveryReason(adminLoginError?.reasonCode);
+  const recoveryVerification = safeVerificationState(adminLoginError?.verificationStatus);
+  const isProtectedCheckoutRejection = actorRuntimeRestoreFailed && recoveryReason === 'ACTOR_HANDOFF_CHECKOUT_OWNED';
+
   const verificationUnavailable = [
     'SESSION_VERIFICATION_INCONCLUSIVE',
     'ACTOR_RUNTIME_RESTORE_FAILED',
@@ -219,6 +255,22 @@ export default function AdminLoginModal() {
       busyRef.current = false;
       setLoading(false);
     }
+  };
+
+  const copyRecoveryDiagnostic = async () => {
+    setDiagnosticCopyStatus('');
+    const report = [
+      'LANZO POS — Diagnóstico de recuperación de Admin',
+      `Versión: ${APP_VERSION_LABEL}`,
+      'Código: ACTOR_RUNTIME_RESTORE_FAILED',
+      `Motivo: ${recoveryReason}`,
+      `Verificación: ${recoveryVerification}`,
+      `Conexión: ${online ? 'Online' : 'Offline'}`,
+      'Los datos de ventas y cobros no se han modificado.',
+      'Sin credenciales, identificadores de licencia, negocio, dispositivo, usuario ni detalles de operaciones.'
+    ].join('\n');
+    const copied = await copyTextToClipboard(report);
+    setDiagnosticCopyStatus(copied ? 'Diagnóstico copiado' : 'No se pudo copiar. Puedes compartir los códigos que aparecen en pantalla.');
   };
 
   const retryPreparation = async () => {
@@ -460,6 +512,21 @@ export default function AdminLoginModal() {
               {loading ? 'Verificando...' : 'Entrar'}
             </button>
           </form>
+        )}
+
+        {actorRuntimeRestoreFailed && (
+          <div className="admin-auth-diagnostic" aria-label="Diagnóstico seguro de recuperación">
+            <p className="admin-auth-diagnostic__title">Diagnóstico de acceso</p>
+            <p><strong>Código:</strong> <code>ACTOR_RUNTIME_RESTORE_FAILED</code></p>
+            <p><strong>Motivo:</strong> <code>{recoveryReason}</code></p>
+            {isProtectedCheckoutRejection && (
+              <p>Hay cobros protegidos de otra sesión o sin propietario verificable. No se liberarán ni repetirán.</p>
+            )}
+            <button type="button" className="admin-auth-recovery-link" onClick={() => { void copyRecoveryDiagnostic(); }}>
+              <Copy size={16} aria-hidden="true" /> Copiar diagnóstico
+            </button>
+            {diagnosticCopyStatus && <p role="status">{diagnosticCopyStatus}</p>}
+          </div>
         )}
 
         </>}
