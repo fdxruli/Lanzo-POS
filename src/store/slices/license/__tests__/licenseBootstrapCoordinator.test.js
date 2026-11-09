@@ -631,7 +631,7 @@ describe('initializeApp coordinator', () => {
       status: 'loading',
       code: 'BOOTSTRAP_CONTEXT_STALE'
     });
-    expect(state.adminLoginError).toBeUndefined();
+    expect(state.adminLoginError).toBeNull();
     expect(state._loadProfile).not.toHaveBeenCalled();
     expect(actorRuntimeController.getState().status).toBe('locked');
   });
