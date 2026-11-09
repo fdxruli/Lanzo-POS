@@ -451,7 +451,7 @@ export const createLicenseBackgroundValidationActions = ({
 
           get().reportServerStatus?.(
             'degraded',
-            'Supabase está respondiendo más lento de lo normal. Los cambios de configuración pueden tardar unos segundos en reflejarse.',
+            'El servicio en línea está tardando más de lo normal. Algunos cambios pueden demorar en reflejarse.',
             'background_timeout'
           );
         } else if (
@@ -464,7 +464,7 @@ export const createLicenseBackgroundValidationActions = ({
 
           get().reportServerStatus?.(
             'down',
-            'No se pudo contactar Supabase en este momento. Lanzo POS seguirá reintentando automáticamente.',
+            'No pudimos conectarnos al servicio en línea. Lo intentaremos nuevamente de forma automática.',
             'background_network_error'
           );
         }

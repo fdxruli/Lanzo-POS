@@ -71,7 +71,7 @@ const notifyCashSessionAttentionRefresh = () => {
 
 const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
   <div className="ui-alert ui-alert--warning caja-network-recovery" role="alert" aria-live="polite">
-    <strong>Sin conexión con Supabase</strong>
+    <strong>No se puede verificar Caja</strong>
     <p>{CASH_NETWORK_UNAVAILABLE_MESSAGE}</p>
     <button
       type="button"

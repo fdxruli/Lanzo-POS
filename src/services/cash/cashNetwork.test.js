@@ -37,6 +37,7 @@ describe('cash network recovery classification', () => {
       rpcName: 'pos_get_current_cash_session'
     });
     expect(normalized.message).toBe(CASH_NETWORK_UNAVAILABLE_MESSAGE);
+    expect(normalized.message).not.toMatch(/supabase|base de datos/i);
   });
 
   it('preserves diagnostic generation zero', () => {

@@ -5,13 +5,13 @@ import './ServerStatusBanner.css';
 const STATUS_COPY = {
   degraded: {
     icon: '🐢',
-    title: 'Supabase está lento',
+    title: 'El servicio está tardando en responder',
     detail: 'Lanzo POS seguirá reintentando automáticamente.'
   },
   down: {
     icon: '🔌',
-    title: 'Conexión con Supabase interrumpida',
-    detail: 'Puedes seguir usando Lanzo POS. El sistema intentará reconectar en segundo plano.'
+    title: 'Conexión con el servicio interrumpida',
+    detail: 'Algunas funciones en línea pueden estar limitadas. Intentaremos recuperar la conexión automáticamente.'
   }
 };
 
@@ -63,7 +63,7 @@ const ServerStatusBanner = ({ isSuppressed = false } = {}) => {
       <button
         className="banner-close-btn"
         onClick={dismissServerAlert}
-        aria-label="Cerrar aviso de Supabase"
+        aria-label="Cerrar aviso de conexión"
         type="button"
       >
         ✕

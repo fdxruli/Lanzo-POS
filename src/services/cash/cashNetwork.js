@@ -1,7 +1,7 @@
 export const CASH_NETWORK_UNAVAILABLE_CODE = 'CASH_NETWORK_UNAVAILABLE';
 export const CASH_STALE_RESPONSE_CODE = 'CLOUD_REQUEST_RESPONSE_STALE';
 
-export const CASH_NETWORK_UNAVAILABLE_MESSAGE = 'Sin conexión con Supabase. La Caja permanece en solo consulta hasta verificar nuevamente la estación.';
+export const CASH_NETWORK_UNAVAILABLE_MESSAGE = 'No se pudo establecer conexión con el servicio en este momento. Por seguridad, Caja permanece en modo de solo consulta hasta que podamos verificar su estado.';
 
 const RETRYABLE_HTTP_STATUS_CODES = new Set([408, 429]);
 
