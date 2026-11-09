@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, Check, Copy, Mail, RefreshCw } from 'lucide-react';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
 import { getBootRetrySafety } from '../../services/diagnostics/bootRecoverySafety';
+import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
 import {
   buildAdminBootSupportReport,
   buildSupportMailtoUrl,
@@ -55,6 +56,7 @@ const PHASE_LABEL = Object.freeze({
 });
 
 export default function AppBootRecovery({ initializeApp }) {
+  const [isUpdateContextCurrent] = useState(() => createRecoveryContextGuard());
   const [safety, setSafety] = useState(getBootRetrySafety);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryNotice, setRetryNotice] = useState('');
@@ -92,7 +94,7 @@ export default function AppBootRecovery({ initializeApp }) {
   const canRestart = safety.canRetry && !retryBusy && typeof initializeApp === 'function';
   const canOfferUpdate = check.status === 'available' || check.status === 'pending'
     || worker.waiting || worker.reloadDeferred;
-  const canApplyUpdate = safety.canUpdate && !retryBusy && online
+  const canApplyUpdate = safety.canUpdate && isUpdateContextCurrent() && !retryBusy && online
     && (worker.waiting || worker.reloadDeferred || !navigator.serviceWorker?.controller);
 
   const retry = async () => {
@@ -137,7 +139,7 @@ export default function AppBootRecovery({ initializeApp }) {
 
   const applyUpdate = async () => {
     const current = getBootRetrySafety();
-    if (!current.canUpdate || navigator.onLine === false || applyBusy) return;
+    if (!current.canUpdate || !isUpdateContextCurrent() || navigator.onLine === false || applyBusy) return;
     setApplyBusy(true);
     setUpdateNotice('');
     try {
