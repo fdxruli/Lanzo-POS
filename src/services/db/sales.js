@@ -591,7 +591,8 @@ const allocateDirectPartialInventory = async ({ sale, tables }) => {
                     availability.set(batch.id, normalizeStock(available - quantity));
                     pending = normalizeStock(pending - quantity);
                     batchDeductions.push({ batchId: batch.id, productId, quantity, fromCommittedStock: false });
-                    lineCosts[req.lineIndex] += (Number(batch.cost) || Number(product.cost) || 0) * quantity;
+                    const batchCost = Number(batch.cost);
+                    lineCosts[req.lineIndex] += (Number.isFinite(batchCost) ? batchCost : Number(product.cost) || 0) * quantity;
                     item.batchesUsed.push({
                         batchId: batch.id, ingredientId: productId, quantity,
                         cost: batch.cost, expiryDate: batch.expiryDate || null,
