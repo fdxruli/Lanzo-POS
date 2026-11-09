@@ -32,7 +32,7 @@ describe('BatchTable sale price', () => {
       productBatches={[{ id: 'lote-a', isActive: true, stock: 10, price: 25 }]}
     />);
 
-    expect(screen.getByRole('columnheader', { name: 'Precio del producto' })).toBeTruthy();
+    expect(screen.getByText('Precio del producto')).toBeTruthy();
     expect(screen.getByText('$22.98')).toBeTruthy();
     expect(screen.queryByText('$25.00')).toBeNull();
   });
@@ -51,7 +51,7 @@ describe('BatchTable sale price', () => {
       }]}
     />);
 
-    expect(screen.getByRole('columnheader', { name: 'Precio de variante' })).toBeTruthy();
+    expect(screen.getByText('Precio de variante')).toBeTruthy();
     expect(screen.getByText('$220.00')).toBeTruthy();
     expect(screen.queryByText('$200.00')).toBeNull();
   });

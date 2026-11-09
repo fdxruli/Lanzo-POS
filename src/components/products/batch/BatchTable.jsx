@@ -1,18 +1,20 @@
-import { 
-  Edit2, 
-  Archive, 
-  RefreshCw, 
-  Plus, 
-  Layers, 
-  Package, 
-  DollarSign 
+import {
+  Archive, Edit2, Plus, RefreshCw
 } from 'lucide-react';
-import { getBatchTableColumns } from './utils/tableColumns';
 import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
 import { getBatchManagerStatus } from '../../../services/products/batchManagerQueries';
 import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 
-const formatDate = (isoDate) => (isoDate ? new Date(isoDate).toLocaleDateString() : '-');
+const formatDate = (isoDate) => {
+  if (!isoDate) return 'Sin fecha';
+  const date = new Date(isoDate);
+  return Number.isNaN(date.getTime()) ? 'Sin fecha' : date.toLocaleDateString('es-MX');
+};
+
+const formatMoney = (amount) => Number(amount || 0).toLocaleString('es-MX', {
+  style: 'currency',
+  currency: 'MXN'
+});
 
 export function getDisplayedBatchSalePrice(product = {}, batch = {}) {
   if (isCommercialVariantProduct({ ...product, activeBatches: [batch] })) {
@@ -41,189 +43,148 @@ export default function BatchTable({
   onEditBatch,
   onDeleteBatch
 }) {
+  const showExpiry = Boolean(features.hasLots || features.hasExpiry);
+  const showVariants = Boolean(features.hasVariants);
   const isCommercialVariant = isCommercialVariantProduct({
     ...product,
     activeBatches: product?.activeBatches?.length ? product.activeBatches : productBatches
   });
-  const columns = getBatchTableColumns(features, { isCommercialVariant });
-
-  const renderCell = (batch, columnKey) => {
-    const isArchived = getBatchManagerStatus(batch) === 'archived';
-    if (columnKey === 'primary') {
-      if (features.hasVariants) {
-        return (
-          <div className="batch-primary-info">
-            <strong>{batch.attributes?.talla || '-'}</strong>{' '}
-            <span className="batch-color-text">{batch.attributes?.color || ''}</span>
-          </div>
-        );
-      }
-      return <span className="batch-date-text">{formatDate(batch.createdAt)}</span>;
-    }
-
-    if (columnKey === 'sku') {
-      return <span className="batch-sku-badge">{batch.sku || 'N/A'}</span>;
-    }
-
-    if (columnKey === 'expiryDate') {
-      return <span>{formatDate(batch.expiryDate)}</span>;
-    }
-
-    if (columnKey === 'price') {
-      return <strong className="batch-price-text">${getDisplayedBatchSalePrice(product, batch).toFixed(2)}</strong>;
-    }
-
-    if (columnKey === 'location') {
-      return <span className="batch-location-text">{batch.location || '-'}</span>;
-    }
-
-    if (columnKey === 'stock') {
-      const availableStock = getAvailableStock(batch);
-      const committed = getCommittedStock(batch);
-      const hasCommitted = committed > 0;
-
-      return (
-        <div className="batch-stock-container">
-          <span className={`batch-badge ${availableStock > 0 ? 'activo' : 'agotado'}`}>
-            {availableStock}
-          </span>
-          {hasCommitted && (
-            <span className="batch-committed-text">
-              -{committed} reserv.
-            </span>
-          )}
-        </div>
-      );
-    }
-
-    if (columnKey === 'actions') {
-      return (
-        <div className="batch-actions-container">
-          <button
-            type="button"
-            className="btn-action edit"
-            title={isArchived ? "No se puede editar un lote archivado" : "Editar información"}
-            onClick={() => onEditBatch(batch)}
-            disabled={isArchived}
-            style={{ opacity: isArchived ? 0.4 : 1, cursor: isArchived ? 'not-allowed' : 'pointer' }}
-          >
-            <Edit2 size={16} />
-          </button>
-          <button
-            type="button"
-            className="btn-action archive"
-            title={isArchived ? "Este lote ya está archivado" : "Archivar"}
-            onClick={() => onDeleteBatch(batch)}
-            disabled={isArchived}
-            style={{ opacity: isArchived ? 0.4 : 1, cursor: isArchived ? 'not-allowed' : 'pointer' }}
-          >
-            <Archive size={16} />
-          </button>
-        </div>
-      );
-    }
-
-    return null;
-  };
 
   return (
     <div className="batch-details-container">
-      
-      {/* Nuevo panel de estadísticas detalladas */}
-      <div className="batch-stats-grid">
+      <dl className="batch-stats-grid" aria-label="Resumen de inventario del producto">
         <div className="batch-stat-card">
-          <div className="stat-icon variants"><Layers size={22} /></div>
-          <div className="stat-info">
-            <span className="stat-label">Registros / Variantes</span>
-            <span className="stat-value">{loadedCount} de {totalCount}</span>
-            <span className="stat-detail">Mostrados / totales</span>
-          </div>
+          <dt>Registros</dt>
+          <dd>{loadedCount} de {totalCount}</dd>
         </div>
         <div className="batch-stat-card">
-          <div className="stat-icon stock"><Package size={22} /></div>
-          <div className="stat-info">
-            <span className="stat-label">Stock Total</span>
-            <span className="stat-value">{totalStock}</span>
-          </div>
+          <dt>Existencias físicas</dt>
+          <dd>{totalStock}</dd>
         </div>
         <div className="batch-stat-card">
-          <div className="stat-icon value"><DollarSign size={22} /></div>
-          <div className="stat-info">
-            <span className="stat-label">Valor en Inventario</span>
-            <span className="stat-value">${inventoryValue.toFixed(2)}</span>
-          </div>
+          <dt>Valor en inventario</dt>
+          <dd>{formatMoney(inventoryValue)}</dd>
         </div>
-      </div>
+      </dl>
 
       <div className="batch-controls">
-        <h4 className="batch-table-title">Detalle de Inventario</h4>
-
+        <div>
+          <h4 className="batch-table-title">Detalle de lotes</h4>
+          <p className="batch-table-hint">Edita, registra ingresos o consulta el historial del producto.</p>
+        </div>
         <div className="batch-action-buttons">
           <button
             type="button"
-            className="btn btn-secondary btn-with-icon"
+            className="ui-button ui-button--secondary batch-control-button"
             onClick={onRefresh}
             disabled={isLoadingInitial || isRefreshing}
-            title="Actualizar stock desde la base de datos"
+            aria-label="Actualizar lotes"
+            title="Volver a consultar los lotes guardados"
           >
-            <RefreshCw size={16} className={(isLoadingInitial || isRefreshing) ? 'icon-spin' : ''} />
+            <RefreshCw size={16} className={(isLoadingInitial || isRefreshing) ? 'icon-spin' : ''} aria-hidden="true" />
             <span>{(isLoadingInitial || isRefreshing) ? 'Actualizando...' : 'Actualizar'}</span>
           </button>
-
-          <button
-            type="button"
-            className="btn btn-save btn-with-icon"
-            onClick={onOpenNew}
-          >
-            <Plus size={18} />
-            <span>Nuevo Ingreso</span>
+          <button type="button" className="ui-button ui-button--primary batch-control-button" onClick={onOpenNew}>
+            <Plus size={17} aria-hidden="true" />
+            <span>Nuevo ingreso</span>
           </button>
         </div>
       </div>
 
-      <div className="table-responsive-wrapper">
-        <table className="batch-list-table">
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column.key}>{column.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {productBatches.map((batch) => (
-              <tr
+      {isLoadingInitial && (
+        <p role="status" className="batch-state-message">Consultando lotes...</p>
+      )}
+
+      {!isLoadingInitial && productBatches.length === 0 && (
+        <div className="batch-detail-empty">
+          <strong>Sin lotes registrados</strong>
+          <p>Registra el primer ingreso para comenzar a controlar su inventario.</p>
+        </div>
+      )}
+
+      {productBatches.length > 0 && (
+        <div className="batch-entry-list" role="list" aria-label="Lotes registrados">
+          {productBatches.map((batch) => {
+            const archived = getBatchManagerStatus(batch) === 'archived';
+            const available = getAvailableStock(batch);
+            const committed = getCommittedStock(batch);
+            const primaryLabel = showVariants
+              ? [batch.attributes?.talla, batch.attributes?.color].filter(Boolean).join(' · ') || 'Variante sin atributos'
+              : `Ingreso del ${formatDate(batch.createdAt)}`;
+            const supplier = typeof batch.supplier === 'string'
+              ? batch.supplier
+              : (batch.supplierName || '');
+            return (
+              <article
                 key={batch.id}
-                className={getBatchManagerStatus(batch) === 'archived' ? 'inactive-batch' : ''}
+                role="listitem"
+                className={`batch-entry ${archived ? 'batch-entry--archived' : ''}`}
               >
-                {columns.map((column) => (
-                  <td key={`${batch.id}-${column.key}`}>
-                    {renderCell(batch, column.key)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {productBatches.length === 0 && (
-              <tr>
-                <td colSpan={columns.length} className="empty-table-message">
-                  No hay lotes o variantes registradas para este producto.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                <div className="batch-entry-header">
+                  <div className="batch-entry-identity">
+                    <strong>{primaryLabel}</strong>
+                    {batch.sku && <span className="batch-entry-sku">SKU {batch.sku}</span>}
+                  </div>
+                  <span className={`batch-entry-status ${archived ? 'is-archived' : 'is-active'}`}>
+                    {archived ? 'Archivado' : 'Activo'}
+                  </span>
+                </div>
+
+                <div className="batch-entry-body">
+                  <div className="batch-entry-stock">
+                    <span>Disponible</span>
+                    <strong>{available}</strong>
+                    {committed > 0 && <small>{committed} reservadas</small>}
+                  </div>
+                  <dl className="batch-entry-meta">
+                    {showExpiry && (
+                      <div><dt>Caducidad</dt><dd>{formatDate(batch.expiryDate)}</dd></div>
+                    )}
+                    <div><dt>{isCommercialVariant ? 'Precio de variante' : 'Precio del producto'}</dt><dd>{formatMoney(getDisplayedBatchSalePrice(product, batch))}</dd></div>
+                    {supplier && <div><dt>Proveedor</dt><dd>{supplier}</dd></div>}
+                    {batch.location && <div><dt>Ubicación</dt><dd>{batch.location}</dd></div>}
+                  </dl>
+                </div>
+
+                <div className="batch-entry-actions">
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--sm"
+                    onClick={() => onEditBatch(batch)}
+                    disabled={archived}
+                    aria-label={`Editar ${primaryLabel}`}
+                    title={archived ? "No se puede editar un lote archivado" : "Editar información"}
+                  >
+                    <Edit2 size={15} aria-hidden="true" /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button ui-button--ghost ui-button--sm batch-entry-archive"
+                    onClick={() => onDeleteBatch(batch)}
+                    disabled={archived}
+                    aria-label={`Archivar ${primaryLabel}`}
+                    title={archived ? "Este lote ya está archivado" : "Archivar"}
+                  >
+                    <Archive size={15} aria-hidden="true" /> Archivar
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
       {hasMore && (
         <div className="batch-load-more-container">
           <button
             type="button"
-            className="btn btn-secondary btn-with-icon batch-load-more"
+            className="ui-button ui-button--secondary batch-load-more"
             onClick={onLoadMore}
             disabled={isLoadingBatches}
             aria-busy={isLoadingNextPage}
           >
-            <RefreshCw size={16} className={isLoadingNextPage ? 'icon-spin' : ''} />
-            <span>{isLoadingNextPage ? 'Cargando lotes...' : 'Cargar más lotes'}</span>
+            <RefreshCw size={16} className={isLoadingNextPage ? 'icon-spin' : ''} aria-hidden="true" />
+            {isLoadingNextPage ? 'Cargando lotes...' : 'Cargar más lotes'}
           </button>
         </div>
       )}
