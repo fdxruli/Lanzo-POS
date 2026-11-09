@@ -1,0 +1,519 @@
+/* Caja mobile-first R1. Solo presentación, aislada de reglas financieras. */
+.caja-page {
+  color: var(--ui-text);
+  background: var(--ui-bg-page);
+  min-width: 0;
+}
+.caja-page .caja-grid {
+  --caja-panel-scroll-max: none;
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 1.1rem;
+  max-width: 1260px;
+  width: 100%;
+  margin: 0 auto;
+  padding: .5rem 1rem max(2rem, env(safe-area-inset-bottom));
+}
+.caja-page .caja-grid--opening { max-width: 860px; }
+.caja-page .caja-grid .caja-card {
+  padding: 0;
+  min-width: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.caja-page .caja-grid .section-heading-icon,
+.caja-page .caja-grid .actions-heading-icon,
+.caja-page .caja-grid .caja-opening-icon {
+  width: 38px;
+  height: 38px;
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-brand-soft);
+  border-radius: var(--ui-radius-sm);
+  border: 0;
+}
+.caja-page .caja-grid .section-title,
+.caja-page .caja-grid .actions-title,
+.caja-page .caja-grid .caja-opening-heading h2 {
+  color: var(--ui-text-strong);
+  font-size: clamp(1.12rem, 2vw, 1.4rem);
+  line-height: 1.3;
+  letter-spacing: -.015em;
+}
+.caja-page .caja-grid .section-eyebrow {
+  font-size: .71rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--ui-text-muted);
+}
+/* Navegación por pestañas, sin marcos ni botones anidados. */
+.caja-page .caja-grid .caja-section-navigation {
+  min-width: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .caja-section-tabs {
+  display: flex;
+  gap: 1.1rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.caja-page .caja-grid .caja-section-tab {
+  flex: 0 0 auto;
+  min-height: 48px;
+  padding: .5rem .1rem;
+  font-size: .87rem;
+  font-weight: 650;
+  color: var(--ui-text-muted);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.caja-page .caja-grid .caja-section-tab.is-active {
+  color: var(--ui-text-brand);
+  border: 0;
+  border-bottom: 3px solid var(--ui-border-selected);
+  background: transparent;
+  box-shadow: none;
+}
+.caja-page .caja-grid .caja-turno-layout,
+.caja-page .caja-grid .caja-business-layout { gap: 1.45rem; }
+/* Estado / efectivo teórico / desglose. */
+.caja-page .caja-grid .status-card { gap: .85rem; }
+.caja-page .caja-grid .status-ribbon { min-height: 0; gap: .65rem; }
+.caja-page .caja-grid .status-meta {
+  flex-wrap: wrap;
+  gap: .4rem .8rem;
+  color: var(--ui-text-muted);
+  font-size: .79rem;
+}
+.caja-page .caja-grid .cash-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  gap: .9rem;
+  min-height: 0;
+  padding: 1rem 0 1.2rem;
+  color: var(--ui-text-strong);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+  border-radius: 0;
+  overflow: visible;
+}
+.caja-page .caja-grid .cash-hero::after { content: none; }
+.caja-page .caja-grid .cash-hero-icon {
+  width: 38px;
+  height: 38px;
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-brand-soft);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+}
+.caja-page .caja-grid .cash-hero-eyebrow,
+.caja-page .caja-grid .cash-hero h2 {
+  color: var(--ui-text-muted);
+}
+.caja-page .caja-grid .cash-hero h2 {
+  font-size: .92rem;
+  font-weight: 550;
+}
+.caja-page .caja-grid .cash-hero-amount {
+  grid-row: auto;
+  color: var(--ui-text-strong);
+  font-size: clamp(2.3rem, 8vw, 3.45rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.045em;
+  line-height: 1.05;
+}
+.caja-page .caja-grid .liquidity-progress {
+  grid-column: auto;
+  grid-row: auto;
+  padding: 0;
+  border: 0;
+  color: var(--ui-text-muted);
+}
+.caja-page .caja-grid .liquidity-bar { background: var(--ui-bg-muted); }
+.caja-page .caja-grid .cash-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+.caja-page .caja-grid .cash-metric {
+  padding: .7rem .7rem .7rem 0;
+  min-width: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .cash-metric .amount {
+  font-size: 1rem;
+  font-weight: 750;
+}
+/* Acciones operativas, jerarquía y áreas táctiles. */
+.caja-page .caja-grid .actions-card { gap: .85rem; }
+.caja-page .caja-grid .cash-action-context {
+  flex-wrap: wrap;
+  gap: .45rem .8rem;
+  color: var(--ui-text-muted);
+}
+.caja-page .caja-grid .actions-grid { gap: .7rem; }
+.caja-page .caja-grid .btn-audit {
+  min-height: 76px;
+  padding: .85rem 1rem;
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border: 1px solid var(--ui-action-primary-border);
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+}
+.caja-page .caja-grid .btn-audit:hover:not(:disabled) {
+  background: var(--ui-action-primary-hover-bg);
+}
+.caja-page .caja-grid .actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: .65rem;
+}
+.caja-page .caja-grid .actions-row button,
+.caja-page .caja-grid .btn-adjust {
+  min-height: 48px;
+  border-radius: var(--ui-radius-sm);
+  box-shadow: none;
+}
+.caja-page .caja-grid .btn-adjust {
+  background: var(--ui-bg-surface);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .shortcuts-help {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+/* Movimientos, historial, supervisión: listas con divisores, no sub-tarjetas. */
+.caja-page .caja-grid .movements-list,
+.caja-page .caja-grid .history-list,
+.caja-page .caja-grid .staff-audit-list {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+.caja-page .caja-grid .movement-item,
+.caja-page .caja-grid .history-item {
+  min-height: 72px;
+  padding: .85rem .1rem;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .movement-item:hover,
+.caja-page .caja-grid .history-item:hover { background: var(--ui-bg-hover); }
+.caja-page .caja-grid .movement-details {
+  flex-wrap: wrap;
+  color: var(--ui-text-muted);
+}
+.caja-page .caja-grid .history-content { min-width: 0; }
+.caja-page .caja-grid .history-technical-details,
+.caja-page .caja-grid .caja-subdisclosure,
+.caja-page .caja-grid .caja-disclosure {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.caja-page .caja-grid .caja-disclosure > summary,
+.caja-page .caja-grid .caja-subdisclosure > summary,
+.caja-page .caja-grid .history-technical-details > summary {
+  color: var(--ui-text-brand);
+  background: transparent;
+  border-radius: 0;
+  padding-inline: 0;
+}
+.caja-page .caja-grid .staff-audit-item {
+  padding: .95rem 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+  border-radius: 0;
+}
+.caja-page .caja-grid .staff-audit-primary-field,
+.caja-page .caja-grid .staff-audit-grid span {
+  padding: .3rem .4rem .3rem 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.caja-page .caja-grid .staff-audit-primary,
+.caja-page .caja-grid .staff-audit-grid { gap: .5rem .8rem; }
+.caja-page .caja-grid .business-cash-list { gap: 0; }
+.caja-page .caja-grid .business-cash-list h3 { margin: .5rem 0; }
+.caja-page .caja-grid .business-cash-session {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: start;
+  gap: .65rem 1rem;
+  padding: 1rem 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+  border-radius: 0;
+}
+.caja-page .caja-grid .business-cash-session--needs-review {
+  padding-inline: .65rem;
+  background: var(--ui-bg-warning-soft);
+  border-left: 3px solid var(--ui-border-warning);
+}
+.caja-page .caja-grid .business-cash-session--review { border-left-color: var(--ui-border-danger); }
+.caja-page .caja-grid .business-cash-session-value {
+  text-align: right;
+  align-items: end;
+  min-width: 0;
+}
+.caja-page .caja-grid .business-cash-session-value > strong {
+  font-size: 1.1rem;
+  color: var(--ui-text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.caja-page .caja-grid .business-cash-review {
+  grid-column: 1/-1;
+  justify-self: start;
+  min-height: 44px;
+  padding: .5rem .85rem;
+  color: var(--ui-text-brand);
+  background: transparent;
+  border-color: var(--ui-border-selected);
+  border-radius: var(--ui-radius-sm);
+}
+.caja-page .caja-grid .business-cash-review:hover:not(:disabled) { background: var(--ui-bg-selected); }
+/* Cajas del plan anterior: lista compacta que evita desplazar todo el módulo. */
+.caja-page .caja-grid .caja-post-downgrade-reconciliation {
+  display: grid;
+  grid-column: 1/-1;
+  gap: .7rem;
+  min-width: 0;
+  padding: .8rem 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+  border-radius: 0;
+  box-shadow: none;
+}
+.caja-page .caja-grid .caja-post-downgrade__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .65rem;
+}
+.caja-page .caja-grid .caja-post-downgrade__heading h2 {
+  margin: .1rem 0 0;
+  color: var(--ui-text-strong);
+  font-size: clamp(1.15rem, 3vw, 1.45rem);
+  line-height: 1.25;
+}
+.caja-page .caja-grid .caja-post-downgrade__hint {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.caja-page .caja-grid .caja-post-downgrade__list {
+  display: grid;
+  min-width: 0;
+  border-top: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .caja-post-downgrade__item {
+  display: grid;
+  gap: .65rem;
+  padding: .85rem 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+.caja-page .caja-grid .caja-post-downgrade__row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: .55rem;
+  min-width: 0;
+}
+.caja-page .caja-grid .caja-post-downgrade__identity {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+}
+.caja-page .caja-grid .caja-post-downgrade__name {
+  color: var(--ui-text-strong);
+  font-size: .92rem;
+  overflow-wrap: anywhere;
+}
+.caja-page .caja-grid .caja-post-downgrade__device,
+.caja-page .caja-grid .caja-post-downgrade__date,
+.caja-page .caja-grid .caja-post-downgrade__inactive {
+  color: var(--ui-text-muted);
+  font-size: .77rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.caja-page .caja-grid .caja-post-downgrade__amount {
+  display: grid;
+  gap: .1rem;
+  justify-items: end;
+  min-width: 0;
+  text-align: right;
+}
+.caja-page .caja-grid .caja-post-downgrade__amount small {
+  color: var(--ui-text-muted);
+  font-size: .69rem;
+}
+.caja-page .caja-grid .caja-post-downgrade__amount strong {
+  color: var(--ui-text-strong);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.caja-page .caja-grid .caja-post-downgrade__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .45rem;
+}
+.caja-page .caja-grid .caja-post-downgrade__inactive {
+  display: inline-flex;
+  gap: .3rem;
+  align-items: center;
+}
+.caja-page .caja-grid .caja-post-downgrade__review {
+  display: inline-flex;
+  gap: .45rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: .45rem .75rem;
+  margin-left: auto;
+  color: var(--ui-text-brand);
+  background: transparent;
+  border: 1px solid var(--ui-border-selected);
+  border-radius: var(--ui-radius-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+.caja-page .caja-grid .caja-post-downgrade__review:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.caja-page .caja-grid .caja-post-downgrade__review:hover:not(:disabled) { background: var(--ui-bg-selected); }
+.caja-page .caja-grid .caja-post-downgrade__more {
+  min-height: 44px;
+  justify-self: center;
+  padding: .5rem .8rem;
+  color: var(--ui-text-brand);
+  background: transparent;
+  border: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* Apertura y revisión administrativa: valores alineados y panel responsive. */
+.caja-page .caja-grid .caja-opening-panel { gap: .85rem; }
+.caja-page .caja-grid .cash-opening-form { min-width: 0; }
+.caja-modal--admin-audit .caja-modal__content {
+  width: min(730px, 100%);
+  max-height: 92dvh;
+  overflow: auto;
+  color: var(--ui-text);
+  background: var(--ui-bg-surface);
+}
+.caja-modal--admin-audit .admin-cash-audit-body { gap: 1rem; }
+.caja-modal--admin-audit .admin-cash-audit-summary,
+.caja-modal--admin-audit .admin-cash-audit-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 0 1rem;
+}
+.caja-modal--admin-audit .admin-cash-audit-summary > span,
+.caja-modal--admin-audit .admin-cash-audit-totals > span {
+  min-width: 0;
+  padding: .75rem 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-color);
+  border-radius: 0;
+}
+.caja-modal--admin-audit .admin-cash-audit-summary small,
+.caja-modal--admin-audit .admin-cash-audit-totals small {
+  color: var(--ui-text-muted);
+  font-size: .71rem;
+  text-transform: none;
+}
+.caja-modal--admin-audit .admin-cash-audit-summary strong,
+.caja-modal--admin-audit .admin-cash-audit-totals strong {
+  color: var(--ui-text-strong);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.caja-modal--admin-audit .admin-cash-audit-choice button {
+  color: var(--ui-text-strong);
+  background: var(--ui-bg-surface);
+  border-color: var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+}
+.caja-modal--admin-audit .admin-cash-audit-form input,
+.caja-modal--admin-audit .admin-cash-audit-form select,
+.caja-modal--admin-audit .admin-cash-audit-form textarea {
+  min-height: 44px;
+  color: var(--ui-text);
+  background: var(--ui-bg-control);
+  border-color: var(--ui-border-control);
+}
+.caja-page .caja-grid button:focus-visible,
+.caja-page .caja-grid summary:focus-visible,
+.caja-modal--admin-audit button:focus-visible,
+.caja-modal--admin-audit input:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
+}
+@media (min-width: 720px) {
+  .caja-page .caja-grid { gap: 1.5rem; padding: 1rem 1.5rem 2.5rem; }
+  .caja-page .caja-grid .caja-post-downgrade__list { grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 1.5rem; }
+  .caja-page .caja-grid .cash-breakdown { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .caja-page .caja-grid .business-cash-session { grid-template-columns: minmax(0,1fr) auto auto; align-items: center; }
+  .caja-page .caja-grid .business-cash-review { grid-column: auto; }
+}
+@media (min-width: 900px) {
+  .caja-page .caja-grid .caja-turno-layout { grid-template-columns: minmax(0,1.75fr) minmax(290px,1fr); gap: 2rem; }
+  .caja-page .caja-grid .caja-turno-layout > .status-card { grid-column: 1; }
+  .caja-page .caja-grid .caja-turno-layout > .actions-card { grid-column: 2; padding-left: 1.4rem; border-left: 1px solid var(--ui-border-color); }
+  .caja-page .caja-grid .caja-post-downgrade__list { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@media (max-width: 560px) {
+  .caja-page .caja-grid { padding: .25rem .9rem max(1.5rem, env(safe-area-inset-bottom)); gap: 1rem; }
+  .caja-page .caja-grid .caja-section-tab { flex: 0 0 auto; }
+  .caja-page .caja-grid .caja-post-downgrade__row { grid-template-columns: minmax(0,1fr); }
+  .caja-page .caja-grid .caja-post-downgrade__amount { justify-items: start; text-align: left; }
+  .caja-page .caja-grid .staff-audit-primary,
+  .caja-page .caja-grid .staff-audit-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .caja-page .caja-grid .staff-audit-secondary { grid-template-columns: 1fr; }
+  .caja-modal--admin-audit { padding: max(.25rem, env(safe-area-inset-top)) 0 0; }
+  .caja-modal--admin-audit .caja-modal__content {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    margin: auto 0 0;
+    border-radius: 16px 16px 0 0;
+  }
+  .caja-modal--admin-audit .admin-cash-audit-summary,
+  .caja-modal--admin-audit .admin-cash-audit-totals { grid-template-columns: 1fr; }
+}
+@media print {
+  .caja-page .caja-grid .caja-section-navigation,
+  .caja-page .caja-grid .caja-post-downgrade__more { display: none; }
+}

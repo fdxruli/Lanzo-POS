@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, LoaderCircle } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ClipboardCheck, LoaderCircle } from 'lucide-react';
 import { useAppStore } from '../../../store/useAppStore';
 import { getLicenseKeyFromDetails } from '../../../services/sync/syncConstants';
 import { postDowngradeCashReconciliation } from '../../../services/cash/postDowngradeCashReconciliation';
@@ -31,6 +31,7 @@ const CajaPostDowngradeReconciliationPanel = () => {
     refresh
   } = usePostDowngradeCashPending();
   const [selectedCashSessionId, setSelectedCashSessionId] = useState(null);
+  const [showAll, setShowAll] = useState(false);
 
   const loading = status === 'loading';
   const hasPending = Number.isInteger(pendingCount) && pendingCount > 0;
@@ -66,20 +67,11 @@ const CajaPostDowngradeReconciliationPanel = () => {
   if (!loading && !error && pendingCount === 0) return null;
 
   return (
-    <section
-      className="ui-section caja-post-downgrade-reconciliation"
-      aria-label="Cajas pendientes del plan anterior"
-      aria-busy={loading}
-    >
-      <div className="ui-section__header">
+    <section className="caja-post-downgrade-reconciliation" aria-label="Cajas pendientes del plan anterior" aria-labelledby="post-downgrade-cash-title" aria-busy={loading}>
+      <div className="caja-post-downgrade__heading">
         <div>
-          <p className="ui-section__eyebrow">Historial del plan anterior</p>
-          <h2>Cajas pendientes del plan anterior</h2>
-          <p>
-            Estas cajas fueron abiertas mientras tu negocio utilizaba Lanzo Nube.
-            Puedes revisarlas y cerrarlas para dejar el historial conciliado.
-            Esto no activa Caja Cloud en tu plan actual.
-          </p>
+          <p className="section-eyebrow">Historial de Lanzo Nube</p>
+          <h2 id="post-downgrade-cash-title">Cajas del plan anterior</h2>
         </div>
         {hasPending && (
           <span className="ui-badge ui-badge--warning">
@@ -87,13 +79,14 @@ const CajaPostDowngradeReconciliationPanel = () => {
           </span>
         )}
       </div>
-
+      <p className="caja-post-downgrade__hint">
+        Revisa y concilia las cajas de tu plan anterior. Esto no activa Caja Nube.
+      </p>
       {loading && (
         <p role="status" aria-live="polite">
           <LoaderCircle size={18} aria-hidden="true" /> Consultando cajas pendientes…
         </p>
       )}
-
       {error && canShowHistoricalSurface && (
         <div className="ui-alert ui-alert--warning" role="alert">
           <AlertTriangle size={18} aria-hidden="true" />
@@ -108,45 +101,66 @@ const CajaPostDowngradeReconciliationPanel = () => {
           )}
         </div>
       )}
-
       {!loading && hasPending && (
-        <div className="caja-business-cash-list">
-          {cashSessions.map((session) => (
-            <article className="caja-business-cash-item" key={session.id}>
-              <div>
-                <strong>{session.responsible_name || 'Responsable no disponible'}</strong>
-                <p>{session.opening_device_name || 'Dispositivo no disponible'} · abierta {formatDate(session.opened_at)}</p>
-                <p>Efectivo esperado: {formatMoney(session.expected_cash_total)}</p>
-                {session.original_device_active === false && (
-                  <small>El dispositivo donde se abrió esta caja ya no está activo.</small>
-                )}
-              </div>
-              <button
-                type="button"
-                className="ui-button ui-button--secondary"
-                onClick={() => setSelectedCashSessionId(session.id)}
-                disabled={!online}
-                aria-describedby={!online ? 'post-downgrade-cash-offline-help' : undefined}
-              >
-                <ClipboardCheck size={17} aria-hidden="true" />
-                Revisar y conciliar
-              </button>
-            </article>
-          ))}
-        </div>
+        <>
+          <div className="caja-post-downgrade__list" role="list" aria-label="Sesiones pendientes de conciliación">
+            {(showAll ? cashSessions : cashSessions.slice(0, 3)).map((session) => (
+              <article className="caja-post-downgrade__item" role="listitem" key={session.id}>
+                <div className="caja-post-downgrade__row">
+                  <div className="caja-post-downgrade__identity">
+                    <strong className="caja-post-downgrade__name">
+                      {session.responsible_name || 'Responsable no disponible'}
+                    </strong>
+                    <span className="caja-post-downgrade__device">
+                      {session.opening_device_name || 'Dispositivo no disponible'}
+                    </span>
+                    <span className="caja-post-downgrade__date">Abierta: {formatDate(session.opened_at)}</span>
+                  </div>
+                  <div className="caja-post-downgrade__amount">
+                    <small>Efectivo esperado</small>
+                    <strong>{formatMoney(session.expected_cash_total)}</strong>
+                  </div>
+                </div>
+                <div className="caja-post-downgrade__foot">
+                  {session.original_device_active === false && (
+                    <span className="caja-post-downgrade__inactive">
+                      <AlertTriangle size={14} aria-hidden="true" /> Dispositivo inactivo
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="caja-post-downgrade__review"
+                    onClick={() => setSelectedCashSessionId(session.id)}
+                    disabled={!online}
+                    aria-describedby={!online ? 'post-downgrade-cash-offline-help' : undefined}
+                    aria-label={'Revisar y conciliar caja de ' + (session.responsible_name || 'responsable no disponible')}
+                  >
+                    <ClipboardCheck size={17} aria-hidden="true" />
+                    Revisar y conciliar
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {cashSessions.length > 3 && (
+            <button
+              type="button"
+              className="caja-post-downgrade__more"
+              onClick={() => setShowAll((current) => !current)}
+              aria-expanded={showAll}
+            >
+              {showAll ? 'Mostrar menos' : 'Ver todas las cajas (' + cashSessions.length + ')'}
+            </button>
+          )}
+        </>
       )}
-
       {(isOfflineKnown || (!online && hasPending)) && (
-        <div
-          id="post-downgrade-cash-offline-help"
-          className="ui-alert ui-alert--warning"
-          role="status"
-        >
+        <div id="post-downgrade-cash-offline-help" className="ui-alert ui-alert--warning" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
           <p>Conéctate a internet para revisar y cerrar las cajas pendientes.</p>
         </div>
       )}
-
       <CajaAdminCashAuditModal
         cashSessionId={selectedCashSessionId}
         onClose={handleModalClose}

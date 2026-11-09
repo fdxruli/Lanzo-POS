@@ -59,6 +59,7 @@ import {
 } from '../components/caja/modals';
 
 import './CajaPage.css';
+import './CajaPage.redesign.css';
 
 const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
 const CASH_SESSION_ATTENTION_REFRESH_EVENT = 'lanzo:cash-sync-updated';
