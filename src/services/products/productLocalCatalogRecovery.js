@@ -189,7 +189,8 @@ const migrateUnsyncedCatalog = async ({ licenseKey, catalog }) => {
     },
     {
       entityType: SYNC_ENTITY_TYPES.PRODUCT,
-      records: catalog.products,
+      records: [...catalog.products].sort((a, b) =>
+        Number(b.productType === 'ingredient') - Number(a.productType === 'ingredient')),
       mutate: (record, idempotencyKey) => productCloudRepository.upsertProduct({
         licenseKey,
         product: productToCloudPayload(record),
