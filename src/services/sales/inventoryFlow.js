@@ -517,6 +517,8 @@ export const buildProcessedItemsAndDeductions = ({
                     quantity: requiredStart,
                     fromCommittedStock: false
                 });
+                // Account for the simple-stock ingredient just like a batch.
+                itemTotalCost += roundCurrency((Number(targetProduct.cost) || 0) * requiredStart);
                 requiredQty = 0; // La transacción verifica y descuenta el stock físico vigente.
             }
             if (!targetProduct.batchManagement?.enabled && targetProduct.trackStock === false) {
@@ -540,9 +542,6 @@ export const buildProcessedItemsAndDeductions = ({
                 );
             }
 
-            if (requiredQty > 0) {
-                itemTotalCost += roundCurrency((parseFloat(targetProduct?.cost) || 0) * requiredQty);
-            }
         }
 
         const calculatedAvgCost = orderItem.quantity > 0
