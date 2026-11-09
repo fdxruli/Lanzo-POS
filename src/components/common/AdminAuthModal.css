@@ -150,6 +150,29 @@
   margin-top: .15rem;
 }
 
+
+/* Technical recovery evidence lives in the existing page flow, not another card. */
+.admin-auth-diagnostic {
+  display: grid;
+  gap: .4rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 1rem 0 0;
+  padding-top: .85rem;
+  border-top: 1px solid var(--ui-border, var(--ui-border-subtle));
+  color: var(--ui-text-muted);
+  font-size: .84rem;
+  line-height: 1.5;
+}
+.admin-auth-diagnostic p { margin: 0; }
+.admin-auth-diagnostic__title { font-weight: 700; color: var(--ui-text-strong); }
+.admin-auth-diagnostic code {
+  overflow-wrap: anywhere;
+  color: var(--ui-text-strong);
+  font-size: .82rem;
+}
+.admin-auth-diagnostic .admin-auth-recovery-link { gap: .45rem; justify-self: start; }
+
 .admin-auth-recovery-link {
   display: inline-flex;
   min-height: 2.75rem;
