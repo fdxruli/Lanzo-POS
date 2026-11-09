@@ -555,6 +555,87 @@ describe('initializeApp coordinator', () => {
     expect(state.currentAdminUser.id).toBe('admin-verified');
   });
 
+  it.each(['admin', 'staff'])('leaves loading with a protected checkout owned by another session (%s)', async (role) => {
+    const license = {
+      license_key: 'BOOT-HANDOFF-FIXTURE',
+      device_role: role,
+      admin_identity_required: role === 'admin',
+      plan_code: 'pro',
+      max_devices: 2,
+      ...(role === 'admin' ? { admin_user: { id: 'admin-previous' } } : { staff_user: { id: 'staff-previous' } })
+    };
+    const verifiedActor = { id: role === 'admin' ? 'admin-verified' : 'staff-verified' };
+    storageMocks.getLicenseFromStorage.mockResolvedValue(license);
+    if (role === 'admin') {
+      supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
+      supabaseMocks.verifyAdminSession.mockResolvedValue({
+        valid: true, admin_user: verifiedActor, details: license
+      });
+    } else {
+      supabaseMocks.hasStaffSessionToken.mockResolvedValue(true);
+      supabaseMocks.verifyStaffSession.mockResolvedValue({
+        valid: true, staff_user: verifiedActor
+      });
+    }
+    // Reproduce the real bridge lifecycle: authentication begins, handoff
+    // fails on protected checkout ownership, then the bridge locks its actor.
+    actorMocks.beginActorRuntimeAuthentication.mockImplementationOnce((actorType) => {
+      actorRuntimeController.beginAuthentication({ actorType });
+    });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementationOnce(async () => {
+      actorRuntimeController.beginHandoffCheck();
+      actorRuntimeController.lock('actor_handoff_failed');
+      throw Object.assign(new Error('protected checkout is owned by another actor'), {
+        code: 'ACTOR_HANDOFF_CHECKOUT_OWNED'
+      });
+    });
+
+    const state = createState();
+    await expect(state.initializeApp()).resolves.toEqual({ status: `${role}_login_required` });
+    expect(state.appStatus).toBe(`${role}_login_required`);
+    expect(state[`${role}LoginError`]).toMatchObject({
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_HANDOFF_CHECKOUT_OWNED'
+    });
+    expect(state[`${role}LoginMessage`]).toMatch(/cobros protegidos/i);
+    expect(state._isInitializing).toBe(false);
+    expect(state._loadProfile).not.toHaveBeenCalled();
+    expect(actorRuntimeController.getState().status).toBe('locked');
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a foreign actor epoch as an owned checkout rejection', async () => {
+    const license = {
+      license_key: 'BOOT-FOREIGN-HANDOFF',
+      device_role: 'admin',
+      admin_identity_required: true,
+      plan_code: 'pro',
+      admin_user: { id: 'admin-fixture' }
+    };
+    storageMocks.getLicenseFromStorage.mockResolvedValue(license);
+    supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      valid: true, admin_user: license.admin_user, details: license
+    });
+    actorMocks.beginActorRuntimeAuthentication.mockImplementationOnce((actorType) => {
+      actorRuntimeController.beginAuthentication({ actorType });
+    });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementationOnce(async () => {
+      actorRuntimeController.lock('actor_context_changed_in_other_tab');
+      throw Object.assign(new Error('stale handoff'), { code: 'ACTOR_HANDOFF_CHECKOUT_OWNED' });
+    });
+
+    const state = createState();
+    await expect(state.initializeApp()).resolves.toMatchObject({
+      status: 'loading',
+      code: 'BOOTSTRAP_CONTEXT_STALE'
+    });
+    expect(state.adminLoginError).toBeNull();
+    expect(state._loadProfile).not.toHaveBeenCalled();
+    expect(actorRuntimeController.getState().status).toBe('locked');
+  });
+
   it('preserves Admin credentials on inconclusive verification and retries without login', async () => {
     const localLicense = {
       license_key: 'BOOT-ADMIN-RETRY',

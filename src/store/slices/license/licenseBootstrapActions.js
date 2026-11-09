@@ -58,6 +58,11 @@ import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 let coordinatorState = 'idle';
 
+// A rejected handoff can lock the ActorRuntime as part of this bootstrap.
+// Do not mistake that owned rejection for an external session replacement.
+const CHECKOUT_HANDOFF_BLOCKED = 'ACTOR_HANDOFF_CHECKOUT_OWNED';
+const CHECKOUT_HANDOFF_MESSAGE = 'Hay cobros protegidos de otra sesión o sin propietario verificable en este dispositivo. No se han liberado ni repetido. Contacta soporte antes de continuar.';
+
 const SAFE_BOOTSTRAP_DIAGNOSTIC_CODES = new Set([
     'ABORT_ERR',
     'ACTOR_RUNTIME_RESTORE_FAILED',
@@ -306,7 +311,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     });
                     const currentActor = actorRuntimeController.getState();
                     const ownedRestoreFailure = currentActor.reason === 'ambiguous_actor_session_evidence'
-                        || currentActor.reason === `${actorType}_session_restore_failed`;
+                        || currentActor.reason === `${actorType}_session_restore_failed`
+                        || (currentActor.reason === 'actor_handoff_failed'
+                            && error?.code === CHECKOUT_HANDOFF_BLOCKED);
                     if (currentActor.status === 'locked'
                         && currentActor.generation === bootstrapActorGeneration + 1
                         && ownedRestoreFailure) {
@@ -556,7 +563,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                             code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
                             verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED,
                             uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
-                            userMessage: 'La sesión Staff se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
+                            userMessage: actorError?.code === CHECKOUT_HANDOFF_BLOCKED
+                                ? CHECKOUT_HANDOFF_MESSAGE
+                                : 'La sesión Staff se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
                         });
                         coordinatorState = 'ready';
                         return { status: 'staff_login_required' };
@@ -625,7 +634,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                     code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
                                     verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
                                     uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
-                                    userMessage: 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; conéctate y reintenta la verificación.'
+                                    userMessage: actorError?.code === CHECKOUT_HANDOFF_BLOCKED
+                                        ? CHECKOUT_HANDOFF_MESSAGE
+                                        : 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; conéctate y reintenta la verificación.'
                                 });
                             }
                         } else {
@@ -699,7 +710,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                         code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
                                         verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
                                         uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
-                                        userMessage: 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; reintenta la verificación.'
+                                        userMessage: actorError?.code === CHECKOUT_HANDOFF_BLOCKED
+                                            ? CHECKOUT_HANDOFF_MESSAGE
+                                            : 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; reintenta la verificación.'
                                     });
                                     coordinatorState = 'ready';
                                     return { status: get().appStatus };
@@ -773,7 +786,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                             code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
                             verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED,
                             uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
-                            userMessage: 'La sesión se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
+                            userMessage: actorError?.code === CHECKOUT_HANDOFF_BLOCKED
+                                ? CHECKOUT_HANDOFF_MESSAGE
+                                : 'La sesión se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
                         });
                         coordinatorState = 'ready';
                         return { status: 'admin_login_required' };
