@@ -1,9 +1,9 @@
 import { startAdminResumeChecks } from './pwa/adminResumeChecks';
 import { useEffect, lazy, Suspense, useState } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import AppBootRecovery from './components/common/AppBootRecovery';
 import AdminLazyRouteRecoveryFallback from './components/common/AdminLazyRouteRecoveryFallback';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
@@ -49,10 +49,6 @@ import {
   recoverAdminLazyRoute,
 } from './pwa/adminLazyRouteRecovery';
 import { createRecoveryContextGuard } from './services/diagnostics/recoveryContext';
-import {
-  getActorCheckoutOwnerships,
-  getPendingActorOperations
-} from './services/auth/actorOperationalHandoff';
 
 const APP_BOOT_TIMEOUT_MS = 15_000;
 
@@ -120,59 +116,6 @@ const PageLoader = () => (
     <p style={{ color: 'var(--text-light)', fontSize: '0.9rem' }}>Cargando módulo...</p>
   </div>
 );
-
-const areBootOperationsIdle = () => {
-  try {
-    return getActorCheckoutOwnerships().length === 0
-      && getPendingActorOperations().length === 0;
-  } catch {
-    return false;
-  }
-};
-
-const AppBootRecovery = () => {
-  const [isContextCurrent] = useState(() => {
-    const contextGuard = createRecoveryContextGuard();
-    return () => {
-      try {
-        return contextGuard() === true;
-      } catch {
-        return false;
-      }
-    };
-  });
-  const canRetry = areBootOperationsIdle() && isContextCurrent();
-  const handleRetry = () => {
-    if (!areBootOperationsIdle() || !isContextCurrent()) return;
-    window.location.reload();
-  };
-
-  return (
-    <main className="app-boot-recovery" role="alert" aria-live="assertive">
-      <section className="app-boot-recovery__card">
-        <AlertTriangle size={40} aria-hidden="true" />
-        <h1>No pudimos iniciar Lanzo POS</h1>
-        <p>
-          La aplicación tardó demasiado en completar su preparación. Si una operación quedó pendiente, verifica su resultado antes de volver a intentarla.
-        </p>
-        <button
-          type="button"
-          className="ui-button ui-button--primary"
-          onClick={handleRetry}
-          disabled={!canRetry}
-          aria-describedby={!canRetry ? 'app-boot-recovery-disabled' : undefined}
-        >
-          Reintentar inicio
-        </button>
-        {!canRetry && (
-          <p className="app-boot-recovery__note" id="app-boot-recovery-disabled" role="status">
-            No podemos confirmar que la sesión y las operaciones estén listas para reiniciar Lanzo.
-          </p>
-        )}
-      </section>
-    </main>
-  );
-};
 
 function App() {
   const { pathname } = useLocation();
