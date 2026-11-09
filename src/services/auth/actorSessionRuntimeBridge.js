@@ -27,6 +27,7 @@ import {
   createActorKey
 } from './actorRuntimeController';
 import { completeActorAuthorityRecovery } from './actorAuthorityRecovery';
+import { reconcileCommittedCheckoutLocks } from './committedCheckoutLockReconciliation';
 
 export const ACTOR_SESSION_AMBIGUOUS = 'ACTOR_SESSION_AMBIGUOUS';
 
@@ -172,9 +173,16 @@ export const grantAuthenticatedActorRuntime = async ({
     });
     await installActorOperationalHandoffGuards();
     assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
-    // Checkout ownership is also recorded on the tenant-shared SALES row so a
-    // browser restart cannot erase the safety barrier. Legacy locked rows with
-    // no actor proof remain unresolved and block handoff fail-closed.
+    // Only a fully committed sale with a matching durable receipt may have
+    // an obsolete checkout lock cleared. The sale, Staff attribution, payment,
+    // stock and receipt never change. Inconclusive or open attempts stay locked.
+    await reconcileCommittedCheckoutLocks({
+      db: tenantRuntimeDb,
+      assertCurrent: () => assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK)
+    });
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
+    // Persisted active checkouts still block a different actor exactly as
+    // before. Re-read after reconciliation to discard settled stale ownership.
     await refreshPersistedActorCheckoutOwnership({ tenant });
     assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
     assertActorOperationalHandoffClear({ tenant, actorKey });

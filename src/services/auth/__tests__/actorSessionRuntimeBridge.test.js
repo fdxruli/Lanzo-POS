@@ -29,7 +29,8 @@ const mocks = vi.hoisted(() => {
     installActorOperationalHandoffGuards: vi.fn(async () => true),
     refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
     assertActorOperationalHandoffClear: vi.fn(() => true),
-    rebindActorOperationalOwnership: vi.fn(() => 0)
+    rebindActorOperationalOwnership: vi.fn(() => 0),
+    reconcileCommittedCheckoutLocks: vi.fn(async () => ({ reconciled: 0 }))
   };
 });
 
@@ -57,6 +58,9 @@ vi.mock('../actorScopedStorage', () => ({
   subscribeActorScopedStorage: mocks.subscribeActorScopedStorage
 }));
 
+vi.mock('../committedCheckoutLockReconciliation', () => ({
+  reconcileCommittedCheckoutLocks: mocks.reconcileCommittedCheckoutLocks
+}));
 vi.mock('../actorOperationalHandoff', () => ({
   configureActorOperationalPersistence: mocks.configureActorOperationalPersistence,
   installActorOperationalHandoffGuards: mocks.installActorOperationalHandoffGuards,
@@ -171,6 +175,10 @@ describe('actor session runtime bridge', () => {
       db: mocks.tenantRuntimeDb,
       salesStore: 'sales'
     });
+    expect(mocks.reconcileCommittedCheckoutLocks).toHaveBeenCalledWith({
+      db: mocks.tenantRuntimeDb,
+      assertCurrent: expect.any(Function)
+    });
     expect(mocks.refreshPersistedActorCheckoutOwnership).toHaveBeenCalledWith({
       tenant: TENANT_RUNTIME
     });
@@ -179,6 +187,9 @@ describe('actor session runtime bridge', () => {
       actorKey: 'admin:admin-1'
     });
     expect(mocks.configureActorOperationalPersistence.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.reconcileCommittedCheckoutLocks.mock.invocationCallOrder[0]
+    );
+    expect(mocks.reconcileCommittedCheckoutLocks.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]
     );
     expect(mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]).toBeLessThan(

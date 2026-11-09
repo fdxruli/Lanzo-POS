@@ -10,6 +10,7 @@ const io = vi.hoisted(() => ({
   save: vi.fn(),
   hydrate: vi.fn(),
   handoff: vi.fn(),
+  reconcile: vi.fn(async () => ({ reconciled: 0 })),
   tenant: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_a', generation: 1 },
   device: 'device-a',
   foreignContext: null
@@ -80,6 +81,11 @@ vi.mock('../actorScopedStorage', () => ({
   invalidateActorScopedStorage: vi.fn(),
   subscribeActorScopedStorage: (callback) => { io.foreignContext = callback; }
 }));
+// The AUTH-R1 harness models sessions and tenant readiness, not IndexedDB.
+ // The real atomic sale/ledger implementation is covered by dedicated Dexie tests.
+vi.mock('../committedCheckoutLockReconciliation', () => ({
+  reconcileCommittedCheckoutLocks: io.reconcile
+}));
 vi.mock('../actorOperationalHandoff', () => ({
   configureActorOperationalPersistence: vi.fn(), installActorOperationalHandoffGuards: async () => {},
   refreshPersistedActorCheckoutOwnership: async () => [], assertActorOperationalHandoffClear: io.handoff,
@@ -128,6 +134,7 @@ beforeEach(() => {
   io.ready.mockResolvedValue(undefined);
   io.hydrate.mockResolvedValue([]);
   io.handoff.mockReset();
+  io.reconcile.mockResolvedValue({ reconciled: 0 });
   io.offline.mockResolvedValue(true);
   io.login.mockImplementation(async ({ beforeLocalPersistence }) => {
     await beforeLocalPersistence?.({ license_key: 'LIC-A' });

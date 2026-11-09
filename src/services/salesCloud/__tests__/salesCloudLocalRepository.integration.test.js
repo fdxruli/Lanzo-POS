@@ -88,6 +88,51 @@ afterEach(async () => {
   runtime.database = null;
 });
 
+describe('Confirmed Cloud checkout projection', () => {
+  it('atomically clears an old Staff checkout lock only for a server-confirmed closed receipt', async () => {
+    const previous = {
+      id: 'staff-checkout', status: 'open', isLockedForCheckout: true,
+      checkoutActorKey: 'staff:original', checkoutAttemptId: 'attempt-original',
+      checkoutLockedAt: '2026-11-08T10:00:00.000Z', lockedAt: '2026-11-08T10:00:00.000Z',
+      total: '20', items: []
+    };
+    await runtime.database.table(STORES.SALES).put(previous);
+    const saved = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+      localSale: { id: previous.id },
+      response: { sale: {
+        id: 'server-staff-checkout', local_sale_id: previous.id,
+        status: 'closed', source_mode: 'cloud_committed', total: '20'
+      } }
+    });
+    expect(saved).toMatchObject({
+      status: 'closed', sourceMode: 'cloud_committed', isLockedForCheckout: false,
+      checkoutActorKey: 'staff:original', checkoutAttemptId: 'attempt-original',
+      lockedAt: null
+    });
+    expect((await runtime.database.table(STORES.SALES).get(previous.id)))
+      .toMatchObject({ isLockedForCheckout: false, checkoutActorKey: 'staff:original' });
+    expect((await runtime.database.table(STORES.TRANSACTION_LOG).get('txn_cloud_sale_staff-checkout')))
+      .toMatchObject({ type: 'CLOUD_SALE', status: 'COMPLETED',
+        saleId: previous.id, cloudSaleId: 'server-staff-checkout' });
+  });
+
+  it('does not clear a checkout lock when the Cloud response is not closed/confirmed', async () => {
+    await runtime.database.table(STORES.SALES).put({
+      id: 'pending-cloud', status: 'open', isLockedForCheckout: true,
+      checkoutActorKey: 'staff:original', checkoutAttemptId: 'pending-attempt'
+    });
+    const sale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+      localSale: { id: 'pending-cloud' },
+      response: { sale: {
+        id: 'server-pending', local_sale_id: 'pending-cloud',
+        status: 'open', source_mode: 'cloud_committed', total: '20'
+      } }
+    });
+    expect(sale.isLockedForCheckout).toBe(true);
+    expect((await runtime.database.table(STORES.SALES).get('pending-cloud')).isLockedForCheckout).toBe(true);
+  });
+});
+
 describe('Cloud split payments persisted through Dexie into Caja', () => {
   it('ignores foreign reservation snapshots during hold repair and successful split cleanup', async () => {
     const inventory = { id: 'pizza', stock: 12, committedStock: 2, trackStock: true };
