@@ -202,6 +202,10 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   abono: String(cloudSale.amount_paid ?? localSale.abono ?? cloudSale.total ?? 0),
   ...cloudSaleCreditBalancePatch(cloudSale),
   status: cloudSale.status || localSale.status || 'closed',
+  // Cloud's confirmed terminal receipt, not the earlier local checkout draft,
+  // owns the final checkout lock. Never unlock an unconfirmed or open result.
+  ...(cloudSale.status === 'closed' && cloudSale.source_mode === 'cloud_committed'
+    ? { isLockedForCheckout: false, lockedAt: null } : {}),
   folio: cloudSale.cloud_folio || cloudSale.folio || localSale.folio,
   posFolio: cloudSale.pos_folio || cloudSale.posFolio || localSale.posFolio || localSale.pos_folio || null,
   cloudFolio: cloudSale.cloud_folio || null,
