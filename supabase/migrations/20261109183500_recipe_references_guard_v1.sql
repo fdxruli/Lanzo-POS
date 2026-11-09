@@ -69,7 +69,7 @@ begin
       or (new.is_active is true and old.is_active is distinct from new.is_active)
       or (new.product_type = 'sellable' and new.product_type is distinct from old.product_type);
   end if;
-  if not v_validate_recipe or new.recipe is null then return new; end if;
+  if not v_validate_recipe or new.recipe is null or new.recipe = 'null'::jsonb then return new; end if;
 
   if pg_catalog.jsonb_typeof(new.recipe) <> 'array' then
     raise exception 'RECIPE_INVALID_FORMAT' using errcode = 'P0001';
