@@ -14,6 +14,10 @@ import { Money } from '../../utils/moneyMath';
 import { SALE_STATUS } from '../sales/financialStats';
 import { getExplicitSalePaymentRows, isRestaurantSplitCashPayment } from '../sales/paymentMethodContract';
 import Logger from '../Logger';
+import { getOperationalStockSnapshot } from '../inventoryStock';
+import { isBatchExpiredForSale } from '../../utils/dateUtils';
+import { getIngredientDefaultUnit } from '../../utils/ingredientConfiguration';
+import { getDirectPartialRecipeSnapshot } from '../sales/directPartialAuthorization';
 
 const LOCAL_STATION_KEY_PREFIX = 'local:device:';
 const isLocalStationKey = (value) => (
@@ -53,27 +57,29 @@ const saleHasCashComponent = (sale = {}) => {
 
 const buildNonBatchSalesMap = (saleItems = []) => {
     const summary = new Map();
-
-    (saleItems || []).forEach((item) => {
-        if (hasBatchDeductions(item)) return;
-
-        const productId = getRealProductId(item);
-        if (!productId) return;
-
-        const totalSold = normalizeStock(item?.stockDeducted ?? item?.quantity ?? 0);
-        if (totalSold <= 0) return;
-
+    const add = (productId, quantity, committed = false) => {
+        const totalSold = normalizeStock(quantity);
+        if (!productId || totalSold <= 0) return;
         const current = summary.get(productId) || { totalSold: 0, committedSold: 0 };
         current.totalSold = normalizeStock(current.totalSold + totalSold);
-
-        if (isCommittedSaleItem(item)) {
-            const committedQty = normalizeStock(item?.inventoryReservation?.committedQuantity ?? totalSold);
-            current.committedSold = normalizeStock(current.committedSold + committedQty);
-        }
-
+        if (committed) current.committedSold = normalizeStock(current.committedSold + totalSold);
         summary.set(productId, current);
-    });
+    };
 
+    for (const item of saleItems || []) {
+        // The sale line is a dish; its components, not its parent, own stock.
+        // A present (even empty) array is an explicit inventory allocation.
+        if (Array.isArray(item.nonBatchIngredientsUsed)) {
+            for (const usage of item.nonBatchIngredientsUsed) {
+                add(usage.ingredientId || usage.productId, usage.quantity, usage.fromCommittedStock === true);
+            }
+            continue;
+        }
+        if (hasBatchDeductions(item)) continue;
+        const productId = getRealProductId(item);
+        const totalSold = normalizeStock(item?.stockDeducted ?? item?.quantity ?? 0);
+        add(productId, totalSold, isCommittedSaleItem(item));
+    }
     return summary;
 };
 
@@ -163,6 +169,13 @@ const collectAffectedProductIds = (sale, deductions = []) => {
         sale.items.forEach((item) => {
             const productId = getRealProductId(item);
             if (productId) affectedProductIds.add(productId);
+            for (const usage of item?.nonBatchIngredientsUsed || []) {
+                const ingredientId = usage.ingredientId || usage.productId;
+                if (ingredientId) affectedProductIds.add(ingredientId);
+            }
+            for (const requirement of item?.directPartialRequirements || []) {
+                if (requirement.ingredientId) affectedProductIds.add(requirement.ingredientId);
+            }
         });
     }
 
@@ -453,6 +466,160 @@ const generateStoreCode = (companyName) => {
     }
 };
 
+const DIRECT_PARTIAL_EPSILON = 0.00001;
+
+// Run only INSIDE the existing Dexie sale transaction. This function never
+// frees a reservation: it uses stock - committedStock on every component.
+const allocateDirectPartialInventory = async ({ sale, tables }) => {
+    const approval = sale.metadata?.directPartialInventoryAuthorization;
+    if (!approval) return null;
+    if (approval.mode !== 'direct_recipe_v1' || approval.version !== 1
+        || approval.saleId !== sale.id || !approval.attemptId
+        || sale.localCheckoutAttemptId !== approval.attemptId
+        || approval.actorKey !== sale.localCommitBinding?.actorKey
+        || approval.tenant !== sale.localCommitBinding?.tenant?.opaqueId
+        || !approval.maxMissing || typeof approval.maxMissing !== 'object'
+        || !approval.recipeSnapshot || typeof approval.recipeSnapshot !== 'object'
+        || sale.orderType === 'table' || sale.tableData || sale.restaurantOrderId
+        || sale.items.some((item) => item.inventoryReservation?.source === 'table')) {
+        throw buildInventoryError('DIRECT_PARTIAL_CONTEXT_INVALID');
+    }
+    const grouped = new Map();
+    for (const item of sale.items) {
+        const sourceProductId = getRealProductId(item);
+        const approvedRecipe = approval.recipeSnapshot[sourceProductId];
+        const liveProduct = await tables.menu.get(sourceProductId);
+        if (!approvedRecipe || !item.directPartialRecipeSnapshot
+            || JSON.stringify(approvedRecipe) !== JSON.stringify(item.directPartialRecipeSnapshot)
+            || JSON.stringify(approvedRecipe) !== JSON.stringify(getDirectPartialRecipeSnapshot(liveProduct))) {
+            throw buildInventoryError('DIRECT_PARTIAL_RECIPE_CHANGED_RECONFIRM:' + sourceProductId);
+        }
+    }
+    for (const [lineIndex, item] of sale.items.entries()) {
+        if (!Array.isArray(item.directPartialRequirements)) {
+            throw buildInventoryError('DIRECT_PARTIAL_REQUIREMENTS_MISSING');
+        }
+        item.batchesUsed = [];
+        item.nonBatchIngredientsUsed = [];
+        for (const req of item.directPartialRequirements) {
+            const needed = Number(req.required);
+            if (!req.ingredientId || !Number.isFinite(needed) || needed <= 0) {
+                throw buildInventoryError('DIRECT_PARTIAL_REQUIREMENTS_INVALID');
+            }
+            const row = grouped.get(req.ingredientId) || { strict: [], partial: [] };
+            row[req.canPartial === true ? 'partial' : 'strict'].push({
+                lineIndex,
+                required: normalizeStock(needed),
+                ingredientUnit: req.ingredientUnit,
+                ingredientProductType: req.ingredientProductType
+            });
+            grouped.set(req.ingredientId, row);
+        }
+    }
+    const summaries = [];
+    const batchDeductions = [];
+    for (const productId of Array.from(grouped.keys()).sort()) {
+        const requirements = grouped.get(productId);
+        const product = await tables.menu.get(productId);
+        if (!product || product.deletedAt || product.isActive === false || product.trackStock === false) {
+            throw buildInventoryError('DIRECT_PARTIAL_INGREDIENT_UNAVAILABLE:' + productId);
+        }
+        const allRequests = [...requirements.strict, ...requirements.partial];
+        if (requirements.partial.some((req) => req.ingredientProductType !== 'ingredient'
+            || req.ingredientUnit !== getIngredientDefaultUnit(product))) {
+            throw buildInventoryError('DIRECT_PARTIAL_INGREDIENT_CHANGED_RECONFIRM:' + productId);
+        }
+        const needed = normalizeStock(allRequests.reduce((sum, row) => sum + row.required, 0));
+        const strictNeeded = normalizeStock(requirements.strict.reduce((sum, row) => sum + row.required, 0));
+        const stockSnapshot = getOperationalStockSnapshot(product);
+        if (!product.batchManagement?.enabled && (!stockSnapshot.valid
+            || stockSnapshot.committedStock > stockSnapshot.physicalStock + DIRECT_PARTIAL_EPSILON)) {
+            throw buildInventoryError('DIRECT_PARTIAL_STOCK_UNKNOWN:' + productId);
+        }
+        const batches = product.batchManagement?.enabled
+            ? await tables.batches.where('productId').equals(productId).toArray()
+            : [];
+        if (batches.some((batch) => !getOperationalStockSnapshot(batch).valid
+            || getCommittedStock(batch) > normalizeStock(batch.stock) + DIRECT_PARTIAL_EPSILON)) {
+            throw buildInventoryError('DIRECT_PARTIAL_BATCH_STOCK_UNKNOWN:' + productId);
+        }
+        if (product.expirationMode === 'STRICT' && batches.some((batch) =>
+            batch.isActive !== false && getAvailableStock(batch) > 0
+            && (!batch.expiryDate || isBatchExpiredForSale(batch, product, new Date()))
+        )) {
+            throw buildInventoryError('DIRECT_PARTIAL_EXPIRED_BATCH_BLOCKED:' + productId);
+        }
+        const eligibleBatches = batches.filter((batch) => batch.isActive !== false
+            && batch.status !== 'inactive'
+            && !isBatchExpiredForSale(batch, product, new Date()))
+            .sort((left, right) => String(left.expiryDate || '9999').localeCompare(String(right.expiryDate || '9999'))
+                || String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+                || String(left.id).localeCompare(String(right.id)));
+        const availability = new Map(eligibleBatches.map((batch) => [batch.id, getAvailableStock(batch)]));
+        const free = product.batchManagement?.enabled
+            ? normalizeStock([...availability.values()].reduce((sum, qty) => sum + qty, 0))
+            : getAvailableStock(product);
+        if (free + DIRECT_PARTIAL_EPSILON < strictNeeded) {
+            throw buildInventoryError('DIRECT_PARTIAL_STRICT_ITEM_SHORTAGE:' + productId);
+        }
+        const consumed = normalizeStock(Math.min(free, needed));
+        const missing = normalizeStock(Math.max(0, needed - consumed));
+        const approvedMaximum = Number(approval.maxMissing[productId] ?? 0);
+        if (!Number.isFinite(approvedMaximum) || approvedMaximum < 0
+            || missing > approvedMaximum + DIRECT_PARTIAL_EPSILON) {
+            throw buildInventoryError('DIRECT_PARTIAL_STOCK_CHANGED_RECONFIRM:' + productId);
+        }
+        let remainingFree = consumed;
+        for (const req of allRequests) {
+            const use = normalizeStock(Math.min(req.required, remainingFree));
+            remainingFree = normalizeStock(remainingFree - use);
+            const item = sale.items[req.lineIndex];
+            if (use <= 0) continue;
+            if (!product.batchManagement?.enabled) {
+                item.nonBatchIngredientsUsed.push({
+                    ingredientId: productId, quantity: use, fromCommittedStock: false
+                });
+            } else {
+                let pending = use;
+                for (const batch of eligibleBatches) {
+                    if (pending <= DIRECT_PARTIAL_EPSILON) break;
+                    const available = availability.get(batch.id) || 0;
+                    if (available <= 0) continue;
+                    const quantity = normalizeStock(Math.min(pending, available));
+                    availability.set(batch.id, normalizeStock(available - quantity));
+                    pending = normalizeStock(pending - quantity);
+                    batchDeductions.push({ batchId: batch.id, productId, quantity, fromCommittedStock: false });
+                    item.batchesUsed.push({
+                        batchId: batch.id, ingredientId: productId, quantity,
+                        cost: batch.cost, expiryDate: batch.expiryDate || null,
+                        batchSku: batch.sku || null
+                    });
+                }
+                if (pending > DIRECT_PARTIAL_EPSILON) {
+                    throw buildInventoryError('DIRECT_PARTIAL_BATCH_ALLOCATION_MISMATCH:' + productId);
+                }
+            }
+        }
+        summaries.push({
+            ingredientId: productId, name: product.name, unit: getIngredientDefaultUnit(product),
+            required: needed, consumed, missing, freeBefore: free,
+            committedBefore: product.batchManagement?.enabled
+                ? batches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
+                : getCommittedStock(product)
+        });
+    }
+    // The existing sale row is the idempotency barrier. Sale + components,
+    // inventory_events, batches, ledger, cash/folio and audit persist atomically.
+    sale.metadata.directPartialInventory = {
+        approved: true,
+        attemptId: approval.attemptId,
+        actorKey: approval.actorKey,
+        recordedAt: new Date().toISOString(),
+        components: summaries
+    };
+    return batchDeductions;
+};
+
 const processSaleWithinTransaction = async ({
     sale,
     deductions = [],
@@ -567,8 +734,11 @@ const processSaleWithinTransaction = async ({
     const affectedProductIds = collectAffectedProductIds(sale, deductions);
     const batchesCacheMap = await loadBatchesCacheByProduct(affectedProductIds, tables.batches);
 
+    const authoritativeDeductions = sale.metadata?.directPartialInventoryAuthorization
+        ? await allocateDirectPartialInventory({ sale, tables })
+        : deductions;
     await applyBatchDeductions({
-        deductions,
+        deductions: authoritativeDeductions,
         batchesCacheMap,
         tableBatches: tables.batches
     });

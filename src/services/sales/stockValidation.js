@@ -1,5 +1,7 @@
 import { getAvailableStock } from '../db/utils';
-import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { getRecipeIngredientId, getIngredientDefaultUnit } from '../../utils/ingredientConfiguration';
+import { getOperationalStockSnapshot } from '../inventoryStock';
+import { isBatchExpiredForSale } from '../../utils/dateUtils';
 
 const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
 const shouldTrackDirectStock = (product) => Boolean(product?.trackStock);
@@ -89,42 +91,14 @@ const loadFreshBatchesByProduct = async ({ productIds, queryBatchesByProductIdAn
     return batchesByProduct;
 };
 
-const getBatchManagedAvailable = (productId, batchesByProduct, simulatedBatchStock) => {
-    const batches = batchesByProduct.get(productId) || [];
-    return batches.reduce((sum, batch) => sum + (simulatedBatchStock.get(batch.id) || 0), 0);
-};
-
-const consumeBatchManagedStock = (productId, qty, batchesByProduct, simulatedBatchStock) => {
-    const batches = batchesByProduct.get(productId) || [];
-    let pendingQty = qty;
-
-    for (const batch of batches) {
-        if (pendingQty <= 0) break;
-
-        const batchAvailable = simulatedBatchStock.get(batch.id) || 0;
-        if (batchAvailable <= 0) continue;
-
-        const consumed = Math.min(pendingQty, batchAvailable);
-        simulatedBatchStock.set(batch.id, batchAvailable - consumed);
-        pendingQty -= consumed;
-    }
-
-    return getBatchManagedAvailable(productId, batchesByProduct, simulatedBatchStock);
-};
-
 export const validateStockBeforeSale = async ({
     itemsToProcess,
     productMap,
-    ignoreStock,
     loadData,
     loadMultipleData,
     queryBatchesByProductIdAndActive,
     STORES
 }) => {
-    if (ignoreStock) {
-        return { ok: true };
-    }
-
     const requirementsByItem = new Map();
     const uniqueStockIds = new Set();
 
@@ -169,83 +143,88 @@ export const validateStockBeforeSale = async ({
         queryBatchesByProductIdAndActive
     });
 
-    const missingIngredients = [];
-    const simulatedStock = new Map();
-    const simulatedBatchStock = new Map();
-
-    freshStockMap.forEach((product, id) => {
-        if (product?.batchManagement?.enabled) {
-            const batches = batchesByProduct.get(id) || [];
-            batches.forEach((batch) => {
-                simulatedBatchStock.set(batch.id, getAvailableStock(batch));
-            });
-            simulatedStock.set(id, getBatchManagedAvailable(id, batchesByProduct, simulatedBatchStock));
-        } else {
-            simulatedStock.set(id, getAvailableStock(product));
-        }
-    });
-
-    for (const [index, item] of itemsToProcess.entries()) {
-        const productDef = productMap.get(getRealProductId(item));
-        const itemRequirements = requirementsByItem.get(index) || new Map();
-
-        for (const [reqId, reqQty] of itemRequirements.entries()) {
-            const realStockData = freshStockMap.get(reqId);
-
-            if (!realStockData) {
-                missingIngredients.push({
-                    productName: productDef?.name || 'Producto Desconocido',
-                    ingredientName: `ERROR CRITICO: Producto/ingrediente ID ${reqId} eliminado`,
-                    needed: reqQty,
-                    available: 0,
-                    unit: ''
-                });
-                continue;
-            }
-
-            if (!simulatedStock.has(reqId)) continue;
-
-            const currentAvailable = realStockData.batchManagement?.enabled
-                ? getBatchManagedAvailable(reqId, batchesByProduct, simulatedBatchStock)
-                : simulatedStock.get(reqId);
-
-            if (currentAvailable < reqQty) {
-                const alreadyListed = missingIngredients.some((m) => m.ingredientName === realStockData.name);
-                if (!alreadyListed) {
-                    missingIngredients.push({
-                        productName: 'Pedido (Acumulado)',
-                        ingredientName: realStockData.name,
-                        needed: reqQty,
-                        available: currentAvailable,
-                        unit: realStockData.bulkData?.purchase?.unit || 'u'
-                    });
-                }
-            } else if (realStockData.batchManagement?.enabled) {
-                const remainingStock = consumeBatchManagedStock(
-                    reqId,
-                    reqQty,
-                    batchesByProduct,
-                    simulatedBatchStock
-                );
-                simulatedStock.set(reqId, remainingStock);
-            } else {
-                simulatedStock.set(reqId, currentAvailable - reqQty);
-            }
+    const totals = new Map();
+    for (const [index, requirements] of requirementsByItem) {
+        const item = itemsToProcess[index];
+        const source = productMap.get(getRealProductId(item));
+        const recipeIds = new Set((source?.recipe || []).map(getRecipeIngredientId));
+        for (const [id, qty] of requirements) {
+            const current = totals.get(id) || { needed: 0, recipeOnly: true };
+            current.needed += qty;
+            current.recipeOnly = current.recipeOnly
+                && recipeIds.has(id)
+                && !(item.selectedModifiers || []).some((modifier) => modifier.ingredientId === id);
+            totals.set(id, current);
         }
     }
 
-    if (missingIngredients.length > 0) {
-        const details = missingIngredients.map((m) =>
-            `- ${m.ingredientName}: Tienes ${m.available.toFixed(2)} ${m.unit} (Necesitas ${m.needed.toFixed(2)})`
-        ).join('\n');
+    const missingIngredients = [];
+    const unknownIngredients = [];
+    let eligibleForPartial = true;
+    for (const [id, requirement] of totals) {
+        const product = freshStockMap.get(id);
+        const snapshot = product && getOperationalStockSnapshot(product);
+        if (!product || product.isActive === false || product.deletedAt || product.trackStock === false
+            || (product.productType && requirement.recipeOnly && product.productType !== 'ingredient')
+            || (!product.batchManagement?.enabled && !snapshot?.valid)) {
+            unknownIngredients.push(id);
+            continue;
+        }
+        let available = getAvailableStock(product);
+        if (product.batchManagement?.enabled) {
+            const batches = batchesByProduct.get(id) || [];
+            if (batches.some((batch) => !getOperationalStockSnapshot(batch).valid)) {
+                unknownIngredients.push(id);
+                continue;
+            }
+            if (product.expirationMode === 'STRICT' && batches.some((batch) =>
+                batch.isActive !== false && getAvailableStock(batch) > 0
+                && (!batch.expiryDate || isBatchExpiredForSale(batch, product, new Date()))
+            )) {
+                return { ok: false, response: {
+                    success: false, errorType: 'EXPIRY_BLOCKED',
+                    message: 'Hay lotes caducados o sin fecha obligatoria. Revisa Caducidad/Merma antes de vender.'
+                } };
+            }
+            available = batches.filter((batch) => batch.isActive !== false && batch.status !== 'inactive'
+                && !isBatchExpiredForSale(batch, product, new Date()))
+                .reduce((sum, batch) => sum + getAvailableStock(batch), 0);
+        }
+        if (available + 0.00001 < requirement.needed) {
+            eligibleForPartial = eligibleForPartial && requirement.recipeOnly;
+            missingIngredients.push({
+                ingredientId: id,
+                productName: 'Pedido (Acumulado)',
+                ingredientName: product.name,
+                needed: requirement.needed,
+                available,
+                missing: Math.max(0, requirement.needed - available),
+                unit: getIngredientDefaultUnit(product)
+            });
+        }
+    }
 
+    if (unknownIngredients.length) {
+        return { ok: false, response: {
+            success: false, errorType: 'INVENTORY_UNKNOWN',
+            message: 'No se puede vender con faltantes: hay ingredientes inexistentes, inactivos o con stock desconocido. Actualiza el catálogo.',
+            unknownIngredients
+        } };
+    }
+
+    if (missingIngredients.length) {
+        const details = missingIngredients.map((m) =>
+            '- ' + m.ingredientName + ': requeridos ' + m.needed.toFixed(2) + ' ' + m.unit
+            + ', disponibles ' + m.available.toFixed(2) + ', faltan ' + m.missing.toFixed(2)
+        ).join('\n');
         return {
             ok: false,
             response: {
                 success: false,
                 errorType: 'STOCK_WARNING',
-                message: `STOCK INSUFICIENTE:\n\n${details}\n\nEl pedido supera lo disponible.`,
-                missingData: missingIngredients
+                message: 'STOCK INSUFICIENTE — faltantes acumulados del pedido:\n\n' + details + '\n\nSe descontará únicamente el stock libre al confirmar.',
+                missingData: missingIngredients,
+                eligibleForPartial: Boolean(eligibleForPartial)
             }
         };
     }

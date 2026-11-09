@@ -36,7 +36,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   };
 
   const handleAdd = () => {
-    if (!selectedIngredientId || Number(quantity) <= 0) {
+    if (!selectedIngredientId || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0) {
       showMessageModal('Selecciona un ingrediente y una cantidad válida.', null, { type: 'warning' });
       return;
     }
@@ -48,6 +48,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     }
     const enteredQuantity = Number(quantity);
     const finalQuantity = useSmallUnit ? enteredQuantity / 1000 : enteredQuantity;
+    if (!Number.isFinite(finalQuantity) || finalQuantity <= 0) return;
     setRecipeItems((items) => [...items, {
       ingredientId: ingredient.id,
       name: ingredient.name,
@@ -57,6 +58,12 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
     }]);
     resetInput();
   };
+
+  const invalidItems = recipeItems.filter((item) => {
+    const ingredient = ingredientsById.get(getRecipeIngredientId(item));
+    return !ingredient || !Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0
+      || (item.unit && getIngredientDefaultUnit(ingredient) !== item.unit);
+  });
 
   const totalEstimatedCost = recipeItems.reduce((sum, item) => {
     const ingredient = ingredientsById.get(getRecipeIngredientId(item));
@@ -70,7 +77,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
   return <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
     <div className="modal-content recipe-modal">
       <h2 className="modal-title">Construir receta</h2>
-      <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong></p>
+      <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong>. Guarda después el producto para conservar la receta.</p>
 
       {isLoading ? <div className="warning-box">Cargando insumos...</div> : error ? <div className="warning-box">No se pudieron cargar los insumos. Intenta nuevamente. <button type="button" className="btn btn-secondary" onClick={refresh}>Reintentar</button></div> : ingredients.length === 0 ? <div className="warning-box">No hay insumos activos disponibles. Crea un insumo para comenzar una receta.</div> : <div className="recipe-input-group">
         <div className="form-group" style={{ flex: 2 }}>
@@ -100,10 +107,10 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
           const ingredient = ingredientsById.get(ingredientId);
           const isMissing = !ingredient;
           const estimatedCost = ingredient ? Number(ingredient.cost || 0) * Number(item.quantity || 0) : Number(item.estimatedCost || 0);
-          return <tr key={ingredientId || index} className={isMissing ? 'recipe-row-missing' : ''}><td>{item.name}{isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}</td><td>{item.quantity} {item.unit}</td><td>${toMoney(estimatedCost)}</td><td><button type="button" className="btn-icon-remove" onClick={() => setRecipeItems((items) => items.filter((candidate) => getRecipeIngredientId(candidate) !== ingredientId))} aria-label="Eliminar ingrediente">×</button></td></tr>;
+          return <tr key={ingredientId || index} className={isMissing ? 'recipe-row-missing' : ''}><td data-label="Ingrediente">{item.name}{isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}</td><td data-label="Cantidad">{item.quantity} {item.unit}</td><td data-label="Costo Est.">${toMoney(estimatedCost)}</td><td data-label="Acción"><button type="button" className="btn-icon-remove" onClick={() => setRecipeItems((items) => items.filter((candidate) => getRecipeIngredientId(candidate) !== ingredientId))} aria-label="Eliminar ingrediente">×</button></td></tr>;
         })}
       </tbody></table></div>
-      <div className="recipe-footer"><div className="recipe-total">Costo teórico total: <span>${toMoney(totalEstimatedCost)}</span></div><div className="recipe-actions"><button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-save" onClick={() => { onSave(recipeItems); onClose(); }}>Guardar receta</button></div></div>
+      <div className="recipe-footer"><div className="recipe-total">Costo teórico total: <span>${toMoney(totalEstimatedCost)}</span></div><div className="recipe-actions"><button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-save" disabled={isLoading || Boolean(error) || invalidItems.length > 0} onClick={() => { onSave(recipeItems); onClose(); }}>Guardar receta</button></div></div>
     </div>
   </div>;
 }

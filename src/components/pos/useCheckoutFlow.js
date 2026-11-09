@@ -159,16 +159,12 @@ export function useCheckoutFlow({
                     showMessageModal('⚠️ El sistema está muy ocupado. Por favor intenta cobrar de nuevo.');
                     await refreshData();
                 } else if (result.errorType === 'STOCK_WARNING') {
+                    // This legacy entry point has no durable checkout-attempt
+                    // binding. Never grant an unscoped forceSale override.
                     showMessageModal(
-                        result.message,
-                        () => {
-                            isSaleInProgressRef.current = false;
-                            handleProcessOrder(paymentData, true);
-                        },
-                        {
-                            confirmButtonText: 'Sí, Vender Igual',
-                            type: 'warning',
-                        }
+                        result.message + '\n\nVuelve al cobro principal para confirmar faltantes.',
+                        null,
+                        { confirmButtonText: 'Cancelar venta', type: 'warning' }
                     );
                 } else {
                     showMessageModal(`Error: ${result.message}`, null, { type: 'error' });

@@ -147,6 +147,24 @@ export const salesCloudRepository = {
     return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
+  async assertDirectPartialInventoryContract() {
+    assertSupabase();
+    // No request is sent to the financial dispatcher before this gate passes.
+    let data;
+    let error;
+    try {
+      ({ data, error } = await supabaseClient.rpc('pos_direct_partial_inventory_contract_v1'));
+    } catch (failure) {
+      error = failure;
+    }
+    if (error || data?.version !== 'direct_recipe_v1' || data?.enabled !== true) {
+      const unavailable = new Error('El servidor aún no tiene instalado el contrato de ventas con faltantes. No se cobró ni se descontó inventario.');
+      unavailable.code = 'DIRECT_PARTIAL_CLOUD_CONTRACT_UNAVAILABLE';
+      throw unavailable;
+    }
+    return true;
+  },
+
   async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, restaurantSettlement = null, idempotencyKey = null, actorHandle = null, project = null }) {
     const result = await executeNewFinancialIntent({ operationType: 'sale.cashier_inventory', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null, ...(restaurantSettlement ? { restaurant_settlement: restaurantSettlement } : {}) }, licenseKey, idempotencyKey, cashSessionId, actorHandle, project });
     return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };

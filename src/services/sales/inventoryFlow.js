@@ -1,6 +1,7 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
-import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { getDirectPartialRecipeSnapshot } from './directPartialAuthorization';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 const EPSILON = 0.00001;
@@ -349,6 +350,7 @@ export const buildProcessedItemsAndDeductions = ({
     batchesMap,
     roundCurrency,
     enforceExpiryStrict = true,
+    allowDirectPartial = false,
     now = new Date()
 }) => {
     const productMap = new Map((allProducts || []).map((product) => [product.id, product]));
@@ -364,7 +366,27 @@ export const buildProcessedItemsAndDeductions = ({
 
         const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
 
-        if (product.trackStock === false && !hasRecipe(product)) {
+        if (allowDirectPartial) {
+            if (isTableReservation(orderItem)) throw new Error('DIRECT_PARTIAL_TABLE_FORBIDDEN');
+            const recipeIds = new Set((product.recipe || []).map(getRecipeIngredientId));
+            processedItems.push({
+                ...orderItem, image: null, base64: null,
+                cost: parseFloat(product.cost) || 0,
+                batchesUsed: [], nonBatchIngredientsUsed: [], stockDeducted: 0,
+                directPartialRequirements: requirements.map(({ targetId, neededQty }) => ({
+                    ingredientId: targetId,
+                    required: normalizeStock(neededQty),
+                    canPartial: recipeIds.has(targetId)
+                        && !(orderItem.selectedModifiers || []).some((modifier) => modifier.ingredientId === targetId),
+                    ingredientUnit: getIngredientDefaultUnit(productMap.get(targetId)),
+                    ingredientProductType: productMap.get(targetId)?.productType || productMap.get(targetId)?.product_type || null
+                })),
+                directPartialRecipeSnapshot: getDirectPartialRecipeSnapshot(product)
+            });
+            continue;
+        }
+
+        if (product.trackStock === false && !hasRecipe(product) && !orderItem?.selectedModifiers?.some((modifier) => modifier?.ingredientId)) {
             processedItems.push({
                 ...orderItem,
                 image: null,
@@ -382,6 +404,11 @@ export const buildProcessedItemsAndDeductions = ({
                 ? committedReservation.committedBatches
                 : [];
             const itemBatchesUsed = [];
+            const nonBatchIngredientsUsed = getTableReservationProductQuantities(orderItem, product).map((entry) => ({
+                ingredientId: entry.productId,
+                quantity: normalizeStock(entry.quantity),
+                fromCommittedStock: true
+            }));
             let itemTotalCost = 0;
 
             for (const batchUsage of committedBatches) {
@@ -431,6 +458,7 @@ export const buildProcessedItemsAndDeductions = ({
                 base64: null,
                 cost: calculatedAvgCost,
                 batchesUsed: itemBatchesUsed,
+                nonBatchIngredientsUsed,
                 stockDeducted: normalizeStock(committedReservation?.committedQuantity ?? quantityToDeduct)
             });
             continue;
@@ -438,12 +466,13 @@ export const buildProcessedItemsAndDeductions = ({
 
         let itemTotalCost = 0;
         const itemBatchesUsed = [];
+        const nonBatchIngredientsUsed = [];
 
         for (const component of requirements) {
             let requiredQty = normalizeStock(component.neededQty);
             const targetId = component.targetId;
             const targetProduct = productMap.get(targetId);
-            const rawBatches = batchesMap.get(targetId) || [];
+            const rawBatches = targetProduct?.batchManagement?.enabled ? (batchesMap.get(targetId) || []) : [];
             const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
             const requiredStart = requiredQty;
 
@@ -479,6 +508,21 @@ export const buildProcessedItemsAndDeductions = ({
                 requiredQty = normalizeStock(requiredQty - toDeduct);
             }
 
+            if (!targetProduct || targetProduct.deletedAt || targetProduct.isActive === false) {
+                throw new Error('CRITICAL_RECIPE_INGREDIENT_UNAVAILABLE: ' + targetId);
+            }
+            if (!targetProduct.batchManagement?.enabled && targetProduct.trackStock !== false) {
+                nonBatchIngredientsUsed.push({
+                    ingredientId: targetId,
+                    quantity: requiredStart,
+                    fromCommittedStock: false
+                });
+                requiredQty = 0; // La transacción verifica y descuenta el stock físico vigente.
+            }
+            if (!targetProduct.batchManagement?.enabled && targetProduct.trackStock === false) {
+                throw new Error('CRITICAL_RECIPE_INGREDIENT_NOT_TRACKED: ' + targetId);
+            }
+
             if (requiredQty > EPSILON && targetProduct?.batchManagement?.enabled) {
                 const expiredAvailableQuantity = sumExpiredStrictAvailable(rawBatches, targetProduct, now);
                 if (enforceExpiryStrict && expiredAvailableQuantity > 0) {
@@ -511,6 +555,7 @@ export const buildProcessedItemsAndDeductions = ({
             base64: null,
             cost: calculatedAvgCost,
             batchesUsed: itemBatchesUsed,
+            nonBatchIngredientsUsed,
             stockDeducted: quantityToDeduct
         });
     }

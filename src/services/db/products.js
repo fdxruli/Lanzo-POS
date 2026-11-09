@@ -255,20 +255,26 @@ export const productsRepository = {
               if (!batchUsage?.batchId) continue;
               batchIds.add(batchUsage.batchId);
             }
-          } else {
-            const productId = item?.parentId || item?.id;
-            if (!productId) {
-              warnings.push({
-                code: 'INVALID_ITEM',
-                message: 'Item sin productId ni parentId',
-                item
-              });
+          }
+          // Composite dishes can use both lots and simple-stock ingredients.
+          // Restore the recorded physical consumption, never the dish quantity.
+          const directUsages = Array.isArray(item?.nonBatchIngredientsUsed)
+            ? item.nonBatchIngredientsUsed.map((usage) => ({
+                productId: usage.ingredientId || usage.productId,
+                quantity: usage.quantity
+              }))
+            : (hasBatches ? [] : [{
+                productId: item?.parentId || item?.id,
+                quantity: item?.stockDeducted ?? item?.quantity ?? 0
+              }]);
+          for (const usage of directUsages) {
+            if (!usage.productId) {
+              warnings.push({ code: 'INVALID_ITEM', message: 'Consumo sin ingrediente identificado', item });
               continue;
             }
-            productIds.add(productId);
-            const quantityToRestore = Number(item?.stockDeducted ?? item?.quantity ?? 0);
-            const current = productDeductions.get(productId) || 0;
-            productDeductions.set(productId, current + quantityToRestore);
+            productIds.add(usage.productId);
+            productDeductions.set(usage.productId,
+              (productDeductions.get(usage.productId) || 0) + Number(usage.quantity || 0));
           }
         }
 
@@ -460,14 +466,22 @@ export const productsRepository = {
 
         const simpleDeductions = new Map();
         for (const item of items || []) {
-          if (Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0) continue;
-          const productId = item?.parentId || item?.id;
-          if (!productId) continue;
-          const quantity = normalizeStock(item?.stockDeducted ?? item?.quantity ?? 0);
-          simpleDeductions.set(
-            productId,
-            normalizeStock((simpleDeductions.get(productId) || 0) + quantity)
-          );
+          const hasBatches = Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
+          const directUsages = Array.isArray(item?.nonBatchIngredientsUsed)
+            ? item.nonBatchIngredientsUsed.map((usage) => ({
+                productId: usage.ingredientId || usage.productId,
+                quantity: usage.quantity
+              }))
+            : (hasBatches ? [] : [{
+                productId: item?.parentId || item?.id,
+                quantity: item?.stockDeducted ?? item?.quantity ?? 0
+              }]);
+          for (const usage of directUsages) {
+            if (!usage.productId) continue;
+            const quantity = normalizeStock(usage.quantity);
+            simpleDeductions.set(usage.productId,
+              normalizeStock((simpleDeductions.get(usage.productId) || 0) + quantity));
+          }
         }
 
         const productIds = Array.from(new Set([

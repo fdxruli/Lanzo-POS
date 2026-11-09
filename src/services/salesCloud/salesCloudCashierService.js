@@ -631,6 +631,11 @@ export const salesCloudCashierService = {
     );
   },
 
+  async requiresCloudInventoryAuthority() {
+    const context = await getRuntimeContext();
+    return Boolean(context.licenseKey && context.inventoryFeatureEnabled);
+  },
+
   async canUseCloudCashierSale(licenseDetails = null) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
@@ -1122,6 +1127,19 @@ export const salesCloudCashierService = {
       || isCreditLikePaymentMethod(sale?.paymentMethod || sale?.payment_method);
     const createsNewDebt = hasNewCreditBalance({ sale: sale || {}, paymentData, total });
     const inventoryEnabled = isCloudSalesInventoryEnabled(details);
+    const directPartial = sale?.metadata?.directPartialInventoryAuthorization || null;
+    if (directPartial) {
+      if (creditSale || createsNewDebt || !inventoryEnabled
+          || restaurantOrder?.tableData || restaurantOrder?.orderType === 'table'
+          || restaurantOrder?.isSaved || restaurantOrder?.restaurantOrderId
+          || processedItems.some((item) => item.inventoryReservation?.source === 'table')) {
+        const invalid = new Error('El descuento parcial cloud solo está autorizado para ventas directas con inventario, sin mesa ni fiado.');
+        invalid.code = 'DIRECT_PARTIAL_CONTEXT_FORBIDDEN';
+        throw invalid;
+      }
+      await salesCloudRepository.assertDirectPartialInventoryContract();
+      actorHandle.assertCurrent('pos');
+    }
 
     if (createsNewDebt) assertCreditSalesPermission(actorHandle);
 

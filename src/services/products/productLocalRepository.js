@@ -21,6 +21,7 @@ import {
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
+import { assertValidRecipeReferences, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const nowIso = () => new Date().toISOString();
 
@@ -217,6 +218,16 @@ export const productLocalRepository = {
       : null;
 
     const productId = editing ? hydratedExisting.id : (productData.id || generateID('prod'));
+    if (productData.restaurantType === 'dish' || (Array.isArray(productData.recipe) && productData.recipe.length)) {
+      const recipe = productData.recipe;
+      if (!Array.isArray(recipe)) throw new Error('La receta no tiene un formato válido.');
+      const ids = recipe.map(getRecipeIngredientId).filter(Boolean);
+      const ingredients = ids.length ? await db.table(STORES.MENU).bulkGet(ids) : [];
+      assertValidRecipeReferences(recipe, ingredients, {
+        productId,
+        licenseId: productData.licenseId || productData.license_id || null
+      });
+    }
     let image = productData.image;
 
     if (productData.image instanceof File) {

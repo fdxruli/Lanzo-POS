@@ -217,3 +217,29 @@
     min-height: 44px;
   }
 }
+
+@media (max-width: 640px) {
+  .recipe-table { min-width: 0; }
+  .recipe-table thead { display: none; }
+  .recipe-table tbody, .recipe-table tr { display: block; }
+  .recipe-table tr {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+  }
+  .recipe-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .recipe-table td:not(.recipe-empty-cell)::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted, var(--text-light));
+    font-size: 0.8rem;
+    flex: 0 0 35%;
+  }
+  .recipe-table td.recipe-empty-cell { justify-content: center; }
+  .btn-icon-remove { min-width: 44px; min-height: 44px; }
+}

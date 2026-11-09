@@ -204,3 +204,41 @@ describe('inventoryFlow committed stock', () => {
     });
   });
 });
+
+
+describe('recipe inventory allocations', () => {
+  const dish = { id: 'dish', name: 'Hamburguesa', trackStock: false,
+    recipe: [{ ingredientId: 'chicken', quantity: 0.15 }, { ingredientId: 'bread', quantity: 1 }] };
+  const chicken = { id: 'chicken', name: 'Pechuga', trackStock: true, stock: 1, committedStock: 0, cost: 50 };
+  const bread = { id: 'bread', name: 'Bolillo', trackStock: true, stock: 10, committedStock: 0, cost: 3 };
+
+  it('allocates non-batch ingredients once per component, not parent dish', () => {
+    const result = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: 'dish', quantity: 2 }],
+      allProducts: [dish, chicken, bread],
+      batchesMap: new Map(),
+      roundCurrency: (v) => Math.round(v * 100) / 100
+    });
+    expect(result.batchesToDeduct).toEqual([]);
+    expect(result.processedItems[0].nonBatchIngredientsUsed).toEqual([
+      { ingredientId: 'chicken', quantity: 0.3, fromCommittedStock: false },
+      { ingredientId: 'bread', quantity: 2, fromCommittedStock: false }
+    ]);
+  });
+
+  it('preserves reserved non-batch ingredient quantities for table settlement', () => {
+    const result = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: 'dish', quantity: 2, inventoryReservation: {
+        source: 'table', committedQuantity: 2, committedBatches: [],
+        committedProducts: [{ productId: 'chicken', quantity: 0.3 }, { productId: 'bread', quantity: 2 }]
+      } }],
+      allProducts: [dish, chicken, bread],
+      batchesMap: new Map(),
+      roundCurrency: (v) => Math.round(v * 100) / 100
+    });
+    expect(result.processedItems[0].nonBatchIngredientsUsed).toEqual([
+      { ingredientId: 'chicken', quantity: 0.3, fromCommittedStock: true },
+      { ingredientId: 'bread', quantity: 2, fromCommittedStock: true }
+    ]);
+  });
+});
