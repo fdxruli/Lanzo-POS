@@ -90,8 +90,8 @@ export default function AppBootRecovery() {
     && (worker.waiting || worker.reloadDeferred || !navigator.serviceWorker?.controller);
 
   const retry = () => {
-    if (!readRecoverySafety(isContextCurrent).contextCurrent
-      || !readRecoverySafety(isContextCurrent).operationsIdle) return;
+    const current = readRecoverySafety(isContextCurrent);
+    if (!current.contextCurrent || !current.operationsIdle) return;
     window.location.reload();
   };
 
