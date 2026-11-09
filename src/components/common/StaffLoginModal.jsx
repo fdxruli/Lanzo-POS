@@ -11,6 +11,7 @@ import './StaffLoginModal.css';
 const SAFE_LOGIN_MESSAGES = Object.freeze({
   INVALID_STAFF_CREDENTIALS: 'Usuario o contraseña incorrectos.',
   INVALID_CREDENTIALS: 'Usuario o contraseña incorrectos.',
+  STAFF_ACCOUNT_INACTIVE: 'Esta cuenta de personal está desactivada. Solicita al administrador que la habilite para poder ingresar.',
   ONLINE_REQUIRED: 'Necesitas internet para iniciar sesión staff.',
   STAFF_LOGIN_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
   RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
