@@ -649,3 +649,52 @@
   .caja-modal .caja-modal__body { max-height: calc(100dvh - env(safe-area-inset-top) - 75px); }
   .caja-modal .caja-modal__header { padding: .85rem 1rem; }
 }
+/* Aviso de conexión: una sola alerta, texto legible y acción separada.
+   No se reutiliza el layout horizontal genérico de ui-alert en pantallas estrechas. */
+.caja-page .caja-network-recovery {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .85rem;
+  align-items: start;
+  min-width: 0;
+  padding: 1rem;
+  background: var(--ui-bg-warning-soft);
+  border: 1px solid var(--ui-border-warning);
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+  color: var(--ui-text-warning);
+}
+.caja-page .caja-network-recovery__content {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+}
+.caja-page .caja-network-recovery__content strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+.caja-page .caja-network-recovery__content p {
+  margin: 0;
+  font-size: .88rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.caja-page .caja-network-recovery > button {
+  justify-self: stretch;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  white-space: normal;
+}
+@media (min-width: 720px) {
+  .caja-page .caja-network-recovery {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1rem 1.2rem;
+  }
+  .caja-page .caja-network-recovery > button {
+    width: auto;
+    justify-self: end;
+  }
+}

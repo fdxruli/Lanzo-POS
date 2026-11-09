@@ -230,7 +230,7 @@ describe('CajaPage progressive disclosure', () => {
     expect(screen.getByRole('button', { name: 'Ajuste de caja' })).toBeDisabled();
   });
 
-  it('shows the Supabase outage message and forces a verification retry', () => {
+  it('shows a user-friendly connection warning and forces a verification retry', () => {
     fx.hook = makeState({
       isCloudCash: true,
       isCloudCashReadOnly: true,
@@ -239,7 +239,9 @@ describe('CajaPage progressive disclosure', () => {
     });
     renderCajaPage();
 
-    expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
+    expect(screen.getByText('No se puede verificar Caja')).toBeVisible();
+    expect(screen.getByText(/Caja permanece en modo de solo consulta/i)).toBeVisible();
+    expect(screen.queryByText(/Supabase/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
     expect(fx.retry).toHaveBeenCalledTimes(1);
   });
@@ -255,7 +257,9 @@ describe('CajaPage progressive disclosure', () => {
     });
     renderCajaPage();
 
-    expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
+    expect(screen.getByText('No se puede verificar Caja')).toBeVisible();
+    expect(screen.getByText(/Caja permanece en modo de solo consulta/i)).toBeVisible();
+    expect(screen.queryByText(/Supabase/i)).not.toBeInTheDocument();
     expect(screen.queryByText('No se puede verificar la estación financiera.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeEnabled();
   });

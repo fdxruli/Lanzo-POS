@@ -36,10 +36,10 @@ const isRealtimeLicense = (state = {}) => (
 
 const getDefaultServerMessage = (health) => {
   if (health === 'degraded') {
-    return 'Supabase está respondiendo más lento de lo normal. Lanzo POS seguirá reintentando en segundo plano.';
+    return 'El servicio en línea está respondiendo más lento de lo normal. Intentaremos conectarnos nuevamente.';
   }
 
-  return 'No se pudo mantener comunicación estable con Supabase. Lanzo POS seguirá reintentando en segundo plano.';
+  return 'La conexión con el servicio en línea se interrumpió. Intentaremos recuperarla automáticamente.';
 };
 
 export const createUISlice = (set, get) => ({
