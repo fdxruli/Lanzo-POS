@@ -290,7 +290,7 @@ create or replace function private.prepare_direct_partial_inventory_items_v1(
   p_license_id uuid, p_items jsonb
 )
 returns jsonb language plpgsql security definer set search_path = ''
-as $
+as $$
 declare
   v_context jsonb := nullif(pg_catalog.current_setting('lanzo.direct_partial_recipe_v1',true),'')::jsonb;
   v_approved_items jsonb;
@@ -414,7 +414,7 @@ begin
   end loop;
   return v_items_for_inventory;
 end;
-$;
+$$;
 revoke all on function private.prepare_direct_partial_inventory_items_v1(uuid,jsonb) from public, anon, authenticated;
 
 -- Existing function called by the cashier inventory RPC. Strict paths unchanged.
