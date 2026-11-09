@@ -18,7 +18,8 @@ vi.mock('../../../store/useAppStore', () => {
 });
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({ markFreeDeviceTakeoverCompleted: vi.fn() }));
 const supportMocks = vi.hoisted(() => ({ copyTextToClipboard: vi.fn() }));
-vi.mock('../../../services/support/supportContact', () => ({
+vi.mock('../../../services/support/supportContact', async (importOriginal) => ({
+  ...(await importOriginal()),
   copyTextToClipboard: supportMocks.copyTextToClipboard
 }));
 import AdminLoginModal from '../AdminLoginModal';
