@@ -45,13 +45,18 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     />
   );
 
+  const openIdentity = () => {
+    const summary = screen.getByText('Identidad visual', { selector: 'strong' }).closest('summary');
+    if (!summary.closest('details').open) fireEvent.click(summary);
+  };
+
   it('hydrates existing images as preserve and clears only the logo when requested', async () => {
     renderPanel();
     await waitFor(() => expect(lastChange(changes).logo).toEqual({
       value: portal.logoUrl, intent: 'preserve'
     }));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Desvincular' })[0]);
+    fireEvent.click((openIdentity(), screen.getAllByRole('button', { name: 'Desvincular' })[0]));
 
     await waitFor(() => expect(lastChange(changes).logo).toEqual({ value: null, intent: 'clear' }));
     expect(lastChange(changes).cover).toEqual({ value: portal.coverImageUrl, intent: 'preserve' });
@@ -99,7 +104,8 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
 
   it('clears the cover on reset while preserving the logo', async () => {
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Restablecer' }));
+    openIdentity();
+    fireEvent.click(screen.getByRole('button', { name: 'Restablecer identidad' }));
 
     await waitFor(() => expect(lastChange(changes).cover).toEqual({ value: null, intent: 'clear' }));
     expect(lastChange(changes).logo).toEqual({ value: portal.logoUrl, intent: 'preserve' });
@@ -107,7 +113,7 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
 
   it('rehydrates response values as preserve after a save', async () => {
     const { rerender } = renderPanel();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Desvincular' })[0]);
+    fireEvent.click((openIdentity(), screen.getAllByRole('button', { name: 'Desvincular' })[0]));
     await waitFor(() => expect(lastChange(changes).logo.intent).toBe('clear'));
 
     rerender(
