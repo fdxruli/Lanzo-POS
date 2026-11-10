@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   app: null,
   actorRuntime: null,
-  postDowngradeCash: null
+  postDowngradeCash: null,
+  showMenuBell: true
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -48,13 +49,18 @@ vi.mock('../../common/Logo', () => ({
 }));
 
 vi.mock('../../notifications/NotificationBell', () => ({
-  default: ({ className = '', localOnly = false }) => (
-    <button
-      type="button"
-      className={className}
-      data-local-only={localOnly ? 'true' : 'false'}
-      aria-label={localOnly ? 'Alertas locales de inventario' : 'Notificaciones'}
-    />
+  default: ({ className = '', localOnly = false, showLabel = false, onOpen }) => (
+    localOnly || state.showMenuBell ? (
+      <button
+        type="button"
+        className={className}
+        data-local-only={localOnly ? 'true' : 'false'}
+        aria-label={localOnly ? 'Alertas locales de inventario' : 'Notificaciones'}
+        onClick={onOpen}
+      >
+        {showLabel && <span className="notification-bell__label">Notificaciones</span>}
+      </button>
+    ) : null
   )
 }));
 
@@ -127,6 +133,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   state.app = createAppState();
+  state.showMenuBell = true;
   state.postDowngradeCash = {
     eligible: false,
     pendingCount: null,
@@ -238,6 +245,120 @@ describe('Navbar sales report access', () => {
 });
 
 describe('Navbar mobile menu', () => {
+  it('uses a compact visual heading while preserving the accessible dialog name', () => {
+    renderNavbar();
+    const { drawer } = openMobileDrawer();
+
+    expect(within(drawer).getByRole('heading', { name: 'Menú principal' }))
+      .toHaveTextContent(/^Menú$/);
+    expect(drawer.querySelector('.drawer-handle')).toBeNull();
+    expect(drawer.querySelector('.drawer-eyebrow')).toBeNull();
+    expect(drawer.querySelector('.drawer-header')).toBe(drawer.firstElementChild);
+    expect(drawer.querySelector('.drawer-notification-slot').nextElementSibling)
+      .toBe(drawer.querySelector('.drawer-links'));
+  });
+
+  it('keeps the alert entry above modules and closes on opening its panel', () => {
+    renderNavbar();
+    const { menuButton, drawer } = openMobileDrawer();
+    const slot = drawer.querySelector('.drawer-notification-slot');
+
+    expect(within(slot).getByRole('button', { name: 'Notificaciones' }))
+      .toHaveTextContent('Notificaciones');
+    fireEvent.click(within(slot).getByRole('button', { name: 'Notificaciones' }));
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('does not leave a visible placeholder when notification entry is unavailable', () => {
+    state.showMenuBell = false;
+    renderNavbar();
+    const { drawer } = openMobileDrawer();
+    expect(drawer.querySelector('.drawer-notification-slot')).toBeEmptyDOMElement();
+  });
+
+  it('closes on a downward touch swipe beginning in the header', () => {
+    renderNavbar();
+    const { menuButton, drawer } = openMobileDrawer();
+    const header = drawer.querySelector('.drawer-header');
+
+    fireEvent.pointerDown(header, {
+      pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0,
+      clientX: 90, clientY: 100
+    });
+    fireEvent.pointerMove(header, {
+      pointerId: 1, pointerType: 'touch', clientX: 94, clientY: 205
+    });
+    expect(drawer).toHaveClass('is-dragging');
+    fireEvent.pointerUp(header, {
+      pointerId: 1, pointerType: 'touch', clientX: 94, clientY: 205
+    });
+
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('resets short and horizontal header swipes without closing', () => {
+    renderNavbar();
+    const { menuButton, drawer } = openMobileDrawer();
+    const header = drawer.querySelector('.drawer-header');
+
+    fireEvent.pointerDown(header, {
+      pointerId: 2, pointerType: 'touch', isPrimary: true, button: 0,
+      clientX: 90, clientY: 100
+    });
+    fireEvent.pointerMove(header, {
+      pointerId: 2, pointerType: 'touch', clientX: 90, clientY: 135
+    });
+    fireEvent.pointerUp(header, {
+      pointerId: 2, pointerType: 'touch', clientX: 90, clientY: 135
+    });
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    expect(drawer).not.toHaveClass('is-dragging');
+    expect(drawer.style.getPropertyValue('--drawer-drag-y')).toBe('');
+
+    fireEvent.pointerDown(header, {
+      pointerId: 3, pointerType: 'touch', isPrimary: true, button: 0,
+      clientX: 90, clientY: 100
+    });
+    fireEvent.pointerMove(header, {
+      pointerId: 3, pointerType: 'touch', clientX: 180, clientY: 115
+    });
+    fireEvent.pointerUp(header, {
+      pointerId: 3, pointerType: 'touch', clientX: 180, clientY: 115
+    });
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('never interprets module scrolling or closing-button touches as drawer drags', () => {
+    renderNavbar();
+    const { menuButton, drawer } = openMobileDrawer();
+    const links = drawer.querySelector('.drawer-links');
+    const headerClose = within(drawer).getByRole('button', { name: 'Cerrar menú' });
+
+    fireEvent.pointerDown(links, {
+      pointerId: 4, pointerType: 'touch', isPrimary: true, button: 0,
+      clientX: 90, clientY: 100
+    });
+    fireEvent.pointerMove(links, {
+      pointerId: 4, pointerType: 'touch', clientX: 90, clientY: 210
+    });
+    fireEvent.pointerUp(links, {
+      pointerId: 4, pointerType: 'touch', clientX: 90, clientY: 210
+    });
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    expect(drawer).not.toHaveClass('is-dragging');
+
+    fireEvent.pointerDown(headerClose, {
+      pointerId: 5, pointerType: 'touch', isPrimary: true, button: 0,
+      clientX: 90, clientY: 100
+    });
+    fireEvent.pointerMove(headerClose, {
+      pointerId: 5, pointerType: 'touch', clientX: 90, clientY: 210
+    });
+    expect(drawer).not.toHaveClass('is-dragging');
+    fireEvent.click(headerClose);
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('shows the confirmed historical cash count only for the eligible owner', () => {
     state.postDowngradeCash = {
       eligible: true,

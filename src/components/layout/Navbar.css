@@ -174,25 +174,32 @@
   bottom: 0;
   left: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   background-color: var(--card-background-color);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding: 8px 16px calc(82px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px max(16px, env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
   z-index: var(--z-drawer);
   transform: translateY(calc(100% + 24px));
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   max-height: min(82dvh, 720px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   visibility: hidden;
   pointer-events: none;
 }
 
 .mobile-drawer.open {
-  transform: translateY(0);
+  transform: translateY(var(--drawer-drag-y, 0px));
   visibility: visible;
   pointer-events: auto;
+}
+
+/* Follow the finger while dragging; restore the transition on release. */
+.mobile-drawer.is-dragging {
+  transition: none;
 }
 
 .mobile-drawer-overlay {
@@ -221,105 +228,124 @@
   overscroll-behavior: none;
 }
 
-.drawer-handle {
-  width: 42px;
-  height: 4px;
-  margin: 2px auto 12px;
-  border-radius: 999px;
-  background-color: var(--border-color);
-}
-
 .drawer-header {
   display: flex;
+  flex: 0 0 auto;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  padding: 0 2px 14px;
-  border-bottom: 1px solid var(--border-color);
+  min-height: 44px;
+  margin-bottom: 9px;
+  padding: 0 0 9px 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  touch-action: pan-x pinch-zoom;
+  user-select: none;
 }
 
 .drawer-header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  color: var(--text-dark);
+  font-size: 1.18rem;
+  font-weight: 700;
   line-height: 1.25;
 }
 
-.drawer-eyebrow {
-  margin: 0 0 2px;
-  color: var(--text-light);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
 .btn-close-drawer {
-  background: var(--light-background);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  width: 44px;
-  height: 44px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
   color: var(--text-dark);
   cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  padding: 0;
+  transition: background-color 0.18s ease, transform 0.18s ease;
 }
 
 .btn-close-drawer:hover {
-  background: var(--ui-action-danger-bg);
-  color: var(--ui-action-danger-text);
-  border-color: var(--ui-action-danger-bg);
-  transform: rotate(90deg);
+  background: var(--ui-bg-hover, var(--light-background));
 }
 
 .btn-close-drawer:active {
-  transform: rotate(90deg) scale(0.95);
+  background: var(--ui-bg-muted, var(--light-background));
+  transform: scale(0.97);
 }
 
+/* The heading and alerts stay fixed; only the module list scrolls. */
 .drawer-links {
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 2px 1px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .drawer-notification-slot {
-  margin: 0 20px 10px;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0 0 10px;
 }
 
 .drawer-notification-slot:empty {
   display: none;
 }
 
-.notification-bell--mobile-menu {
+.drawer-notification-slot .notification-bell--mobile-menu {
   display: flex;
-  width: 100%;
-  height: 48px;
   align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 0 14px;
-  border-color: var(--border-color);
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  gap: 9px;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-border-color) 76%, transparent);
   border-radius: 12px;
-  background: var(--light-background);
+  background: var(--ui-bg-muted, var(--light-background));
+  color: var(--ui-text-brand, var(--brand-accent-text));
   box-shadow: none;
   font: inherit;
+  text-align: left;
 }
 
-.notification-bell--mobile-menu .notification-bell__label {
+.drawer-notification-slot .notification-bell--mobile-menu:hover {
+  border-color: var(--ui-border-brand, var(--brand-accent-border));
+  background: var(--ui-bg-hover, var(--light-background));
+  box-shadow: none;
+}
+
+.drawer-notification-slot .notification-bell--mobile-menu .notification-bell__label {
+  flex: 1;
+  min-width: 0;
   color: var(--text-dark);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
-.notification-bell--mobile-menu .notification-bell__badge {
-  top: 50%;
-  right: 12px;
-  transform: translateY(-50%);
+.drawer-notification-slot .notification-bell--mobile-menu .notification-bell__badge {
+  position: static;
+  flex: 0 0 auto;
+  margin-left: auto;
+  transform: none;
+  border: 0;
+}
+
+.drawer-notification-slot .notification-bell--mobile-menu::after {
+  content: '›';
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-light);
+  font-size: 1.3rem;
+  line-height: 1;
 }
 
 .drawer-context-heading {
@@ -364,6 +390,7 @@
 .drawer-link {
   display: flex;
   flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   min-height: 64px;
