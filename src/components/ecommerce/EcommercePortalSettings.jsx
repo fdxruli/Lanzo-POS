@@ -1,5 +1,7 @@
 import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { UNSAFE_DataRouterContext } from 'react-router-dom';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -251,7 +253,18 @@ function PublicationBadge({ product }) {
   );
 }
 
-function StoreHealth({ portal, requirements, products, operations, onNavigate }) {
+function PortalLeaveGuard({ enabled }) {
+  useNavigationGuard({
+    enabled,
+    title: '¿Salir sin guardar?',
+    message: 'Tienes cambios en Información que todavía no se han guardado.',
+    confirmButtonText: 'Salir sin guardar',
+    cancelButtonText: 'Continuar editando'
+  });
+  return null;
+}
+
+function StoreHealth({ portal, requirements, products, operations, hasUnsavedChanges, onNavigate }) {
   const eligiblePublished = products.some((product) => (
     product.isPublished
     && !['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
@@ -261,7 +274,6 @@ function StoreHealth({ portal, requirements, products, operations, onNavigate })
     && requirements.municipality && requirements.state && requirements.postalCode;
   const hoursReady = portal.businessHoursEnabled !== true
     || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true);
-
   const problems = [
     ...(!requirements.whatsapp
       ? [{ category: 'Preparación', label: 'Falta un WhatsApp válido', section: 'information' }]
@@ -275,43 +287,52 @@ function StoreHealth({ portal, requirements, products, operations, onNavigate })
     ...(!eligiblePublished
       ? [{ category: 'Catálogo', label: 'No hay productos publicados elegibles', section: 'catalog' }]
       : []),
-    ...(portal.ordersPaused === true
+    ...(portal.status === 'published' && portal.ordersPaused === true
       ? [{ category: 'Operación', label: 'Los pedidos están pausados', section: 'operation' }]
       : [])
   ];
   const statusLabel = STATUS_LABELS[portal.status] || portal.status;
-  const summary = problems.length === 0
-    ? 'Todo correcto'
-    : `${problems.length} ${problems.length === 1 ? 'aspecto por revisar' : 'aspectos por revisar'}`;
-
+  const summary = problems.length > 0
+    ? `${problems.length} ${problems.length === 1 ? 'aspecto por revisar' : 'aspectos por revisar'}`
+    : portal.status === 'published'
+      ? 'Sin pendientes detectados'
+      : portal.status === 'paused'
+        ? 'No recibe pedidos'
+        : portal.status === 'draft'
+          ? 'Aún sin publicar'
+          : 'Sin pendientes de preparación';
   return (
     <div className="ecom-info-health" aria-label="Estado de la tienda">
-      {problems.length === 0 ? (
-        <span className="ecom-info-health__summary">
-          <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
-          <span>{summary}</span>
-        </span>
-      ) : (
-        <details>
-          <summary>
-            <span className="ecom-info-health__summary">
-              <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
-              <span>{summary}</span>
-            </span>
-            <span className="ecom-info-health__toggle">Ver detalles</span>
-          </summary>
-          <ul>
-            {problems.map((issue) => (
-              <li key={issue.label}>
-                <span><strong>{issue.category}</strong> · {issue.label}</span>
-                <button type="button" onClick={() => onNavigate(issue.section)}>
-                  Revisar
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <details>
+        <summary>
+          <span className="ecom-info-health__summary">
+            <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
+            <span>{summary}</span>
+            {hasUnsavedChanges && <span className="ecom-info-health__draft">Cambios sin guardar</span>}
+          </span>
+          <span className="ecom-info-health__toggle">Ver detalles</span>
+        </summary>
+        <ul>
+          {problems.length === 0 && <li><span>Sin aspectos pendientes en los datos confirmados.</span></li>}
+          {problems.map((issue) => (
+            <li key={issue.label}>
+              <span><strong>{issue.category}</strong> · {issue.label}</span>
+              <button type="button" onClick={() => onNavigate(issue.section)}>Revisar</button>
+            </li>
+          ))}
+          {!(portal.status === 'published' && portal.ordersPaused === true) && (
+            <li>
+              <span><strong>Pedidos</strong> · {portal.status === 'published'
+                ? 'Activos'
+                : 'No disponibles mientras la tienda no esté publicada'}</span>
+              {portal.status === 'published' && (
+                <button type="button" onClick={() => onNavigate('operation')}>Revisar</button>
+              )}
+            </li>
+          )}
+          {hasUnsavedChanges && <li><span>Los cambios locales no están incluidos en este estado.</span></li>}
+        </ul>
+      </details>
     </div>
   );
 }
@@ -381,6 +402,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const localCatalogSearchTermRef = useRef('');
   const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
+  const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
   const unsavedChangesRef = useRef(false);
   unsavedChangesRef.current = hasUnsavedChanges;
@@ -487,17 +509,19 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setActiveSection(nextId);
     document.getElementById(`ecom-portal-tab-${nextId}`)?.focus();
   };
-  const publicationRequirements = {
-    whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
-    street: form.addressStreet.trim().length > 0,
-    neighborhood: form.addressNeighborhood.trim().length > 0,
+  const requirementsFor = (candidate) => ({
+    whatsapp: candidate.whatsappPhone.replace(/\D/g, '').length >= 8,
+    street: candidate.addressStreet.trim().length > 0,
+    neighborhood: candidate.addressNeighborhood.trim().length > 0,
     municipality: (
-      form.addressMunicipality.trim().length >= 2
-      && !UNKNOWN_ADDRESS_PART_PATTERN.test(form.addressMunicipality.trim())
+      candidate.addressMunicipality.trim().length >= 2
+      && !UNKNOWN_ADDRESS_PART_PATTERN.test(candidate.addressMunicipality.trim())
     ),
-    state: form.addressState.trim().length > 0,
-    postalCode: POSTAL_CODE_PATTERN.test(form.addressPostalCode.trim())
-  };
+    state: candidate.addressState.trim().length > 0,
+    postalCode: POSTAL_CODE_PATTERN.test(candidate.addressPostalCode.trim())
+  });
+  const publicationRequirements = requirementsFor(form);
+  const persistedRequirements = portal ? requirementsFor(portalForm(portal, null)) : null;
   const linkedRefs = useMemo(
     () => new Set(products.map((item) => item.localProductRef).filter(Boolean)),
     [products]
@@ -679,7 +703,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const savePortal = async (
     candidate,
     successMessage,
-    { validate = true, syncFormOnSuccess = true } = {}
+    { validate = true, syncFormOnSuccess = true, statusOnly = false } = {}
   ) => {
     const validationError = validate ? validatePortal(candidate) : null;
     if (validationError) return toast.error(validationError);
@@ -707,22 +731,22 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     const canPersistLogoThroughPortal = !portal || !canUseAdvancedBranding;
     const canPersistCoverThroughPortal = !portal && canUseAdvancedBranding;
 
-    if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
+    if (!statusOnly && canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
       const logoUrl = publicUrl(logo.value);
       if (!logoUrl) return toast.error('El logo seleccionado no tiene una URL pública válida. Intenta subirlo nuevamente.');
       payload.logoUrl = logoUrl;
-    } else if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
+    } else if (!statusOnly && canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
       payload.logoUrl = null;
-    } else if (!portal) {
+    } else if (!portal && !statusOnly) {
       const initialLogo = publicUrl(candidate.logoUrl);
       if (initialLogo) payload.logoUrl = initialLogo;
     }
 
-    if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
+    if (!statusOnly && canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
       if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
       payload.coverImageUrl = coverImageUrl;
-    } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
+    } else if (!statusOnly && canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
     }
 
@@ -742,7 +766,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPortal(nextPortal);
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
-    if (syncFormOnSuccess) {
+    if (statusOnly) {
+      // Only the confirmed status changes; preserve all edits and the saved baseline.
+      setForm((current) => ({ ...current, status: nextPortal.status }));
+      setSavedForm((current) => ({ ...current, status: nextPortal.status }));
+    } else if (syncFormOnSuccess) {
       const persistedForm = portalForm(nextPortal, companyProfile);
       setForm(persistedForm);
       setSavedForm(persistedForm);
@@ -772,9 +800,18 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   };
 
   const changeStatus = async (status) => {
-    if (savingPortal) return;
+    if (savingPortal || !portal) return;
+    if (status === 'paused' && portal.status === 'published') {
+      // The existing upsert writes complete fields; never use the mutable form to pause.
+      await savePortal(
+        { ...portalForm(portal, null), status: 'paused' },
+        'Portal pausado.',
+        { validate: false, statusOnly: true, syncFormOnSuccess: false }
+      );
+      return;
+    }
     if (hasUnsavedChanges) {
-      toast.error('Guarda los cambios de Información antes de cambiar la publicación.');
+      toast.error('Guarda los cambios de Información antes de publicar.');
       return;
     }
     const next = { ...form, status };
@@ -784,10 +821,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       toast.error(validationError);
       return;
     }
-    await savePortal(
-      next,
-      status === 'published' ? 'Portal publicado.' : 'Portal pausado.'
-    );
+    await savePortal(next, 'Portal publicado.');
   };
 
   const copyLink = async () => {
@@ -1039,12 +1073,14 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   return (
     <div className="ecom-admin-page">
+      {dataRouterContext && <PortalLeaveGuard enabled={hasUnsavedChanges} />}
       {portal && (
         <StoreHealth
           portal={portal}
-          requirements={publicationRequirements}
+          requirements={persistedRequirements}
           products={products}
           operations={operations}
+          hasUnsavedChanges={hasUnsavedChanges}
           onNavigate={setActiveSection}
         />
       )}
