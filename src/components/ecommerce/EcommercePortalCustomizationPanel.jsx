@@ -36,7 +36,8 @@ export default function EcommercePortalCustomizationPanel({
   licenseKey,
   disabled = false,
   onChange,
-  onBusyChange
+  onBusyChange,
+  onValidationChange
 }) {
   const [templateCode, setTemplateCode] = useState('classic');
   const [theme, setTheme] = useState(getEcommercePortalThemeDefaults);
@@ -59,6 +60,7 @@ export default function EcommercePortalCustomizationPanel({
   const colorsValid = isEcommercePortalHexColor(theme.primaryColor)
     && isEcommercePortalHexColor(theme.secondaryColor);
   const normalizedTheme = useMemo(() => normalizeEcommercePortalTheme(theme), [theme]);
+  useEffect(() => { onValidationChange?.(!isPro || colorsValid); }, [colorsValid, isPro, onValidationChange]);
 
   useEffect(() => {
     if (hydratingFromPortal.current) {
