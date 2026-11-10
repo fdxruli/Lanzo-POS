@@ -204,6 +204,7 @@ const preparePublishedEditor = async (response = freePortalResponse) => {
   await renderCatalog();
   fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
   await screen.findByRole('dialog', { name: 'Editar producto' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar producto' })).not.toBeDisabled());
 };
 
 const createCatalogRoute = () => {
@@ -534,6 +535,38 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(await screen.findByRole('button', { name: 'Editar Nombre confirmado' })).toBeInTheDocument();
     expect(notifySuccess).toHaveBeenCalledWith('Producto actualizado.');
     expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows leaving without a catalog draft warning after a confirmed save', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockResolvedValue(productOne);
+    savePublishedProduct.mockResolvedValue({ success: true });
+    const router = createCatalogRoute();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Producto Uno' }));
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Cambio guardado' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+    expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
+    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not report an unpublish as failed when only catalog refresh fails', async () => {
+    getEcommercePortal.mockResolvedValue(freePortalResponse);
+    listPublishedProducts.mockResolvedValueOnce({ success: true, products: [publishedProduct] })
+      .mockResolvedValueOnce({ success: false, message: 'Actualización no disponible' });
+    setProductPublished.mockResolvedValue({ success: true });
+    const notifyError = vi.spyOn(toast, 'error');
+    const notifySuccess = vi.spyOn(toast, 'success');
+    await renderCatalog();
+    fireEvent.click(screen.getByRole('button', { name: 'Despublicar Producto Uno' }));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('Publicación actualizada, pero')));
+    expect(setProductPublished).toHaveBeenCalledTimes(1);
+    expect(notifySuccess).not.toHaveBeenCalled();
   });
 
   it('closes on confirmed save despite refresh failure and still requests PRO sync once', async () => {
