@@ -70,3 +70,18 @@
 @media (prefers-reduced-motion: reduce) {
   .ecom-builder-preview-inert { transition: none; }
 }
+
+/* Mensaje contextual sin reducir el área de navegación de la vista previa. */
+.ecom-builder-preview-modal__content { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.ecom-builder-preview-modal__notice {
+  margin: 0; padding: .45rem .9rem; font-size: .78rem;
+  color: var(--ui-text-muted, var(--text-light)); background: var(--ui-bg-muted, var(--light-background));
+  border-bottom: 1px solid var(--border-color);
+}
+@media (max-width: 640px) {
+  .ecom-builder-preview-modal__toolbar { gap: .4rem; }
+  .ecom-builder-preview-modal__title h2 { font-size: .96rem; }
+  .ecom-builder-preview-modal__actions { gap: .3rem; }
+  .ecom-builder-preview-modal__viewport-controls { gap: .2rem; }
+  .ecom-builder-preview-modal__notice { padding-inline: .75rem; }
+}
