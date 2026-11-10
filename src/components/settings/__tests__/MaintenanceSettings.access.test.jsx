@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ permissions: {} }));
@@ -39,7 +40,7 @@ describe('MaintenanceSettings: solo actualizaciones', () => {
     ['permiso específico de la pestaña', { settings_maintenance: true, sync: false, inventory: false }]
   ])('muestra el control de actualizaciones con %s', (_, permissions) => {
     state.permissions = permissions;
-    render(<MaintenanceSettings />);
+    render(<MemoryRouter><MaintenanceSettings /></MemoryRouter>);
 
     expect(screen.getByTestId('maintenance-update-controls')).toHaveAttribute('data-show-apply', 'true');
     for (const removed of [
@@ -52,7 +53,7 @@ describe('MaintenanceSettings: solo actualizaciones', () => {
 
   it('deniega acceso sin permiso para la sección', () => {
     state.permissions = { settings_maintenance: false, sync: true, inventory: true };
-    render(<MaintenanceSettings />);
+    render(<MemoryRouter><MaintenanceSettings /></MemoryRouter>);
 
     expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByTestId('maintenance-update-controls')).not.toBeInTheDocument();
