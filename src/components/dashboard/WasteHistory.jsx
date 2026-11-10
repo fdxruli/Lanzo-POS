@@ -1,200 +1,141 @@
-import { Leaf, Utensils, AlertTriangle, ArrowLeft, ArrowRight, Trash2, Info, CheckCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, ChevronDown } from 'lucide-react';
 import { normalizeBusinessTypes } from '../../utils/businessType';
 import './WasteHistory.css';
 
 const EMPTY_ARRAY = [];
 
-const getReasonStyle = (reason = '') => {
-    const lowerReason = reason.toLowerCase();
+const getReasonTone = (reason = '') => {
+  const text = String(reason).toLowerCase();
+  if (text.includes('venci') || text.includes('caduca')) return 'waste-reason--danger';
+  if (['error', 'devolu', 'mal estado', 'dan', 'dano', 'podri'].some((term) => text.includes(term))) {
+    return 'waste-reason--warning';
+  }
+  return '';
+};
 
-    if (lowerReason.includes('venci') || lowerReason.includes('caduca')) {
-        return { badge: 'badge-red', severity: 'severity-high' };
-    }
-
-    if (lowerReason.includes('error') || lowerReason.includes('devolu')) {
-        return { badge: 'badge-orange', severity: 'severity-medium' };
-    }
-
-    if (lowerReason.includes('mal estado') || lowerReason.includes('dan') || lowerReason.includes('dano') || lowerReason.includes('podri')) {
-        return { badge: 'badge-yellow', severity: 'severity-medium' };
-    }
-
-    return { badge: 'badge-gray', severity: 'severity-low' };
+const formatWasteDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Sin fecha';
+  return date.toLocaleDateString() + ' · ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 export default function WasteHistory({
-    logs,
-    wasteLoaded = false,
-    wasteError = null,
-    onRetry = () => {},
-    onNext = () => {},
-    onPrev = () => {},
-    hasMoreWaste = false,
-    currentWastePageIndex = 0,
-    isWasteLoading = false,
-    activeRubros = EMPTY_ARRAY
+  logs,
+  wasteLoaded = false,
+  wasteError = null,
+  onRetry = () => {},
+  onNext = () => {},
+  onPrev = () => {},
+  hasMoreWaste = false,
+  currentWastePageIndex = 0,
+  isWasteLoading = false,
+  activeRubros = EMPTY_ARRAY
 }) {
-    const pageLoss = logs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0);
-    const pageReady = wasteLoaded && !isWasteLoading && !wasteError;
+  const pageLoss = logs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0);
+  const pageReady = wasteLoaded && !isWasteLoading && !wasteError;
+  const rubros = normalizeBusinessTypes(activeRubros);
+  const description = rubros.includes('verduleria/fruteria')
+    ? 'Consulta las pérdidas y desperdicios de tus productos.'
+    : rubros.includes('food_service')
+      ? 'Consulta los ingredientes y platillos desperdiciados.'
+      : 'Consulta las pérdidas y mermas registradas.';
 
-    const normalizedRubros = normalizeBusinessTypes(activeRubros);
-    const isVerduleria = normalizedRubros.includes('verduleria/fruteria');
-    const isFoodService = normalizedRubros.includes('food_service');
-    const themeClass = isVerduleria ? 'theme-verduleria' : isFoodService ? 'theme-food' : 'theme-default';
-    const businessLabel = isVerduleria ? 'Fruteria' : isFoodService ? 'Restaurante' : 'General';
+  return (
+    <section className="waste-history-wrapper" aria-label="Historial local de mermas">
+      <header className="waste-header">
+        <h2>Mermas</h2>
+        <p>{description}</p>
+      </header>
 
-    const getProductIcon = () => {
-        if (isVerduleria) return <Leaf size={20} />;
-        if (isFoodService) return <Utensils size={20} />;
-        return <AlertTriangle size={20} />;
-    };
-
-    return (
-        <div className={`waste-history-wrapper ${themeClass}`}>
-            <div className="waste-header">
-                <div className="waste-title-group">
-                    <span className="waste-kicker">
-                        <Trash2 size={15} />
-                        Mermas
-                    </span>
-                    <div>
-                        <h2>Control de perdidas</h2>
-                        <p>
-                            {isVerduleria
-                                ? 'Control de mermas y desperdicios de productos.'
-                                : isFoodService
-                                  ? 'Control de ingredientes y platillos desperdiciados.'
-                                  : 'Control de perdidas y mermas del negocio.'}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="waste-status-pill">
-                    {isWasteLoading || (!wasteLoaded && !wasteError)
-                        ? 'Cargando...'
-                        : wasteError
-                            ? 'Consulta no disponible'
-                            : `${logs.length} registro${logs.length === 1 ? '' : 's'} en esta página`}
-                </div>
-            </div>
-
-            <div className="waste-metrics" aria-label="Resumen de mermas">
-                <div className="waste-metric waste-metric-loss">
-                    <span>Pérdida en esta página</span>
-                    <strong>{pageReady ? `-${pageLoss.toFixed(2)}` : '—'}</strong>
-                </div>
-                <div className="waste-metric">
-                    <span>Registros en esta página</span>
-                    <strong>{pageReady ? logs.length : '—'}</strong>
-                </div>
-                <div className="waste-metric">
-                    <span>Pagina</span>
-                    <strong>{currentWastePageIndex + 1}</strong>
-                </div>
-                <div className="waste-metric">
-                    <span>Vista de rubro</span>
-                    <strong>{businessLabel}</strong>
-                </div>
-            </div>
-
-            <p className="waste-empty-text" role="note">
-                Origen: almacenamiento de este dispositivo. No es un historial consolidado
-                de otros dispositivos ni del registro Cloud de Caducidad.
-                {pageReady && (hasMoreWaste
-                    ? ' Hay más registros locales para consultar.'
-                    : ' No se detectaron más registros en esta consulta local; esto no confirma el historial completo del negocio.')}
-            </p>
-
-            {isWasteLoading || (!wasteLoaded && !wasteError) ? (
-                <div className="waste-empty-state" role="status">
-                    <div className="waste-empty-title">Cargando mermas...</div>
-                    <div className="waste-empty-text">Consultando los registros de este dispositivo.</div>
-                </div>
-            ) : wasteError ? (
-                <div className="waste-empty-state" role="alert">
-                    <AlertTriangle size={40} className="waste-empty-icon" />
-                    <div className="waste-empty-title">Historial no disponible</div>
-                    <div className="waste-empty-text">{wasteError}</div>
-                    <button type="button" className="waste-page-btn" onClick={onRetry}>
-                        Reintentar
-                    </button>
-                </div>
-            ) : logs.length === 0 ? (
-                <div className="waste-empty-state">
-                    <CheckCircle size={48} className="waste-empty-icon" />
-                    <div className="waste-empty-title">Sin mermas registradas</div>
-                    <div className="waste-empty-text">No se encontraron mermas en esta página del dispositivo.</div>
-                </div>
-            ) : (
-                <div className="waste-grid">
-                    {logs.map((log) => {
-                        const { badge, severity } = getReasonStyle(log.reason || '');
-                        return (
-                            <article key={log.id} className={`waste-card ${severity}`}>
-                                <div className="waste-card-header">
-                                    <div className="waste-item-info">
-                                        <div className="waste-icon-container">
-                                            {getProductIcon()}
-                                        </div>
-                                        <div>
-                                            <h3 className="waste-product-name">{log.productName}</h3>
-                                            <span className="waste-product-qty">
-                                                {log.quantity} {log.unit}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="waste-loss-amount">
-                                        -${Number(log.lossAmount || 0).toFixed(2)}
-                                    </div>
-                                </div>
-
-                                <div className="waste-card-body">
-                                    <span className={`waste-reason-badge ${badge}`}>
-                                        <Info size={14} />
-                                        {log.reason || 'Sin motivo'}
-                                    </span>
-
-                                    {log.notes && (
-                                        <div className="waste-notes">
-                                            &quot;{log.notes}&quot;
-                                        </div>
-                                    )}
-
-                                    <div className="waste-date">
-                                        {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </div>
-                                </div>
-                            </article>
-                        );
-                    })}
-                </div>
-            )}
-
-            <div className="waste-pagination">
-                <button
-                    type="button"
-                    className="waste-page-btn"
-                    onClick={onPrev}
-                    disabled={!pageReady || currentWastePageIndex === 0}
-                >
-                    <ArrowLeft size={18} />
-                    {isWasteLoading ? 'Cargando...' : 'Anterior'}
-                </button>
-
-                <span className="waste-page-info">
-                    Pagina {currentWastePageIndex + 1}
-                </span>
-
-                <button
-                    type="button"
-                    className="waste-page-btn"
-                    onClick={onNext}
-                    disabled={!pageReady || !hasMoreWaste}
-                >
-                    {isWasteLoading ? 'Cargando...' : 'Siguiente'}
-                    <ArrowRight size={18} />
-                </button>
-            </div>
+      <div className="waste-summary" aria-label="Resumen de mermas">
+        <div className="waste-summary-item">
+          <span>Pérdida en esta página</span>
+          <strong className="waste-summary-loss">{pageReady ? '$' + pageLoss.toFixed(2) : '—'}</strong>
         </div>
-    );
+        <div className="waste-summary-item">
+          <span>Registros en esta página</span>
+          <strong>{pageReady ? logs.length : '—'}</strong>
+        </div>
+      </div>
+
+      <p className="waste-source-note" role="note">
+        Origen: almacenamiento de este dispositivo. No es un historial consolidado
+        de otros dispositivos ni del registro Cloud de Caducidad.
+        {pageReady && (hasMoreWaste
+          ? ' Hay más registros locales para consultar.'
+          : ' No se detectaron más registros en esta consulta local; esto no confirma el historial completo del negocio.')}
+      </p>
+
+      <div className="waste-list-meta">
+        {isWasteLoading || (!wasteLoaded && !wasteError)
+          ? 'Cargando registros...'
+          : wasteError
+            ? 'Consulta no disponible'
+            : logs.length + ' registro' + (logs.length === 1 ? '' : 's') + ' en esta página'}
+      </div>
+
+      {isWasteLoading || (!wasteLoaded && !wasteError) ? (
+        <div className="waste-empty-state" role="status">
+          <strong className="waste-empty-title">Cargando mermas...</strong>
+          <p>Consultando los registros de este dispositivo.</p>
+        </div>
+      ) : wasteError ? (
+        <div className="waste-empty-state" role="alert">
+          <AlertTriangle size={24} className="waste-state-icon" aria-hidden="true" />
+          <strong className="waste-empty-title">Historial no disponible</strong>
+          <p>{wasteError}</p>
+          <button type="button" className="waste-page-btn" onClick={onRetry}>Reintentar</button>
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="waste-empty-state">
+          <CheckCircle size={28} className="waste-state-icon" aria-hidden="true" />
+          <strong className="waste-empty-title">Sin mermas registradas</strong>
+          <p>No se encontraron mermas en esta página del dispositivo.</p>
+        </div>
+      ) : (
+        <div className="waste-list" aria-label="Registros de mermas">
+          {logs.map((log) => (
+            <details className="waste-row" key={log.id}>
+              <summary className="waste-row-toggle">
+                <span className="waste-row-content">
+                  <strong className="waste-product-name">{log.productName || 'Producto eliminado'}</strong>
+                  <span className="waste-row-secondary">
+                    {log.quantity} {log.unit || 'u'} · {formatWasteDate(log.timestamp)}
+                  </span>
+                </span>
+                <span className="waste-row-end">
+                  <strong className="waste-loss-amount">{'-$' + Number(log.lossAmount || 0).toFixed(2)}</strong>
+                  <ChevronDown size={17} className="waste-row-chevron" aria-hidden="true" />
+                </span>
+              </summary>
+              <div className="waste-row-details">
+                <div className="waste-row-facts">
+                  <span>Motivo: <strong className={getReasonTone(log.reason)}>{log.reason || 'Sin motivo'}</strong></span>
+                  {log.batchSku && <span>Lote: <strong>{log.batchSku}</strong></span>}
+                  {log.costAtTime != null && (
+                    <span>Costo unitario: <strong>{'$' + Number(log.costAtTime || 0).toFixed(2)}</strong></span>
+                  )}
+                  {log.notes && <span className="waste-row-notes">Observaciones: {log.notes}</span>}
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+
+      <nav className="waste-pagination" aria-label="Navegación de mermas">
+        <button type="button" className="waste-page-btn" onClick={onPrev}
+          disabled={!pageReady || currentWastePageIndex === 0}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          {isWasteLoading ? 'Cargando...' : 'Anterior'}
+        </button>
+        <span className="waste-page-info">Página {currentWastePageIndex + 1}</span>
+        <button type="button" className="waste-page-btn" onClick={onNext}
+          disabled={!pageReady || !hasMoreWaste}>
+          {isWasteLoading ? 'Cargando...' : 'Siguiente'}
+          <ArrowRight size={16} aria-hidden="true" />
+        </button>
+      </nav>
+    </section>
+  );
 }

@@ -59,4 +59,17 @@ describe('Mermas: presentación del alcance', () => {
     expect(screen.getByText('Sin mermas registradas')).toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('no confirma el historial completo');
   });
+
+  it('muestra una fila desplegable con motivo y observaciones, sin cambiar la paginación', () => {
+    render(<WasteHistory logs={[{ ...record, notes: 'Merma de prueba', batchSku: 'L-12' }]} wasteLoaded />);
+    const summary = screen.getByText('Tomate').closest('summary');
+    expect(summary.parentElement.tagName).toBe('DETAILS');
+    expect(summary.parentElement).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(summary.parentElement).toHaveAttribute('open');
+    expect(screen.getByText('Dañado')).toBeInTheDocument();
+    expect(screen.getByText('Observaciones: Merma de prueba')).toBeInTheDocument();
+    expect(screen.getByText('L-12')).toBeInTheDocument();
+    expect(screen.getByText('Página 1')).toBeInTheDocument();
+  });
 });
