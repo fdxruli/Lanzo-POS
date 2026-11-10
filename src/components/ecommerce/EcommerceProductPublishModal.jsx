@@ -606,8 +606,14 @@ export default function EcommerceProductPublishModal({
           </div>
 
           {canSyncCatalog && (
-            <fieldset className="ecom-admin-sync-fields ecom-admin-span-2">
-              <legend>Vinculación con el producto local</legend>
+            <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+              <summary>
+                <span><Link2 size={17} /> Sincronización PRO</span>
+                <small>{Object.values(form.syncConfig).filter((mode) => mode === 'source').length} de 5 campos vinculados</small>
+                <ChevronDown size={18} aria-hidden="true" />
+              </summary>
+              <fieldset className="ecom-admin-sync-fields">
+                <legend>Vinculación con el producto local</legend>
               <label className="ecom-admin-sync-master">
                 <input
                   type="checkbox"
@@ -638,9 +644,13 @@ export default function EcommerceProductPublishModal({
                   );
                 })}
               </div>
-            </fieldset>
+              </fieldset>
+            </details>
           )}
 
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Datos para clientes</h4>
+          </div>
           <label className="form-group">
             <span className="form-label">Nombre público *</span>
             <input className="form-input" value={form.publicName} disabled={canSyncCatalog && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
@@ -653,15 +663,28 @@ export default function EcommerceProductPublishModal({
             <span className="form-label">Categoría pública</span>
             <input className="form-input" value={form.categoryName} disabled={canSyncCatalog && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
           </label>
-          <label className="form-group">
-            <span className="form-label">Orden</span>
-            <input className="form-input" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => setForm((current) => ({ ...current, displayOrder: event.target.value }))} />
-          </label>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Descripción pública</span>
-            <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={canSyncCatalog && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
-          </label>
+          <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+            <summary>
+              <span>Descripción y orden</span>
+              <small>Opciones adicionales</small>
+              <ChevronDown size={18} aria-hidden="true" />
+            </summary>
+            <div className="ecom-catalog-editor-detail-fields">
+              <label className="form-group">
+                <span className="form-label">Descripción pública</span>
+                <textarea className="form-textarea" rows={3} value={form.publicDescription} disabled={canSyncCatalog && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
+              </label>
+              <label className="form-group">
+                <span className="form-label">Orden</span>
+                <input className="form-input" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => setForm((current) => ({ ...current, displayOrder: event.target.value }))} />
+              </label>
+            </div>
+          </details>
 
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Disponibilidad y publicación</h4>
+            <p>Publicado controla si aparece en la tienda. La disponibilidad manual y el stock determinan si puede ofrecerse.</p>
+          </div>
           {canUseStockVisibility && (
             <label className="form-group ecom-admin-span-2">
               <span className="form-label">Visibilidad del inventario</span>
@@ -696,6 +719,15 @@ export default function EcommerceProductPublishModal({
             <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
             <label><input type="checkbox" checked={form.isPublished} onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))} disabled={!editingProduct && limitReached} /> Publicado</label>
           </div>
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Configuraciones comerciales</h4>
+          </div>
+          {businessPolicy.status === 'hidden_incompatible' && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Producto incompatible con el rubro actual</strong>
+              <span>No se puede publicar mientras mantenga esta incompatibilidad.</span>
+            </div>
+          )}
           {(businessPolicy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
             || form.publicConfigurationMode === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE) && (
             <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
@@ -720,7 +752,13 @@ export default function EcommerceProductPublishModal({
             </div>
           )}
           {wholesalePreview.tiers.length > 0 && (
-            <div className="ecom-admin-span-2">
+            <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+              <summary>
+                <span>Mayoreo</span>
+                <small>{form.wholesaleEnabled ? 'Visible en la tienda' : 'No publicado'}</small>
+                <ChevronDown size={18} aria-hidden="true" />
+              </summary>
+              <div className="ecom-catalog-editor-detail-fields">
               <label>
                 <input
                   type="checkbox"
@@ -751,7 +789,8 @@ export default function EcommerceProductPublishModal({
                   de publicarlos.
                 </small>
               )}
-            </div>
+              </div>
+            </details>
           )}
           {canUseStockVisibility && (
             <small className="ecom-admin-help ecom-admin-span-2">
