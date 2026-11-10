@@ -49,6 +49,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   const [previewOpen, setPreviewOpen] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [appearanceValid, setAppearanceValid] = useState(true);
   const [temporaryBranding, setTemporaryBranding] = useState(null);
   const closePreview = useCallback(() => setPreviewOpen(false), []);
   const operationRef = useRef(null);
@@ -69,8 +70,8 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
     ...portal,
     templateCode: builderAppearance?.templateCode ?? portal?.templateCode,
     theme: builderAppearance?.theme ?? portal?.theme,
-    logoUrl: builderAppearance?.branding?.logoUrl ?? portal?.logoUrl,
-    coverImageUrl: builderAppearance?.branding?.coverImageUrl ?? portal?.coverImageUrl
+    logoUrl: builderAppearance?.branding ? builderAppearance.branding.logoUrl : portal?.logoUrl,
+    coverImageUrl: builderAppearance?.branding ? builderAppearance.branding.coverImageUrl : portal?.coverImageUrl
   }), [builderAppearance, portal]);
   const previewPortal = useMemo(() => ({
     ...builderPortal,
@@ -102,7 +103,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
 
   useEffect(() => { templateCodeRef.current = portal?.templateCode; }, [portal?.templateCode]);
   useEffect(() => { hasLocalChangesRef.current = hasLocalChanges; }, [hasLocalChanges]);
-  useEffect(() => { onDirtyChange?.(hasLocalChanges); }, [hasLocalChanges, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.(hasLocalChanges || !appearanceValid); }, [hasLocalChanges, appearanceValid, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const applyRemoteState = useCallback((result) => {
@@ -178,7 +179,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   if (!workingDocument) return <section className="ui-card ecom-builder-shell"><p>No se pudo cargar el borrador.</p><button type="button" className="btn btn-secondary" onClick={load}><RefreshCw size={16} />Reintentar</button></section>;
 
   const save = async () => {
-    if (operationRef.current || !hasLocalChanges || !documentValidation.valid) return;
+    if (operationRef.current || !hasLocalChanges || !documentValidation.valid || !appearanceValid) return;
     operationRef.current = 'save';
     setSaving(true);
     const document = clone(documentValidation.document);
@@ -194,9 +195,10 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
       setWorkingDocument(clone(confirmed));
       setRemoteState((current) => ({ ...current, draft: { ...current.draft, ...result.draft }, hasUnpublishedChanges: true }));
       setConflict(false);
-      const refreshed = await getSiteBuilderState();
-      if (refreshed.success && Number(refreshed.draft?.revision) >= Number(result.draft?.revision)) applyRemoteState(refreshed);
-      toast.success('Borrador guardado.');
+      let refreshed = null;
+      try { refreshed = await getSiteBuilderState(); } catch { /* El guardado fue confirmado. */ }
+      if (refreshed?.success && Number(refreshed.draft?.revision) >= Number(result.draft?.revision)) applyRemoteState(refreshed);
+      toast.success(refreshed?.success ? 'Borrador guardado.' : 'Borrador guardado. No se pudo actualizar el panel; pulsa Actualizar.');
     } finally {
       operationRef.current = null;
       setSaving(false);
@@ -204,8 +206,8 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   };
 
   const publish = async () => {
-    if (hasLocalChanges) {
-      toast.error('Guarda el borrador antes de publicarlo.');
+    if (hasLocalChanges || !appearanceValid || conflict) {
+      toast.error('Guarda un borrador válido y resuelve los conflictos antes de publicar.');
       return;
     }
     if (operationRef.current) return;
@@ -334,10 +336,10 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
         </div>
       </div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
-      {conflict && <div className="ecom-builder-conflict"><p>Hay otra revisión guardada. Recargar descartará tus cambios locales; si deseas conservarlos, sigue editando, pero deberás resolver el conflicto antes de guardar.</p><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div>}
+      {conflict && <div className="ecom-builder-conflict"><p>Hay otra revisión guardada. Recargar descartará tus cambios locales; si deseas conservarlos, sigue editando, pero deberás resolver el conflicto antes de guardar.</p><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button></div>}
       <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey}
         disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)}
-        onChange={changeAppearance} onBusyChange={setUploading} />
+        onChange={changeAppearance} onBusyChange={setUploading} onValidationChange={setAppearanceValid} />
       <div className="ecom-builder-main">
         <EcommerceSiteBuilderControls document={workingDocument} disabled={busy} mode="structure"
           onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))}
@@ -355,8 +357,8 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
           <strong>{hasLocalChanges ? 'Cambios locales pendientes' : remoteState?.hasUnpublishedChanges ? 'Borrador guardado sin publicar' : 'Borrador al día'}</strong>
           <small>Revisión del borrador: <b>{remoteState?.draft?.revision ?? '—'}</b></small>
         </div>
-        <button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button>
-        <button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges || conflict}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar diseño'}</button>
+        <button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || !appearanceValid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button>
+        <button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges || !appearanceValid || conflict}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar diseño'}</button>
       </div>
       <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} deletingVersionId={deletingVersionId} disabled={saving || publishing || uploading} onRestore={restore} onDelete={deleteVersion} onLoadMore={loadMoreVersions} />
       {previewOpen && <EcommerceSiteBuilderPreviewModal document={workingDocument} portal={previewPortal} onClose={closePreview} />}
