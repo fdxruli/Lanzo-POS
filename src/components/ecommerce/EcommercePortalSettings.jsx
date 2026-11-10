@@ -265,23 +265,25 @@ export const filterPublicCatalog = (products, search, status, stockById, canSync
   });
 };
 
-function PortalLeaveGuard({ informationDirty, catalogDirty, operationDirty }) {
+function PortalLeaveGuard({ informationDirty, catalogDirty, operationDirty, designDirty }) {
+  const sections = [
+    informationDirty && 'Información',
+    catalogDirty && 'Catálogo',
+    operationDirty && 'Operación',
+    designDirty && 'Diseño'
+  ].filter(Boolean);
   useNavigationGuard({
-    enabled: informationDirty || catalogDirty || operationDirty,
+    enabled: sections.length > 0,
     title: '¿Salir sin guardar?',
-    message: [
-      informationDirty && 'Información',
-      catalogDirty && 'Catálogo',
-      operationDirty && 'horarios de Operación'
-    ].filter(Boolean).length > 1
-      ? 'Tienes cambios sin guardar en ' + [
-        informationDirty && 'Información', catalogDirty && 'Catálogo', operationDirty && 'Operación'
-      ].filter(Boolean).join(', ') + '.'
-      : operationDirty
-        ? 'Tienes horarios modificados que todavía no se han guardado.'
-        : catalogDirty
-          ? 'Tienes cambios sin guardar en un producto del Catálogo.'
-          : 'Tienes cambios en Información que todavía no se han guardado.',
+    message: sections.length > 1
+      ? 'Tienes cambios sin guardar en ' + sections.join(', ') + '.'
+      : designDirty
+        ? 'Tienes modificaciones de Diseño que todavía no se han guardado.'
+        : operationDirty
+          ? 'Tienes horarios modificados que todavía no se han guardado.'
+          : catalogDirty
+            ? 'Tienes cambios sin guardar en un producto del Catálogo.'
+            : 'Tienes cambios en Información que todavía no se han guardado.',
     confirmButtonText: 'Salir sin guardar',
     cancelButtonText: 'Continuar editando'
   });
@@ -410,6 +412,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
   const [operationDirty, setOperationDirty] = useState(false);
+  const [designDirty, setDesignDirty] = useState(false);
   const [customization, setCustomization] = useState(() => portalCustomization(null));
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const [activeSection, setActiveSection] = useState('information');
@@ -432,7 +435,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
   const unsavedChangesRef = useRef(false);
-  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty) || operationDirty;
+  const tabConfirmOpenRef = useRef(false);
+  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty) || operationDirty || designDirty;
 
   useEffect(() => {
     if (!hasUnsavedChanges || typeof window === 'undefined') return undefined;
@@ -522,15 +526,22 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   }, [showNubeBenefits]);
 
   const requestSection = (nextId, focusTab = false) => {
-    if (!nextId || nextId === activeSection) return;
+    if (!nextId || nextId === activeSection || tabConfirmOpenRef.current) return;
     const move = () => {
+      tabConfirmOpenRef.current = false;
       setOperationDirty(false);
+      setDesignDirty(false);
       setActiveSection(nextId);
       if (focusTab) document.getElementById('ecom-portal-tab-' + nextId)?.focus();
     };
-    if (activeSection !== 'operation' || !operationDirty) return move();
+    const hasDirtyDesign = activeSection === 'design' && designDirty;
+    const hasDirtyOperation = activeSection === 'operation' && operationDirty;
+    if (!hasDirtyDesign && !hasDirtyOperation) return move();
+    tabConfirmOpenRef.current = true;
     showMessageModal(
-      'Tienes horarios modificados que todavía no se han guardado.',
+      hasDirtyDesign
+        ? 'Tienes modificaciones de Diseño que todavía no se han guardado.'
+        : 'Tienes horarios modificados que todavía no se han guardado.',
       move,
       {
         type: 'warning',
@@ -538,7 +549,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         confirmButtonText: 'Salir sin guardar',
         cancelButtonText: 'Continuar editando',
         showCancel: true,
-        isDismissible: false
+        isDismissible: false,
+        onCancel: () => { tabConfirmOpenRef.current = false; }
       }
     );
   };
@@ -1176,6 +1188,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           informationDirty={hasUnsavedChanges}
           catalogDirty={modalOpen && modalDirty}
           operationDirty={operationDirty}
+          designDirty={designDirty}
         />
       )}
       {portal && (
@@ -1302,15 +1315,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         >
           {canUseSiteBuilder ? (
             <div className="ecom-design-workspace">
-              <div className="ecom-admin-workspace-header">
-                <div>
-                  <span className="ecom-admin-eyebrow">Tienda en línea</span>
-                  <h2>Diseña y publica tu tienda</h2>
-                  <p>Define la identidad, organiza las secciones y publica los cambios para tus clientes.</p>
-                </div>
-              </div>
               <section className="ecom-design-structure" aria-label="Editor de la tienda">
-                <EcommerceSiteBuilderFoundation isPro={canUseSiteBuilder} portal={portal} licenseKey={licenseKey} />
+                <EcommerceSiteBuilderFoundation isPro={canUseSiteBuilder} portal={portal} licenseKey={licenseKey} onDirtyChange={setDesignDirty} />
               </section>
             </div>
           ) : (

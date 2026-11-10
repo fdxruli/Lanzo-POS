@@ -45,13 +45,18 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     />
   );
 
+  const openIdentity = () => {
+    const summary = screen.getByText('Identidad visual', { selector: 'strong' }).closest('summary');
+    if (!summary.closest('details').open) fireEvent.click(summary);
+  };
+
   it('hydrates existing images as preserve and clears only the logo when requested', async () => {
     renderPanel();
     await waitFor(() => expect(lastChange(changes).logo).toEqual({
       value: portal.logoUrl, intent: 'preserve'
     }));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Desvincular' })[0]);
+    fireEvent.click((openIdentity(), screen.getAllByRole('button', { name: 'Desvincular' })[0]));
 
     await waitFor(() => expect(lastChange(changes).logo).toEqual({ value: null, intent: 'clear' }));
     expect(lastChange(changes).cover).toEqual({ value: portal.coverImageUrl, intent: 'preserve' });
@@ -99,7 +104,8 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
 
   it('clears the cover on reset while preserving the logo', async () => {
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Restablecer' }));
+    openIdentity();
+    fireEvent.click(screen.getByRole('button', { name: 'Restablecer identidad' }));
 
     await waitFor(() => expect(lastChange(changes).cover).toEqual({ value: null, intent: 'clear' }));
     expect(lastChange(changes).logo).toEqual({ value: portal.logoUrl, intent: 'preserve' });
@@ -107,7 +113,7 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
 
   it('rehydrates response values as preserve after a save', async () => {
     const { rerender } = renderPanel();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Desvincular' })[0]);
+    fireEvent.click((openIdentity(), screen.getAllByRole('button', { name: 'Desvincular' })[0]));
     await waitFor(() => expect(lastChange(changes).logo.intent).toBe('clear'));
 
     rerender(
@@ -123,6 +129,24 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     expect(lastChange(changes).cover).toEqual({
       value: 'https://cdn.example/cover-saved.png', intent: 'preserve'
     });
+  });
+
+  it('keeps invalid hexadecimal input and never projects a fallback theme into the draft', async () => {
+    const onValidationChange = vi.fn();
+    renderPanel({ onValidationChange });
+    openIdentity();
+    const input = screen.getByRole('textbox', { name: 'Hexadecimal principal' });
+    const before = changes.length;
+    fireEvent.change(input, { target: { value: '#123' } });
+    await waitFor(() => expect(onValidationChange).toHaveBeenLastCalledWith(false));
+    expect(changes).toHaveLength(before);
+    const summary = screen.getByText('Identidad visual', { selector: 'strong' }).closest('summary');
+    fireEvent.click(summary);
+    fireEvent.click(summary);
+    expect(screen.getByRole('textbox', { name: 'Hexadecimal principal' })).toHaveValue('#123');
+    fireEvent.change(input, { target: { value: '#123456' } });
+    await waitFor(() => expect(onValidationChange).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(lastChange(changes).theme.primaryColor).toBe('#123456'));
   });
 
   it('does not expose upload controls on Free', () => {

@@ -70,12 +70,14 @@ vi.mock('../EcommercePortalCustomizationPanel', () => ({
 }));
 
 vi.mock('../EcommerceSiteBuilderFoundation', () => ({
-  default: ({ portal, licenseKey, isPro }) => (
+  default: ({ portal, licenseKey, isPro, onDirtyChange }) => (
     <section data-testid="site-builder">
       <span>Editor visual del borrador</span>
       <output data-testid="builder-portal">{JSON.stringify(portal)}</output>
       <output data-testid="builder-license">{licenseKey}</output>
       <output data-testid="builder-plan">{String(isPro)}</output>
+      <button type="button" onClick={() => onDirtyChange?.(true)}>Modificar borrador de prueba</button>
+      <button type="button" onClick={() => onDirtyChange?.(false)}>Guardar borrador de prueba</button>
     </section>
   )
 }));
@@ -1018,6 +1020,44 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByDisplayValue('pendiente@example.com')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Salir sin guardar' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+  });
+
+  it('protects Diseño across tab changes and route changes without blocking saved drafts', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: existingPortal, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    useMessageStore.setState({ isOpen: false, message: '', onConfirm: null, options: {} });
+    const router = createMemoryRouter([
+      { path: '/portal-online', element: (
+        <>
+          <EcommercePortalSettings />
+          <Link to="/productos">Ir a Productos</Link>
+          <MessageModal />
+        </>
+      ) },
+      { path: '/productos', element: <div>Productos</div> }
+    ], { initialEntries: ['/portal-online'] });
+    rtlRender(<RouterProvider router={router} />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modificar borrador de prueba' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Catálogo' }));
+    expect(await screen.findByText('¿Salir sin guardar?')).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Diseño' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(screen.getByRole('tabpanel', { name: 'Diseño' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    expect(await screen.findByText('¿Salir sin guardar?')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/portal-online');
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador de prueba' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Catálogo' }));
+    expect(screen.getByRole('tabpanel', { name: 'Catálogo' })).toBeInTheDocument();
+    expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
   });
 
