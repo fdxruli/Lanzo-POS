@@ -60,7 +60,7 @@
 .ecom-builder-shell .ecom-customization, .ecom-admin-form-card .ecom-customization {
   display: grid; gap: 0; margin: 0; padding: 0; border: 0; min-width: 0;
 }
-.ecom-customization__fold .ecom-builder-fold__body { padding: .35rem .1rem 1rem; }
+.ecom-customization__fold .ecom-builder-fold__content { padding: .35rem .1rem 1rem; }
 .ecom-customization__identity { gap: .75rem; }
 .ecom-customization__identity fieldset { min-width: 0; display: grid; gap: .6rem; padding: 0 0 .5rem; margin: 0; border: 0; }
 .ecom-customization__identity fieldset:first-child { padding-top: 0; }
