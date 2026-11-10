@@ -443,9 +443,11 @@ export const buildProcessedItemsAndDeductions = ({
                 itemTotalCost += roundCurrency((Number(batchUsage.cost) || 0) * normalizedQty);
             }
 
-            if (committedBatches.length === 0) {
-                const authoritativeCost = parseFloat(product.cost) || 0;
-                itemTotalCost = roundCurrency(authoritativeCost * quantityToDeduct);
+            // A committed table can use both batches and simple-stock ingredients.
+            // Cost only the recorded physical component allocations.
+            for (const usage of nonBatchIngredientsUsed) {
+                const component = productMap.get(usage.ingredientId);
+                itemTotalCost += roundCurrency((Number(component?.cost) || 0) * Number(usage.quantity || 0));
             }
 
             const calculatedAvgCost = orderItem.quantity > 0
@@ -517,6 +519,8 @@ export const buildProcessedItemsAndDeductions = ({
                     quantity: requiredStart,
                     fromCommittedStock: false
                 });
+                // Account for the simple-stock ingredient just like a batch.
+                itemTotalCost += roundCurrency((Number(targetProduct.cost) || 0) * requiredStart);
                 requiredQty = 0; // La transacción verifica y descuenta el stock físico vigente.
             }
             if (!targetProduct.batchManagement?.enabled && targetProduct.trackStock === false) {
@@ -540,9 +544,6 @@ export const buildProcessedItemsAndDeductions = ({
                 );
             }
 
-            if (requiredQty > 0) {
-                itemTotalCost += roundCurrency((parseFloat(targetProduct?.cost) || 0) * requiredQty);
-            }
         }
 
         const calculatedAvgCost = orderItem.quantity > 0

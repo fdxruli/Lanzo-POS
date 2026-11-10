@@ -211,8 +211,12 @@ export const productMigrationService = {
         await productLocalRepository.applyCloudCatalog(response);
       }
 
-      for (let index = 0; index < localCatalog.products.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-        const products = localCatalog.products.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(productToCloudPayload);
+      // Recipe writes now require referenced ingredients to exist on the server.
+      // Keep all ingredient batches ahead of dishes during initial cutover.
+      const orderedProducts = [...localCatalog.products].sort((a, b) =>
+        Number(b.productType === 'ingredient') - Number(a.productType === 'ingredient'));
+      for (let index = 0; index < orderedProducts.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
+        const products = orderedProducts.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(productToCloudPayload);
         const response = await productCloudRepository.migrateLocalCatalog({
           licenseKey,
           categories: [],
