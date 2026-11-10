@@ -217,16 +217,19 @@ export const useSalesStore = create((set, get) => ({
 
     const state = get();
 
-    if (state.currentWastePageIndex === 0) {
+    if (state.currentWastePageIndex === 0 && state.wasteLoaded && !state.wasteError) {
+      const isNewRecord = !state.wasteLogs.some((log) => log.id === wasteRecord.id);
       const dedupedWasteLogs = [
         wasteRecord,
         ...state.wasteLogs.filter((log) => log.id !== wasteRecord.id)
       ];
-      const firstPageWasteLogs = dedupedWasteLogs.slice(0, 50);
-      const firstPageNextCursor =
-        firstPageWasteLogs.length === 50
-          ? firstPageWasteLogs[firstPageWasteLogs.length - 1]?.timestamp || null
-          : null;
+      const firstPageWasteLogs = dedupedWasteLogs.slice(0, WASTE_PAGE_SIZE);
+      // Una página con exactamente 50 registros no implica que exista otra.
+      // Un registro nuevo sólo desplaza uno si ya había 50 o más.
+      const hasMore = state.hasMoreWaste || (isNewRecord && state.wasteLogs.length >= WASTE_PAGE_SIZE);
+      const firstPageNextCursor = hasMore
+        ? firstPageWasteLogs[firstPageWasteLogs.length - 1]?.timestamp || null
+        : null;
 
       set({
         wasteRequestId: state.wasteRequestId + 1,
