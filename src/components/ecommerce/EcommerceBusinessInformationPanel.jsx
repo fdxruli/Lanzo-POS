@@ -1,11 +1,9 @@
 import {
-  CheckCircle2,
+  ChevronDown,
   Copy,
   ExternalLink,
   Globe2,
-  Info,
   LoaderCircle,
-  Lock,
   Mail,
   MapPin,
   MessageCircle,
@@ -53,16 +51,13 @@ const MEXICO_STATES = Object.freeze([
   'Zacatecas'
 ]);
 
-function PublicationRequirement({ complete, children }) {
-  return (
-    <li className={complete ? 'is-complete' : ''}>
-      {complete
-        ? <CheckCircle2 size={16} aria-hidden="true" />
-        : <Info size={16} aria-hidden="true" />}
-      <span>{children}</span>
-    </li>
-  );
-}
+
+const PORTAL_STATUS_LABELS = {
+  draft: 'Borrador',
+  published: 'Publicado',
+  paused: 'Pausado',
+  disabled: 'Deshabilitado'
+};
 
 export default function EcommerceBusinessInformationPanel({
   portal,
@@ -72,6 +67,7 @@ export default function EcommerceBusinessInformationPanel({
   onFieldChange,
   onSubmit,
   saving,
+  hasUnsavedChanges = false,
   reservedLink,
   onCopyLink,
   onShareLink,
@@ -82,6 +78,18 @@ export default function EcommerceBusinessInformationPanel({
   onOpenNubeBenefits
 }) {
   const canPublish = Object.values(requirements).every(Boolean);
+  const addressComplete = Boolean(
+    requirements.street && requirements.neighborhood && requirements.municipality
+    && requirements.state && requirements.postalCode
+  );
+  const addressSummary = [
+    form.addressStreet,
+    form.addressNeighborhood,
+    form.addressMunicipality,
+    form.addressState,
+    form.addressPostalCode
+  ].map((part) => String(part || '').trim()).filter(Boolean).join(' · ');
+  const showSave = !portal || hasUnsavedChanges;
 
   return (
     <section
@@ -90,39 +98,34 @@ export default function EcommerceBusinessInformationPanel({
       role="tabpanel"
       aria-labelledby="ecom-portal-tab-information"
     >
-      <form className="ui-card ecom-admin-form-card" onSubmit={onSubmit}>
-        <div className="ecom-admin-card-heading">
-          <div>
-            <span className="ecom-admin-eyebrow">Información comercial</span>
-            <h3>Datos visibles para tus clientes</h3>
-            <p>
-              Se mostrarán en la tienda y ayudarán al cliente a recoger su pedido o contactarte.
-            </p>
-          </div>
-          <Save size={22} aria-hidden="true" />
+      <form
+        className="ui-card ecom-admin-form-card ecom-info-editor"
+        onSubmit={onSubmit}
+        onInvalidCapture={(event) => {
+          event.target.closest('details')?.setAttribute('open', '');
+        }}
+      >
+        <div className="ecom-info-editor__heading">
+          <h3>Contacto</h3>
+          <span>Datos para tus clientes</span>
         </div>
-
         <div className="ecom-admin-form-grid">
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Nombre del negocio *</span>
-            <div className="ecom-admin-input-icon">
-              {portal ? <Lock size={16} aria-hidden="true" /> : <Globe2 size={16} aria-hidden="true" />}
-              <input
-                className="form-input"
-                value={form.name}
-                onChange={onFieldChange('name')}
-                maxLength={120}
-                readOnly={Boolean(portal)}
-                required
-              />
-            </div>
-            <small className="ecom-admin-help">
-              {portal
-                ? 'El nombre queda protegido después de crear la tienda y ya no puede modificarse desde el portal.'
-                : 'Revisa bien el nombre: después de crear la tienda quedará protegido.'}
-            </small>
-          </label>
-
+          {!portal && (
+            <label className="form-group ecom-admin-span-2">
+              <span className="form-label">Nombre del negocio *</span>
+              <div className="ecom-admin-input-icon">
+                <Globe2 size={16} aria-hidden="true" />
+                <input
+                  className="form-input"
+                  value={form.name}
+                  onChange={onFieldChange('name')}
+                  maxLength={120}
+                  required
+                />
+              </div>
+              <small className="ecom-admin-help">Revisa el nombre: quedará protegido al crear la tienda.</small>
+            </label>
+          )}
           <label className="form-group">
             <span className="form-label">WhatsApp *</span>
             <div className="ecom-admin-input-icon">
@@ -139,7 +142,6 @@ export default function EcommerceBusinessInformationPanel({
             </div>
             <small className="ecom-admin-help">Obligatorio para publicar. Incluye la lada del país.</small>
           </label>
-
           <label className="form-group">
             <span className="form-label">Correo electrónico</span>
             <div className="ecom-admin-input-icon">
@@ -153,79 +155,79 @@ export default function EcommerceBusinessInformationPanel({
                 maxLength={254}
               />
             </div>
-            <small className="ecom-admin-help">Opcional. Se mostrará como medio adicional de contacto.</small>
-          </label>
-
-          <div className="form-group ecom-admin-span-2">
-            <span className="form-label">Domicilio o punto de atención *</span>
-            <small className="ecom-admin-help">
-              Completa cada dato para publicar. Si la calle o colonia no tiene nombre, escribe S/N.
-            </small>
-          </div>
-
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Calle o avenida *</span>
-            <div className="ecom-admin-input-icon">
-              <MapPin size={16} aria-hidden="true" />
-              <input
-                className="form-input"
-                value={form.addressStreet}
-                onChange={onFieldChange('addressStreet')}
-                placeholder="Ej. Av. Central 123 o S/N"
-                maxLength={160}
-              />
-            </div>
-          </label>
-
-          <label className="form-group">
-            <span className="form-label">Colonia o ejido *</span>
-            <input
-              className="form-input"
-              value={form.addressNeighborhood}
-              onChange={onFieldChange('addressNeighborhood')}
-              placeholder="Ej. Centro o S/N"
-              maxLength={120}
-            />
-          </label>
-
-          <label className="form-group">
-            <span className="form-label">Municipio o alcaldía *</span>
-            <input
-              className="form-input"
-              value={form.addressMunicipality}
-              onChange={onFieldChange('addressMunicipality')}
-              placeholder="Ej. Comitán de Domínguez"
-              maxLength={120}
-            />
-          </label>
-
-          <label className="form-group">
-            <span className="form-label">Estado *</span>
-            <select
-              className="form-input"
-              value={form.addressState}
-              onChange={onFieldChange('addressState')}
-            >
-              <option value="">Selecciona un estado</option>
-              {MEXICO_STATES.map((state) => (
-                <option key={state} value={state}>{state}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="form-group">
-            <span className="form-label">Código postal *</span>
-            <input
-              className="form-input"
-              value={form.addressPostalCode}
-              onChange={onFieldChange('addressPostalCode')}
-              placeholder="Ej. 30000"
-              inputMode="numeric"
-              pattern="[0-9]{5}"
-              maxLength={5}
-            />
           </label>
         </div>
+
+        <details className="ecom-info-disclosure" defaultOpen={!portal || !addressComplete}>
+          <summary>
+            <span className="ecom-info-disclosure__title"><MapPin size={17} aria-hidden="true" /> Ubicación</span>
+            <small>{addressSummary || 'Sin dirección'}{!addressComplete ? ' · Incompleta' : ''}</small>
+            <ChevronDown size={17} aria-hidden="true" className="ecom-info-disclosure__chevron" />
+          </summary>
+          <div className="ecom-admin-form-grid ecom-info-disclosure__content">
+            <p className="ecom-info-hint ecom-admin-span-2">
+              Completa la dirección para publicar. Si la calle o colonia no tiene nombre, escribe S/N.
+            </p>
+            <label className="form-group ecom-admin-span-2">
+              <span className="form-label">Calle o avenida *</span>
+              <div className="ecom-admin-input-icon">
+                <MapPin size={16} aria-hidden="true" />
+                <input
+                  className="form-input"
+                  value={form.addressStreet}
+                  onChange={onFieldChange('addressStreet')}
+                  placeholder="Ej. Av. Central 123 o S/N"
+                  maxLength={160}
+                />
+              </div>
+            </label>
+            <label className="form-group">
+              <span className="form-label">Colonia o ejido *</span>
+              <input
+                className="form-input"
+                value={form.addressNeighborhood}
+                onChange={onFieldChange('addressNeighborhood')}
+                placeholder="Ej. Centro o S/N"
+                maxLength={120}
+              />
+            </label>
+            <label className="form-group">
+              <span className="form-label">Municipio o alcaldía *</span>
+              <input
+                className="form-input"
+                value={form.addressMunicipality}
+                onChange={onFieldChange('addressMunicipality')}
+                placeholder="Ej. Comitán de Domínguez"
+                maxLength={120}
+              />
+            </label>
+            <label className="form-group">
+              <span className="form-label">Estado *</span>
+              <select
+                className="form-input"
+                value={form.addressState}
+                onChange={onFieldChange('addressState')}
+              >
+                <option value="">Selecciona un estado</option>
+                {MEXICO_STATES.map((state) => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-group">
+              <span className="form-label">Código postal *</span>
+              <input
+                className="form-input"
+                value={form.addressPostalCode}
+                onChange={onFieldChange('addressPostalCode')}
+                placeholder="Ej. 30000"
+                inputMode="numeric"
+                pattern="[0-9]{5}"
+                maxLength={5}
+              />
+            </label>
+          </div>
+        </details>
 
         <EcommercePortalGeneralSettings
           form={form}
@@ -236,99 +238,82 @@ export default function EcommerceBusinessInformationPanel({
           onOpenNubeBenefits={onOpenNubeBenefits}
         />
 
-        <div className="ecom-admin-form-actions">
-          <span>
-            <CheckCircle2 size={16} aria-hidden="true" />
-            Puedes guardar un borrador aunque falten los datos obligatorios.
-          </span>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving
-              ? <LoaderCircle className="ecom-admin-spin" size={17} aria-hidden="true" />
-              : <Save size={17} aria-hidden="true" />}
-            {portal ? 'Guardar información' : 'Crear tienda'}
-          </button>
-        </div>
+        {showSave && (
+          <div className="ecom-info-save-bar" role="group" aria-label="Guardar información">
+            <span aria-live="polite">{portal ? 'Cambios sin guardar' : 'Puedes crear la tienda como borrador.'}</span>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving
+                ? <LoaderCircle className="ecom-admin-spin" size={17} aria-hidden="true" />
+                : <Save size={17} aria-hidden="true" />}
+              {saving ? 'Guardando...' : portal ? 'Guardar cambios' : 'Crear tienda'}
+            </button>
+          </div>
+        )}
       </form>
 
-      {portal ? (
-        <section className="ui-card ecom-admin-status-card" aria-label="Publicación y enlace">
-          <div className="ecom-admin-card-heading">
-            <div>
-              <span className="ecom-admin-eyebrow">Publicación</span>
-              <h3>Enlace de tu tienda</h3>
-              <p>Comparte el enlace cuando la información obligatoria esté completa.</p>
+      {portal && (
+        <section className="ui-card ecom-admin-status-card ecom-info-links" aria-label="Publicación y enlace">
+          <div className="ecom-info-editor__heading">
+            <h3>Enlace y publicación</h3>
+            <span className={`ecom-admin-status status-${portal.status}`}>
+              {PORTAL_STATUS_LABELS[portal.status] || portal.status}
+            </span>
+          </div>
+
+          <div className="ecom-info-link-row">
+            <span className="ecom-info-link-url" title={reservedLink}>{reservedLink}</span>
+            <div className="ecom-info-link-primary">
+              <button type="button" className="btn btn-secondary" onClick={onCopyLink}>
+                <Copy size={16} aria-hidden="true" /> Copiar
+              </button>
+              <a
+                className="btn btn-secondary"
+                href={reservedLink}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink size={16} aria-hidden="true" /> Abrir tienda
+              </a>
             </div>
           </div>
 
-          <div className="ecom-admin-public-link-panel">
-            <div className="ecom-admin-link-box">
-              <Globe2 size={22} aria-hidden="true" />
-              <div>
-                <span>Link reservado</span>
-                <strong>{reservedLink}</strong>
-                <small>Revisión actual del catálogo: {portal.catalogRevision || 1}.</small>
+          <details className="ecom-info-disclosure ecom-info-share">
+            <summary>
+              <span className="ecom-info-disclosure__title"><Share2 size={17} aria-hidden="true" /> Más formas de compartir</span>
+              <ChevronDown size={17} aria-hidden="true" className="ecom-info-disclosure__chevron" />
+            </summary>
+            <div className="ecom-info-share__content">
+              <button type="button" className="btn btn-secondary" onClick={onShareLink}>
+                <Share2 size={16} aria-hidden="true" /> Compartir
+              </button>
+              <a
+                className="btn btn-secondary"
+                href={whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle size={16} aria-hidden="true" /> WhatsApp
+              </a>
+              <div className="ecom-admin-qr-box">
+                <PublicStoreQrCode value={reservedLink} />
+                <span><QrCode size={14} aria-hidden="true" /> QR de la tienda</span>
               </div>
-              <div className="ecom-admin-link-actions">
-                <a
-                  className="btn btn-secondary"
-                  href={reservedLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink size={16} aria-hidden="true" /> Abrir tienda
-                </a>
-                <button type="button" className="btn btn-secondary" onClick={onCopyLink}>
-                  <Copy size={16} aria-hidden="true" /> Copiar link
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={onShareLink}>
-                  <Share2 size={16} aria-hidden="true" /> Compartir
-                </button>
-                <a
-                  className="btn btn-secondary"
-                  href={whatsappShareUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MessageCircle size={16} aria-hidden="true" /> WhatsApp
-                </a>
-              </div>
             </div>
-            <div className="ecom-admin-qr-box">
-              <PublicStoreQrCode value={reservedLink} />
-              <span><QrCode size={14} aria-hidden="true" /> QR de la tienda</span>
+          </details>
+
+          <div className="ecom-info-publication">
+            <div className="ecom-info-publication__copy" id="ecom-publication-requirements">
+              <strong>{canPublish ? 'Información lista para publicar' : 'Faltan datos para publicar'}</strong>
+              <small>{canPublish
+                ? 'Publicar y guardar información son acciones independientes.'
+                : 'Consulta el estado de la tienda y completa los campos pendientes.'}</small>
+              {hasUnsavedChanges && <small>Guarda tus cambios antes de publicar o pausar.</small>}
             </div>
-          </div>
-
-          <div
-            id="ecom-publication-requirements"
-            className={`ecom-admin-publication-check ${canPublish ? 'is-complete' : ''}`}
-          >
-            <strong>{canPublish ? 'Información lista para publicar' : 'Completa los datos para publicar'}</strong>
-            <ul>
-              <PublicationRequirement complete={requirements.whatsapp}>
-                WhatsApp válido
-              </PublicationRequirement>
-              <PublicationRequirement complete={requirements.street && requirements.neighborhood}>
-                Calle y colonia / ejido
-              </PublicationRequirement>
-              <PublicationRequirement complete={requirements.municipality && requirements.state}>
-                Municipio y estado
-              </PublicationRequirement>
-              <PublicationRequirement complete={requirements.postalCode}>
-                Código postal de 5 dígitos
-              </PublicationRequirement>
-            </ul>
-          </div>
-
-          <div className="ecom-admin-status-actions">
-            <span><Globe2 size={18} aria-hidden="true" /> Slug: <strong>{portal.slug}</strong></span>
             <button
               type="button"
               className={`btn ${portal.status === 'published' ? 'btn-secondary' : 'btn-primary'}`}
-              onClick={() => onChangeStatus(
-                portal.status === 'published' ? 'paused' : 'published'
-              )}
-              disabled={saving || (portal.status !== 'published' && !canPublish)}
+              onClick={() => onChangeStatus(portal.status === 'published' ? 'paused' : 'published')}
+              disabled={saving || hasUnsavedChanges || (portal.status !== 'published' && !canPublish)}
               aria-describedby="ecom-publication-requirements"
             >
               {portal.status === 'published'
@@ -338,7 +323,7 @@ export default function EcommerceBusinessInformationPanel({
             </button>
           </div>
         </section>
-      ) : null}
+      )}
     </section>
   );
 }
