@@ -6,7 +6,7 @@ import { buildTelegramSupportTarget } from '../../services/support/telegramConta
 import './PreloginSupportAccess.css';
 
 // Callers supply a fixed screen label only. No account, device or error context.
-export default function PreloginSupportAccess({ screen, children, modal = false, triggerLabel = 'Soporte', triggerClassName = '' }) {
+export default function PreloginSupportAccess({ screen, children, modal = false, triggerLabel = 'Soporte', triggerClassName = '', introText = 'Puedes consultar soporte sin salir de este proceso. No incluyas contraseñas, licencias ni información sensible al escribir tu mensaje.' }) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
   const id = useId();
@@ -49,7 +49,7 @@ export default function PreloginSupportAccess({ screen, children, modal = false,
 
   const panel = (
     <section id={id} className="prelogin-support__panel" hidden={!modal && !open} aria-label="Soporte oficial de LANZO">
-      <p>Puedes consultar soporte sin salir de este proceso. No incluyas contraseñas, licencias ni información sensible al escribir tu mensaje.</p>
+      <p>{introText}</p>
       <div className="prelogin-support__channels">
         <div>
           <h2><Mail size={17} aria-hidden="true" /> Correo electrónico</h2>
