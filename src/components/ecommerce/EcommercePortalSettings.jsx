@@ -532,7 +532,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       setOperationDirty(false);
       setDesignDirty(false);
       setActiveSection(nextId);
-      if (focusTab) queueMicrotask(() => document.getElementById('ecom-portal-tab-' + nextId)?.focus());
+      if (focusTab) document.getElementById('ecom-portal-tab-' + nextId)?.focus();
     };
     const hasDirtyDesign = activeSection === 'design' && designDirty;
     const hasDirtyOperation = activeSection === 'operation' && operationDirty;
