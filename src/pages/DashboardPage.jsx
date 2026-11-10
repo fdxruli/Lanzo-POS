@@ -458,7 +458,7 @@ export default function DashboardPage() {
 
   useLayoutEffect(() => {
     setSalesFinalHistoryPageIndex(0);
-    setWasteContext(salesHistoryContextKey);
+    if (typeof setWasteContext === 'function') setWasteContext(salesHistoryContextKey);
   }, [salesHistoryContextKey, setWasteContext]);
 
   useEffect(() => {
