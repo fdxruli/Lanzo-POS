@@ -236,22 +236,32 @@ function BusinessCapabilityReviewBanner({ products }) {
 }
 
 function PublicationBadge({ product }) {
-  const capability = product.businessCapabilityStatus || product.publicConfigurationMode;
-  const isIncompatible = capability === 'hidden_incompatible';
-  const requiresReview = capability === 'requires_review';
-  const isEligible = !isIncompatible && !requiresReview;
-
   return (
-    <span className="ecom-admin-product-statuses">
-      <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
-        {product.isPublished ? 'Publicado' : 'No publicado'}
-      </span>
-      <span className={`ecom-admin-mini-status ${isEligible ? 'is-eligible' : 'is-blocked'}`}>
-        {isIncompatible ? 'Incompatible' : requiresReview ? 'Requiere revisión' : 'Elegible'}
-      </span>
+    <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
+      {product.isPublished ? 'Publicado' : 'Despublicado'}
     </span>
   );
 }
+
+const needsCatalogAttention = (product, stockById, canSyncCatalog) => (
+  Boolean(STOCK_WARNING_COPY[stockById.get(String(product.id))?.status] && product.isPublished)
+  || ['requires_review', 'hidden_incompatible'].includes(
+    product.businessCapabilityStatus || product.publicConfigurationMode
+  )
+  || (canSyncCatalog && ['review', 'error'].includes(product.syncStatus))
+);
+
+export const filterPublicCatalog = (products, search, status, stockById, canSyncCatalog) => {
+  const query = search.trim().toLocaleLowerCase('es-MX');
+  return products.filter((product) => {
+    if (status === 'published' && !product.isPublished) return false;
+    if (status === 'hidden' && product.isPublished) return false;
+    if (status === 'attention' && !needsCatalogAttention(product, stockById, canSyncCatalog)) return false;
+    return !query || [
+      product.publicName, product.categoryName, product.description
+    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query));
+  });
+};
 
 function PortalLeaveGuard({ enabled }) {
   useNavigationGuard({
@@ -389,6 +399,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [activeSection, setActiveSection] = useState('information');
   usePublishBotScreen('/portal-online', activeSection);
   const [productSearch, setProductSearch] = useState('');
+  const [productFilter, setProductFilter] = useState('all');
   const nubeBenefitsHeadingRef = useRef(null);
   const focusNubeBenefitsAfterNavigationRef = useRef(false);
   const catalogRequestSeqRef = useRef(0);
@@ -532,16 +543,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       result
     ])
   ), [stockSnapshot]);
-  const filteredProducts = useMemo(() => {
-    const query = productSearch.trim().toLocaleLowerCase('es-MX');
-    if (!query) return products;
-
-    return products.filter((product) => [
-      product.publicName,
-      product.categoryName,
-      product.description
-    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query)));
-  }, [productSearch, products]);
+  const filteredProducts = useMemo(() => filterPublicCatalog(
+    products, productSearch, productFilter, stockByPublishedProductId, canSyncCatalog
+  ), [products, productSearch, productFilter, stockByPublishedProductId, canSyncCatalog]);
 
   const evaluateStock = useCallback(async ({
     nextPortal,
@@ -1275,19 +1279,17 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         >
           <section
             id="ecommerce-published-products"
-            className="ui-card ecom-admin-products-card"
+            className="ui-card ecom-admin-products-card ecom-catalog-products"
             tabIndex={-1}
             aria-label="Productos publicados en portal"
           >
-        <div className="ecom-admin-card-heading">
+        <div className="ecom-catalog-heading">
           <div>
-            <span className="ecom-admin-eyebrow">Catálogo</span>
-            <h3>Productos publicados</h3>
+            <h3>Catálogo de la tienda</h3>
             <p>
               {hasUnlimitedPublishedProducts
                 ? `${publishedCount} productos publicados`
                 : `${publishedCount} / ${maxProducts} productos publicados`}
-              {stockLoading ? ' · Verificando stock...' : ''}
             </p>
           </div>
           <button
@@ -1302,113 +1304,138 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             {' '}Publicar producto
           </button>
         </div>
+        {stockLoading && (
+          <p className="ecom-catalog-stock-check" role="status">
+            <RefreshCw className="ecom-admin-spin" size={15} aria-hidden="true" />
+            Verificando inventario…
+          </p>
+        )}
 
-        <label className="ecom-admin-product-search">
-          <Search size={19} aria-hidden="true" />
-          <span className="sr-only">Buscar productos publicados</span>
-          <input
-            type="search"
-            value={productSearch}
-            onChange={(event) => setProductSearch(event.target.value)}
-            placeholder="Buscar productos"
-          />
-        </label>
+        <div className="ecom-catalog-tools">
+          <label className="ecom-admin-product-search">
+            <Search size={19} aria-hidden="true" />
+            <span className="sr-only">Buscar productos publicados</span>
+            <input
+              type="search"
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+              placeholder="Buscar productos"
+            />
+          </label>
+          <div className="ecom-catalog-filters" role="group" aria-label="Filtrar productos">
+            {[
+              ['all', 'Todos'],
+              ['published', 'Publicados'],
+              ['hidden', 'Ocultos'],
+              ['attention', 'Requieren atención']
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={productFilter === value}
+                onClick={() => setProductFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {products.length === 0 ? (
           <div className="ecom-admin-products-empty">
-            <PackagePlus size={30} />
-            <strong>Aun no hay productos en el portal</strong>
-            <span>Elige productos del catalogo local y crea un snapshot publico controlado.</span>
+            <PackagePlus size={28} />
+            <strong>Aún no hay productos en la tienda</strong>
+            <span>Publica un producto del catálogo local para comenzar.</span>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="ecom-admin-products-empty">
-            <Search size={30} />
+            <Search size={28} />
             <strong>No encontramos productos</strong>
-            <span>Prueba con otro nombre o categoría.</span>
+            <span>Prueba con otra búsqueda o filtro.</span>
           </div>
         ) : (
-          <div className="ecom-admin-product-list">
+          <div className="ecom-catalog-list">
             {filteredProducts.map((product) => {
               const stockResult = product.isPublished
                 ? stockByPublishedProductId.get(String(product.id))
                 : null;
               const warningText = STOCK_WARNING_COPY[stockResult?.status] || '';
+              const capabilityStatus = product.businessCapabilityStatus || product.publicConfigurationMode;
+              const requiresReview = capabilityStatus === 'requires_review';
+              const isIncompatible = capabilityStatus === 'hidden_incompatible';
+              const syncIssue = canSyncCatalog
+                && ['pending', 'review', 'error'].includes(product.syncStatus);
 
               return (
                 <article
                   key={product.id}
-                  className={[
-                    'ecom-admin-product',
-                    product.isPublished ? '' : 'is-hidden',
-                    warningText ? 'has-stock-warning' : ''
-                  ].filter(Boolean).join(' ')}
+                  className={`ecom-catalog-row${warningText || requiresReview || isIncompatible ? ' has-alert' : ''}`}
                 >
-                  <span className="ecom-admin-product-image">
-                    {product.imageUrl
-                      ? <img src={product.imageUrl} alt="" />
-                      : <Store size={22} />}
-                  </span>
-                  <div>
-                    <div>
+                  <div className="ecom-catalog-row-main">
+                    <span className="ecom-admin-product-image">
+                      {product.imageUrl
+                        ? <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />
+                        : <Store size={22} />}
+                    </span>
+                    <div className="ecom-catalog-row-info">
                       <strong>{product.publicName}</strong>
-                      <PublicationBadge product={product} />
-                      {canSyncCatalog && (
-                        <EcommerceCatalogSyncBadge status={product.syncStatus} />
+                      <span className="ecom-catalog-row-price">${numberOr(product.price).toFixed(2)}</span>
+                      <small>{product.categoryName || 'Sin categoría'}</small>
+                      <div className="ecom-catalog-row-statuses">
+                        <PublicationBadge product={product} />
+                        {(product.isAvailable === false || product.manualAvailable === false) && (
+                          <span className="ecom-admin-mini-status is-blocked">No disponible</span>
+                        )}
+                        {syncIssue && <EcommerceCatalogSyncBadge status={product.syncStatus} />}
+                      </div>
+                      {warningText && (
+                        <span className={`ecom-admin-stock-warning status-${stockResult.status}`} role="status">
+                          <AlertTriangle size={15} aria-hidden="true" />
+                          {warningText}
+                        </span>
+                      )}
+                      {(requiresReview || isIncompatible) && (
+                        <span className="ecom-admin-stock-warning status-unverified" role="status">
+                          <AlertTriangle size={15} aria-hidden="true" />
+                          {isIncompatible ? 'Incompatible con el rubro' : 'Requiere revisión'}
+                          {product.businessCapabilityReason ? ` · ${product.businessCapabilityReason}` : ''}
+                        </span>
                       )}
                     </div>
-                    {warningText && (
-                      <span
-                        className={`ecom-admin-stock-warning status-${stockResult.status}`}
-                        role="status"
-                        aria-label={warningText}
-                      >
-                        <AlertTriangle size={15} aria-hidden="true" />
-                        {warningText}
-                      </span>
-                    )}
-                    {product.businessCapabilityStatus === 'requires_review' && (
-                      <span className="ecom-admin-stock-warning status-unverified" role="status">
-                        <AlertTriangle size={15} aria-hidden="true" />
-                        Requiere revisión
-                        {product.businessCapabilityReason
-                          ? ` · ${product.businessCapabilityReason}`
-                          : ''}
-                      </span>
-                    )}
-                    <span>
-                      {product.categoryName || 'Sin categoria'} · ${numberOr(product.price).toFixed(2)}
-                    </span>
-                    <small>
-                      {product.isAvailable ? 'Disponible' : 'No disponible'}
-                      {' · '}Manual: {product.manualAvailable === false ? 'desactivado' : 'activo'}
-                      {' · '}Orden {product.displayOrder || 0}
-                    </small>
                   </div>
-                  <div className="ecom-admin-product-actions">
+                  <div className="ecom-catalog-row-actions">
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="btn btn-secondary"
                       onClick={() => openEditProduct(product)}
-                      title="Editar"
+                      disabled={busyProductId === product.id}
                       aria-label={`Editar ${product.publicName}`}
                     >
-                      <Pencil size={18} />
+                      <Pencil size={16} aria-hidden="true" /> Editar
                     </button>
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="btn btn-secondary"
                       onClick={() => toggleProduct(product)}
-                      disabled={busyProductId === product.id}
-                      title={product.isPublished ? 'Despublicar' : 'Publicar'}
+                      disabled={busyProductId === product.id || (!product.isPublished && limitReached)}
                       aria-label={`${product.isPublished ? 'Despublicar' : 'Publicar'} ${product.publicName}`}
                     >
                       {busyProductId === product.id
-                        ? <LoaderCircle className="ecom-admin-spin" size={18} />
-                        : product.isPublished
-                          ? <EyeOff size={18} />
-                          : <Eye size={18} />}
+                        ? <LoaderCircle className="ecom-admin-spin" size={16} />
+                        : product.isPublished ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {product.isPublished ? 'Despublicar' : 'Publicar'}
                     </button>
                   </div>
+                  <details className="ecom-catalog-row-detail">
+                    <summary>Más detalles de este producto</summary>
+                    <div>
+                      <span>Disponibilidad manual: {product.manualAvailable === false ? 'Desactivada' : 'Activa'}</span>
+                      <span>Orden: {product.displayOrder || 0}</span>
+                      {canSyncCatalog && !syncIssue && (
+                        <EcommerceCatalogSyncBadge status={product.syncStatus} />
+                      )}
+                    </div>
+                  </details>
                 </article>
               );
             })}

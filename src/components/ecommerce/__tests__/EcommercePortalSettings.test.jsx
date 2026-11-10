@@ -6,7 +6,7 @@ import { createMemoryRouter, Link, MemoryRouter, RouterProvider } from 'react-ro
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
 import { ecommerceCatalogSyncService } from '../../../services/ecommerce/ecommerceCatalogSyncService';
-import EcommercePortalSettings from '../EcommercePortalSettings';
+import EcommercePortalSettings, { filterPublicCatalog } from '../EcommercePortalSettings';
 import MessageModal from '../../common/MessageModal';
 import { useMessageStore } from '../../../store/useMessageStore';
 import {
@@ -726,6 +726,12 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByRole('button', { name: 'Despublicar Producto uno' })).toBeEnabled();
     expect(screen.queryByText('Haz crecer tu catálogo con Lanzo Nube')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Ver beneficios' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultos' }));
+    expect(screen.queryByRole('button', { name: 'Editar Producto uno' })).not.toBeInTheDocument();
+    expect(screen.getByText('No encontramos productos')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Publicados' }));
+    expect(screen.getByRole('button', { name: 'Editar Producto uno' })).toBeEnabled();
+    expect(listPublishedProducts).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Free design informational and does not save branding without an entitlement', async () => {
@@ -1048,4 +1054,31 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
   });
 
+});
+
+describe('Portal catálogo: filtros locales sin mutar productos', () => {
+  const products = Object.freeze([
+    { id: 'p1', publicName: 'Leche', categoryName: 'Lácteos', isPublished: true, syncStatus: 'synced' },
+    { id: 'p2', publicName: 'Pan', categoryName: 'Panadería', isPublished: false, syncStatus: 'manual' },
+    { id: 'p3', publicName: 'Queso', categoryName: 'Lácteos', isPublished: true, syncStatus: 'error' },
+    { id: 'p4', publicName: 'Yogurt', isPublished: true, businessCapabilityStatus: 'requires_review' }
+  ]);
+  const stockById = new Map([['p1', { status: 'out_of_stock' }]]);
+
+  it('combines search with all, published and hidden filters using only loaded data', () => {
+    expect(filterPublicCatalog(products, 'lác', 'all', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p3']);
+    expect(filterPublicCatalog(products, '', 'published', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p3', 'p4']);
+    expect(filterPublicCatalog(products, '', 'hidden', stockById, false).map((p) => p.id))
+      .toEqual(['p2']);
+    expect(products.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4']);
+  });
+
+  it('separates inventory and business attention from PRO synchronization errors', () => {
+    expect(filterPublicCatalog(products, '', 'attention', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p4']);
+    expect(filterPublicCatalog(products, '', 'attention', stockById, true).map((p) => p.id))
+      .toEqual(['p1', 'p3', 'p4']);
+  });
 });
