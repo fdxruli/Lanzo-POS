@@ -356,6 +356,19 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByRole('button', { name: 'Cargar más resultados' }).disabled).toBe(false);
   });
 
+  it('closes an unchanged product editor without a discard confirmation', async () => {
+    await renderCatalog();
+    await openPublishModal();
+    const confirm = vi.spyOn(window, 'confirm');
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+      expect(confirm).not.toHaveBeenCalled();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
     await renderCatalog();
     await openPublishModal();
@@ -371,8 +384,21 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     await waitForCatalogRequest('pendiente', null, 2);
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
-    expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(confirm).toHaveBeenCalledWith('¿Descartar los cambios sin guardar de este producto?');
+      expect(screen.getByRole('dialog', { name: 'Publicar producto' })).toBeInTheDocument();
+      expect(getProductSelect().value).toBe(productOne.id);
+      expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+      confirm.mockReturnValue(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+    } finally {
+      confirm.mockRestore();
+    }
 
     productRepository.listProductsPage.mockResolvedValueOnce({
       data: [productTwo],
