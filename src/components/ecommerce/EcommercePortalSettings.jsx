@@ -2,6 +2,8 @@ import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { showMessageModal } from '../../services/utils';
+import { getAvailabilityDetail, getAvailabilityLabel } from '../../utils/ecommerceAvailability';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -263,15 +265,23 @@ export const filterPublicCatalog = (products, search, status, stockById, canSync
   });
 };
 
-function PortalLeaveGuard({ informationDirty, catalogDirty }) {
+function PortalLeaveGuard({ informationDirty, catalogDirty, operationDirty }) {
   useNavigationGuard({
-    enabled: informationDirty || catalogDirty,
+    enabled: informationDirty || catalogDirty || operationDirty,
     title: '¿Salir sin guardar?',
-    message: informationDirty && catalogDirty
-      ? 'Tienes cambios sin guardar en Información y Catálogo.'
-      : catalogDirty
-        ? 'Tienes cambios sin guardar en un producto del Catálogo.'
-        : 'Tienes cambios en Información que todavía no se han guardado.',
+    message: [
+      informationDirty && 'Información',
+      catalogDirty && 'Catálogo',
+      operationDirty && 'horarios de Operación'
+    ].filter(Boolean).length > 1
+      ? 'Tienes cambios sin guardar en ' + [
+        informationDirty && 'Información', catalogDirty && 'Catálogo', operationDirty && 'Operación'
+      ].filter(Boolean).join(', ') + '.'
+      : operationDirty
+        ? 'Tienes horarios modificados que todavía no se han guardado.'
+        : catalogDirty
+          ? 'Tienes cambios sin guardar en un producto del Catálogo.'
+          : 'Tienes cambios en Información que todavía no se han guardado.',
     confirmButtonText: 'Salir sin guardar',
     cancelButtonText: 'Continuar editando'
   });
@@ -399,6 +409,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
+  const [operationDirty, setOperationDirty] = useState(false);
   const [customization, setCustomization] = useState(() => portalCustomization(null));
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const [activeSection, setActiveSection] = useState('information');
@@ -421,7 +432,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
   const unsavedChangesRef = useRef(false);
-  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty);
+  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty) || operationDirty;
 
   useEffect(() => {
     if (!hasUnsavedChanges || typeof window === 'undefined') return undefined;
@@ -510,6 +521,28 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setActiveSection('nube');
   }, [showNubeBenefits]);
 
+  const requestSection = (nextId, focusTab = false) => {
+    if (!nextId || nextId === activeSection) return;
+    const move = () => {
+      setOperationDirty(false);
+      setActiveSection(nextId);
+      if (focusTab) requestAnimationFrame(() => document.getElementById('ecom-portal-tab-' + nextId)?.focus());
+    };
+    if (activeSection !== 'operation' || !operationDirty) return move();
+    showMessageModal(
+      'Tienes horarios modificados que todavía no se han guardado.',
+      move,
+      {
+        type: 'warning',
+        title: '¿Salir sin guardar?',
+        confirmButtonText: 'Salir sin guardar',
+        cancelButtonText: 'Continuar editando',
+        showCancel: true,
+        isDismissible: false
+      }
+    );
+  };
+
   const handleTabKeyDown = (event, currentId) => {
     const currentIndex = visibleSections.findIndex(({ id }) => id === currentId);
     let nextIndex = currentIndex;
@@ -522,8 +555,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
     event.preventDefault();
     const nextId = visibleSections[nextIndex]?.id;
-    setActiveSection(nextId);
-    document.getElementById(`ecom-portal-tab-${nextId}`)?.focus();
+    requestSection(nextId, true);
   };
   const requirementsFor = (candidate) => ({
     whatsapp: candidate.whatsappPhone.replace(/\D/g, '').length >= 8,
@@ -866,15 +898,25 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     : '';
 
   const updateOperations = (result) => {
-    setOperations((current) => ({ ...current, ...result }));
+    if (!result) return;
+    setOperations((current) => ({
+      ...current,
+      ...result,
+      hours: result.hours ? { ...current?.hours, ...result.hours } : current?.hours,
+      availability: result.availability
+        ? { ...current?.availability, ...result.availability }
+        : current?.availability,
+      portal: result.portal ? { ...current?.portal, ...result.portal } : current?.portal
+    }));
     if (result?.portal) {
-      setPortal(result.portal);
+      const confirmedPortal = { ...portal, ...result.portal };
+      setPortal(confirmedPortal);
       if (unsavedChangesRef.current) {
         // Keep the draft when operation settings update the portal in another tab.
-        setForm((current) => ({ ...current, status: result.portal.status }));
-        setSavedForm((current) => ({ ...current, status: result.portal.status }));
+        setForm((current) => ({ ...current, status: confirmedPortal.status }));
+        setSavedForm((current) => ({ ...current, status: confirmedPortal.status }));
       } else {
-        const updatedForm = portalForm(result.portal, companyProfile);
+        const updatedForm = portalForm(confirmedPortal, companyProfile);
         setForm(updatedForm);
         setSavedForm(updatedForm);
       }
@@ -1133,6 +1175,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         <PortalLeaveGuard
           informationDirty={hasUnsavedChanges}
           catalogDirty={modalOpen && modalDirty}
+          operationDirty={operationDirty}
         />
       )}
       {portal && (
@@ -1142,7 +1185,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           products={products}
           operations={operations}
           hasUnsavedChanges={hasUnsavedChanges}
-          onNavigate={setActiveSection}
+          onNavigate={requestSection}
         />
       )}
 
@@ -1162,7 +1205,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
               aria-controls={`ecom-portal-panel-${id}`}
               tabIndex={activeSection === id ? 0 : -1}
               className={activeSection === id ? 'tab-btn active' : 'tab-btn'}
-              onClick={() => setActiveSection(id)}
+              onClick={() => requestSection(id)}
               onKeyDown={(event) => handleTabKeyDown(event, id)}
             >
               <Icon size={19} aria-hidden="true" />
@@ -1292,8 +1335,20 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           role="tabpanel"
           aria-labelledby="ecom-portal-tab-operation"
         >
-          <EcommerceOperatingHoursSettings data={operations} onSaved={updateOperations} />
+          <div className="ecom-ops-status ecom-ops-panel" role="status" aria-live="polite">
+            <strong>{operations?.availability
+              ? operations.availability.acceptingOrders === true && operations.availability.code === 'OPEN'
+                ? 'Abierto y recibiendo pedidos'
+                : getAvailabilityLabel(operations.availability)
+              : 'Estado no confirmado'}</strong>
+            <span>{operations?.availability
+              ? getAvailabilityDetail(operations.availability)
+              : 'No se pudo confirmar la disponibilidad actual.'}</span>
+            {operationDirty && <small>El estado mostrado es el confirmado; tienes horarios sin guardar.</small>}
+          </div>
           <EcommerceOrderPauseControl data={operations} onSaved={updateOperations} />
+          <EcommerceOperatingHoursSettings data={operations} onSaved={updateOperations}
+            onDirtyChange={setOperationDirty} />
         </section>
       ) : null}
 
