@@ -180,7 +180,7 @@
   background-color: var(--card-background-color);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding: 10px 16px calc(82px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px max(16px, env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
   z-index: var(--z-drawer);
   transform: translateY(calc(100% + 24px));
