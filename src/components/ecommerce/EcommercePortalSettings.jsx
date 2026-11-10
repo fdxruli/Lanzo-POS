@@ -245,7 +245,9 @@ function PublicationBadge({ product }) {
 
 const needsCatalogAttention = (product, stockById, canSyncCatalog) => (
   Boolean(STOCK_WARNING_COPY[stockById.get(String(product.id))?.status] && product.isPublished)
-  || ['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
+  || ['requires_review', 'hidden_incompatible'].includes(
+    product.businessCapabilityStatus || product.publicConfigurationMode
+  )
   || (canSyncCatalog && ['review', 'error'].includes(product.syncStatus))
 );
 
@@ -1358,8 +1360,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                 ? stockByPublishedProductId.get(String(product.id))
                 : null;
               const warningText = STOCK_WARNING_COPY[stockResult?.status] || '';
-              const requiresReview = product.businessCapabilityStatus === 'requires_review';
-              const isIncompatible = product.businessCapabilityStatus === 'hidden_incompatible';
+              const capabilityStatus = product.businessCapabilityStatus || product.publicConfigurationMode;
+              const requiresReview = capabilityStatus === 'requires_review';
+              const isIncompatible = capabilityStatus === 'hidden_incompatible';
               const syncIssue = canSyncCatalog
                 && ['pending', 'review', 'error'].includes(product.syncStatus);
 
