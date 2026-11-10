@@ -168,6 +168,14 @@ describe('SettingsPage section isolation', () => {
     expect(state.generalRenders).not.toHaveBeenCalled();
   });
 
+  it('mantiene la ruta maintenance con la etiqueta Actualizaciones', () => {
+    state.access = makeAccess({ tabs: ['maintenance'] });
+    renderPage('/configuracion?tab=maintenance');
+
+    expect(screen.getByRole('button', { name: 'Actualizaciones' })).toBeVisible();
+    expect(screen.getByText('Mantenimiento autorizado')).toBeInTheDocument();
+  });
+
   it('closes mounted Settings immediately when the actor runtime locks', () => {
     state.access = makeAccess({ tabs: ['license'] });
     const view = renderPage();
