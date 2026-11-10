@@ -261,7 +261,7 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
     fireEvent.change(screen.getByLabelText('Fecha de excepción'), { target: { value: '2026-12-25' } });
     expect(screen.getByRole('alert')).toHaveTextContent('duplicadas');
     expect(screen.getByRole('button', { name: 'Guardar horarios' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: /Eliminar fecha 2026-12-25/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: /Eliminar fecha 2026-12-25/ })[1]);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
     await waitFor(() => expect(saveOperatingSchedule).toHaveBeenCalledWith(
