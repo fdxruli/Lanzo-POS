@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
-import { act, cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -133,6 +133,8 @@ describe('EcommercePortalSettings QR isolation', () => {
     render(<EcommercePortalSettings />);
 
     expect(await screen.findByText(publicStoreUrl)).toBeInTheDocument();
+    // Sharing actions and QR fallback are now intentionally behind the disclosure.
+    fireEvent.click(screen.getByText('Más formas de compartir'));
     expect(screen.getByText(
       'No se pudo generar el código QR. Puedes copiar el enlace de la tienda.'
     ).closest('[role="status"]')).toBeInTheDocument();
@@ -141,7 +143,7 @@ describe('EcommercePortalSettings QR isolation', () => {
     const shareLink = screen.getByRole('button', { name: 'Compartir' });
     const whatsApp = screen.getByRole('link', { name: 'WhatsApp' });
 
-    expect(openStores).toHaveLength(2);
+    expect(openStores).toHaveLength(1);
     for (const openStore of openStores) {
       expect(openStore).toHaveAttribute('href', publicStoreUrl);
     }
