@@ -1,7 +1,6 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  Keyboard,
   LockKeyhole,
   Scale,
   ShieldCheck,
@@ -95,21 +94,6 @@ const CajaActionsCard = ({
           <Scale size={19} aria-hidden="true" />
           <span>Ajuste de caja</span>
         </button>
-      </div>
-
-      <div className="shortcuts-help">
-        <details className="caja-disclosure shortcuts-disclosure">
-          <summary>
-            <Keyboard size={15} aria-hidden="true" />
-            Atajos de teclado
-          </summary>
-          <div className="shortcuts-grid">
-            <span><kbd>Alt+R</kbd><span>Refrescar</span></span>
-            <span><kbd>Ctrl+Shift+E</kbd><span>Entrada</span></span>
-            <span><kbd>Ctrl+Shift+S</kbd><span>Salida</span></span>
-            <span><kbd>ESC</kbd><span>Cerrar modal</span></span>
-          </div>
-        </details>
       </div>
     </section>
   );
