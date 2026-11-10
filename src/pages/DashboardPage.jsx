@@ -189,17 +189,18 @@ export default function DashboardPage() {
   const hasMoreWaste = useSalesStore((state) => state.hasMoreWaste);
   const currentWastePageIndex = useSalesStore((state) => state.currentWastePageIndex);
   const isWasteLoading = useSalesStore((state) => state.isWasteLoading);
+  const wasteLoaded = useSalesStore((state) => state.wasteLoaded);
+  const wasteError = useSalesStore((state) => state.wasteError);
+  const wasteContextKey = useSalesStore((state) => state.wasteContextKey);
+  const setWasteContext = useSalesStore((state) => state.setWasteContext);
+  const wasteContextMatches = wasteContextKey === salesHistoryContextKey;
 
   // 3. PRODUCTOS
   const menu = useInventoryCatalogStore((state) => state.menu);
   const analyticsSales = reportingData.sales;
   const analyticsWasteLogs = reportingData.wasteLogs;
   const analyticsMenu = reportingData.isLoading ? menu : reportingData.menu;
-  const totalWasteLoss = useMemo(
-    () => analyticsWasteLogs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0),
-    [analyticsWasteLogs]
-  );
-
+  // Mermas muestra únicamente su página local, no los agregados de Analytics.
   // 4. PAPELERA
   const loadRecycleBin = useRecycleBinStore(state => state.loadRecycleBin);
 
@@ -457,7 +458,8 @@ export default function DashboardPage() {
 
   useLayoutEffect(() => {
     setSalesFinalHistoryPageIndex(0);
-  }, [salesHistoryContextKey]);
+    if (typeof setWasteContext === 'function') setWasteContext(salesHistoryContextKey);
+  }, [salesHistoryContextKey, setWasteContext]);
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');
@@ -855,14 +857,15 @@ export default function DashboardPage() {
       {activeTab === 'waste' && features.hasWaste && (
         <section className="ui-section dashboard-section dashboard-section--waste" aria-label="Historial de mermas">
           <WasteHistory
-            logs={wasteLogs}
-            totalCount={analyticsWasteLogs.length}
-            totalLoss={totalWasteLoss}
+            logs={wasteContextMatches ? wasteLogs : []}
+            wasteLoaded={wasteContextMatches && wasteLoaded}
+            wasteError={wasteContextMatches ? wasteError : null}
+            onRetry={() => fetchWastePage('current')}
             onNext={() => fetchWastePage('next')}
             onPrev={() => fetchWastePage('prev')}
-            hasMoreWaste={hasMoreWaste}
-            currentWastePageIndex={currentWastePageIndex}
-            isWasteLoading={isWasteLoading}
+            hasMoreWaste={wasteContextMatches && hasMoreWaste}
+            currentWastePageIndex={wasteContextMatches ? currentWastePageIndex : 0}
+            isWasteLoading={!wasteContextMatches || isWasteLoading}
             activeRubros={features.activeRubros}
             reportSource={reportingData.reportSource}
           />

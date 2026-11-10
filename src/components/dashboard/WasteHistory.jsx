@@ -24,8 +24,9 @@ const getReasonStyle = (reason = '') => {
 
 export default function WasteHistory({
     logs,
-    totalCount = null,
-    totalLoss = null,
+    wasteLoaded = false,
+    wasteError = null,
+    onRetry = () => {},
     onNext = () => {},
     onPrev = () => {},
     hasMoreWaste = false,
@@ -34,8 +35,7 @@ export default function WasteHistory({
     activeRubros = EMPTY_ARRAY
 }) {
     const pageLoss = logs.reduce((sum, log) => sum + (Number(log.lossAmount) || 0), 0);
-    const displayedLoss = totalLoss ?? pageLoss;
-    const displayedCount = totalCount ?? logs.length;
+    const pageReady = wasteLoaded && !isWasteLoading && !wasteError;
 
     const normalizedRubros = normalizeBusinessTypes(activeRubros);
     const isVerduleria = normalizedRubros.includes('verduleria/fruteria');
@@ -70,34 +70,60 @@ export default function WasteHistory({
                 </div>
 
                 <div className="waste-status-pill">
-                    {displayedCount > 0 ? `${displayedCount} registro${displayedCount === 1 ? '' : 's'}` : 'Sin registros'}
+                    {isWasteLoading || (!wasteLoaded && !wasteError)
+                        ? 'Cargando...'
+                        : wasteError
+                            ? 'Consulta no disponible'
+                            : `${logs.length} registro${logs.length === 1 ? '' : 's'} en esta página`}
                 </div>
             </div>
 
             <div className="waste-metrics" aria-label="Resumen de mermas">
                 <div className="waste-metric waste-metric-loss">
-                    <span>Perdida registrada</span>
-                    <strong>-${displayedLoss.toFixed(2)}</strong>
+                    <span>Pérdida en esta página</span>
+                    <strong>{pageReady ? `-${pageLoss.toFixed(2)}` : '—'}</strong>
                 </div>
                 <div className="waste-metric">
-                    <span>Registros</span>
-                    <strong>{displayedCount}</strong>
+                    <span>Registros en esta página</span>
+                    <strong>{pageReady ? logs.length : '—'}</strong>
                 </div>
                 <div className="waste-metric">
                     <span>Pagina</span>
                     <strong>{currentWastePageIndex + 1}</strong>
                 </div>
                 <div className="waste-metric">
-                    <span>Rubro</span>
+                    <span>Vista de rubro</span>
                     <strong>{businessLabel}</strong>
                 </div>
             </div>
 
-            {logs.length === 0 ? (
+            <p className="waste-empty-text" role="note">
+                Origen: almacenamiento de este dispositivo. No es un historial consolidado
+                de otros dispositivos ni del registro Cloud de Caducidad.
+                {pageReady && (hasMoreWaste
+                    ? ' Hay más registros locales para consultar.'
+                    : ' No se detectaron más registros en esta consulta local; esto no confirma el historial completo del negocio.')}
+            </p>
+
+            {isWasteLoading || (!wasteLoaded && !wasteError) ? (
+                <div className="waste-empty-state" role="status">
+                    <div className="waste-empty-title">Cargando mermas...</div>
+                    <div className="waste-empty-text">Consultando los registros de este dispositivo.</div>
+                </div>
+            ) : wasteError ? (
+                <div className="waste-empty-state" role="alert">
+                    <AlertTriangle size={40} className="waste-empty-icon" />
+                    <div className="waste-empty-title">Historial no disponible</div>
+                    <div className="waste-empty-text">{wasteError}</div>
+                    <button type="button" className="waste-page-btn" onClick={onRetry}>
+                        Reintentar
+                    </button>
+                </div>
+            ) : logs.length === 0 ? (
                 <div className="waste-empty-state">
                     <CheckCircle size={48} className="waste-empty-icon" />
                     <div className="waste-empty-title">Sin mermas registradas</div>
-                    <div className="waste-empty-text">No hay registros de merma en esta pagina.</div>
+                    <div className="waste-empty-text">No se encontraron mermas en esta página del dispositivo.</div>
                 </div>
             ) : (
                 <div className="waste-grid">
@@ -149,7 +175,7 @@ export default function WasteHistory({
                     type="button"
                     className="waste-page-btn"
                     onClick={onPrev}
-                    disabled={isWasteLoading || currentWastePageIndex === 0}
+                    disabled={!pageReady || currentWastePageIndex === 0}
                 >
                     <ArrowLeft size={18} />
                     {isWasteLoading ? 'Cargando...' : 'Anterior'}
@@ -163,7 +189,7 @@ export default function WasteHistory({
                     type="button"
                     className="waste-page-btn"
                     onClick={onNext}
-                    disabled={isWasteLoading || !hasMoreWaste}
+                    disabled={!pageReady || !hasMoreWaste}
                 >
                     {isWasteLoading ? 'Cargando...' : 'Siguiente'}
                     <ArrowRight size={18} />
