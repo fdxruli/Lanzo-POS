@@ -307,13 +307,17 @@ export default function EcommerceBusinessInformationPanel({
               <small>{canPublish
                 ? 'Publicar y guardar información son acciones independientes.'
                 : 'Consulta el estado de la tienda y completa los campos pendientes.'}</small>
-              {hasUnsavedChanges && <small>Guarda tus cambios antes de publicar o pausar.</small>}
+              {hasUnsavedChanges && (
+                <small>{portal.status === 'published'
+                  ? 'Puedes pausar sin perder tu borrador. Para publicar cambios, guárdalos primero.'
+                  : 'Guarda los cambios antes de publicar.'}</small>
+              )}
             </div>
             <button
               type="button"
               className={`btn ${portal.status === 'published' ? 'btn-secondary' : 'btn-primary'}`}
               onClick={() => onChangeStatus(portal.status === 'published' ? 'paused' : 'published')}
-              disabled={saving || hasUnsavedChanges || (portal.status !== 'published' && !canPublish)}
+              disabled={saving || (portal.status !== 'published' && (hasUnsavedChanges || !canPublish))}
               aria-describedby="ecom-publication-requirements"
             >
               {portal.status === 'published'
