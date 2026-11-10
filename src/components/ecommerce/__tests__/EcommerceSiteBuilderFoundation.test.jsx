@@ -124,8 +124,8 @@ describe('EcommerceSiteBuilderFoundation', () => {
     fireEvent.click(screen.getByText('Guardar borrador'));
     await screen.findByText(/Conflicto: el borrador cambió en otro dispositivo/i);
     expect(openPreview()).toHaveTextContent('"density":"compact"');
-    fireEvent.click(screen.getByText('Conservar mis cambios'));
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Recargar borrador remoto' })).toBeInTheDocument();
   });
 
   it('disables publication with local changes and publishes once after saving', async () => {
