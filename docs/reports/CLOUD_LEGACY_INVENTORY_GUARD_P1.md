@@ -3,7 +3,7 @@
 **Migración:** `20261110150000_cloud_legacy_inventory_guard_v1.sql`. **Estado:** preparada, no instalada; no se modificaron ventas ni existencias reales.
 
 ## Qué protege
-R2B valida licencia, sesión, tenant, permisos e identidad real de los productos. Antes de delegar a la hoja 6B, el wrapper `cashier_unlimited` sólo permite items que el catálogo Cloud demuestra sin obligación de inventario. La función de crédito conserva su aplicación de inventario cuando la licencia está habilitada y rechaza, de forma transaccional, cualquier éxito sin stock requerido. No se acepta una declaración `cloudInventoryEffects=false`, `track_stock=false` o `snapshotOnly` como autoridad.
+R2B valida licencia, sesión, tenant, permisos e identidad real de los productos. Antes de delegar a la hoja 6B, el wrapper `cashier_unlimited` sólo permite items que el catálogo Cloud demuestra sin obligación de inventario. El guard se aplica para los indicadores legacy true, false o ausente. Sólo se omite en un paso interno de la 6C, mediante una marca transaccional creada y restaurada por la hoja 6C y ligada a licencia, venta y clave idempotente. La función de crédito conserva su aplicación de inventario cuando la licencia está habilitada y rechaza, de forma transaccional, cualquier éxito sin stock requerido. No se acepta una declaración `cloudInventoryEffects=false`, `track_stock=false` o `snapshotOnly` como autoridad.
 
 Se conservan la RPC moderna, las autorizaciones, locks, idempotencia y permisos EXECUTE existentes. El error `CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED` pide actualizar la PWA. Un replay de recibo completado no registra una nueva venta.
 
@@ -25,3 +25,8 @@ Usar exclusivamente negocio y dispositivo de prueba aprobados, con Vercel Previe
 **Evidencia requerida:** IDs de prueba, resultado RPC, conteos antes/después y movimientos con vínculo a sale_id; reintento igual. No declarar PASS con una prueba estática o Preview READY.
 
 **Riesgo residual:** llamadas internas con credenciales privilegiadas a la hoja `*_legacy_r2b` (restringida a `service_role`/postgres) no usan este wrapper; nunca debe exponerse service_role al cliente. El alcance cubre RPC públicas y sus rutas delegadas encontradas. Si se descubre un caller privilegiado directo, no publicar comercialmente antes de resolverlo.
+
+## Corrección puntual R2 (#466)
+- Eliminada la evasión cuando `cloudInventoryEffects=true`: ahora la ruta 6B siempre comprueba obligación de inventario salvo un contexto *interno y acotado de 6C*, determinado en servidor. Cambios en dos wrappers y hoja 6C para preservar la operación moderna.
+- Reemplazado `pg_catalog.nullif` por `NULLIF` y agregado hash/preflight para la hoja 6C.
+- Regresión extendida a flags false/true/ausente; **pendiente de ejecución en PostgreSQL aislado compatible**. Nunca declarar PASS únicamente por checks estáticos o Preview READY.

@@ -119,6 +119,48 @@ begin
     raise exception 'P1_LEGACY_PARTIAL_EFFECTS';
   end if;
 
+  -- 1b: cloudInventoryEffects=true used to bypass the old v_operation guard.
+  -- The 6C-only server scope must not be set for this direct legacy call.
+  v_sale_id := 'p1-legacy-true-'||v_suffix;
+  v_error := null;
+  begin
+    perform public.pos_create_cloud_sale_cashier(
+      v_license_key,v_device_fingerprint,v_security_token,v_staff_token,
+      jsonb_build_object('id',v_sale_id,'local_sale_id',v_sale_id,'total',25,'subtotal',25,'amount_paid',25,'payment_method','cash',
+        'metadata',jsonb_build_object('cloudInventoryEffects',true)),
+      jsonb_build_array(jsonb_build_object('id',v_sale_id||':item','product_id',v_product_id,'quantity',1,
+        'unit_price',25,'line_subtotal',25,'line_total',25)),
+      jsonb_build_array(jsonb_build_object('id',v_sale_id||':pay','method','cash','amount',25,'received_amount',25,'change_amount',0)),
+      v_cash_id,'p1-legacy-true-idem-'||v_suffix
+    );
+  exception when sqlstate 'P0001' then get stacked diagnostics v_error=message_text;
+  end;
+  if v_error is null or position('CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED' in v_error)=0
+    or exists(select 1 from public.pos_sales where license_id=v_license_id and id=v_sale_id)
+    or exists(select 1 from public.pos_cash_movements where license_id=v_license_id) then
+    raise exception 'P1_LEGACY_TRUE_FLAG_BYPASS: %',v_error;
+  end if;
+
+  -- 1c: absent client flag is also denied for controlled products.
+  v_sale_id := 'p1-legacy-absent-'||v_suffix;
+  v_error := null;
+  begin
+    perform public.pos_create_cloud_sale_cashier(
+      v_license_key,v_device_fingerprint,v_security_token,v_staff_token,
+      jsonb_build_object('id',v_sale_id,'local_sale_id',v_sale_id,'total',25,'subtotal',25,'amount_paid',25,'payment_method','cash'),
+      jsonb_build_array(jsonb_build_object('id',v_sale_id||':item','product_id',v_product_id,'quantity',1,
+        'unit_price',25,'line_subtotal',25,'line_total',25)),
+      jsonb_build_array(jsonb_build_object('id',v_sale_id||':pay','method','cash','amount',25,'received_amount',25,'change_amount',0)),
+      v_cash_id,'p1-legacy-absent-idem-'||v_suffix
+    );
+  exception when sqlstate 'P0001' then get stacked diagnostics v_error=message_text;
+  end;
+  if v_error is null or position('CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED' in v_error)=0
+    or exists(select 1 from public.pos_sales where license_id=v_license_id and id=v_sale_id)
+    or exists(select 1 from public.pos_cash_movements where license_id=v_license_id) then
+    raise exception 'P1_LEGACY_ABSENT_FLAG_BYPASS: %',v_error;
+  end if;
+
   -- 2: 6C stock and cash are applied once.
   v_sale_id := 'p1-modern-'||v_suffix;
   v_sale := jsonb_build_object(
