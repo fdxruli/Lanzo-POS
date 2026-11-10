@@ -332,4 +332,70 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     expect(onSearchLocalProducts).toHaveBeenLastCalledWith('');
   });
 
+
+  it('closes freely when clean and confirms before discarding a product draft', () => {
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      render(<EcommerceProductPublishModal {...baseProps({ onClose })} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      onClose.mockClear();
+
+      selectProductOne();
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Nombre público *').value).toBe(productOne.name);
+
+      confirm.mockReturnValue(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it('keeps manually edited description and order while collapsing editor details', () => {
+    const onSave = vi.fn().mockResolvedValue(false);
+    render(<EcommerceProductPublishModal {...baseProps({ onSave })} />);
+    selectProductOne();
+    fireEvent.click(screen.getByText('Descripción y orden'));
+    fireEvent.change(screen.getByLabelText('Descripción pública'), {
+      target: { value: 'Nueva descripción pública' }
+    });
+    fireEvent.change(screen.getByLabelText('Orden'), { target: { value: '7' } });
+    fireEvent.click(screen.getByText('Descripción y orden'));
+    fireEvent.click(screen.getByText('Descripción y orden'));
+
+    expect(screen.getByLabelText('Descripción pública').value).toBe('Nueva descripción pública');
+    expect(screen.getByLabelText('Orden').value).toBe('7');
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    return act(async () => {
+      await Promise.resolve();
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+        publicDescription: 'Nueva descripción pública',
+        displayOrder: 7
+      }));
+    });
+  });
+
+  it('prevents duplicate submits and retains changes after an unsuccessful save', async () => {
+    let completeSave;
+    const onSave = vi.fn(() => new Promise((resolve) => { completeSave = resolve; }));
+    const onClose = vi.fn();
+    render(<EcommerceProductPublishModal {...baseProps({ onSave, onClose })} />);
+    selectProductOne();
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Nombre revisado' }
+    });
+    const save = screen.getByRole('button', { name: 'Guardar producto' });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    await act(async () => { completeSave(false); await Promise.resolve(); });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Nombre público *').value).toBe('Nombre revisado');
+  });
+
 });
