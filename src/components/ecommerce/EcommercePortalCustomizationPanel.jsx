@@ -67,6 +67,8 @@ export default function EcommercePortalCustomizationPanel({
       hydratingFromPortal.current = false;
       return;
     }
+    // Preserve incomplete hex input locally; never project a normalized fallback into the draft.
+    if (isPro && !colorsValid) return;
     onChange?.({
       templateCode: isPro ? normalizeEcommercePortalTemplate(templateCode) : 'classic',
       theme: isPro ? normalizedTheme : {},
