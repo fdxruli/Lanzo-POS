@@ -5,10 +5,8 @@ import {
   CheckCircle2,
   Clock3,
   Cloud,
-  ExternalLink,
   Eye,
   EyeOff,
-  Globe2,
   LoaderCircle,
   Lock,
   PackagePlus,
@@ -253,32 +251,68 @@ function PublicationBadge({ product }) {
   );
 }
 
-function StoreHealth({ portal, requirements, products, operations }) {
+function StoreHealth({ portal, requirements, products, operations, onNavigate }) {
   const eligiblePublished = products.some((product) => (
     product.isPublished
     && !['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
     && !['requires_review', 'hidden_incompatible'].includes(product.publicConfigurationMode)
   ));
-  const checks = [
-    ['WhatsApp válido', requirements.whatsapp],
-    ['Dirección completa', requirements.street && requirements.neighborhood && requirements.municipality && requirements.state && requirements.postalCode],
-    ['Horarios configurados', portal?.businessHoursEnabled !== true || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true)],
-    ['Catálogo elegible', eligiblePublished],
-    ['Tienda publicada', portal?.status === 'published'],
-    ['Pedidos activos', portal?.ordersPaused !== true]
+  const addressComplete = requirements.street && requirements.neighborhood
+    && requirements.municipality && requirements.state && requirements.postalCode;
+  const hoursReady = portal.businessHoursEnabled !== true
+    || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true);
+
+  const problems = [
+    ...(!requirements.whatsapp
+      ? [{ category: 'Preparación', label: 'Falta un WhatsApp válido', section: 'information' }]
+      : []),
+    ...(!addressComplete
+      ? [{ category: 'Preparación', label: 'Completa la dirección', section: 'information' }]
+      : []),
+    ...(!hoursReady
+      ? [{ category: 'Operación', label: 'Revisa los horarios', section: 'operation' }]
+      : []),
+    ...(!eligiblePublished
+      ? [{ category: 'Catálogo', label: 'No hay productos publicados elegibles', section: 'catalog' }]
+      : []),
+    ...(portal.ordersPaused === true
+      ? [{ category: 'Operación', label: 'Los pedidos están pausados', section: 'operation' }]
+      : [])
   ];
+  const statusLabel = STATUS_LABELS[portal.status] || portal.status;
+  const summary = problems.length === 0
+    ? 'Todo correcto'
+    : `${problems.length} ${problems.length === 1 ? 'aspecto por revisar' : 'aspectos por revisar'}`;
 
   return (
-    <section className="ecom-admin-store-health" aria-label="Estado de la tienda">
-      <strong>Salud de la tienda</strong>
-      <div>
-        {checks.map(([label, complete]) => (
-          <span key={label} className={complete ? 'is-complete' : 'is-pending'}>
-            <CheckCircle2 size={15} aria-hidden="true" /> {label}
-          </span>
-        ))}
-      </div>
-    </section>
+    <div className="ecom-info-health" aria-label="Estado de la tienda">
+      {problems.length === 0 ? (
+        <span className="ecom-info-health__summary">
+          <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
+          <span>{summary}</span>
+        </span>
+      ) : (
+        <details>
+          <summary>
+            <span className="ecom-info-health__summary">
+              <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
+              <span>{summary}</span>
+            </span>
+            <span className="ecom-info-health__toggle">Ver detalles</span>
+          </summary>
+          <ul>
+            {problems.map((issue) => (
+              <li key={issue.label}>
+                <span><strong>{issue.category}</strong> · {issue.label}</span>
+                <button type="button" onClick={() => onNavigate(issue.section)}>
+                  Revisar
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -317,6 +351,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     typeof navigator === 'undefined' || navigator.onLine !== false
   ));
   const [form, setForm] = useState(() => portalForm(null, companyProfile));
+  const [savedForm, setSavedForm] = useState(() => portalForm(null, companyProfile));
   const [products, setProducts] = useState([]);
   const [busyProductId, setBusyProductId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -346,6 +381,19 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const localCatalogSearchTermRef = useRef('');
   const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
+  const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
+  const unsavedChangesRef = useRef(false);
+  unsavedChangesRef.current = hasUnsavedChanges;
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || typeof window === 'undefined') return undefined;
+    const warnBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const authorizationPending = isLicenseInitializing
     || currentDeviceRole === null
@@ -513,7 +561,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     if (typeof result.plan?.code === 'string' && isPlainObject(result.features)) {
       setConfirmedPlanContext({ plan: result.plan, features: result.features });
     }
-    setForm(portalForm(nextPortal, companyProfile));
+    const loadedForm = portalForm(nextPortal, companyProfile);
+    setForm(loadedForm);
+    setSavedForm(loadedForm);
     setOperations(result);
 
     try {
@@ -544,7 +594,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     };
     const handleOnline = () => {
       setIsOnline(true);
-      if (!authorizationPending && canManageEcommercePortal) void load();
+      if (!authorizationPending && canManageEcommercePortal && !unsavedChangesRef.current) void load();
     };
 
     window.addEventListener('offline', handleOffline);
@@ -692,7 +742,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPortal(nextPortal);
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
-    if (syncFormOnSuccess) setForm(portalForm(nextPortal, companyProfile));
+    if (syncFormOnSuccess) {
+      const persistedForm = portalForm(nextPortal, companyProfile);
+      setForm(persistedForm);
+      setSavedForm(persistedForm);
+    }
     if (!portal || !canUseAdvancedBranding) setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
@@ -713,6 +767,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   };
 
   const changeStatus = async (status) => {
+    if (savingPortal) return;
+    if (hasUnsavedChanges) {
+      toast.error('Guarda los cambios de Información antes de cambiar la publicación.');
+      return;
+    }
     const next = { ...form, status };
     const validationError = validatePortal(next);
     if (validationError) {
@@ -720,7 +779,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       toast.error(validationError);
       return;
     }
-    setForm(next);
     await savePortal(
       next,
       status === 'published' ? 'Portal publicado.' : 'Portal pausado.'
@@ -763,7 +821,15 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setOperations((current) => ({ ...current, ...result }));
     if (result?.portal) {
       setPortal(result.portal);
-      setForm(portalForm(result.portal, companyProfile));
+      if (unsavedChangesRef.current) {
+        // Keep the draft when operation settings update the portal in another tab.
+        setForm((current) => ({ ...current, status: result.portal.status }));
+        setSavedForm((current) => ({ ...current, status: result.portal.status }));
+      } else {
+        const updatedForm = portalForm(result.portal, companyProfile);
+        setForm(updatedForm);
+        setSavedForm(updatedForm);
+      }
     }
   };
 
@@ -968,33 +1034,15 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   return (
     <div className="ecom-admin-page">
-      <header className="ecom-admin-workspace-header">
-        <div>
-          <span className="ecom-admin-kicker">
-            <Globe2 size={16} /> Portal online
-          </span>
-          <h2>{portal?.name || companyProfile?.name || 'Tu tienda'}</h2>
-          <p>Administra el catálogo y la operación de tu tienda.</p>
-        </div>
-        {portal && (
-          <div className="ecom-admin-workspace-actions">
-            <span className={`ecom-admin-status status-${portal.status}`}>
-              {STATUS_LABELS[portal.status] || portal.status}
-            </span>
-            <a
-              className="btn btn-secondary ecom-admin-open-store"
-              href={reservedLink}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink size={17} />
-              <span>Abrir tienda</span>
-            </a>
-          </div>
-        )}
-      </header>
-
-      {portal && <StoreHealth portal={portal} requirements={publicationRequirements} products={products} operations={operations} />}
+      {portal && (
+        <StoreHealth
+          portal={portal}
+          requirements={publicationRequirements}
+          products={products}
+          operations={operations}
+          onNavigate={setActiveSection}
+        />
+      )}
 
       <nav
         className="ecom-admin-section-nav tabs-container"
@@ -1041,6 +1089,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           onFieldChange={updateForm}
           onSubmit={submitPortal}
           saving={savingPortal}
+          hasUnsavedChanges={hasUnsavedChanges}
           reservedLink={reservedLink}
           onCopyLink={copyLink}
           onShareLink={shareLink}
