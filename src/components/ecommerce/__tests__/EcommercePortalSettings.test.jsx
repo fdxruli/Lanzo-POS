@@ -524,7 +524,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByDisplayValue('contacto@example.com'), { target: { value: 'ventas@example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({ contactEmail: 'ventas@example.com' });
     ['templateCode', 'theme', 'logoUrl', 'coverImageUrl'].forEach((field) => expect(saveEcommercePortal.mock.calls[0][0]).not.toHaveProperty(field));
@@ -544,7 +544,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
     expect(screen.getByRole('tab', { name: 'Información' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByDisplayValue('Negocio de prueba')).toHaveAttribute('readonly');
+    expect(screen.queryByDisplayValue('Negocio de prueba')).toBeNull(); // Protected name is stored, not displayed.
     expect(screen.getByDisplayValue('529610000000')).not.toBeNull();
     expect(screen.getByDisplayValue('contacto@example.com')).not.toBeNull();
     expect(screen.getByDisplayValue('Calle pública 1')).not.toBeNull();
@@ -593,7 +593,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
       target: { value: 'VENTAS@EXAMPLE.COM' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
@@ -618,11 +618,12 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByDisplayValue('Centro'), {
       target: { value: 's/n' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar portal' }));
+    expect(screen.getByRole('button', { name: 'Publicar portal' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
-      status: 'published',
+      status: 'draft',
       addressStreet: 'S/N',
       addressNeighborhood: 's/n',
       addressMunicipality: 'Comitán de Domínguez',
@@ -837,7 +838,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByLabelText('Slug de la tienda'), {
       target: { value: 'negocio-pro-actualizado' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
