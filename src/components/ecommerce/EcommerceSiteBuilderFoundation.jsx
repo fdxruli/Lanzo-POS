@@ -103,7 +103,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
 
   useEffect(() => { templateCodeRef.current = portal?.templateCode; }, [portal?.templateCode]);
   useEffect(() => { hasLocalChangesRef.current = hasLocalChanges; }, [hasLocalChanges]);
-  useEffect(() => { onDirtyChange?.(hasLocalChanges || !appearanceValid); }, [hasLocalChanges, appearanceValid, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.(hasLocalChanges || !appearanceValid || uploading); }, [hasLocalChanges, appearanceValid, uploading, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const applyRemoteState = useCallback((result) => {
@@ -167,12 +167,12 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   }, [isPro, load, portal?.id]);
 
   useEffect(() => {
-    if (!hasLocalChanges) return undefined;
+    if (!hasLocalChanges && appearanceValid && !uploading) return undefined;
     const warn = (event) => { event.preventDefault(); event.returnValue = ''; };
     const release = registerAdminUpdateBlocker('Guarda o descarta los cambios del portal antes de actualizar.');
     window.addEventListener('beforeunload', warn);
     return () => { release(); window.removeEventListener('beforeunload', warn); };
-  }, [hasLocalChanges]);
+  }, [hasLocalChanges, appearanceValid, uploading]);
 
   if (!isPro) return null;
   if (loading && !workingDocument) return <section className="ui-card ecom-builder-shell" aria-live="polite">Cargando constructor…</section>;
@@ -354,7 +354,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
       </div>
       <div className="ecom-builder-actions" aria-label="Guardar y publicar diseño">
         <div className="ecom-builder-save-meta">
-          <strong>{hasLocalChanges ? 'Cambios locales pendientes' : remoteState?.hasUnpublishedChanges ? 'Borrador guardado sin publicar' : 'Borrador al día'}</strong>
+          <strong>{conflict ? 'Conflicto de revisión' : !appearanceValid ? 'Corrige el color hexadecimal' : uploading ? 'Subiendo imagen…' : hasLocalChanges ? 'Cambios locales pendientes' : remoteState?.hasUnpublishedChanges ? 'Borrador guardado sin publicar' : 'Borrador al día'}</strong>
           <small>Revisión del borrador: <b>{remoteState?.draft?.revision ?? '—'}</b></small>
         </div>
         <button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || !appearanceValid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button>
