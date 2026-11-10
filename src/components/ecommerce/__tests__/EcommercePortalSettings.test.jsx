@@ -726,6 +726,12 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByRole('button', { name: 'Despublicar Producto uno' })).toBeEnabled();
     expect(screen.queryByText('Haz crecer tu catálogo con Lanzo Nube')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Ver beneficios' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultos' }));
+    expect(screen.queryByRole('button', { name: 'Editar Producto uno' })).not.toBeInTheDocument();
+    expect(screen.getByText('No encontramos productos')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Publicados' }));
+    expect(screen.getByRole('button', { name: 'Editar Producto uno' })).toBeEnabled();
+    expect(listPublishedProducts).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Free design informational and does not save branding without an entitlement', async () => {
