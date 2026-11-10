@@ -853,6 +853,28 @@ describe('EcommercePortalSettings image intent payloads', () => {
     });
   });
 
+  it('does not mistake unsaved company-profile contact defaults for persisted portal data', async () => {
+    act(() => useAppStore.setState({
+      companyProfile: { name: 'Negocio de prueba', phone: '529611111111', email: 'perfil@example.com' }
+    }));
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: { ...existingPortal, whatsappPhone: null, contactEmail: null },
+      plan: { code: 'pro_monthly' },
+      features: proFeatures
+    });
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getByPlaceholderText('52 961 000 0000')).toHaveValue('');
+    expect(screen.getByPlaceholderText('contacto@negocio.com')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('52 961 000 0000'), {
+      target: { value: '529611111111' }
+    });
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+    expect(screen.getByLabelText('Estado de la tienda')).toHaveTextContent('Falta un WhatsApp válido');
+  });
+
   it('pauses a published store using confirmed values and preserves a dirty draft for later saving', async () => {
     const published = { ...existingPortal, status: 'published' };
     const paused = { ...published, status: 'paused' };
