@@ -1065,7 +1065,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       syncRequestFailed = true;
     }
     if (refreshFailed) {
-      toast.error('Producto guardado, pero no se pudieron actualizar la lista o los indicadores. Usa Actualizar para recargar los datos.');
+      toast.error('Producto guardado, pero no se pudieron actualizar la lista o los indicadores. Recarga la página para consultar los datos recientes.');
     }
     if (syncRequestFailed) {
       toast.error('Producto guardado, pero no se pudo solicitar la sincronización del catálogo.');
@@ -1105,7 +1105,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       syncRequestFailed = true;
     }
     if (refreshFailed) {
-      toast.error('Publicación actualizada, pero no se pudieron refrescar la lista o los indicadores. Usa Actualizar para recargar los datos.');
+      toast.error('Publicación actualizada, pero no se pudieron refrescar la lista o los indicadores. Recarga la página para consultar los datos recientes.');
     }
     if (syncRequestFailed) {
       toast.error('Publicación actualizada, pero no se pudo solicitar la sincronización del catálogo.');
