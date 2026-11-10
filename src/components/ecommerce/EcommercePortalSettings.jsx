@@ -48,6 +48,7 @@ import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
 import EcommerceProBenefitsPanel from './EcommerceProBenefitsPanel';
 import EcommerceProHint from './EcommerceProHint';
 import './EcommercePortalSettings.css';
+import './EcommercePortalCatalogCompact.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
 const POSTAL_CODE_PATTERN = /^\d{5}$/;
@@ -389,6 +390,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [activeSection, setActiveSection] = useState('information');
   usePublishBotScreen('/portal-online', activeSection);
   const [productSearch, setProductSearch] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState('all');
   const nubeBenefitsHeadingRef = useRef(null);
   const focusNubeBenefitsAfterNavigationRef = useRef(false);
   const catalogRequestSeqRef = useRef(0);
@@ -534,14 +536,21 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   ), [stockSnapshot]);
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLocaleLowerCase('es-MX');
-    if (!query) return products;
-
-    return products.filter((product) => [
-      product.publicName,
-      product.categoryName,
-      product.description
-    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query)));
-  }, [productSearch, products]);
+    return products.filter((product) => {
+      if (catalogFilter === 'published' && !product.isPublished) return false;
+      if (catalogFilter === 'hidden' && product.isPublished) return false;
+      if (catalogFilter === 'review') {
+        const stockStatus = stockByPublishedProductId.get(String(product.id))?.status;
+        const flagged = Boolean(STOCK_WARNING_COPY[stockStatus])
+          || ['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
+          || ['requires_review', 'hidden_incompatible'].includes(product.publicConfigurationMode);
+        if (!flagged) return false;
+      }
+      return !query || [
+        product.publicName, product.categoryName, product.publicDescription, product.description
+      ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query));
+    });
+  }, [catalogFilter, productSearch, products, stockByPublishedProductId]);
 
   const evaluateStock = useCallback(async ({
     nextPortal,
@@ -1281,8 +1290,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           >
         <div className="ecom-admin-card-heading">
           <div>
-            <span className="ecom-admin-eyebrow">Catálogo</span>
-            <h3>Productos publicados</h3>
+            <h3>Catálogo de la tienda</h3>
             <p>
               {hasUnlimitedPublishedProducts
                 ? `${publishedCount} productos publicados`
@@ -1303,16 +1311,32 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           </button>
         </div>
 
-        <label className="ecom-admin-product-search">
+        <label className="ecom-admin-product-search ecom-catalog-search">
           <Search size={19} aria-hidden="true" />
           <span className="sr-only">Buscar productos publicados</span>
           <input
             type="search"
             value={productSearch}
             onChange={(event) => setProductSearch(event.target.value)}
-            placeholder="Buscar productos"
+            placeholder="Buscar por nombre o categoría"
           />
         </label>
+        <div className="ecom-catalog-filters" role="group" aria-label="Filtrar catálogo">
+          {[
+            ['all', 'Todos'], ['published', 'Publicados'], ['hidden', 'Ocultos'], ['review', 'Revisar']
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={catalogFilter === value ? 'is-selected' : ''}
+              aria-pressed={catalogFilter === value}
+              onClick={() => setCatalogFilter(value)}
+            >{label}</button>
+          ))}
+          <span className="ecom-catalog-filters__count" role="status">
+            {filteredProducts.length} {filteredProducts.length === 1 ? 'resultado' : 'resultados'}
+          </span>
+        </div>
 
         {products.length === 0 ? (
           <div className="ecom-admin-products-empty">
@@ -1324,7 +1348,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           <div className="ecom-admin-products-empty">
             <Search size={30} />
             <strong>No encontramos productos</strong>
-            <span>Prueba con otro nombre o categoría.</span>
+            <span>Prueba otro término o selecciona «Todos».</span>
           </div>
         ) : (
           <div className="ecom-admin-product-list">
@@ -1345,11 +1369,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                 >
                   <span className="ecom-admin-product-image">
                     {product.imageUrl
-                      ? <img src={product.imageUrl} alt="" />
+                      ? <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />
                       : <Store size={22} />}
                   </span>
-                  <div>
-                    <div>
+                  <div className="ecom-catalog-row-content">
+                    <div className="ecom-catalog-row-heading">
                       <strong>{product.publicName}</strong>
                       <PublicationBadge product={product} />
                       {canSyncCatalog && (
@@ -1375,28 +1399,32 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                           : ''}
                       </span>
                     )}
-                    <span>
-                      {product.categoryName || 'Sin categoria'} · ${numberOr(product.price).toFixed(2)}
+                    <span className="ecom-catalog-row-meta">
+                      <strong>${numberOr(product.price).toFixed(2)}</strong>
+                      <span>{product.categoryName || 'Sin categoría'}</span>
+                      <span>{product.isAvailable ? 'Disponible' : 'No disponible'}</span>
                     </span>
-                    <small>
-                      {product.isAvailable ? 'Disponible' : 'No disponible'}
-                      {' · '}Manual: {product.manualAvailable === false ? 'desactivado' : 'activo'}
-                      {' · '}Orden {product.displayOrder || 0}
-                    </small>
+                    <details className="ecom-catalog-row-details">
+                      <summary>Más detalles</summary>
+                      <small>
+                        Disponibilidad manual: {product.manualAvailable === false ? 'desactivada' : 'activa'}
+                        {' · '}Orden {product.displayOrder || 0}
+                      </small>
+                    </details>
                   </div>
                   <div className="ecom-admin-product-actions">
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="ecom-admin-icon-button ecom-catalog-row-action"
                       onClick={() => openEditProduct(product)}
                       title="Editar"
                       aria-label={`Editar ${product.publicName}`}
                     >
-                      <Pencil size={18} />
+                      <Pencil size={17} aria-hidden="true" /><span>Editar</span>
                     </button>
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="ecom-admin-icon-button ecom-catalog-row-action"
                       onClick={() => toggleProduct(product)}
                       disabled={busyProductId === product.id}
                       title={product.isPublished ? 'Despublicar' : 'Publicar'}
@@ -1407,6 +1435,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                         : product.isPublished
                           ? <EyeOff size={18} />
                           : <Eye size={18} />}
+                      <span>{product.isPublished ? "Ocultar" : "Publicar"}</span>
                     </button>
                   </div>
                 </article>
