@@ -336,6 +336,9 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
         </div>
       </div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
+      <small className="ecom-builder-published-version">{remoteState?.published?.versionNumber != null
+        ? 'Versión pública vigente: ' + remoteState.published.versionNumber
+        : 'Sin una versión de diseño publicada'}</small>
       {conflict && <div className="ecom-builder-conflict"><p>Hay otra revisión guardada. Recargar descartará tus cambios locales; si deseas conservarlos, sigue editando, pero deberás resolver el conflicto antes de guardar.</p><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button></div>}
       <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey}
         disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)}
