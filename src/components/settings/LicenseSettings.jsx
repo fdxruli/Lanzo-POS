@@ -116,53 +116,6 @@ function getGracePeriodState(licenseDetails) {
     };
 }
 
-function LicenseHero({
-    selectedCount,
-    maxRubrosAllowed,
-    planName,
-    licenseDetails,
-    licenseStatus
-}) {
-    const statusPresentation = getLicenseStatusPresentation(
-        licenseDetails,
-        new Date(),
-        { licenseStatus }
-    );
-
-    return (
-        <header className="license-settings-hero">
-            <div className="license-hero-copy">
-                <span className="license-kicker">
-                    <ShieldCheck size={15} aria-hidden="true" />
-                    Configuracion
-                </span>
-                <div>
-                    <h2>Licencia y rubros</h2>
-                    <p>Consulta tu licencia y administra sus capacidades.</p>
-                </div>
-            </div>
-
-            <div className="license-hero-right">
-                <div className="license-hero-summary" aria-label="Resumen de licencia">
-                    <span>
-                        <small>Plan</small>
-                        <strong>{planName}</strong>
-                    </span>
-                    <span>
-                        <small>Estado</small>
-                        <strong>{statusPresentation.label}</strong>
-                    </span>
-                    <span>
-                        <small>Rubros</small>
-                        <strong>{selectedCount}/{maxRubrosAllowed === 999 ? '∞' : maxRubrosAllowed}</strong>
-                    </span>
-                </div>
-
-            </div>
-        </header>
-    );
-}
-
 function RubroCard({ rubro, stateKind, onToggle }) {
     const Icon = rubro.Icon;
     const selected = stateKind === 'selected' || stateKind === 'linked';
@@ -301,19 +254,25 @@ function LicenseCriticalAlerts({ licenseDetails, licenseStatus, showFreeCompatib
 
 function LicenseSummaryPanel({ licenseDetails, licenseStatus, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
     const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails, new Date(), { licenseStatus });
 
     return (
         <section className="license-panel license-summary-panel">
             <div className="license-panel-heading">
                 <div>
-                    <h3>Resumen</h3>
-                    <p>La informacion que necesitas para revisar el estado de tu operacion.</p>
+                    <h3>Tu licencia</h3>
+                    <p>Estado y capacidades de tu plan.</p>
                 </div>
+                <span className={`license-status-pill is-${statusPresentation.tone}`}>{statusPresentation.label}</span>
             </div>
 
             <div className="license-summary-grid">
+                <div className="license-summary-item">
+                    <span>Plan</span>
+                    <strong>{getCommercialPlanName(licenseDetails)}</strong>
+                </div>
                 <div className={`license-summary-item license-summary-item--${expirationInfo.tone}`}>
-                    <span>Vencimiento</span>
+                    <span>Vigencia</span>
                     <strong>{expirationInfo.label}</strong>
                     {expirationInfo.note && <small>{expirationInfo.note}</small>}
                 </div>
@@ -492,7 +451,6 @@ function LicenseSettingsContent({ settingsAccess }) {
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
     const showFreeCompatibilityUpdate = settingsAccess.isAdmin
         && gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
-    const commercialPlanName = getCommercialPlanName(licenseDetails);
     const localDiscovery = getLocalPlanDiscoveryCapabilities(
         licenseDetails,
         settingsAccess,
@@ -714,12 +672,13 @@ function LicenseSettingsContent({ settingsAccess }) {
 
     return (
         <div className="license-settings-shell">
-            <LicenseHero
-                selectedCount={selectedRubros.length}
-                maxRubrosAllowed={maxRubrosAllowed}
-                planName={commercialPlanName}
+            <LicenseCriticalAlerts
                 licenseDetails={licenseDetails}
                 licenseStatus={licenseStatus}
+                showFreeCompatibilityUpdate={showFreeCompatibilityUpdate}
+                isUpdatingFree={isUpdatingFree}
+                freeUpdateError={freeUpdateError}
+                onFreeCompatibilityUpdate={handleFreeCompatibilityUpdate}
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
@@ -743,15 +702,6 @@ function LicenseSettingsContent({ settingsAccess }) {
                     );
                 })}
             </nav>
-
-            <LicenseCriticalAlerts
-                licenseDetails={licenseDetails}
-                licenseStatus={licenseStatus}
-                showFreeCompatibilityUpdate={showFreeCompatibilityUpdate}
-                isUpdatingFree={isUpdatingFree}
-                freeUpdateError={freeUpdateError}
-                onFreeCompatibilityUpdate={handleFreeCompatibilityUpdate}
-            />
 
             {effectiveActiveSection === 'summary' && (
                 <div

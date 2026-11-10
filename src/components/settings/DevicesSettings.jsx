@@ -1,4 +1,4 @@
-import { ShieldCheck, Smartphone } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import DeviceManager from '../common/DeviceManager';
@@ -20,30 +20,13 @@ export default function DevicesSettings() {
 
   return (
     <div className="license-settings-shell" data-testid="devices-settings">
-      <header className="license-settings-hero">
-        <div className="license-hero-copy">
-          <span className="license-kicker">
-            <Smartphone size={15} />
-            Dispositivos
-          </span>
-          <div>
-            <h2>Equipos vinculados</h2>
-            <p>Consulta el acceso de este equipo y, como Admin, administra los dispositivos de la licencia.</p>
-          </div>
-        </div>
-      </header>
-
       {access.isAdmin ? (
         <section className="license-panel license-linked-devices">
           <div className="license-panel-heading">
             <div>
               <h3>Dispositivos vinculados</h3>
-              <p>Revisa equipos conectados, cambia su capacidad y libera cupos.</p>
+              <p>Consulta el estado de tus equipos y administra sus accesos.</p>
             </div>
-            <span className="license-panel-badge">
-              <Smartphone size={15} />
-              Admin
-            </span>
           </div>
 
           {licenseDetails?.valid && licenseDetails?.license_key
