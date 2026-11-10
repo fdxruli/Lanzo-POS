@@ -263,11 +263,15 @@ export const filterPublicCatalog = (products, search, status, stockById, canSync
   });
 };
 
-function PortalLeaveGuard({ enabled }) {
+function PortalLeaveGuard({ informationDirty, catalogDirty }) {
   useNavigationGuard({
-    enabled,
+    enabled: informationDirty || catalogDirty,
     title: '¿Salir sin guardar?',
-    message: 'Tienes cambios en Información que todavía no se han guardado.',
+    message: informationDirty && catalogDirty
+      ? 'Tienes cambios sin guardar en Información y Catálogo.'
+      : catalogDirty
+        ? 'Tienes cambios sin guardar en un producto del Catálogo.'
+        : 'Tienes cambios en Información que todavía no se han guardado.',
     confirmButtonText: 'Salir sin guardar',
     cancelButtonText: 'Continuar editando'
   });
@@ -386,6 +390,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [products, setProducts] = useState([]);
   const [busyProductId, setBusyProductId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalDirty, setModalDirty] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [openingCatalog, setOpeningCatalog] = useState(false);
   const [searchingCatalog, setSearchingCatalog] = useState(false);
@@ -416,7 +421,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const dataRouterContext = useContext(UNSAFE_DataRouterContext);
   const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
   const unsavedChangesRef = useRef(false);
-  unsavedChangesRef.current = hasUnsavedChanges;
+  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty);
 
   useEffect(() => {
     if (!hasUnsavedChanges || typeof window === 'undefined') return undefined;
@@ -985,6 +990,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setSearchingCatalog(false);
     setLoadingMoreCatalog(false);
     setModalOpen(false);
+    setModalDirty(false);
   }, []);
 
   const openNewProduct = async () => {
@@ -1044,9 +1050,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       toast.error(result.message);
       return false;
     }
-    await refreshAfterProductMutation('published-product-saved');
-    requestCatalogSync([payload.localProductRef], 'published-product-saved');
-    toast.success(payload.id ? 'Producto actualizado.' : 'Producto publicado.');
+
+    // Persistence succeeded. Failures below must not invite a second write.
+    let refreshFailed = false;
+    let syncRequestFailed = false;
+    try {
+      await refreshAfterProductMutation('published-product-saved');
+    } catch {
+      refreshFailed = true;
+    }
+    try {
+      requestCatalogSync([payload.localProductRef], 'published-product-saved');
+    } catch {
+      syncRequestFailed = true;
+    }
+    if (refreshFailed) {
+      toast.error('Producto guardado, pero no se pudieron actualizar la lista o los indicadores. Usa Actualizar para recargar los datos.');
+    }
+    if (syncRequestFailed) {
+      toast.error('Producto guardado, pero no se pudo solicitar la sincronización del catálogo.');
+    }
+    if (!refreshFailed && !syncRequestFailed) {
+      toast.success(payload.id ? 'Producto actualizado.' : 'Producto publicado.');
+    }
     return true;
   };
 
@@ -1055,12 +1081,38 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       return toast.error('Llegaste al límite de productos publicados de tu plan.');
     }
     setBusyProductId(product.id);
-    const result = await setProductPublished(product.id, !product.isPublished);
-    setBusyProductId(null);
+    let result;
+    try {
+      result = await setProductPublished(product.id, !product.isPublished);
+    } catch {
+      toast.error('No se pudo cambiar la publicación del producto.');
+      return;
+    } finally {
+      setBusyProductId(null);
+    }
     if (!result.success) return toast.error(result.message);
-    await refreshAfterProductMutation('published-product-toggled');
-    requestCatalogSync([product.localProductRef], 'published-product-toggled');
-    toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
+
+    let refreshFailed = false;
+    let syncRequestFailed = false;
+    try {
+      await refreshAfterProductMutation('published-product-toggled');
+    } catch {
+      refreshFailed = true;
+    }
+    try {
+      requestCatalogSync([product.localProductRef], 'published-product-toggled');
+    } catch {
+      syncRequestFailed = true;
+    }
+    if (refreshFailed) {
+      toast.error('Publicación actualizada, pero no se pudieron refrescar la lista o los indicadores. Usa Actualizar para recargar los datos.');
+    }
+    if (syncRequestFailed) {
+      toast.error('Publicación actualizada, pero no se pudo solicitar la sincronización del catálogo.');
+    }
+    if (!refreshFailed && !syncRequestFailed) {
+      toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
+    }
   };
 
   if (authorizationPending) return <StateMessage />;
@@ -1077,7 +1129,12 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   return (
     <div className="ecom-admin-page">
-      {dataRouterContext && <PortalLeaveGuard enabled={hasUnsavedChanges} />}
+      {dataRouterContext && (
+        <PortalLeaveGuard
+          informationDirty={hasUnsavedChanges}
+          catalogDirty={modalOpen && modalDirty}
+        />
+      )}
       {portal && (
         <StoreHealth
           portal={portal}
@@ -1495,6 +1552,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         onLoadMoreLocalProducts={loadMoreLocalProducts}
         onClose={closeProductModal}
         onSave={saveProduct}
+        onDirtyChange={setModalDirty}
       />
     </div>
   );
