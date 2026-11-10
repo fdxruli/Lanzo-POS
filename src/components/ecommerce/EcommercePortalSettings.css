@@ -1126,3 +1126,9 @@
 @media (prefers-reduced-motion: reduce) {
   .ecom-builder-fold > summary::after, .ecom-builder-section-row > summary::after { transition: none; }
 }
+
+/* El historial puede desplazarse por completo detrás de la barra contextual. */
+.ecom-builder-published-version { color: var(--ui-text-muted, var(--text-light)); font-size: .76rem; }
+@media (max-width: 620px) {
+  .ecom-builder-shell { padding-bottom: max(7rem, calc(1rem + env(safe-area-inset-bottom))); }
+}
