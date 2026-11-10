@@ -42,6 +42,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const menuButtonRef = useRef(null);
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
+  const drawerGestureRef = useRef(null);
   const features = useFeatureConfig();
 
   const { isVolatile } = usePersistentStorage();
@@ -95,9 +96,77 @@ function Navbar({ isSuppressed = false } = {}) {
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
 
+  const resetDrawerGesture = () => {
+    drawerGestureRef.current = null;
+    drawerRef.current?.classList.remove('is-dragging');
+    drawerRef.current?.style.removeProperty('--drawer-drag-y');
+  };
+
+  const handleHeaderPointerDown = (event) => {
+    if (!isMobileMenuOpen || !['touch', 'pen'].includes(event.pointerType)
+      || event.isPrimary === false || event.button !== 0
+      || event.target.closest?.('button, a, input, select, textarea, [role="button"], [contenteditable="true"]')) {
+      return;
+    }
+
+    drawerGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      distance: 0,
+      horizontal: 0,
+      dragging: false
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleHeaderPointerMove = (event) => {
+    const gesture = drawerGestureRef.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+
+    const distance = event.clientY - gesture.startY;
+    const horizontal = Math.abs(event.clientX - gesture.startX);
+    if (!gesture.dragging) {
+      if (Math.abs(distance) < 10 && horizontal < 10) return;
+      if (distance <= 0 || horizontal >= distance) {
+        resetDrawerGesture();
+        return;
+      }
+      gesture.dragging = true;
+      drawerRef.current?.classList.add('is-dragging');
+    }
+
+    gesture.distance = distance;
+    gesture.horizontal = horizontal;
+    drawerRef.current?.style.setProperty(
+      '--drawer-drag-y',
+      `${Math.round(Math.max(0, Math.min(distance, 240)) * 0.8)}px`
+    );
+  };
+
+  const handleHeaderPointerUp = (event) => {
+    const gesture = drawerGestureRef.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    if (gesture.dragging && gesture.distance >= 80 && gesture.horizontal < gesture.distance) {
+      drawerGestureRef.current = null;
+      drawerRef.current?.classList.remove('is-dragging');
+      closeMenu();
+    } else {
+      resetDrawerGesture();
+    }
+  };
+
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) {
+      drawerGestureRef.current = null;
+      drawerRef.current?.classList.remove('is-dragging');
+      drawerRef.current?.style.removeProperty('--drawer-drag-y');
+    }
+  }, [isMobileMenuOpen]);
 
   useEffect(() => {
     if (!isMobileMenuOpen) return undefined;
@@ -403,12 +472,14 @@ function Navbar({ isSuppressed = false } = {}) {
         aria-hidden={!isMobileMenuOpen}
         inert={!isMobileMenuOpen}
       >
-        <div className="drawer-handle" aria-hidden="true" />
-        <div className="drawer-header">
-          <div>
-            <p className="drawer-eyebrow">Navegación</p>
-            <h2 id="mobile-menu-title">Menú principal</h2>
-          </div>
+        <div
+          className="drawer-header"
+          onPointerDown={handleHeaderPointerDown}
+          onPointerMove={handleHeaderPointerMove}
+          onPointerUp={handleHeaderPointerUp}
+          onPointerCancel={resetDrawerGesture}
+        >
+          <h2 id="mobile-menu-title" aria-label="Menú principal">Menú</h2>
           <button
             ref={closeButtonRef}
             type="button"
