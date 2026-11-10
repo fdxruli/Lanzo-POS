@@ -910,7 +910,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Pausar portal' }));
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: 'Pausar portal' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pausar portal' })).toBeEnabled());
     expect(screen.getByDisplayValue('529611234567')).toBeInTheDocument();
     expect(screen.getByLabelText('Estado de la tienda')).toHaveTextContent('Publicado');
   });
