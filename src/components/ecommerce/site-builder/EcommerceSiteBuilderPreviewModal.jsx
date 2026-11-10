@@ -82,6 +82,7 @@ export default function EcommerceSiteBuilderPreviewModal({ document: siteDocumen
           </div>
         </header>
         <div className="ecom-builder-preview-modal__content">
+          <p className="ecom-builder-preview-modal__notice">Vista previa de diseño. Los productos mostrados son de ejemplo.</p>
           <EcommerceSiteBuilderPreview document={siteDocument} portal={portal} viewport={viewport} />
         </div>
       </section>
