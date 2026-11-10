@@ -34,7 +34,7 @@ import EcommerceSiteBuilderStatus from './site-builder/EcommerceSiteBuilderStatu
 const PAGE_SIZE = 20;
 const clone = (value) => structuredClone(value);
 
-export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseKey }) {
+export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseKey, onDirtyChange }) {
   const [remoteState, setRemoteState] = useState(null);
   const [savedDocument, setSavedDocument] = useState(null);
   const [workingDocument, setWorkingDocument] = useState(null);
@@ -102,6 +102,8 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
 
   useEffect(() => { templateCodeRef.current = portal?.templateCode; }, [portal?.templateCode]);
   useEffect(() => { hasLocalChangesRef.current = hasLocalChanges; }, [hasLocalChanges]);
+  useEffect(() => { onDirtyChange?.(hasLocalChanges); }, [hasLocalChanges, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const applyRemoteState = useCallback((result) => {
     const document = migrateEcommerceSiteDocument(result?.draft?.document, {
@@ -320,14 +322,44 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   };
   return (
     <section className="ui-card ecom-builder-shell" aria-labelledby="site-builder-title">
-      <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><div className="ecom-builder-header-actions"><button type="button" className="btn btn-secondary" aria-haspopup="dialog" aria-expanded={previewOpen} onClick={() => setPreviewOpen(true)}><Eye size={16} />Vista previa</button><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div></div>
+      <div className="ecom-builder-heading">
+        <div>
+          <span className="ecom-admin-eyebrow">Constructor del sitio</span>
+          <h2 id="site-builder-title">Diseño de tu tienda</h2>
+          <p>Personalizar → Vista previa → Guardar borrador → Publicar diseño</p>
+        </div>
+        <div className="ecom-builder-header-actions">
+          <button type="button" className="btn btn-secondary" aria-haspopup="dialog" aria-expanded={previewOpen} onClick={() => setPreviewOpen(true)}><Eye size={16} />Vista previa</button>
+          <button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button>
+        </div>
+      </div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
-      {conflict ? <div className="ecom-builder-conflict"><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div> : null}
-      <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey} disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)} onChange={changeAppearance} onBusyChange={setUploading} />
-      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /></div>
-      <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
+      {conflict && <div className="ecom-builder-conflict"><p>Hay otra revisión guardada. Recargar descartará tus cambios locales; si deseas conservarlos, sigue editando, pero deberás resolver el conflicto antes de guardar.</p><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div>}
+      <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey}
+        disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)}
+        onChange={changeAppearance} onBusyChange={setUploading} />
+      <div className="ecom-builder-main">
+        <EcommerceSiteBuilderControls document={workingDocument} disabled={busy} mode="structure"
+          onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))}
+          onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))}
+          onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))}
+          onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} />
+        <EcommerceSiteBuilderControls document={workingDocument} disabled={busy} mode="catalog"
+          onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))}
+          onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))}
+          onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))}
+          onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} />
+      </div>
+      <div className="ecom-builder-actions" aria-label="Guardar y publicar diseño">
+        <div className="ecom-builder-save-meta">
+          <strong>{hasLocalChanges ? 'Cambios locales pendientes' : remoteState?.hasUnpublishedChanges ? 'Borrador guardado sin publicar' : 'Borrador al día'}</strong>
+          <small>Revisión del borrador: <b>{remoteState?.draft?.revision ?? '—'}</b></small>
+        </div>
+        <button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button>
+        <button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges || conflict}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar diseño'}</button>
+      </div>
       <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} deletingVersionId={deletingVersionId} disabled={saving || publishing || uploading} onRestore={restore} onDelete={deleteVersion} onLoadMore={loadMoreVersions} />
-      {previewOpen ? <EcommerceSiteBuilderPreviewModal document={workingDocument} portal={previewPortal} onClose={closePreview} /> : null}
+      {previewOpen && <EcommerceSiteBuilderPreviewModal document={workingDocument} portal={previewPortal} onClose={closePreview} />}
     </section>
   );
 }
