@@ -94,7 +94,7 @@ describe('mobile-first administrative recovery', () => {
     expect(screen.getAllByText('verified@example.com')).toHaveLength(1);
     expect(screen.getByText('Verificado')).toBeInTheDocument();
     expect(screen.getByText('Solicitar cambio de correo')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Contraseña administrativa actual')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Contraseña administrativa actual')).not.toBeVisible();
   });
 
   it('enrolls without persisting secrets and displays the server request reference', async () => {
@@ -110,7 +110,7 @@ describe('mobile-first administrative recovery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Solicitar vinculación' }));
     expect(await screen.findByText('server-request-reference')).toBeInTheDocument();
     expect(mocks.request).toHaveBeenCalledWith('FREE', 'owner@example.com', 'Original123');
-    expect(screen.queryByLabelText('Contraseña administrativa actual')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Contraseña administrativa actual')).not.toBeVisible();
   });
 
   it('restores pending verification and confirms the supplied code with the existing service', async () => {
