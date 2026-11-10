@@ -658,7 +658,8 @@
 }
 .ecom-info-health summary::-webkit-details-marker,
 .ecom-info-disclosure > summary::-webkit-details-marker { display: none; }
-.ecom-info-health__summary { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.ecom-info-health__summary { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.ecom-info-health__draft { color: var(--ui-text-warning, var(--text-light)); font-weight: 700; }
 .ecom-info-health__toggle { color: var(--primary-color); font-weight: 700; font-size: .76rem; }
 .ecom-info-health ul { list-style: none; margin: 2px 0 0; padding: 0; }
 .ecom-info-health li {
