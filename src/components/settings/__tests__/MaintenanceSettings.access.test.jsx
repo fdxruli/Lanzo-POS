@@ -1,175 +1,61 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({
-  permissions: { sync: false, inventory: false, reports: false },
-  stale: false,
-  resolvePrompt: null,
-  rebuildStats: vi.fn(),
-  fixStock: vi.fn(),
-  loadStats: vi.fn(),
-  loadProducts: vi.fn()
-}));
-
+const state = vi.hoisted(() => ({ permissions: {} }));
 const hasPermission = (permission) => state.permissions[permission] === true;
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
   useSettingsAccess: () => ({
-    canAccessPermission: hasPermission,
     canAccessSection: (section) => section === 'maintenance'
       && (hasPermission('settings_maintenance')
         || (!['settings_data', 'settings_controls', 'settings_maintenance', 'settings_backup']
           .some((permission) => Object.prototype.hasOwnProperty.call(state.permissions, permission))
           && (hasPermission('sync') || hasPermission('inventory'))))
-  }),
-  useSettingsActionGuard: () => (permission) => {
-    if (!hasPermission(permission)) throw new Error('PERMISSION_DENIED');
-    return {
-      assertCurrent: () => {
-        if (state.stale) throw new Error('ACTOR_CONTEXT_STALE');
-      }
-    };
-  }
-}));
-
-vi.mock('../../../store/useStatsStore', () => ({
-  useStatsStore: vi.fn((selector) => selector({ loadStats: state.loadStats }))
-}));
-
-vi.mock('../../../store/useInventoryCatalogStore', () => ({
-  useInventoryCatalogStore: vi.fn((selector) => selector({
-    loadInitialProducts: state.loadProducts
-  }))
-}));
-
-vi.mock('../../../services/db', () => ({
-  maintenanceTools: {
-    rebuildStats: state.rebuildStats,
-    fixStock: state.fixStock
-  }
-}));
-
-vi.mock('../../../services/database', () => ({ archiveOldData: vi.fn() }));
-
-vi.mock('../../../services/BackupRiskEvaluator', () => ({
-  evaluator: { ping: vi.fn() }
-}));
-
-vi.mock('../../../services/utils', () => ({
-  showConfirmModal: vi.fn(async () => true),
-  showMessageModal: vi.fn()
-}));
-
-vi.mock('../../common/InputPromptModal', () => ({
-  showInputPromptModal: vi.fn(() => new Promise((resolve) => {
-    state.resolvePrompt = resolve;
-  }))
-}));
-
-vi.mock('../../products/DataTransferModal', () => ({
-  default: ({ show, allowInventory, allowSalesExport }) => show
-    ? <div data-testid="data-transfer">inventory:{String(allowInventory)} sync:{String(allowSalesExport)}</div>
-    : null
+  })
 }));
 
 vi.mock('../../common/UpdateControls', () => ({
-  default: ({ showApply }) => <div data-testid="maintenance-update-controls" data-show-apply={String(showApply)}>Buscar actualizaciones</div>
+  default: ({ showApply }) => (
+    <div data-testid="maintenance-update-controls" data-show-apply={String(showApply)}>
+      Buscar actualizaciones
+    </div>
+  )
 }));
 
 import MaintenanceSettings from '../MaintenanceSettings';
 
-const renderSettings = () => render(
-  <MemoryRouter>
-    <MaintenanceSettings />
-  </MemoryRouter>
-);
-
-describe('MaintenanceSettings action isolation', () => {
+describe('MaintenanceSettings: solo actualizaciones', () => {
   afterEach(cleanup);
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    state.permissions = { sync: false, inventory: false, reports: false };
-    state.stale = false;
-    state.resolvePrompt = null;
-    state.rebuildStats.mockResolvedValue({ success: true, message: 'ok' });
-    state.fixStock.mockResolvedValue({ success: true, message: 'ok', details: [] });
+    state.permissions = {};
   });
 
-  it('shows only sync-authorized routines to sync-only Staff', () => {
-    state.permissions.sync = true;
-    renderSettings();
+  it.each([
+    ['permisos heredados de sincronización', { sync: true }],
+    ['permisos heredados de inventario', { inventory: true }],
+    ['permiso específico de la pestaña', { settings_maintenance: true, sync: false, inventory: false }]
+  ])('muestra el control de actualizaciones con %s', (_, permissions) => {
+    state.permissions = permissions;
+    render(<MemoryRouter><MaintenanceSettings /></MemoryRouter>);
 
-    expect(screen.getByText('Reconstruir desde historial')).toBeInTheDocument();
     expect(screen.getByTestId('maintenance-update-controls')).toHaveAttribute('data-show-apply', 'true');
-    expect(screen.getByText('Archivar ventas antiguas')).toBeInTheDocument();
-    expect(screen.queryByText('Sincronizar stock')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Gestionar datos/i })).not.toBeInTheDocument();
+    for (const removed of [
+      'Reconstruir desde historial', 'Sincronizar stock',
+      'Archivar ventas antiguas', 'Gestionar datos', 'Salud operativa del sistema'
+    ]) {
+      expect(screen.queryByText(removed)).not.toBeInTheDocument();
+    }
   });
 
-  it('shows only inventory-authorized routines to inventory-only Staff', () => {
-    state.permissions.inventory = true;
-    renderSettings();
+  it('deniega acceso sin permiso para la sección', () => {
+    state.permissions = { settings_maintenance: false, sync: true, inventory: true };
+    render(<MemoryRouter><MaintenanceSettings /></MemoryRouter>);
 
-    expect(screen.getByText('Sincronizar stock')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Gestionar datos/i })).toBeInTheDocument();
-    expect(screen.queryByText('Reconstruir desde historial')).not.toBeInTheDocument();
-    expect(screen.queryByText('Archivar ventas antiguas')).not.toBeInTheDocument();
-  });
-
-  it('fails closed when neither maintenance permission is present', () => {
-    renderSettings();
     expect(screen.getByRole('alert')).toHaveTextContent('No tienes acceso');
     expect(screen.queryByTestId('maintenance-update-controls')).not.toBeInTheDocument();
-  });
-
-  it('allows independent section entry without granting sync or inventory routines', () => {
-    state.permissions = {
-      settings_maintenance: true,
-      sync: false,
-      inventory: false,
-      reports: false
-    };
-    renderSettings();
-
-    expect(screen.getByText('Datos y mantenimiento')).toBeInTheDocument();
-    expect(screen.getByTestId('maintenance-update-controls')).toBeInTheDocument();
-    expect(screen.queryByText('Reconstruir desde historial')).not.toBeInTheDocument();
-    expect(screen.queryByText('Sincronizar stock')).not.toBeInTheDocument();
-    expect(screen.queryByText('Archivar ventas antiguas')).not.toBeInTheDocument();
-  });
-
-  it('does not execute a sync action after its actor handle becomes stale', async () => {
-    state.permissions.sync = true;
-    renderSettings();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reconstruir' }));
-    await waitFor(() => expect(state.resolvePrompt).toBeTypeOf('function'));
-    state.stale = true;
-    await act(async () => {
-      state.resolvePrompt('CONFIRMAR');
-      await Promise.resolve();
-    });
-
-    expect(state.rebuildStats).not.toHaveBeenCalled();
-  });
-
-  it('does not pass sales-export authority without reports permission', () => {
-    state.permissions = { sync: true, inventory: true, reports: false };
-    renderSettings();
-
-    fireEvent.click(screen.getByRole('button', { name: /Gestionar datos/i }));
-    expect(screen.getByTestId('data-transfer')).toHaveTextContent('inventory:true sync:false');
-  });
-
-  it('passes sales-export authority only when sync and reports are both current', () => {
-    state.permissions = { sync: true, inventory: false, reports: true };
-    renderSettings();
-
-    fireEvent.click(screen.getByRole('button', { name: /Gestionar datos/i }));
-    expect(screen.getByTestId('data-transfer')).toHaveTextContent('inventory:false sync:true');
   });
 });

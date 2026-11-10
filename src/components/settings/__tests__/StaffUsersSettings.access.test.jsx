@@ -472,13 +472,13 @@ describe('StaffUsersSettings list-first administration', () => {
 
     for (const label of [
       'Datos y Apariencia', 'Controles', 'Licencia y Rubros',
-      'Dispositivos', 'Datos y Mantenimiento', 'Respaldos'
+      'Dispositivos', 'Actualizaciones', 'Respaldos'
     ]) {
       expect(screen.getByRole('checkbox', { name: new RegExp(`^${label}`) })).toBeInTheDocument();
     }
     expect(screen.getByRole('checkbox', { name: /Datos y Apariencia/ })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Controles/ })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /Datos y Mantenimiento/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Actualizaciones/ })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /Respaldos/ })).toBeChecked();
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Controles/ }));
