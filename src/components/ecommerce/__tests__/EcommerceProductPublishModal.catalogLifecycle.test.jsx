@@ -398,4 +398,39 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     expect(screen.getByLabelText('Nombre público *').value).toBe('Nombre revisado');
   });
 
+
+  it('keeps PRO field overrides manual after collapsing synchronization', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    render(<EcommerceProductPublishModal {...baseProps({ onSave })} canSyncCatalog />);
+    selectProductOne();
+    fireEvent.click(screen.getByText('Sincronización PRO'));
+    fireEvent.click(screen.getByText('Mantener sincronizado con el producto local'));
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Nombre editado manualmente' }
+    });
+    fireEvent.click(screen.getByText('Sincronización PRO'));
+    expect(screen.getByLabelText('Nombre público *').value).toBe('Nombre editado manualmente');
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await act(async () => Promise.resolve());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      publicName: 'Nombre editado manualmente',
+      syncConfig: expect.objectContaining({ name: 'manual', price: 'manual' })
+    }));
+  });
+
+  it('opens a collapsed detail containing an invalid field', () => {
+    const onSave = vi.fn();
+    render(<EcommerceProductPublishModal {...baseProps({ onSave })} />);
+    selectProductOne();
+    const toggle = screen.getByText('Descripción y orden');
+    const details = toggle.closest('details');
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText('Orden'), { target: { value: '-2' } });
+    fireEvent.click(toggle);
+    expect(details.open).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    expect(details.open).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
 });
