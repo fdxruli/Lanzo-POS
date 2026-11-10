@@ -132,7 +132,7 @@ export default function EcommercePortalCustomizationPanel({
     <section className="ecom-customization" aria-label="Personalización visual">
       <details className="ecom-builder-fold ecom-customization__fold">
         <summary><span><strong>Plantilla</strong><small>{TEMPLATES[templateCode][0]} · Elige cómo presentar tu tienda</small></span></summary>
-        <div className="ecom-builder-fold__body">
+        <div className="ecom-builder-fold__content">
           <div className="ecom-template-options">{ECOMMERCE_PORTAL_TEMPLATES.map((code) => (
             <button key={code} type="button" aria-pressed={templateCode === code}
               className={'ecom-template-option ' + (templateCode === code ? 'is-selected' : '')}
@@ -146,7 +146,7 @@ export default function EcommercePortalCustomizationPanel({
 
       <details className="ecom-builder-fold ecom-customization__fold">
         <summary><span><strong>Identidad visual</strong><small>{theme.primaryColor} · {theme.secondaryColor} · {FONTS[theme.fontStyle]} · {CORNERS[theme.cornerStyle]}</small></span></summary>
-        <div className="ecom-builder-fold__body ecom-customization__identity">
+        <div className="ecom-builder-fold__content ecom-customization__identity">
           <fieldset className="ecom-customization__section ecom-customization__section--colors">
             <legend>Colores</legend>
             {['primaryColor', 'secondaryColor'].map((field) => (
