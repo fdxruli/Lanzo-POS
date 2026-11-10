@@ -261,6 +261,19 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
   });
 
+  it('blocks saving and publishing while color input is invalid', async () => {
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    await screen.findByText('Guardar borrador');
+    fireEvent.click(densityChoice('Compacta'));
+    openSection('Identidad visual');
+    const hex = screen.getByRole('textbox', { name: 'Hexadecimal principal' });
+    fireEvent.change(hex, { target: { value: '#abc' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar borrador' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Publicar diseño' })).toBeDisabled();
+    fireEvent.change(hex, { target: { value: '#aabbcc' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar borrador' })).toBeEnabled());
+  });
+
   it('reports actual local changes to its parent and clears them after save', async () => {
     const onDirtyChange = vi.fn();
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} onDirtyChange={onDirtyChange} />);
