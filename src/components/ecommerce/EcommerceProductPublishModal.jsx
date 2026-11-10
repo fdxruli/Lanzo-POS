@@ -116,7 +116,8 @@ export default function EcommerceProductPublishModal({
   onSearchLocalProducts,
   onLoadMoreLocalProducts,
   onClose,
-  onSave
+  onSave,
+  onDirtyChange
 }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -320,6 +321,10 @@ export default function EcommerceProductPublishModal({
   }, [canUseStockVisibility, open]);
 
   const isDirty = formFingerprint(form) !== formFingerprint(initialFormRef.current);
+  useEffect(() => {
+    onDirtyChange?.(open && isDirty);
+  }, [isDirty, onDirtyChange, open]);
+
   useEffect(() => {
     if (!open || !isDirty) return undefined;
     const confirmUnload = (event) => {
