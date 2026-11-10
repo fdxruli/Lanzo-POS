@@ -70,6 +70,7 @@
   .product-form-v2__pricing { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--spacing-md); }
   .product-form-v2__pricing > .product-form-v2__field--cost, .product-form-v2__pricing > .product-form-v2__field--margin, .product-form-v2__pricing > .product-form-v2__field--price { grid-column: auto; grid-row: auto; }
   .product-form-v2__pricing > .product-form-v2__field--margin { flex-direction: column; align-items: stretch; gap: 4px; }
+  .product-form-v2__pricing .product-form-v2__field--margin label { min-height: 2.5em; line-height: 1.25; }
   .product-form-v2__pricing .product-form-v2__field--margin .product-form-v2__suffix { width: 100%; }
   .product-form-v2__pricing--fractioned { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-form-v2__pricing--ingredient { grid-template-columns: minmax(0, 1fr); }
