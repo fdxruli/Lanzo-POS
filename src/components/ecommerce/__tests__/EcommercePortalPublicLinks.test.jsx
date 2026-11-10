@@ -47,6 +47,8 @@ const renderPortal = async () => {
   await screen.findByText(publicStoreUrl);
 };
 
+const openSharingOptions = () => fireEvent.click(screen.getByText('Más formas de compartir'));
+
 describe('EcommercePortalSettings public link cutover', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -90,11 +92,12 @@ describe('EcommercePortalSettings public link cutover', () => {
   it('shows, opens and encodes the standalone public URL in the QR', async () => {
     await renderPortal();
     const openStoreLinks = screen.getAllByRole('link', { name: 'Abrir tienda' });
-    expect(openStoreLinks).toHaveLength(2);
+    expect(openStoreLinks).toHaveLength(1);
     for (const link of openStoreLinks) {
       expect(link).toHaveAttribute('href', publicStoreUrl);
       expect(link).toHaveClass('btn', 'btn-secondary');
     }
+    openSharingOptions();
     expect(screen.getByRole('img', { name: 'Codigo QR de la tienda' }))
       .toHaveAttribute('data-qr-value', publicStoreUrl);
   });
@@ -107,6 +110,7 @@ describe('EcommercePortalSettings public link cutover', () => {
 
   it('shares the standalone public URL through navigator.share', async () => {
     await renderPortal();
+    openSharingOptions();
     fireEvent.click(screen.getByRole('button', { name: 'Compartir' }));
     await waitFor(() => expect(navigator.share).toHaveBeenCalledWith(expect.objectContaining({
       url: publicStoreUrl
@@ -116,12 +120,14 @@ describe('EcommercePortalSettings public link cutover', () => {
   it('falls back to clipboard when navigator.share is unavailable', async () => {
     Object.defineProperty(navigator, 'share', { configurable: true, value: undefined });
     await renderPortal();
+    openSharingOptions();
     fireEvent.click(screen.getByRole('button', { name: 'Compartir' }));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(publicStoreUrl));
   });
 
   it('includes the standalone public URL in the WhatsApp text', async () => {
     await renderPortal();
+    openSharingOptions();
     const href = screen.getByRole('link', { name: 'WhatsApp' }).getAttribute('href');
     expect(new URL(href).origin).toBe('https://wa.me');
     expect(new URL(href).searchParams.get('text')).toContain(publicStoreUrl);

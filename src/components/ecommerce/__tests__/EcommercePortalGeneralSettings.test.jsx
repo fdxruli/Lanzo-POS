@@ -175,6 +175,7 @@ describe('EcommercePortalGeneralSettings authoritative plan parity', () => {
     expect(slug).toHaveValue('mi-tienda-personalizada');
     expect(slug).toBeDisabled();
     expect(screen.getByText('Personalizar este enlace está disponible con Lanzo Nube.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Identidad y enlace'));
     fireEvent.click(screen.getByRole('button', { name: 'Ver beneficios' }));
     expect(onOpenNubeBenefits).toHaveBeenCalledTimes(1);
   });

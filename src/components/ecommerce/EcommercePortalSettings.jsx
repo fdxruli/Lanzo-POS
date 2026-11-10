@@ -1,14 +1,14 @@
 import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { UNSAFE_DataRouterContext } from 'react-router-dom';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
   Cloud,
-  ExternalLink,
   Eye,
   EyeOff,
-  Globe2,
   LoaderCircle,
   Lock,
   PackagePlus,
@@ -129,11 +129,11 @@ const portalCustomization = (portal) => ({
 });
 
 const portalForm = (portal, profile) => ({
-  name: portal?.name || profile?.name || '',
+  name: portal?.name || (!portal ? profile?.name : '') || '',
   headline: portal?.headline || '',
   description: portal?.description || '',
-  whatsappPhone: portal?.whatsappPhone || profile?.phone || '',
-  contactEmail: portal?.contactEmail || profile?.email || '',
+  whatsappPhone: portal?.whatsappPhone || (!portal ? profile?.phone : '') || '',
+  contactEmail: portal?.contactEmail || (!portal ? profile?.email : '') || '',
   addressStreet: portal?.addressStreet || '',
   addressNeighborhood: portal?.addressNeighborhood || '',
   addressMunicipality: portal?.addressMunicipality || '',
@@ -236,49 +236,118 @@ function BusinessCapabilityReviewBanner({ products }) {
 }
 
 function PublicationBadge({ product }) {
-  const capability = product.businessCapabilityStatus || product.publicConfigurationMode;
-  const isIncompatible = capability === 'hidden_incompatible';
-  const requiresReview = capability === 'requires_review';
-  const isEligible = !isIncompatible && !requiresReview;
-
   return (
-    <span className="ecom-admin-product-statuses">
-      <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
-        {product.isPublished ? 'Publicado' : 'No publicado'}
-      </span>
-      <span className={`ecom-admin-mini-status ${isEligible ? 'is-eligible' : 'is-blocked'}`}>
-        {isIncompatible ? 'Incompatible' : requiresReview ? 'Requiere revisión' : 'Elegible'}
-      </span>
+    <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
+      {product.isPublished ? 'Publicado' : 'Despublicado'}
     </span>
   );
 }
 
-function StoreHealth({ portal, requirements, products, operations }) {
+const needsCatalogAttention = (product, stockById, canSyncCatalog) => (
+  Boolean(STOCK_WARNING_COPY[stockById.get(String(product.id))?.status] && product.isPublished)
+  || ['requires_review', 'hidden_incompatible'].includes(
+    product.businessCapabilityStatus || product.publicConfigurationMode
+  )
+  || (canSyncCatalog && ['review', 'error'].includes(product.syncStatus))
+);
+
+export const filterPublicCatalog = (products, search, status, stockById, canSyncCatalog) => {
+  const query = search.trim().toLocaleLowerCase('es-MX');
+  return products.filter((product) => {
+    if (status === 'published' && !product.isPublished) return false;
+    if (status === 'hidden' && product.isPublished) return false;
+    if (status === 'attention' && !needsCatalogAttention(product, stockById, canSyncCatalog)) return false;
+    return !query || [
+      product.publicName, product.categoryName, product.description
+    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query));
+  });
+};
+
+function PortalLeaveGuard({ informationDirty, catalogDirty }) {
+  useNavigationGuard({
+    enabled: informationDirty || catalogDirty,
+    title: '¿Salir sin guardar?',
+    message: informationDirty && catalogDirty
+      ? 'Tienes cambios sin guardar en Información y Catálogo.'
+      : catalogDirty
+        ? 'Tienes cambios sin guardar en un producto del Catálogo.'
+        : 'Tienes cambios en Información que todavía no se han guardado.',
+    confirmButtonText: 'Salir sin guardar',
+    cancelButtonText: 'Continuar editando'
+  });
+  return null;
+}
+
+function StoreHealth({ portal, requirements, products, operations, hasUnsavedChanges, onNavigate }) {
   const eligiblePublished = products.some((product) => (
     product.isPublished
     && !['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
     && !['requires_review', 'hidden_incompatible'].includes(product.publicConfigurationMode)
   ));
-  const checks = [
-    ['WhatsApp válido', requirements.whatsapp],
-    ['Dirección completa', requirements.street && requirements.neighborhood && requirements.municipality && requirements.state && requirements.postalCode],
-    ['Horarios configurados', portal?.businessHoursEnabled !== true || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true)],
-    ['Catálogo elegible', eligiblePublished],
-    ['Tienda publicada', portal?.status === 'published'],
-    ['Pedidos activos', portal?.ordersPaused !== true]
+  const addressComplete = requirements.street && requirements.neighborhood
+    && requirements.municipality && requirements.state && requirements.postalCode;
+  const hoursReady = portal.businessHoursEnabled !== true
+    || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true);
+  const problems = [
+    ...(!requirements.whatsapp
+      ? [{ category: 'Preparación', label: 'Falta un WhatsApp válido', section: 'information' }]
+      : []),
+    ...(!addressComplete
+      ? [{ category: 'Preparación', label: 'Completa la dirección', section: 'information' }]
+      : []),
+    ...(!hoursReady
+      ? [{ category: 'Operación', label: 'Revisa los horarios', section: 'operation' }]
+      : []),
+    ...(!eligiblePublished
+      ? [{ category: 'Catálogo', label: 'No hay productos publicados elegibles', section: 'catalog' }]
+      : []),
+    ...(portal.status === 'published' && portal.ordersPaused === true
+      ? [{ category: 'Operación', label: 'Los pedidos están pausados', section: 'operation' }]
+      : [])
   ];
-
+  const statusLabel = STATUS_LABELS[portal.status] || portal.status;
+  const summary = problems.length > 0
+    ? `${problems.length} ${problems.length === 1 ? 'aspecto por revisar' : 'aspectos por revisar'}`
+    : portal.status === 'published'
+      ? 'Sin pendientes detectados'
+      : portal.status === 'paused'
+        ? 'No recibe pedidos'
+        : portal.status === 'draft'
+          ? 'Aún sin publicar'
+          : 'Sin pendientes de preparación';
   return (
-    <section className="ecom-admin-store-health" aria-label="Estado de la tienda">
-      <strong>Salud de la tienda</strong>
-      <div>
-        {checks.map(([label, complete]) => (
-          <span key={label} className={complete ? 'is-complete' : 'is-pending'}>
-            <CheckCircle2 size={15} aria-hidden="true" /> {label}
+    <div className="ecom-info-health" aria-label="Estado de la tienda">
+      <details>
+        <summary>
+          <span className="ecom-info-health__summary">
+            <span className={`ecom-admin-status status-${portal.status}`}>{statusLabel}</span>
+            <span>{summary}</span>
+            {hasUnsavedChanges && <span className="ecom-info-health__draft">Cambios sin guardar</span>}
           </span>
-        ))}
-      </div>
-    </section>
+          <span className="ecom-info-health__toggle">Ver detalles</span>
+        </summary>
+        <ul>
+          {problems.length === 0 && <li><span>Sin aspectos pendientes en los datos confirmados.</span></li>}
+          {problems.map((issue) => (
+            <li key={issue.label}>
+              <span><strong>{issue.category}</strong> · {issue.label}</span>
+              <button type="button" onClick={() => onNavigate(issue.section)}>Revisar</button>
+            </li>
+          ))}
+          {!(portal.status === 'published' && portal.ordersPaused === true) && (
+            <li>
+              <span><strong>Pedidos</strong> · {portal.status === 'published'
+                ? 'Activos'
+                : 'No disponibles mientras la tienda no esté publicada'}</span>
+              {portal.status === 'published' && (
+                <button type="button" onClick={() => onNavigate('operation')}>Revisar</button>
+              )}
+            </li>
+          )}
+          {hasUnsavedChanges && <li><span>Los cambios locales no están incluidos en este estado.</span></li>}
+        </ul>
+      </details>
+    </div>
   );
 }
 
@@ -317,9 +386,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     typeof navigator === 'undefined' || navigator.onLine !== false
   ));
   const [form, setForm] = useState(() => portalForm(null, companyProfile));
+  const [savedForm, setSavedForm] = useState(() => portalForm(null, companyProfile));
   const [products, setProducts] = useState([]);
   const [busyProductId, setBusyProductId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalDirty, setModalDirty] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [openingCatalog, setOpeningCatalog] = useState(false);
   const [searchingCatalog, setSearchingCatalog] = useState(false);
@@ -333,6 +404,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [activeSection, setActiveSection] = useState('information');
   usePublishBotScreen('/portal-online', activeSection);
   const [productSearch, setProductSearch] = useState('');
+  const [productFilter, setProductFilter] = useState('all');
   const nubeBenefitsHeadingRef = useRef(null);
   const focusNubeBenefitsAfterNavigationRef = useRef(false);
   const catalogRequestSeqRef = useRef(0);
@@ -346,6 +418,20 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const localCatalogSearchTermRef = useRef('');
   const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
+  const dataRouterContext = useContext(UNSAFE_DataRouterContext);
+  const hasUnsavedChanges = Object.keys(form).some((key) => form[key] !== savedForm[key]);
+  const unsavedChangesRef = useRef(false);
+  unsavedChangesRef.current = hasUnsavedChanges || (modalOpen && modalDirty);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || typeof window === 'undefined') return undefined;
+    const warnBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const authorizationPending = isLicenseInitializing
     || currentDeviceRole === null
@@ -439,17 +525,19 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setActiveSection(nextId);
     document.getElementById(`ecom-portal-tab-${nextId}`)?.focus();
   };
-  const publicationRequirements = {
-    whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
-    street: form.addressStreet.trim().length > 0,
-    neighborhood: form.addressNeighborhood.trim().length > 0,
+  const requirementsFor = (candidate) => ({
+    whatsapp: candidate.whatsappPhone.replace(/\D/g, '').length >= 8,
+    street: candidate.addressStreet.trim().length > 0,
+    neighborhood: candidate.addressNeighborhood.trim().length > 0,
     municipality: (
-      form.addressMunicipality.trim().length >= 2
-      && !UNKNOWN_ADDRESS_PART_PATTERN.test(form.addressMunicipality.trim())
+      candidate.addressMunicipality.trim().length >= 2
+      && !UNKNOWN_ADDRESS_PART_PATTERN.test(candidate.addressMunicipality.trim())
     ),
-    state: form.addressState.trim().length > 0,
-    postalCode: POSTAL_CODE_PATTERN.test(form.addressPostalCode.trim())
-  };
+    state: candidate.addressState.trim().length > 0,
+    postalCode: POSTAL_CODE_PATTERN.test(candidate.addressPostalCode.trim())
+  });
+  const publicationRequirements = requirementsFor(form);
+  const persistedRequirements = portal ? requirementsFor(portalForm(portal, null)) : null;
   const linkedRefs = useMemo(
     () => new Set(products.map((item) => item.localProductRef).filter(Boolean)),
     [products]
@@ -460,16 +548,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       result
     ])
   ), [stockSnapshot]);
-  const filteredProducts = useMemo(() => {
-    const query = productSearch.trim().toLocaleLowerCase('es-MX');
-    if (!query) return products;
-
-    return products.filter((product) => [
-      product.publicName,
-      product.categoryName,
-      product.description
-    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query)));
-  }, [productSearch, products]);
+  const filteredProducts = useMemo(() => filterPublicCatalog(
+    products, productSearch, productFilter, stockByPublishedProductId, canSyncCatalog
+  ), [products, productSearch, productFilter, stockByPublishedProductId, canSyncCatalog]);
 
   const evaluateStock = useCallback(async ({
     nextPortal,
@@ -513,7 +594,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     if (typeof result.plan?.code === 'string' && isPlainObject(result.features)) {
       setConfirmedPlanContext({ plan: result.plan, features: result.features });
     }
-    setForm(portalForm(nextPortal, companyProfile));
+    const loadedForm = portalForm(nextPortal, companyProfile);
+    setForm(loadedForm);
+    setSavedForm(loadedForm);
     setOperations(result);
 
     try {
@@ -531,7 +614,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   }, [companyProfile, evaluateStock, loadProducts]);
 
   useEffect(() => {
-    if (authorizationPending || !canManageEcommercePortal) return;
+    if (authorizationPending || !canManageEcommercePortal || unsavedChangesRef.current) return;
     void load();
   }, [authorizationPending, canManageEcommercePortal, load]);
 
@@ -544,7 +627,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     };
     const handleOnline = () => {
       setIsOnline(true);
-      if (!authorizationPending && canManageEcommercePortal) void load();
+      if (!authorizationPending && canManageEcommercePortal && !unsavedChangesRef.current) void load();
     };
 
     window.addEventListener('offline', handleOffline);
@@ -629,7 +712,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const savePortal = async (
     candidate,
     successMessage,
-    { validate = true, syncFormOnSuccess = true } = {}
+    { validate = true, syncFormOnSuccess = true, statusOnly = false } = {}
   ) => {
     const validationError = validate ? validatePortal(candidate) : null;
     if (validationError) return toast.error(validationError);
@@ -657,22 +740,22 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     const canPersistLogoThroughPortal = !portal || !canUseAdvancedBranding;
     const canPersistCoverThroughPortal = !portal && canUseAdvancedBranding;
 
-    if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
+    if (!statusOnly && canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
       const logoUrl = publicUrl(logo.value);
       if (!logoUrl) return toast.error('El logo seleccionado no tiene una URL pública válida. Intenta subirlo nuevamente.');
       payload.logoUrl = logoUrl;
-    } else if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
+    } else if (!statusOnly && canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
       payload.logoUrl = null;
-    } else if (!portal) {
+    } else if (!portal && !statusOnly) {
       const initialLogo = publicUrl(candidate.logoUrl);
       if (initialLogo) payload.logoUrl = initialLogo;
     }
 
-    if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
+    if (!statusOnly && canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
       if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
       payload.coverImageUrl = coverImageUrl;
-    } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
+    } else if (!statusOnly && canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
     }
 
@@ -692,7 +775,15 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPortal(nextPortal);
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
-    if (syncFormOnSuccess) setForm(portalForm(nextPortal, companyProfile));
+    if (statusOnly) {
+      // Only the confirmed status changes; preserve all edits and the saved baseline.
+      setForm((current) => ({ ...current, status: nextPortal.status }));
+      setSavedForm((current) => ({ ...current, status: nextPortal.status }));
+    } else if (syncFormOnSuccess) {
+      const persistedForm = portalForm(nextPortal, companyProfile);
+      setForm(persistedForm);
+      setSavedForm(persistedForm);
+    }
     if (!portal || !canUseAdvancedBranding) setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
@@ -706,6 +797,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   const submitPortal = async (event) => {
     event.preventDefault();
+    if (savingPortal) return;
+    if (activeSection !== 'information' && hasUnsavedChanges) {
+      toast.error('Guarda los cambios de Información antes de guardar el diseño.');
+      return;
+    }
     await savePortal(
       form,
       portal ? 'Portal actualizado correctamente.' : 'Portal online creado correctamente.'
@@ -713,6 +809,20 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   };
 
   const changeStatus = async (status) => {
+    if (savingPortal || !portal) return;
+    if (status === 'paused' && portal.status === 'published') {
+      // The existing upsert writes complete fields; never use the mutable form to pause.
+      await savePortal(
+        { ...portalForm(portal, null), status: 'paused' },
+        'Portal pausado.',
+        { validate: false, statusOnly: true, syncFormOnSuccess: false }
+      );
+      return;
+    }
+    if (hasUnsavedChanges) {
+      toast.error('Guarda los cambios de Información antes de publicar.');
+      return;
+    }
     const next = { ...form, status };
     const validationError = validatePortal(next);
     if (validationError) {
@@ -720,11 +830,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       toast.error(validationError);
       return;
     }
-    setForm(next);
-    await savePortal(
-      next,
-      status === 'published' ? 'Portal publicado.' : 'Portal pausado.'
-    );
+    await savePortal(next, 'Portal publicado.');
   };
 
   const copyLink = async () => {
@@ -763,7 +869,15 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setOperations((current) => ({ ...current, ...result }));
     if (result?.portal) {
       setPortal(result.portal);
-      setForm(portalForm(result.portal, companyProfile));
+      if (unsavedChangesRef.current) {
+        // Keep the draft when operation settings update the portal in another tab.
+        setForm((current) => ({ ...current, status: result.portal.status }));
+        setSavedForm((current) => ({ ...current, status: result.portal.status }));
+      } else {
+        const updatedForm = portalForm(result.portal, companyProfile);
+        setForm(updatedForm);
+        setSavedForm(updatedForm);
+      }
     }
   };
 
@@ -876,6 +990,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setSearchingCatalog(false);
     setLoadingMoreCatalog(false);
     setModalOpen(false);
+    setModalDirty(false);
   }, []);
 
   const openNewProduct = async () => {
@@ -935,9 +1050,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       toast.error(result.message);
       return false;
     }
-    await refreshAfterProductMutation('published-product-saved');
-    requestCatalogSync([payload.localProductRef], 'published-product-saved');
-    toast.success(payload.id ? 'Producto actualizado.' : 'Producto publicado.');
+
+    // Persistence succeeded. Failures below must not invite a second write.
+    let refreshFailed = false;
+    let syncRequestFailed = false;
+    try {
+      await refreshAfterProductMutation('published-product-saved');
+    } catch {
+      refreshFailed = true;
+    }
+    try {
+      requestCatalogSync([payload.localProductRef], 'published-product-saved');
+    } catch {
+      syncRequestFailed = true;
+    }
+    if (refreshFailed) {
+      toast.error('Producto guardado, pero no se pudieron actualizar la lista o los indicadores. Recarga la página para consultar los datos recientes.');
+    }
+    if (syncRequestFailed) {
+      toast.error('Producto guardado, pero no se pudo solicitar la sincronización del catálogo.');
+    }
+    if (!refreshFailed && !syncRequestFailed) {
+      toast.success(payload.id ? 'Producto actualizado.' : 'Producto publicado.');
+    }
     return true;
   };
 
@@ -946,12 +1081,38 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       return toast.error('Llegaste al límite de productos publicados de tu plan.');
     }
     setBusyProductId(product.id);
-    const result = await setProductPublished(product.id, !product.isPublished);
-    setBusyProductId(null);
+    let result;
+    try {
+      result = await setProductPublished(product.id, !product.isPublished);
+    } catch {
+      toast.error('No se pudo cambiar la publicación del producto.');
+      return;
+    } finally {
+      setBusyProductId(null);
+    }
     if (!result.success) return toast.error(result.message);
-    await refreshAfterProductMutation('published-product-toggled');
-    requestCatalogSync([product.localProductRef], 'published-product-toggled');
-    toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
+
+    let refreshFailed = false;
+    let syncRequestFailed = false;
+    try {
+      await refreshAfterProductMutation('published-product-toggled');
+    } catch {
+      refreshFailed = true;
+    }
+    try {
+      requestCatalogSync([product.localProductRef], 'published-product-toggled');
+    } catch {
+      syncRequestFailed = true;
+    }
+    if (refreshFailed) {
+      toast.error('Publicación actualizada, pero no se pudieron refrescar la lista o los indicadores. Recarga la página para consultar los datos recientes.');
+    }
+    if (syncRequestFailed) {
+      toast.error('Publicación actualizada, pero no se pudo solicitar la sincronización del catálogo.');
+    }
+    if (!refreshFailed && !syncRequestFailed) {
+      toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
+    }
   };
 
   if (authorizationPending) return <StateMessage />;
@@ -968,33 +1129,22 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   return (
     <div className="ecom-admin-page">
-      <header className="ecom-admin-workspace-header">
-        <div>
-          <span className="ecom-admin-kicker">
-            <Globe2 size={16} /> Portal online
-          </span>
-          <h2>{portal?.name || companyProfile?.name || 'Tu tienda'}</h2>
-          <p>Administra el catálogo y la operación de tu tienda.</p>
-        </div>
-        {portal && (
-          <div className="ecom-admin-workspace-actions">
-            <span className={`ecom-admin-status status-${portal.status}`}>
-              {STATUS_LABELS[portal.status] || portal.status}
-            </span>
-            <a
-              className="btn btn-secondary ecom-admin-open-store"
-              href={reservedLink}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink size={17} />
-              <span>Abrir tienda</span>
-            </a>
-          </div>
-        )}
-      </header>
-
-      {portal && <StoreHealth portal={portal} requirements={publicationRequirements} products={products} operations={operations} />}
+      {dataRouterContext && (
+        <PortalLeaveGuard
+          informationDirty={hasUnsavedChanges}
+          catalogDirty={modalOpen && modalDirty}
+        />
+      )}
+      {portal && (
+        <StoreHealth
+          portal={portal}
+          requirements={persistedRequirements}
+          products={products}
+          operations={operations}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onNavigate={setActiveSection}
+        />
+      )}
 
       <nav
         className="ecom-admin-section-nav tabs-container"
@@ -1041,6 +1191,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           onFieldChange={updateForm}
           onSubmit={submitPortal}
           saving={savingPortal}
+          hasUnsavedChanges={hasUnsavedChanges}
           reservedLink={reservedLink}
           onCopyLink={copyLink}
           onShareLink={shareLink}
@@ -1185,19 +1336,17 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         >
           <section
             id="ecommerce-published-products"
-            className="ui-card ecom-admin-products-card"
+            className="ui-card ecom-admin-products-card ecom-catalog-products"
             tabIndex={-1}
             aria-label="Productos publicados en portal"
           >
-        <div className="ecom-admin-card-heading">
+        <div className="ecom-catalog-heading">
           <div>
-            <span className="ecom-admin-eyebrow">Catálogo</span>
-            <h3>Productos publicados</h3>
+            <h3>Catálogo de la tienda</h3>
             <p>
               {hasUnlimitedPublishedProducts
                 ? `${publishedCount} productos publicados`
                 : `${publishedCount} / ${maxProducts} productos publicados`}
-              {stockLoading ? ' · Verificando stock...' : ''}
             </p>
           </div>
           <button
@@ -1212,113 +1361,138 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             {' '}Publicar producto
           </button>
         </div>
+        {stockLoading && (
+          <p className="ecom-catalog-stock-check" role="status">
+            <RefreshCw className="ecom-admin-spin" size={15} aria-hidden="true" />
+            Verificando inventario…
+          </p>
+        )}
 
-        <label className="ecom-admin-product-search">
-          <Search size={19} aria-hidden="true" />
-          <span className="sr-only">Buscar productos publicados</span>
-          <input
-            type="search"
-            value={productSearch}
-            onChange={(event) => setProductSearch(event.target.value)}
-            placeholder="Buscar productos"
-          />
-        </label>
+        <div className="ecom-catalog-tools">
+          <label className="ecom-admin-product-search">
+            <Search size={19} aria-hidden="true" />
+            <span className="sr-only">Buscar productos publicados</span>
+            <input
+              type="search"
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+              placeholder="Buscar productos"
+            />
+          </label>
+          <div className="ecom-catalog-filters" role="group" aria-label="Filtrar productos">
+            {[
+              ['all', 'Todos'],
+              ['published', 'Publicados'],
+              ['hidden', 'Ocultos'],
+              ['attention', 'Requieren atención']
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={productFilter === value}
+                onClick={() => setProductFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {products.length === 0 ? (
           <div className="ecom-admin-products-empty">
-            <PackagePlus size={30} />
-            <strong>Aun no hay productos en el portal</strong>
-            <span>Elige productos del catalogo local y crea un snapshot publico controlado.</span>
+            <PackagePlus size={28} />
+            <strong>Aún no hay productos en la tienda</strong>
+            <span>Publica un producto del catálogo local para comenzar.</span>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="ecom-admin-products-empty">
-            <Search size={30} />
+            <Search size={28} />
             <strong>No encontramos productos</strong>
-            <span>Prueba con otro nombre o categoría.</span>
+            <span>Prueba con otra búsqueda o filtro.</span>
           </div>
         ) : (
-          <div className="ecom-admin-product-list">
+          <div className="ecom-catalog-list">
             {filteredProducts.map((product) => {
               const stockResult = product.isPublished
                 ? stockByPublishedProductId.get(String(product.id))
                 : null;
               const warningText = STOCK_WARNING_COPY[stockResult?.status] || '';
+              const capabilityStatus = product.businessCapabilityStatus || product.publicConfigurationMode;
+              const requiresReview = capabilityStatus === 'requires_review';
+              const isIncompatible = capabilityStatus === 'hidden_incompatible';
+              const syncIssue = canSyncCatalog
+                && ['pending', 'review', 'error'].includes(product.syncStatus);
 
               return (
                 <article
                   key={product.id}
-                  className={[
-                    'ecom-admin-product',
-                    product.isPublished ? '' : 'is-hidden',
-                    warningText ? 'has-stock-warning' : ''
-                  ].filter(Boolean).join(' ')}
+                  className={`ecom-catalog-row${warningText || requiresReview || isIncompatible ? ' has-alert' : ''}`}
                 >
-                  <span className="ecom-admin-product-image">
-                    {product.imageUrl
-                      ? <img src={product.imageUrl} alt="" />
-                      : <Store size={22} />}
-                  </span>
-                  <div>
-                    <div>
+                  <div className="ecom-catalog-row-main">
+                    <span className="ecom-admin-product-image">
+                      {product.imageUrl
+                        ? <img src={product.imageUrl} alt="" loading="lazy" decoding="async" />
+                        : <Store size={22} />}
+                    </span>
+                    <div className="ecom-catalog-row-info">
                       <strong>{product.publicName}</strong>
-                      <PublicationBadge product={product} />
-                      {canSyncCatalog && (
-                        <EcommerceCatalogSyncBadge status={product.syncStatus} />
+                      <span className="ecom-catalog-row-price">${numberOr(product.price).toFixed(2)}</span>
+                      <small>{product.categoryName || 'Sin categoría'}</small>
+                      <div className="ecom-catalog-row-statuses">
+                        <PublicationBadge product={product} />
+                        {(product.isAvailable === false || product.manualAvailable === false) && (
+                          <span className="ecom-admin-mini-status is-blocked">No disponible</span>
+                        )}
+                        {syncIssue && <EcommerceCatalogSyncBadge status={product.syncStatus} />}
+                      </div>
+                      {warningText && (
+                        <span className={`ecom-admin-stock-warning status-${stockResult.status}`} role="status">
+                          <AlertTriangle size={15} aria-hidden="true" />
+                          {warningText}
+                        </span>
+                      )}
+                      {(requiresReview || isIncompatible) && (
+                        <span className="ecom-admin-stock-warning status-unverified" role="status">
+                          <AlertTriangle size={15} aria-hidden="true" />
+                          {isIncompatible ? 'Incompatible con el rubro' : 'Requiere revisión'}
+                          {product.businessCapabilityReason ? ` · ${product.businessCapabilityReason}` : ''}
+                        </span>
                       )}
                     </div>
-                    {warningText && (
-                      <span
-                        className={`ecom-admin-stock-warning status-${stockResult.status}`}
-                        role="status"
-                        aria-label={warningText}
-                      >
-                        <AlertTriangle size={15} aria-hidden="true" />
-                        {warningText}
-                      </span>
-                    )}
-                    {product.businessCapabilityStatus === 'requires_review' && (
-                      <span className="ecom-admin-stock-warning status-unverified" role="status">
-                        <AlertTriangle size={15} aria-hidden="true" />
-                        Requiere revisión
-                        {product.businessCapabilityReason
-                          ? ` · ${product.businessCapabilityReason}`
-                          : ''}
-                      </span>
-                    )}
-                    <span>
-                      {product.categoryName || 'Sin categoria'} · ${numberOr(product.price).toFixed(2)}
-                    </span>
-                    <small>
-                      {product.isAvailable ? 'Disponible' : 'No disponible'}
-                      {' · '}Manual: {product.manualAvailable === false ? 'desactivado' : 'activo'}
-                      {' · '}Orden {product.displayOrder || 0}
-                    </small>
                   </div>
-                  <div className="ecom-admin-product-actions">
+                  <div className="ecom-catalog-row-actions">
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="btn btn-secondary"
                       onClick={() => openEditProduct(product)}
-                      title="Editar"
+                      disabled={busyProductId === product.id}
                       aria-label={`Editar ${product.publicName}`}
                     >
-                      <Pencil size={18} />
+                      <Pencil size={16} aria-hidden="true" /> Editar
                     </button>
                     <button
                       type="button"
-                      className="ecom-admin-icon-button"
+                      className="btn btn-secondary"
                       onClick={() => toggleProduct(product)}
-                      disabled={busyProductId === product.id}
-                      title={product.isPublished ? 'Despublicar' : 'Publicar'}
+                      disabled={busyProductId === product.id || (!product.isPublished && limitReached)}
                       aria-label={`${product.isPublished ? 'Despublicar' : 'Publicar'} ${product.publicName}`}
                     >
                       {busyProductId === product.id
-                        ? <LoaderCircle className="ecom-admin-spin" size={18} />
-                        : product.isPublished
-                          ? <EyeOff size={18} />
-                          : <Eye size={18} />}
+                        ? <LoaderCircle className="ecom-admin-spin" size={16} />
+                        : product.isPublished ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {product.isPublished ? 'Despublicar' : 'Publicar'}
                     </button>
                   </div>
+                  <details className="ecom-catalog-row-detail">
+                    <summary>Más detalles de este producto</summary>
+                    <div>
+                      <span>Disponibilidad manual: {product.manualAvailable === false ? 'Desactivada' : 'Activa'}</span>
+                      <span>Orden: {product.displayOrder || 0}</span>
+                      {canSyncCatalog && !syncIssue && (
+                        <EcommerceCatalogSyncBadge status={product.syncStatus} />
+                      )}
+                    </div>
+                  </details>
                 </article>
               );
             })}
@@ -1378,6 +1552,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         onLoadMoreLocalProducts={loadMoreLocalProducts}
         onClose={closeProductModal}
         onSave={saveProduct}
+        onDirtyChange={setModalDirty}
       />
     </div>
   );

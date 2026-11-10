@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link2, LoaderCircle, Save, Search, Unlink, X } from 'lucide-react';
+import { ChevronDown, Link2, LoaderCircle, Save, Search, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getEcommercePortal } from '../../services/ecommerce/ecommerceAdminService';
 import { useAppStore } from '../../store/useAppStore';
@@ -49,6 +49,13 @@ const emptyForm = {
   wholesaleEnabled: false,
   syncConfig: MANUAL_SYNC_CONFIG
 };
+
+const formFingerprint = (value) => JSON.stringify([
+  value.localProductRef, value.publicName, value.publicDescription, value.price,
+  value.categoryName, value.isAvailable, value.isPublished, value.displayOrder,
+  value.imageUrl, value.stockMode, value.publicConfigurationMode,
+  value.wholesaleEnabled, value.syncConfig
+]);
 
 const safeNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -109,7 +116,8 @@ export default function EcommerceProductPublishModal({
   onSearchLocalProducts,
   onLoadMoreLocalProducts,
   onClose,
-  onSave
+  onSave,
+  onDirtyChange
 }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -119,6 +127,8 @@ export default function EcommerceProductPublishModal({
   const [localProductSearch, setLocalProductSearch] = useState('');
   const [selectedProductSnapshot, setSelectedProductSnapshot] = useState(null);
   const initializedModalKeyRef = useRef(null);
+  const initialFormRef = useRef(emptyForm);
+  const savingRef = useRef(false);
   const hasUserSearchedRef = useRef(false);
   const companyProfile = useAppStore((state) => state.companyProfile);
 
@@ -191,11 +201,13 @@ export default function EcommerceProductPublishModal({
 
     if (!editingProduct) {
       setSelectedProductSnapshot(null);
-      setForm({
+      const nextForm = {
         ...emptyForm,
         isPublished: !limitReached,
         syncConfig: canSyncCatalog ? SOURCE_SYNC_CONFIG : MANUAL_SYNC_CONFIG
-      });
+      };
+      initialFormRef.current = nextForm;
+      setForm(nextForm);
       return;
     }
 
@@ -203,7 +215,7 @@ export default function EcommerceProductPublishModal({
       (product) => String(product.id) === String(editingProduct.localProductRef || '')
     ) || null;
     setSelectedProductSnapshot(linkedProduct);
-    setForm({
+    const nextForm = {
       id: editingProduct.id,
       localProductRef: editingProduct.localProductRef || '',
       publicName: editingProduct.publicName || '',
@@ -227,7 +239,9 @@ export default function EcommerceProductPublishModal({
       syncConfig: canSyncCatalog
         ? normalizeSyncConfig(editingProduct.syncConfig, MANUAL_SYNC_CONFIG)
         : MANUAL_SYNC_CONFIG
-    });
+    };
+    initialFormRef.current = nextForm;
+    setForm(nextForm);
   }, [canSyncCatalog, editingProduct, limitReached, localProducts, open]);
 
   useEffect(() => {
@@ -306,7 +320,28 @@ export default function EcommerceProductPublishModal({
     return () => { active = false; };
   }, [canUseStockVisibility, open]);
 
+  const isDirty = formFingerprint(form) !== formFingerprint(initialFormRef.current);
+  useEffect(() => {
+    onDirtyChange?.(open && isDirty);
+  }, [isDirty, onDirtyChange, open]);
+
+  useEffect(() => {
+    if (!open || !isDirty) return undefined;
+    const confirmUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', confirmUnload);
+    return () => window.removeEventListener('beforeunload', confirmUnload);
+  }, [open, isDirty]);
+
   if (!open) return null;
+
+  const requestClose = () => {
+    if (savingRef.current) return;
+    if (isDirty && !window.confirm('¿Descartar los cambios sin guardar de este producto?')) return;
+    onClose();
+  };
 
   const clearSelectedProduct = () => {
     setSelectedProductSnapshot(null);
@@ -368,6 +403,7 @@ export default function EcommerceProductPublishModal({
 
   const submit = async (event) => {
     event.preventDefault();
+    if (savingRef.current) return;
     const price = Number(form.price);
     const localProduct = selectedLocalProduct;
     if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
@@ -394,8 +430,11 @@ export default function EcommerceProductPublishModal({
       return toast.error('No hay niveles de mayoreo públicos válidos.');
     }
 
+    savingRef.current = true;
     setSaving(true);
-    const saved = await onSave({
+    let saved = false;
+    try {
+      saved = await onSave({
       id: form.id,
       sourceType: 'local_snapshot',
       localProductRef: form.localProductRef.trim(),
@@ -419,8 +458,13 @@ export default function EcommerceProductPublishModal({
       wholesaleEnabled: form.wholesaleEnabled,
       syncConfig: canSyncCatalog ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
       metadata: { source: 'admin_ui' }
-    });
-    setSaving(false);
+      });
+    } catch {
+      toast.error('No se pudo guardar el producto. Tus cambios siguen aquí.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
     if (saved) onClose();
   };
 
@@ -432,20 +476,23 @@ export default function EcommerceProductPublishModal({
   );
 
   return (
-    <div className="ecom-admin-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="ecom-admin-modal" role="dialog" aria-modal="true" aria-labelledby="ecom-product-title">
+    <div className="ecom-admin-modal-backdrop ecom-catalog-editor-backdrop" onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+      <section className="ecom-admin-modal ecom-catalog-editor" role="dialog" aria-modal="true" aria-labelledby="ecom-product-title">
         <header>
           <div>
-            <span className="ecom-admin-eyebrow">Catálogo público</span>
-            <h3 id="ecom-product-title">{editingProduct ? 'Editar producto publicado' : 'Publicar producto'}</h3>
+            <h3 id="ecom-product-title">{editingProduct ? 'Editar producto' : 'Publicar producto'}</h3>
+            <small>Catálogo de la tienda</small>
           </div>
-          <button type="button" className="ecom-admin-icon-button" onClick={onClose} aria-label="Cerrar">
+          <button type="button" className="ecom-admin-icon-button" onClick={requestClose} aria-label="Cerrar">
             <X size={20} />
           </button>
         </header>
 
-        <form onSubmit={submit}>
-          <div className="form-group ecom-admin-span-2">
+        <form onSubmit={submit} onInvalidCapture={(event) => {
+          const disclosure = event.target.closest('details');
+          if (disclosure) disclosure.open = true;
+        }}>
+          <div className="form-group ecom-admin-span-2 ecom-catalog-editor-origin">
             <label className="form-label" htmlFor="ecom-local-product-select">Producto del catálogo local *</label>
             <span className="ecom-admin-local-product-search">
               <Search size={16} aria-hidden="true" />
@@ -564,8 +611,14 @@ export default function EcommerceProductPublishModal({
           </div>
 
           {canSyncCatalog && (
-            <fieldset className="ecom-admin-sync-fields ecom-admin-span-2">
-              <legend>Vinculación con el producto local</legend>
+            <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+              <summary>
+                <span><Link2 size={17} /> Sincronización PRO</span>
+                <small>{Object.values(form.syncConfig).filter((mode) => mode === 'source').length} de 5 campos vinculados</small>
+                <ChevronDown size={18} aria-hidden="true" />
+              </summary>
+              <fieldset className="ecom-admin-sync-fields">
+                <legend>Vinculación con el producto local</legend>
               <label className="ecom-admin-sync-master">
                 <input
                   type="checkbox"
@@ -596,9 +649,13 @@ export default function EcommerceProductPublishModal({
                   );
                 })}
               </div>
-            </fieldset>
+              </fieldset>
+            </details>
           )}
 
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Datos para clientes</h4>
+          </div>
           <label className="form-group">
             <span className="form-label">Nombre público *</span>
             <input className="form-input" value={form.publicName} disabled={canSyncCatalog && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
@@ -611,15 +668,28 @@ export default function EcommerceProductPublishModal({
             <span className="form-label">Categoría pública</span>
             <input className="form-input" value={form.categoryName} disabled={canSyncCatalog && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
           </label>
-          <label className="form-group">
-            <span className="form-label">Orden</span>
-            <input className="form-input" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => setForm((current) => ({ ...current, displayOrder: event.target.value }))} />
-          </label>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Descripción pública</span>
-            <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={canSyncCatalog && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
-          </label>
+          <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+            <summary>
+              <span>Descripción y orden</span>
+              <small>Opciones adicionales</small>
+              <ChevronDown size={18} aria-hidden="true" />
+            </summary>
+            <div className="ecom-catalog-editor-detail-fields">
+              <label className="form-group">
+                <span className="form-label">Descripción pública</span>
+                <textarea className="form-textarea" rows={3} value={form.publicDescription} disabled={canSyncCatalog && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
+              </label>
+              <label className="form-group">
+                <span className="form-label">Orden</span>
+                <input className="form-input" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => setForm((current) => ({ ...current, displayOrder: event.target.value }))} />
+              </label>
+            </div>
+          </details>
 
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Disponibilidad y publicación</h4>
+            <p>Publicado controla si aparece en la tienda. La disponibilidad manual y el stock determinan si puede ofrecerse.</p>
+          </div>
           {canUseStockVisibility && (
             <label className="form-group ecom-admin-span-2">
               <span className="form-label">Visibilidad del inventario</span>
@@ -654,6 +724,15 @@ export default function EcommerceProductPublishModal({
             <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
             <label><input type="checkbox" checked={form.isPublished} onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))} disabled={!editingProduct && limitReached} /> Publicado</label>
           </div>
+          <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
+            <h4>Configuraciones comerciales</h4>
+          </div>
+          {businessPolicy.status === 'hidden_incompatible' && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Producto incompatible con el rubro actual</strong>
+              <span>No se puede publicar mientras mantenga esta incompatibilidad.</span>
+            </div>
+          )}
           {(businessPolicy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
             || form.publicConfigurationMode === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE) && (
             <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
@@ -677,8 +756,20 @@ export default function EcommerceProductPublishModal({
               </label>
             </div>
           )}
+          {form.wholesaleEnabled && !wholesalePreview.valid && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Revisa los niveles de mayoreo</strong>
+              <span>Hay niveles inválidos. Corrige la configuración de origen antes de guardar.</span>
+            </div>
+          )}
           {wholesalePreview.tiers.length > 0 && (
-            <div className="ecom-admin-span-2">
+            <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
+              <summary>
+                <span>Mayoreo</span>
+                <small>{form.wholesaleEnabled ? 'Visible en la tienda' : 'No publicado'}</small>
+                <ChevronDown size={18} aria-hidden="true" />
+              </summary>
+              <div className="ecom-catalog-editor-detail-fields">
               <label>
                 <input
                   type="checkbox"
@@ -709,7 +800,8 @@ export default function EcommerceProductPublishModal({
                   de publicarlos.
                 </small>
               )}
-            </div>
+              </div>
+            </details>
           )}
           {canUseStockVisibility && (
             <small className="ecom-admin-help ecom-admin-span-2">
@@ -717,8 +809,8 @@ export default function EcommerceProductPublishModal({
             </small>
           )}
 
-          <footer className="ecom-admin-span-2">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <footer className="ecom-admin-span-2 ecom-catalog-editor-footer">
+            <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={saving}>Cancelar</button>
             <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading || stockFeatureError}>
               {saving ? <LoaderCircle className="ecom-admin-spin" size={17} /> : <Save size={17} />}
               Guardar producto

@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, Link, MemoryRouter, RouterProvider } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import MessageModal from '../../common/MessageModal';
+import { useMessageStore } from '../../../store/useMessageStore';
+import { ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT } from '../../../services/ecommerce/ecommerceCatalogSyncService';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EcommercePortalSettings from '../EcommercePortalSettings';
 import { useAppStore } from '../../../store/useAppStore';
@@ -83,6 +87,18 @@ const productTwo = {
   trackStock: false,
   isActive: true
 };
+const publishedProduct = {
+  id: 'published-1',
+  localProductRef: productOne.id,
+  publicName: 'Producto Uno',
+  publicDescription: 'Descripción uno',
+  price: 25,
+  categoryName: 'General',
+  isPublished: true,
+  isAvailable: true,
+  manualAvailable: true
+};
+
 const staleProduct = {
   id: 'product-stale',
   name: 'Producto Stale',
@@ -181,6 +197,35 @@ const openPublishModal = async () => {
   await screen.findByRole('dialog', { name: 'Publicar producto' });
 };
 
+const preparePublishedEditor = async (response = freePortalResponse) => {
+  getEcommercePortal.mockResolvedValue(response);
+  listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+  productRepository.getProductById.mockResolvedValue(productOne);
+  await renderCatalog();
+  fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
+  await screen.findByRole('dialog', { name: 'Editar producto' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar producto' })).not.toBeDisabled());
+};
+
+const createCatalogRoute = () => {
+  useMessageStore.setState({ isOpen: false, message: '', onConfirm: null, options: {} });
+  const router = createMemoryRouter([
+    {
+      path: '/portal-online',
+      element: (
+        <>
+          <EcommercePortalSettings requestedSection="catalog" />
+          <Link to="/productos">Ir a Productos</Link>
+          <MessageModal />
+        </>
+      )
+    },
+    { path: '/productos', element: <div>Productos</div> }
+  ], { initialEntries: ['/portal-online'] });
+  rtlRender(<RouterProvider router={router} />);
+  return router;
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Reset the fixture-owned queues too: a failed test can leave a once-response unused.
@@ -202,6 +247,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   useAppStore.setState({
     currentDeviceRole: null,
     currentStaffUser: null,
@@ -356,6 +402,19 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByRole('button', { name: 'Cargar más resultados' }).disabled).toBe(false);
   });
 
+  it('closes an unchanged product editor without a discard confirmation', async () => {
+    await renderCatalog();
+    await openPublishModal();
+    const confirm = vi.spyOn(window, 'confirm');
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+      expect(confirm).not.toHaveBeenCalled();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
     await renderCatalog();
     await openPublishModal();
@@ -371,8 +430,21 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     await waitForCatalogRequest('pendiente', null, 2);
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
-    expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(confirm).toHaveBeenCalledWith('¿Descartar los cambios sin guardar de este producto?');
+      expect(screen.getByRole('dialog', { name: 'Publicar producto' })).toBeInTheDocument();
+      expect(getProductSelect().value).toBe(productOne.id);
+      expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+      confirm.mockReturnValue(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+    } finally {
+      confirm.mockRestore();
+    }
 
     productRepository.listProductsPage.mockResolvedValueOnce({
       data: [productTwo],
@@ -398,6 +470,131 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(getProductSelect().value).toBe('');
     expect(screen.queryByText('Cargando productos…')).toBeNull();
     expect(savePublishedProduct).not.toHaveBeenCalled();
+  });
+
+  it('guards a modified catalog product during React Router navigation, preserving the rejected draft', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockResolvedValue(productOne);
+    const router = createCatalogRoute();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Producto Uno' }));
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Nombre pendiente' }
+    });
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    expect(await screen.findByText('¿Salir sin guardar?')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/portal-online');
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(screen.getByLabelText('Nombre público *').value).toBe('Nombre pendiente');
+    expect(router.state.location.pathname).toBe('/portal-online');
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salir sin guardar' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+  });
+
+  it('allows React Router navigation with an unchanged catalog editor', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockResolvedValue(productOne);
+    const router = createCatalogRoute();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Producto Uno' }));
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+    expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
+  });
+
+  it('preserves the product draft and server error when saving is rejected', async () => {
+    await preparePublishedEditor();
+    const notifyError = vi.spyOn(toast, 'error');
+    const notifySuccess = vi.spyOn(toast, 'success');
+    savePublishedProduct.mockResolvedValue({ success: false, message: 'El servidor rechazó el producto.' });
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Cambio rechazado' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith('El servidor rechazó el producto.'));
+    expect(screen.getByRole('dialog', { name: 'Editar producto' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre público *').value).toBe('Cambio rechazado');
+    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+    expect(listPublishedProducts).toHaveBeenCalledTimes(1);
+    expect(notifySuccess).not.toHaveBeenCalled();
+  });
+
+  it('confirms a saved product after the catalog refresh succeeds', async () => {
+    await preparePublishedEditor();
+    const notifySuccess = vi.spyOn(toast, 'success');
+    savePublishedProduct.mockResolvedValue({ success: true });
+    listPublishedProducts.mockResolvedValueOnce({
+      success: true, products: [{ ...publishedProduct, publicName: 'Nombre confirmado' }]
+    });
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Nombre confirmado' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
+    expect(await screen.findByRole('button', { name: 'Editar Nombre confirmado' })).toBeInTheDocument();
+    expect(notifySuccess).toHaveBeenCalledWith('Producto actualizado.');
+    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows leaving without a catalog draft warning after a confirmed save', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockResolvedValue(productOne);
+    savePublishedProduct.mockResolvedValue({ success: true });
+    const router = createCatalogRoute();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Producto Uno' }));
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    fireEvent.change(screen.getByLabelText('Nombre público *'), {
+      target: { value: 'Cambio guardado' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+    expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
+    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not report an unpublish as failed when only catalog refresh fails', async () => {
+    getEcommercePortal.mockResolvedValue(freePortalResponse);
+    listPublishedProducts.mockResolvedValueOnce({ success: true, products: [publishedProduct] })
+      .mockResolvedValueOnce({ success: false, message: 'Actualización no disponible' });
+    setProductPublished.mockResolvedValue({ success: true });
+    const notifyError = vi.spyOn(toast, 'error');
+    const notifySuccess = vi.spyOn(toast, 'success');
+    await renderCatalog();
+    fireEvent.click(screen.getByRole('button', { name: 'Despublicar Producto Uno' }));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('Publicación actualizada, pero')));
+    expect(setProductPublished).toHaveBeenCalledTimes(1);
+    expect(notifySuccess).not.toHaveBeenCalled();
+  });
+
+  it('closes on confirmed save despite refresh failure and still requests PRO sync once', async () => {
+    await preparePublishedEditor(proPortalResponse);
+    const notifyError = vi.spyOn(toast, 'error');
+    const notifySuccess = vi.spyOn(toast, 'success');
+    const syncListener = vi.fn();
+    window.addEventListener(ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT, syncListener);
+    try {
+      savePublishedProduct.mockResolvedValue({ success: true });
+      listPublishedProducts.mockResolvedValueOnce({
+        success: false, message: 'La lista no se pudo consultar.'
+      });
+      fireEvent.change(screen.getByLabelText('Nombre público *'), {
+        target: { value: 'Cambio persistido' }
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
+      expect(notifyError).toHaveBeenCalledWith(expect.stringContaining('Producto guardado, pero'));
+      expect(notifySuccess).not.toHaveBeenCalled();
+      expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+      expect(syncListener).toHaveBeenCalledTimes(1);
+      expect(syncListener.mock.calls[0][0].detail).toEqual(expect.objectContaining({
+        productIds: [productOne.id], reason: 'published-product-saved'
+      }));
+    } finally {
+      window.removeEventListener(ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT, syncListener);
+    }
   });
 
   it('uses the cursor that belongs to the latest successful search term when loading more results', async () => {

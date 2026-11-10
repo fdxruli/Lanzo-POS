@@ -2,11 +2,13 @@
 import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, Link, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
 import { ecommerceCatalogSyncService } from '../../../services/ecommerce/ecommerceCatalogSyncService';
-import EcommercePortalSettings from '../EcommercePortalSettings';
+import EcommercePortalSettings, { filterPublicCatalog } from '../EcommercePortalSettings';
+import MessageModal from '../../common/MessageModal';
+import { useMessageStore } from '../../../store/useMessageStore';
 import {
   getEcommercePortal,
   listPublishedProducts,
@@ -524,7 +526,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByDisplayValue('contacto@example.com'), { target: { value: 'ventas@example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({ contactEmail: 'ventas@example.com' });
     ['templateCode', 'theme', 'logoUrl', 'coverImageUrl'].forEach((field) => expect(saveEcommercePortal.mock.calls[0][0]).not.toHaveProperty(field));
@@ -544,7 +546,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
     expect(screen.getByRole('tab', { name: 'Información' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByDisplayValue('Negocio de prueba')).toHaveAttribute('readonly');
+    expect(screen.queryByDisplayValue('Negocio de prueba')).toBeNull(); // Protected name is stored, not displayed.
     expect(screen.getByDisplayValue('529610000000')).not.toBeNull();
     expect(screen.getByDisplayValue('contacto@example.com')).not.toBeNull();
     expect(screen.getByDisplayValue('Calle pública 1')).not.toBeNull();
@@ -593,7 +595,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
       target: { value: 'VENTAS@EXAMPLE.COM' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
@@ -618,11 +620,12 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByDisplayValue('Centro'), {
       target: { value: 's/n' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar portal' }));
+    expect(screen.getByRole('button', { name: 'Publicar portal' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
-      status: 'published',
+      status: 'draft',
       addressStreet: 'S/N',
       addressNeighborhood: 's/n',
       addressMunicipality: 'Comitán de Domínguez',
@@ -723,6 +726,12 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByRole('button', { name: 'Despublicar Producto uno' })).toBeEnabled();
     expect(screen.queryByText('Haz crecer tu catálogo con Lanzo Nube')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Ver beneficios' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultos' }));
+    expect(screen.queryByRole('button', { name: 'Editar Producto uno' })).not.toBeInTheDocument();
+    expect(screen.getByText('No encontramos productos')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Publicados' }));
+    expect(screen.getByRole('button', { name: 'Editar Producto uno' })).toBeEnabled();
+    expect(listPublishedProducts).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Free design informational and does not save branding without an entitlement', async () => {
@@ -837,7 +846,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.change(screen.getByLabelText('Slug de la tienda'), {
       target: { value: 'negocio-pro-actualizado' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
@@ -850,4 +859,226 @@ describe('EcommercePortalSettings image intent payloads', () => {
     });
   });
 
+  it('does not mistake unsaved company-profile contact defaults for persisted portal data', async () => {
+    act(() => useAppStore.setState({
+      companyProfile: { name: 'Negocio de prueba', phone: '529611111111', email: 'perfil@example.com' }
+    }));
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: { ...existingPortal, whatsappPhone: null, contactEmail: null },
+      plan: { code: 'pro_monthly' },
+      features: proFeatures
+    });
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getByPlaceholderText('52 961 000 0000')).toHaveValue('');
+    expect(screen.getByPlaceholderText('contacto@negocio.com')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('52 961 000 0000'), {
+      target: { value: '529611111111' }
+    });
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+    expect(screen.getByLabelText('Estado de la tienda')).toHaveTextContent('Falta un WhatsApp válido');
+  });
+
+  it('pauses a published store using confirmed values and preserves a dirty draft for later saving', async () => {
+    const published = { ...existingPortal, status: 'published' };
+    const paused = { ...published, status: 'paused' };
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: published, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    saveEcommercePortal
+      .mockResolvedValueOnce({ success: true, portal: paused, features: proFeatures })
+      .mockResolvedValueOnce({
+        success: true,
+        portal: { ...paused, whatsappPhone: '529611234567' },
+        features: proFeatures
+      });
+
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByDisplayValue('529610000000'), {
+      target: { value: '529611234567' }
+    });
+    expect(screen.getByRole('button', { name: 'Pausar portal' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar portal' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar portal' })).toBeDisabled());
+    const pausePayload = saveEcommercePortal.mock.calls[0][0];
+    expect(pausePayload).toMatchObject({
+      status: 'paused',
+      whatsappPhone: '529610000000',
+      contactEmail: 'contacto@example.com',
+      addressStreet: 'Calle pública 1'
+    });
+    expect(pausePayload).not.toHaveProperty('logoUrl');
+    expect(pausePayload).not.toHaveProperty('coverImageUrl');
+    expect(screen.getByDisplayValue('529611234567')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estado de la tienda')).toHaveTextContent('Cambios sin guardar');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(2));
+    expect(saveEcommercePortal.mock.calls[1][0]).toMatchObject({
+      status: 'paused',
+      whatsappPhone: '529611234567'
+    });
+  });
+
+  it('keeps the published status and draft after a failed pause request', async () => {
+    const published = { ...existingPortal, status: 'published' };
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: published, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    saveEcommercePortal.mockRejectedValueOnce(new Error('Sin conexión'));
+
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByDisplayValue('529610000000'), {
+      target: { value: '529611234567' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar portal' }));
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pausar portal' })).toBeEnabled());
+    expect(screen.getByDisplayValue('529611234567')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estado de la tienda')).toHaveTextContent('Publicado');
+  });
+
+  it.each([
+    ['published', 'Publicado', 'Sin pendientes detectados'],
+    ['paused', 'Pausado', 'No recibe pedidos'],
+    ['draft', 'Borrador', 'Aún sin publicar']
+  ])('shows persisted health for %s separately from unsaved changes', async (status, label, summary) => {
+    const persisted = { ...existingPortal, status };
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: persisted, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    listPublishedProducts.mockResolvedValue({
+      success: true,
+      products: [{ id: 'published-fixture', isPublished: true, businessCapabilityStatus: 'eligible' }]
+    });
+    render(<EcommercePortalSettings />);
+    const health = await screen.findByLabelText('Estado de la tienda');
+    expect(health).toHaveTextContent(label);
+    expect(health).toHaveTextContent(summary);
+    fireEvent.change(screen.getByDisplayValue('529610000000'), {
+      target: { value: '123' }
+    });
+    expect(health).toHaveTextContent('Cambios sin guardar');
+    expect(health).toHaveTextContent(summary);
+    expect(health).not.toHaveTextContent('Falta un WhatsApp válido');
+  });
+
+  it('keeps an actual server-side health issue even when local edits look valid', async () => {
+    const persisted = { ...existingPortal, status: 'draft', whatsappPhone: null };
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: persisted, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    listPublishedProducts.mockResolvedValue({
+      success: true,
+      products: [{ id: 'published-fixture', isPublished: true, businessCapabilityStatus: 'eligible' }]
+    });
+    render(<EcommercePortalSettings />);
+    const health = await screen.findByLabelText('Estado de la tienda');
+    expect(health).toHaveTextContent('1 aspecto por revisar');
+    // A local correction cannot mark the persisted portal as ready.
+    fireEvent.change(screen.getByPlaceholderText('52 961 000 0000'), {
+      target: { value: '529610000000' }
+    });
+    expect(health).toHaveTextContent('1 aspecto por revisar');
+    expect(health).toHaveTextContent('Falta un WhatsApp válido');
+  });
+
+  it('guards exit to Productos and allows internal tab changes without losing the draft', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: existingPortal, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    useMessageStore.setState({ isOpen: false, message: '', onConfirm: null, options: {} });
+    const router = createMemoryRouter([
+      { path: '/portal-online', element: (
+        <>
+          <EcommercePortalSettings />
+          <Link to="/productos">Ir a Productos</Link>
+          <MessageModal />
+        </>
+      ) },
+      { path: '/productos', element: <div>Productos</div> }
+    ], { initialEntries: ['/portal-online'] });
+    rtlRender(<RouterProvider router={router} />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
+      target: { value: 'pendiente@example.com' }
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Información' }));
+    expect(screen.getByDisplayValue('pendiente@example.com')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    expect(await screen.findByText('¿Salir sin guardar?')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/portal-online');
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(screen.getByDisplayValue('pendiente@example.com')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salir sin guardar' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+  });
+
+  it('allows leaving without a warning after information is successfully saved', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true, portal: existingPortal, plan: { code: 'pro_monthly' }, features: proFeatures
+    });
+    saveEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: { ...existingPortal, contactEmail: 'guardado@example.com' },
+      features: proFeatures
+    });
+    useMessageStore.setState({ isOpen: false, message: '', onConfirm: null, options: {} });
+    const router = createMemoryRouter([
+      { path: '/portal-online', element: (
+        <>
+          <EcommercePortalSettings />
+          <Link to="/productos">Ir a Productos</Link>
+          <MessageModal />
+        </>
+      ) },
+      { path: '/productos', element: <div>Productos</div> }
+    ], { initialEntries: ['/portal-online'] });
+    rtlRender(<RouterProvider router={router} />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
+      target: { value: 'guardado@example.com' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Guardar cambios' })).toBeNull());
+    fireEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/productos'));
+    expect(screen.queryByText('¿Salir sin guardar?')).toBeNull();
+  });
+
+});
+
+describe('Portal catálogo: filtros locales sin mutar productos', () => {
+  const products = Object.freeze([
+    { id: 'p1', publicName: 'Leche', categoryName: 'Lácteos', isPublished: true, syncStatus: 'synced' },
+    { id: 'p2', publicName: 'Pan', categoryName: 'Panadería', isPublished: false, syncStatus: 'manual' },
+    { id: 'p3', publicName: 'Queso', categoryName: 'Lácteos', isPublished: true, syncStatus: 'error' },
+    { id: 'p4', publicName: 'Yogurt', isPublished: true, businessCapabilityStatus: 'requires_review' }
+  ]);
+  const stockById = new Map([['p1', { status: 'out_of_stock' }]]);
+
+  it('combines search with all, published and hidden filters using only loaded data', () => {
+    expect(filterPublicCatalog(products, 'lác', 'all', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p3']);
+    expect(filterPublicCatalog(products, '', 'published', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p3', 'p4']);
+    expect(filterPublicCatalog(products, '', 'hidden', stockById, false).map((p) => p.id))
+      .toEqual(['p2']);
+    expect(products.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4']);
+  });
+
+  it('separates inventory and business attention from PRO synchronization errors', () => {
+    expect(filterPublicCatalog(products, '', 'attention', stockById, false).map((p) => p.id))
+      .toEqual(['p1', 'p4']);
+    expect(filterPublicCatalog(products, '', 'attention', stockById, true).map((p) => p.id))
+      .toEqual(['p1', 'p3', 'p4']);
+  });
 });
