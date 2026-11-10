@@ -299,6 +299,7 @@ function LicenseInfoPanel({
         staffRolesEnabled
     } = licenseContext;
     const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails, new Date(), { licenseStatus });
     const [copiedLicense, setCopiedLicense] = useState(false);
     const commercialPlanName = getCommercialPlanName(licenseDetails);
     const commercialPlanShortName = getCommercialPlanShortName(licenseDetails);
@@ -346,6 +347,9 @@ function LicenseInfoPanel({
                     <span className="license-details-summary-copy">
                         <strong>Informacion de licencia</strong>
                         <small>Ver detalles de licencia · Datos de activacion, vigencia y capacidades.</small>
+                    </span>
+                    <span className={`license-status-pill is-${statusPresentation.tone}`}>
+                        {statusPresentation.label}
                     </span>
                 </summary>
 
