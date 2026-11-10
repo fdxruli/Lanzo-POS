@@ -1098,13 +1098,7 @@
   }
 }
 
-.device-manager-tittle{
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-dark);
-  margin-bottom: var(--spacing-lg);
-  margin-bottom: 0;
-}
+
 
 /* ===== ESTILOS DEL SELECTOR DE TEMA ===== */
 .theme-toggle-container {
@@ -1732,6 +1726,14 @@ input[type="radio"]:checked + .theme-radio-text {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: var(--box-shadow);
+}
+
+.settings-panel-header p,
+.settings-preference-heading p {
+  margin: 4px 0 0;
+  color: var(--text-light);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .settings-general-layout {
