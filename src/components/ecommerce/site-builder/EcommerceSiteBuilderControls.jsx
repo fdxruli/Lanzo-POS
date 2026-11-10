@@ -13,7 +13,7 @@ export default function EcommerceSiteBuilderControls({ document, disabled, mode 
     <section className="ecom-builder-controls" aria-label="Presentación del catálogo">
       <details className="ecom-builder-fold">
         <summary><span><strong>Presentación del catálogo</strong><small>{LAYOUTS[catalog?.layout] || 'Cuadrícula'} · {catalog?.props.showSearch ? 'Con buscador' : 'Sin buscador'} · {document.global.density === 'compact' ? 'Densidad compacta' : 'Densidad cómoda'}</small></span></summary>
-        <div className="ecom-builder-fold__body">
+        <div className="ecom-builder-fold__content">
           <fieldset disabled={disabled} className="ecom-builder-section-control">
             <legend>Presentación</legend>
             <div className="ecom-builder-segmented">
@@ -44,12 +44,12 @@ export default function EcommerceSiteBuilderControls({ document, disabled, mode 
     <section className="ecom-builder-controls" aria-label="Estructura de la tienda">
       <details className="ecom-builder-fold">
         <summary><span><strong>Estructura de la tienda</strong><small>{document.sections.map((section) => LABELS[section.type]).join(' · ')}</small></span></summary>
-        <div className="ecom-builder-fold__body">
+        <div className="ecom-builder-fold__content">
           <p className="ecom-admin-help">Organiza las secciones con Subir y Bajar. El pie de página permanece obligatorio.</p>
           {document.sections.map((section, index) => (
             <details className="ecom-builder-section-row" key={section.id}>
               <summary><span><strong>{LABELS[section.type]}</strong><small>{LAYOUTS[section.layout] || 'Obligatorio'} · Posición {index + 1}</small></span></summary>
-              <div className="ecom-builder-section-row__body">
+              <div className="ecom-builder-section-row__content">
                 <fieldset disabled={disabled} className="ecom-builder-section-control">
                   <legend>Orden</legend>
                   <div className="ecom-builder-order-actions ecom-builder-segmented">
