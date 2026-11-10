@@ -7,6 +7,27 @@ import {
 import Logger from '../services/Logger';
 import { cancelSale, moveCancelledSaleToTrash } from '../services/salesService';
 
+const WASTE_PAGE_SIZE = 50;
+const WASTE_READ_ERROR = 'No se pudo consultar el historial de mermas de este dispositivo. Intenta nuevamente.';
+
+// Leer solamente una fila adicional para saber si existe otra página.
+// No se calcula aquí un total histórico, ni se consulta Cloud.
+const readWastePage = async (cursor = null) => {
+  const { data } = await loadDataPaginated(STORES.WASTE, {
+    limit: WASTE_PAGE_SIZE + 1,
+    cursor,
+    timeIndex: 'timestamp'
+  });
+  const rows = Array.isArray(data) ? data : [];
+  const visible = rows.slice(0, WASTE_PAGE_SIZE);
+  return {
+    data: visible,
+    nextCursor: rows.length > WASTE_PAGE_SIZE
+      ? visible[visible.length - 1]?.timestamp ?? null
+      : null
+  };
+};
+
 export const useSalesStore = create((set, get) => ({
   sales: [],
   wasteLogs: [],
@@ -18,35 +39,84 @@ export const useSalesStore = create((set, get) => ({
   hasMoreWaste: true,
   isSalesLoading: false,
   isWasteLoading: false,
+  wasteLoaded: false,
+  wasteError: null,
+  wasteContextKey: null,
+  wasteRequestId: 0,
   isLoading: false,
 
-  loadRecentSales: async () => {
-    set({ isLoading: true });
-    try {
-      const [recentSales, wastePage] = await Promise.all([
-        loadDataPaginated(STORES.SALES, { limit: 50, timeIndex: 'timestamp' }),
-        loadDataPaginated(STORES.WASTE, { limit: 50, timeIndex: 'timestamp' })
-      ]);
+  setWasteContext: (contextKey) => {
+    const state = get();
+    if (state.wasteContextKey === contextKey) return;
+    set({
+      wasteContextKey: contextKey,
+      wasteRequestId: state.wasteRequestId + 1,
+      wasteLogs: [],
+      wasteCursorStack: [null],
+      currentWastePageIndex: 0,
+      hasMoreWaste: false,
+      isWasteLoading: false,
+      wasteLoaded: false,
+      wasteError: null
+    });
+  },
 
-      const nextSalesCursor = recentSales?.nextCursor || null;
-      const nextWasteCursor = wastePage?.nextCursor || null;
-      set({
-        sales: recentSales?.data || [],
-        wasteLogs: wastePage?.data || [],
-        salesCursorStack: nextSalesCursor ? [null, nextSalesCursor] : [null],
-        currentSalesPageIndex: 0,
-        hasMoreSales: !!nextSalesCursor,
-        wasteCursorStack: nextWasteCursor ? [null, nextWasteCursor] : [null],
-        currentWastePageIndex: 0,
-        hasMoreWaste: !!nextWasteCursor,
-        isSalesLoading: false,
-        isWasteLoading: false,
-        isLoading: false
-      });
-    } catch (error) {
-      Logger.error('Error cargando ventas y mermas recientes:', error);
-      set({ isLoading: false, isSalesLoading: false, isWasteLoading: false });
+  loadRecentSales: async () => {
+    const requestId = get().wasteRequestId + 1;
+    set({
+      isLoading: true,
+      isWasteLoading: true,
+      wasteLoaded: false,
+      wasteError: null,
+      wasteRequestId: requestId
+    });
+
+    // Una lectura fallida de mermas no debe ocultar el historial de ventas.
+    const [salesResult, wasteResult] = await Promise.allSettled([
+      loadDataPaginated(STORES.SALES, { limit: 50, timeIndex: 'timestamp' }),
+      readWastePage()
+    ]);
+
+    if (salesResult.status === 'rejected') {
+      Logger.error('Error cargando ventas recientes:', salesResult.reason);
     }
+    if (wasteResult.status === 'rejected') {
+      Logger.error('Error cargando historial local de mermas:', wasteResult.reason);
+    }
+
+    const salesPatch = salesResult.status === 'fulfilled'
+      ? {
+        sales: salesResult.value?.data || [],
+        salesCursorStack: salesResult.value?.nextCursor
+          ? [null, salesResult.value.nextCursor] : [null],
+        currentSalesPageIndex: 0,
+        hasMoreSales: !!salesResult.value?.nextCursor
+      }
+      : {};
+
+    const wastePatch = get().wasteRequestId !== requestId
+      ? {}
+      : wasteResult.status === 'fulfilled'
+        ? {
+          wasteLogs: wasteResult.value.data,
+          wasteCursorStack: wasteResult.value.nextCursor
+            ? [null, wasteResult.value.nextCursor] : [null],
+          currentWastePageIndex: 0,
+          hasMoreWaste: !!wasteResult.value.nextCursor,
+          wasteLoaded: true,
+          wasteError: null,
+          isWasteLoading: false
+        }
+        : {
+          wasteLogs: [],
+          wasteCursorStack: [null],
+          currentWastePageIndex: 0,
+          hasMoreWaste: false,
+          wasteLoaded: false,
+          wasteError: WASTE_READ_ERROR,
+          isWasteLoading: false
+        };
+    set({ ...salesPatch, ...wastePatch, isSalesLoading: false, isLoading: false });
   },
 
   fetchSalesPage: async (direction = 'current') => {
@@ -98,25 +168,20 @@ export const useSalesStore = create((set, get) => ({
     if (state.isWasteLoading) return;
 
     let targetPageIndex = state.currentWastePageIndex;
-
     if (direction === 'next') {
       if (!state.hasMoreWaste) return;
       targetPageIndex += 1;
     } else if (direction === 'prev') {
       if (state.currentWastePageIndex === 0) return;
-      targetPageIndex = Math.max(0, state.currentWastePageIndex - 1);
+      targetPageIndex = state.currentWastePageIndex - 1;
     }
 
     const targetCursor = state.wasteCursorStack[targetPageIndex] ?? null;
-    set({ isWasteLoading: true });
-
+    const requestId = state.wasteRequestId + 1;
+    set({ isWasteLoading: true, wasteError: null, wasteRequestId: requestId });
     try {
-      const { data, nextCursor } = await loadDataPaginated(STORES.WASTE, {
-        limit: 50,
-        cursor: targetCursor,
-        direction: 'prev',
-        timeIndex: 'timestamp'
-      });
+      const { data, nextCursor } = await readWastePage(targetCursor);
+      if (get().wasteRequestId !== requestId) return;
 
       const newWasteCursorStack = [...state.wasteCursorStack];
       if (nextCursor) {
@@ -126,15 +191,23 @@ export const useSalesStore = create((set, get) => ({
       }
 
       set({
-        wasteLogs: data || [],
+        wasteLogs: data,
         wasteCursorStack: newWasteCursorStack,
         currentWastePageIndex: targetPageIndex,
         hasMoreWaste: !!nextCursor,
+        wasteLoaded: true,
+        wasteError: null,
         isWasteLoading: false
       });
     } catch (error) {
       Logger.error('Error en fetchWastePage:', error);
-      set({ isWasteLoading: false });
+      if (get().wasteRequestId !== requestId) return;
+      set({
+        wasteLogs: [],
+        wasteLoaded: false,
+        wasteError: WASTE_READ_ERROR,
+        isWasteLoading: false
+      });
     }
   },
 
@@ -155,6 +228,10 @@ export const useSalesStore = create((set, get) => ({
           : null;
 
       set({
+        wasteRequestId: state.wasteRequestId + 1,
+        isWasteLoading: false,
+        wasteLoaded: true,
+        wasteError: null,
         wasteLogs: firstPageWasteLogs,
         wasteCursorStack: firstPageNextCursor ? [null, firstPageNextCursor] : [null],
         currentWastePageIndex: 0,
@@ -164,6 +241,10 @@ export const useSalesStore = create((set, get) => ({
     }
 
     set({
+      wasteRequestId: state.wasteRequestId + 1,
+      isWasteLoading: false,
+      wasteLoaded: false,
+      wasteError: null,
       wasteLogs: [],
       wasteCursorStack: [null],
       currentWastePageIndex: 0,
