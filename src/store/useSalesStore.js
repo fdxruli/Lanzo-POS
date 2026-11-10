@@ -204,6 +204,7 @@ export const useSalesStore = create((set, get) => ({
       if (get().wasteRequestId !== requestId) return;
       set({
         wasteLogs: [],
+        currentWastePageIndex: targetPageIndex,
         wasteLoaded: false,
         wasteError: WASTE_READ_ERROR,
         isWasteLoading: false
