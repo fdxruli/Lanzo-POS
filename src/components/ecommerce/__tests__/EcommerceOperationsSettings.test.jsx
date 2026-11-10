@@ -47,11 +47,12 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
 
     expect(screen.getByLabelText('Zona horaria del negocio')).toHaveValue('America/Tijuana');
     expect(screen.getByText('Aplicar horario a los pedidos').closest('label').querySelector('input')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /Domingo/ }));
     expect(screen.getByLabelText('Apertura Domingo')).toHaveValue('10:00');
     expect(screen.getByLabelText('Cierre Domingo')).toHaveValue('16:00');
   });
 
-  it('groups each weekly day metadata and its two time controls', () => {
+  it('expands a compact day to access its two native time controls', () => {
     render(<EcommerceOperatingHoursSettings data={{
       timezone: 'America/Mexico_City',
       businessHoursEnabled: true,
@@ -60,9 +61,10 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
     }} />);
 
     const mondayRow = screen.getByText('Lunes').closest('.ecom-week-row');
-    expect(mondayRow.querySelector('.ecom-week-meta')).not.toBeNull();
     expect(mondayRow.querySelector('.ecom-week-status')).toHaveTextContent('Cerrado');
-    expect(mondayRow.querySelector('.ecom-week-times')).not.toBeNull();
+    expect(mondayRow.querySelector('.ecom-week-times')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Lunes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
     expect(mondayRow.querySelectorAll('.ecom-week-time')).toHaveLength(2);
     expect(screen.getByLabelText('Apertura Lunes')).toHaveAttribute('type', 'time');
     expect(screen.getByLabelText('Cierre Lunes')).toHaveAttribute('type', 'time');
@@ -79,7 +81,8 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
     expect(labels.map((node) => node.textContent)).toEqual([
       'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
     ]);
-    fireEvent.click(screen.getByLabelText('Apertura Lunes').closest('.ecom-week-row').querySelector('input[type="checkbox"]'));
+    fireEvent.click(screen.getByRole('button', { name: /Lunes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
     await waitFor(() => expect(saveOperatingSchedule).toHaveBeenCalled());
     expect(saveOperatingSchedule.mock.calls[0][0].weekly[0].weekday).toBe(1);
@@ -95,11 +98,12 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
     }} />);
 
     fireEvent.click(screen.getByText('Aplicar horario a los pedidos').closest('label').querySelector('input'));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
-    expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining('al menos un día abierto'));
+    expect(screen.getByRole('button', { name: 'Guardar horarios' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('al menos un día abierto');
     expect(saveOperatingSchedule).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText('Lunes').closest('.ecom-week-row').querySelector('input[type="checkbox"]'));
+    fireEvent.click(screen.getByRole('button', { name: /Lunes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
     fireEvent.change(screen.getByLabelText('Apertura Lunes'), { target: { value: '18:00' } });
     fireEvent.change(screen.getByLabelText('Cierre Lunes'), { target: { value: '09:00' } });
     expect(screen.getByRole('alert')).toHaveTextContent('Lunes');
@@ -118,12 +122,13 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
 
     fireEvent.change(screen.getByLabelText('Zona horaria del negocio'), { target: { value: 'America/Cancun' } });
     fireEvent.click(screen.getByText('Aplicar horario a los pedidos').closest('label').querySelector('input'));
-    fireEvent.click(screen.getByText('Lunes').closest('.ecom-week-row').querySelector('input[type="checkbox"]'));
+    fireEvent.click(screen.getByRole('button', { name: /Lunes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
     fireEvent.change(screen.getByLabelText('Apertura Lunes'), { target: { value: '08:30' } });
     fireEvent.change(screen.getByLabelText('Cierre Lunes'), { target: { value: '17:30' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar fecha' }));
     fireEvent.change(screen.getByLabelText('Fecha de excepción'), { target: { value: '2026-08-01' } });
-    fireEvent.click(screen.getByLabelText('Apertura de excepción').closest('.ecom-exception-row').querySelector('input[type="checkbox"]'));
+    fireEvent.click(screen.getByText('Abierto esta fecha').closest('label').querySelector('input'));
     fireEvent.change(screen.getByLabelText('Apertura de excepción'), { target: { value: '10:00' } });
     fireEvent.change(screen.getByLabelText('Cierre de excepción'), { target: { value: '14:00' } });
     fireEvent.change(screen.getByLabelText('Razón de excepción'), { target: { value: 'Evento especial' } });
@@ -185,4 +190,117 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
       'La reanudación debe programarse para una fecha futura.'
     ));
   });
+
+  it('keeps a weekly draft when a pause response updates availability', async () => {
+    const data = {
+      timezone: 'America/Mexico_City', businessHoursEnabled: false,
+      hours: { weekly: [], exceptions: [] }, availability: openAvailability
+    };
+    const dirtyChanged = vi.fn();
+    const { rerender } = render(<EcommerceOperatingHoursSettings data={data} onDirtyChange={dirtyChanged} />);
+    fireEvent.click(screen.getByRole('button', { name: /Lunes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
+    fireEvent.change(screen.getByLabelText('Apertura Lunes'), { target: { value: '07:15' } });
+    expect(dirtyChanged).toHaveBeenLastCalledWith(true);
+    rerender(<EcommerceOperatingHoursSettings data={{
+      ...data,
+      availability: { ...openAvailability, code: 'ORDERS_PAUSED', acceptingOrders: false, manuallyPaused: true }
+    }} onDirtyChange={dirtyChanged} />);
+    expect(screen.getByLabelText('Apertura Lunes')).toHaveValue('07:15');
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
+    await waitFor(() => expect(saveOperatingSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({ weekly: expect.arrayContaining([
+        expect.objectContaining({ weekday: 1, isOpen: true, opensAt: '07:15' })
+      ]) })
+    ));
+    await waitFor(() => expect(dirtyChanged).toHaveBeenLastCalledWith(false));
+  });
+
+  it('does not lose an unsaved draft when the save fails and permits retry', async () => {
+    saveOperatingSchedule.mockResolvedValueOnce({ success: false, message: 'No se guardó' });
+    const data = {
+      timezone: 'America/Mexico_City', businessHoursEnabled: false,
+      hours: { weekly: [], exceptions: [] }, availability: openAvailability
+    };
+    render(<EcommerceOperatingHoursSettings data={data} />);
+    fireEvent.click(screen.getByRole('button', { name: /Martes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
+    fireEvent.change(screen.getByLabelText('Apertura Martes'), { target: { value: '08:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith('No se guardó'));
+    expect(screen.getByLabelText('Apertura Martes')).toHaveValue('08:00');
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
+    await waitFor(() => expect(saveOperatingSchedule).toHaveBeenCalledTimes(2));
+  });
+
+  it('prevents duplicate schedule writes while a save is pending', async () => {
+    let resolveSave;
+    saveOperatingSchedule.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    render(<EcommerceOperatingHoursSettings data={{
+      timezone: 'America/Mexico_City', businessHoursEnabled: false,
+      hours: { weekly: [], exceptions: [] }, availability: openAvailability
+    }} />);
+    fireEvent.click(screen.getByRole('button', { name: /Martes/ }));
+    fireEvent.click(screen.getByText('Abierto este día').closest('label').querySelector('input'));
+    const button = screen.getByRole('button', { name: 'Guardar horarios' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(saveOperatingSchedule).toHaveBeenCalledTimes(1);
+    resolveSave({ success: true });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Guardar horarios' })).not.toBeInTheDocument());
+  });
+
+  it('keeps exception edits local until saving, handles delete, and rejects duplicate dates', async () => {
+    render(<EcommerceOperatingHoursSettings data={{
+      timezone: 'America/Mexico_City', businessHoursEnabled: false,
+      hours: { weekly: [], exceptions: [] }, availability: openAvailability
+    }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar fecha' }));
+    fireEvent.change(screen.getByLabelText('Fecha de excepción'), { target: { value: '2026-12-25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar fecha' }));
+    fireEvent.change(screen.getByLabelText('Fecha de excepción'), { target: { value: '2026-12-25' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('duplicadas');
+    expect(screen.getByRole('button', { name: 'Guardar horarios' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Eliminar fecha 2026-12-25/ }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar horarios' }));
+    await waitFor(() => expect(saveOperatingSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({ exceptions: [expect.objectContaining({ date: '2026-12-25' })] })
+    ));
+  });
+
+  it('sends a 60-minute pause and custom resume through the existing service', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-07-15T12:00:00.000Z'));
+    const data = { timezone: 'America/Mexico_City', availability: openAvailability };
+    render(<EcommerceOrderPauseControl data={data} />);
+    fireEvent.change(screen.getByLabelText('Duración'), { target: { value: '60' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar pedidos' }));
+    await waitFor(() => expect(setOrderPause).toHaveBeenLastCalledWith(
+      expect.objectContaining({ paused: true, resumeAt: '2026-07-15T13:00:00.000Z' })
+    ));
+    fireEvent.change(screen.getByLabelText('Duración'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Reanudar en la zona del negocio'), {
+      target: { value: '2026-07-16T10:00' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pausar pedidos' }));
+    await waitFor(() => expect(setOrderPause).toHaveBeenCalledTimes(2));
+    expect(setOrderPause.mock.calls[1][0].resumeAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('prevents duplicate pause requests and does not claim success before confirmation', async () => {
+    let resolvePause;
+    setOrderPause.mockImplementationOnce(() => new Promise((resolve) => { resolvePause = resolve; }));
+    const onSaved = vi.fn();
+    render(<EcommerceOrderPauseControl data={{
+      timezone: 'America/Mexico_City', availability: openAvailability
+    }} onSaved={onSaved} />);
+    const button = screen.getByRole('button', { name: 'Pausar pedidos' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(setOrderPause).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+    resolvePause({ success: true, availability: { code: 'ORDERS_PAUSED', manuallyPaused: true } });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
 });
