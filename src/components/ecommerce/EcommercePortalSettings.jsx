@@ -526,7 +526,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     const move = () => {
       setOperationDirty(false);
       setActiveSection(nextId);
-      if (focusTab) requestAnimationFrame(() => document.getElementById('ecom-portal-tab-' + nextId)?.focus());
+      if (focusTab) document.getElementById('ecom-portal-tab-' + nextId)?.focus();
     };
     if (activeSection !== 'operation' || !operationDirty) return move();
     showMessageModal(
