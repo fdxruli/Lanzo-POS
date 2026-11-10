@@ -751,6 +751,12 @@ export default function EcommerceProductPublishModal({
               </label>
             </div>
           )}
+          {form.wholesaleEnabled && !wholesalePreview.valid && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Revisa los niveles de mayoreo</strong>
+              <span>Hay niveles inválidos. Corrige la configuración de origen antes de guardar.</span>
+            </div>
+          )}
           {wholesalePreview.tiers.length > 0 && (
             <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
               <summary>
