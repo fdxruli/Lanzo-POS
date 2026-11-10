@@ -107,7 +107,7 @@ export default function EcommerceBusinessInformationPanel({
       >
         <div className="ecom-info-editor__heading">
           <h3>Contacto</h3>
-          <span>Datos para tus clientes</span>
+          <span>Datos visibles para tus clientes</span>
         </div>
         <div className="ecom-admin-form-grid">
           {!portal && (
@@ -264,7 +264,7 @@ export default function EcommerceBusinessInformationPanel({
             <span className="ecom-info-link-url" title={reservedLink}>{reservedLink}</span>
             <div className="ecom-info-link-primary">
               <button type="button" className="btn btn-secondary" onClick={onCopyLink}>
-                <Copy size={16} aria-hidden="true" /> Copiar
+                <Copy size={16} aria-hidden="true" /> Copiar link
               </button>
               <a
                 className="btn btn-secondary"
@@ -303,7 +303,7 @@ export default function EcommerceBusinessInformationPanel({
 
           <div className="ecom-info-publication">
             <div className="ecom-info-publication__copy" id="ecom-publication-requirements">
-              <strong>{canPublish ? 'Información lista para publicar' : 'Faltan datos para publicar'}</strong>
+              <strong>{canPublish ? 'Información lista para publicar' : 'Completa los datos para publicar'}</strong>
               <small>{canPublish
                 ? 'Publicar y guardar información son acciones independientes.'
                 : 'Consulta el estado de la tienda y completa los campos pendientes.'}</small>
