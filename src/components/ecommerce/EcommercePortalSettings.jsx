@@ -581,7 +581,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   }, [companyProfile, evaluateStock, loadProducts]);
 
   useEffect(() => {
-    if (authorizationPending || !canManageEcommercePortal) return;
+    if (authorizationPending || !canManageEcommercePortal || unsavedChangesRef.current) return;
     void load();
   }, [authorizationPending, canManageEcommercePortal, load]);
 
@@ -760,6 +760,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   const submitPortal = async (event) => {
     event.preventDefault();
+    if (savingPortal) return;
+    if (activeSection !== 'information' && hasUnsavedChanges) {
+      toast.error('Guarda los cambios de Información antes de guardar el diseño.');
+      return;
+    }
     await savePortal(
       form,
       portal ? 'Portal actualizado correctamente.' : 'Portal online creado correctamente.'
