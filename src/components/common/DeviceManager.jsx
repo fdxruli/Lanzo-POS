@@ -259,18 +259,10 @@ export default function DeviceManager({ licenseKey }) {
 
   return (
     <div className="device-list-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h4 className="device-manager-tittle" style={{ margin: 0 }}>Dispositivos</h4>
-
-        {isOfflineData ? (
-          <span style={{ fontSize: '0.75rem', backgroundColor: '#ffedd5', color: '#c2410c', padding: '2px 8px', borderRadius: '12px', border: '1px solid #fdba74', fontWeight: '600' }}>
-            Modo offline
-          </span>
-        ) : (
-          <span style={{ fontSize: '0.75rem', color: 'var(--success-color)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
-            Sincronizado
-          </span>
-        )}
+      <div className="device-list-toolbar">
+        <span className={`device-sync-status ${isOfflineData ? 'is-cached' : 'is-current'}`} role="status">
+          {isOfflineData ? 'Datos guardados' : 'Sincronizado'}
+        </span>
       </div>
 
       {devices.length === 0 ? (
@@ -326,8 +318,8 @@ export default function DeviceManager({ licenseKey }) {
                     Ultimo uso: {new Date(device.last_used_at).toLocaleDateString()}
                   </small>
 
-                  <label style={{ display: 'grid', gap: '4px', marginTop: '8px', maxWidth: '220px' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Capacidad del dispositivo</span>
+                  <label className="device-mode-field">
+                    <span>Capacidad del dispositivo</span>
                     <select
                       value={deviceMode || ''}
                       onChange={(event) => handleModeChange(device, event.target.value)}

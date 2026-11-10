@@ -15,7 +15,6 @@ import {
   Phone,
   Save,
   ShieldCheck,
-  Sparkles,
   Sun,
   Upload
 } from 'lucide-react';
@@ -132,34 +131,6 @@ function InputStatusIcon({ isLocked }) {
     <span title="Bloqueado" className="settings-lock-icon">
       <Lock size={16} />
     </span>
-  );
-}
-
-function SettingsHero({ completedFields, activeThemeLabel }) {
-  return (
-    <header className="settings-general-hero">
-      <div className="settings-general-title">
-        <span className="settings-general-kicker">
-          <Sparkles size={15} />
-          Datos y apariencia
-        </span>
-        <div>
-          <h2>Identidad del negocio</h2>
-          <p>Configura la informacion visible del punto de venta y el modo visual de trabajo.</p>
-        </div>
-      </div>
-
-      <div className="settings-general-summary" aria-label="Resumen de configuracion">
-        <div>
-          <span>Perfil</span>
-          <strong>{completedFields}/4</strong>
-        </div>
-        <div>
-          <span>Tema</span>
-          <strong>{activeThemeLabel}</strong>
-        </div>
-      </div>
-    </header>
   );
 }
 
@@ -390,12 +361,6 @@ function GeneralSettingsContent() {
     );
   }, [profileState, companyProfile]);
 
-  const completedFields = useMemo(() => (
-    Object.values(profileState.lockedFields).reduce((count, isLocked) => count + (isLocked ? 1 : 0), 0)
-  ), [profileState.lockedFields]);
-
-  const activeThemeLabel = themeOptions.find((theme) => theme.value === activeTheme)?.label || 'Sistema';
-
   useEffect(() => {
     const systemThemeListener = (event) => {
       if (activeTheme === 'system') applyTheme(event.matches ? 'dark' : 'light');
@@ -494,8 +459,6 @@ function GeneralSettingsContent() {
 
   return (
     <div className="settings-general-shell">
-      <SettingsHero completedFields={completedFields} activeThemeLabel={activeThemeLabel} />
-
       <section className="settings-general-layout">
         <ProfilePanel
           fieldId={fieldId}
