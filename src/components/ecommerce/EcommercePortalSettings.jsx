@@ -129,11 +129,11 @@ const portalCustomization = (portal) => ({
 });
 
 const portalForm = (portal, profile) => ({
-  name: portal?.name || profile?.name || '',
+  name: portal?.name || (!portal ? profile?.name : '') || '',
   headline: portal?.headline || '',
   description: portal?.description || '',
-  whatsappPhone: portal?.whatsappPhone || profile?.phone || '',
-  contactEmail: portal?.contactEmail || profile?.email || '',
+  whatsappPhone: portal?.whatsappPhone || (!portal ? profile?.phone : '') || '',
+  contactEmail: portal?.contactEmail || (!portal ? profile?.email : '') || '',
   addressStreet: portal?.addressStreet || '',
   addressNeighborhood: portal?.addressNeighborhood || '',
   addressMunicipality: portal?.addressMunicipality || '',
