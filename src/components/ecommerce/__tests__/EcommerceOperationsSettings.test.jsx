@@ -171,7 +171,7 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
       timezone: 'America/Mexico_City', availability: openAvailability
     }} />);
     fireEvent.change(screen.getByLabelText('Duración'), { target: { value: '30' } });
-    fireEvent.change(screen.getByLabelText('Razón'), { target: { value: 'Mantenimiento' } });
+    fireEvent.change(screen.getByLabelText('Motivo'), { target: { value: 'Mantenimiento' } });
     fireEvent.click(screen.getByRole('button', { name: 'Pausar pedidos' }));
     await waitFor(() => expect(setOrderPause).toHaveBeenCalledWith({
       paused: true,
