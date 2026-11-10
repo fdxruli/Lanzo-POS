@@ -131,6 +131,24 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     });
   });
 
+  it('keeps invalid hexadecimal input and never projects a fallback theme into the draft', async () => {
+    const onValidationChange = vi.fn();
+    renderPanel({ onValidationChange });
+    openIdentity();
+    const input = screen.getByRole('textbox', { name: 'Hexadecimal principal' });
+    const before = changes.length;
+    fireEvent.change(input, { target: { value: '#123' } });
+    await waitFor(() => expect(onValidationChange).toHaveBeenLastCalledWith(false));
+    expect(changes).toHaveLength(before);
+    const summary = screen.getByText('Identidad visual', { selector: 'strong' }).closest('summary');
+    fireEvent.click(summary);
+    fireEvent.click(summary);
+    expect(screen.getByRole('textbox', { name: 'Hexadecimal principal' })).toHaveValue('#123');
+    fireEvent.change(input, { target: { value: '#123456' } });
+    await waitFor(() => expect(onValidationChange).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(lastChange(changes).theme.primaryColor).toBe('#123456'));
+  });
+
   it('does not expose upload controls on Free', () => {
     renderPanel({ isPro: false });
     expect(document.querySelector('input[type="file"]')).toBeNull();
