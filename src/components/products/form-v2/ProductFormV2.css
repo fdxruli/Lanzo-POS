@@ -30,11 +30,11 @@
 .product-form-v2__barcode button { display: grid; place-items: center; width: 44px; min-height: 44px; flex: 0 0 44px; color: var(--ui-text-strong, var(--text-dark)); background: var(--ui-bg-muted, var(--light-background)); border: 1px solid var(--ui-border-color, var(--border-color)); border-left: 0; border-radius: 0 6px 6px 0; cursor: pointer; }
 .product-form-v2__suffix span { display: grid; place-items: center; min-width: 34px; padding: 0 8px; color: var(--ui-text-muted, var(--text-light)); background: var(--ui-bg-muted, var(--light-background)); border: 1px solid var(--ui-border-color, var(--border-color)); border-left: 0; border-radius: 0 6px 6px 0; }
 .product-form-v2__pricing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 10px; row-gap: 10px; grid-column: 1 / -1; }
-.product-form-v2__pricing > .product-form-v2__field--cost { grid-column: 1; grid-row: 1; }
-.product-form-v2__pricing > .product-form-v2__field--price { grid-column: 2; grid-row: 1; }
-.product-form-v2__pricing > .product-form-v2__field--margin { grid-column: 1 / -1; grid-row: 2; flex-direction: row; align-items: center; gap: 10px; }
-.product-form-v2__pricing .product-form-v2__field--margin .product-form-v2__suffix { width: min(100%, 160px); }
-.product-form-v2__pricing .product-form-v2__field--cost label, .product-form-v2__pricing .product-form-v2__field--price label, .product-form-v2__inventory-fields .product-form-v2__field label { min-height: 2.5em; line-height: 1.25; }
+.product-form-v2__pricing > .product-form-v2__field--cost { grid-column: 1; grid-row: 1; justify-content: flex-end; }
+.product-form-v2__pricing > .product-form-v2__field--price { grid-column: 2; grid-row: 1; justify-content: flex-end; }
+.product-form-v2__pricing > .product-form-v2__field--margin { grid-column: 1; grid-row: 2; flex-direction: column; align-items: stretch; gap: 4px; justify-content: flex-end; }
+.product-form-v2__pricing .product-form-v2__field--margin .product-form-v2__suffix { width: 100%; }
+.product-form-v2__inventory-fields .product-form-v2__field label { min-height: 2.5em; line-height: 1.25; }
 .product-form-v2__pricing--fractioned > .product-form-v2__field--price, .product-form-v2__pricing--ingredient > .product-form-v2__field--cost, .product-form-v2__pricing--ingredient > .product-form-v2__help { grid-column: 1 / -1; }
 .product-form-v2__pricing--ingredient > .product-form-v2__help { margin-top: 0; }
 .product-form-v2__field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-md); grid-column: 1 / -1; }
@@ -70,7 +70,6 @@
   .product-form-v2__pricing { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--spacing-md); }
   .product-form-v2__pricing > .product-form-v2__field--cost, .product-form-v2__pricing > .product-form-v2__field--margin, .product-form-v2__pricing > .product-form-v2__field--price { grid-column: auto; grid-row: auto; }
   .product-form-v2__pricing > .product-form-v2__field--margin { flex-direction: column; align-items: stretch; gap: 4px; }
-  .product-form-v2__pricing .product-form-v2__field--margin label { min-height: 2.5em; line-height: 1.25; }
   .product-form-v2__pricing .product-form-v2__field--margin .product-form-v2__suffix { width: 100%; }
   .product-form-v2__pricing--fractioned { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-form-v2__pricing--ingredient { grid-template-columns: minmax(0, 1fr); }
