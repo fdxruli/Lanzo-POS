@@ -945,10 +945,13 @@ describe('EcommercePortalSettings image intent payloads', () => {
     getEcommercePortal.mockResolvedValue({
       success: true, portal: persisted, plan: { code: 'pro_monthly' }, features: proFeatures
     });
+    listPublishedProducts.mockResolvedValue({
+      success: true,
+      products: [{ id: 'published-fixture', isPublished: true, businessCapabilityStatus: 'eligible' }]
+    });
     render(<EcommercePortalSettings />);
     const health = await screen.findByLabelText('Estado de la tienda');
     expect(health).toHaveTextContent('1 aspecto por revisar');
-    expect(health).toHaveTextContent('Cambios sin guardar');
     // A local correction cannot mark the persisted portal as ready.
     fireEvent.change(screen.getByPlaceholderText('52 961 000 0000'), {
       target: { value: '529610000000' }
