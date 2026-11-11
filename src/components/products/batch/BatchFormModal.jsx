@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   X,
   Save,
@@ -18,6 +18,7 @@ import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
 import { getBatchStockInputProps } from './utils/batchStockInput';
 import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
 import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
+import { getPharmacyClassification } from '../../../utils/pharmacyClassification';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -74,6 +75,16 @@ export default function BatchFormModal({
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
   const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
   const isCommercialVariant = isCommercialVariantProduct(product);
+  const pharmacyClassification = getPharmacyClassification(product);
+  const isPharmacyMedicine = pharmacyClassification.recorded && pharmacyClassification.kind === 'medicine';
+  useEffect(() => {
+    if (isPharmacyMedicine && !isEditing && Number(formValues.stock || 0) !== 0) {
+      setFieldValue('stock', '0');
+    }
+    if (isPharmacyMedicine && !isEditing && formValues.stock === '') {
+      setFieldValue('stock', '0');
+    }
+  }, [isPharmacyMedicine, isEditing, formValues.stock, setFieldValue]);
   const currentProductPrice = Number(product?.price ?? 0);
   const requestedProductPrice = Number(formValues.price);
   const hasProductPriceChange = isProductPriceEditing
@@ -302,7 +313,7 @@ export default function BatchFormModal({
               {/* CANTIDAD (Stock) */}
               <div className="form-group field-with-icon batch-form-field--compact">
                 <label htmlFor={`${idPrefix}-stock`}>
-                  <Package size={16} /> Cantidad Inicial (Stock) *
+                  <Package size={16} /> {isPharmacyMedicine ? 'Existencia del lote' : 'Cantidad Inicial (Stock) *'}
                 </label>
                 <input
                   id={`${idPrefix}-stock`}
@@ -310,10 +321,12 @@ export default function BatchFormModal({
                   min="0"
                   step={stockInputProps.step}
                   inputMode={stockInputProps.inputMode}
-                  value={formValues.stock}
+                  value={isPharmacyMedicine && !isEditing ? '0' : formValues.stock}
+                  disabled={isPharmacyMedicine}
                   onChange={(event) => setFieldValue('stock', event.target.value)}
                   className="form-input batch-stock-input"
                 />
+                {isPharmacyMedicine && <small>El lote se registra sin agregar existencias. Las entradas se documentan desde Recepción de medicamento.</small>}
               </div>
 
               {/* PROVEEDOR */}
