@@ -18,7 +18,8 @@ import {
   PRODUCT_MIGRATION_BATCH_SIZE,
   PRODUCTS_LAST_SNAPSHOT_AT_META_KEY,
   PRODUCTS_MIGRATED_AT_META_KEY,
-  PRODUCTS_MIGRATION_WARNING_META_KEY
+  PRODUCTS_MIGRATION_WARNING_META_KEY,
+  PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
@@ -175,19 +176,6 @@ export const productMigrationService = {
       }
 
       const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
-    if (snapshot?.success !== true) return snapshot;
-
-    if (needsPharmacyCutoverClose && pharmacyCutoverRoot) {
-      const closed = await productCloudRepository.completePharmacyInventoryCutover({
-        licenseKey,
-        batchRoot: pharmacyCutoverRoot
-      });
-      if (closed?.success !== true) {
-        const issues = [{ code: 'PHARMACY_CUTOVER_CLOSE_FAILED', message: 'No se cerró el corte histórico en Cloud.' }];
-        await saveBlockedMigrationConflict({ licenseKey, issues });
-        return { success: false, blocked: true, issues, response: closed };
-      }
-    }
       return { ...snapshot, recovery };
     }
 
@@ -213,7 +201,15 @@ export const productMigrationService = {
     let pharmacyCutoverRoot = null;
 
     if (totalLocalRows > 0) {
-      const batchId = `products-${licenseKey}-${Date.now()}`;
+      // Persist the same root across crash/retry so server-side cutover leases,
+      // import-item hashes and nested idempotency keys remain stable.
+      const savedRoot = await syncMetaService.getMeta(
+        PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey }
+      );
+      const batchId = savedRoot || `products-${licenseKey}-${Date.now()}`;
+      if (!savedRoot) {
+        await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, batchId, { licenseKey });
+      }
       pharmacyCutoverRoot = batchId;
 
       for (let index = 0; index < localCatalog.categories.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
@@ -283,10 +279,24 @@ export const productMigrationService = {
     }
 
     const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
+    if (snapshot?.success !== true) return snapshot;
+
+    if (needsPharmacyCutoverClose && pharmacyCutoverRoot) {
+      const closed = await productCloudRepository.completePharmacyInventoryCutover({
+        licenseKey,
+        batchRoot: pharmacyCutoverRoot
+      });
+      if (closed?.success !== true) {
+        const issues = [{ code: 'PHARMACY_CUTOVER_CLOSE_FAILED', message: 'No se cerró el corte histórico en Cloud.' }];
+        await saveBlockedMigrationConflict({ licenseKey, issues });
+        return { success: false, blocked: true, issues, response: closed };
+      }
+    }
 
     await syncMetaService.setMeta(migratedKey, true, { licenseKey });
     await syncMetaService.setMeta(PRODUCTS_MIGRATED_AT_META_KEY, nowIso(), { licenseKey });
     await syncMetaService.setMeta(PRODUCTS_MIGRATION_WARNING_META_KEY, null, { licenseKey });
+    await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey });
 
     Logger.log(`[Products/Migration] Migracion inicial completada. Local=${totalLocalRows}, snapshot=${snapshot.applied || 0}`);
     notifyProductsChanged({ source: 'productMigrationService.runInitialMigrationIfNeeded' });
