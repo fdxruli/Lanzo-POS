@@ -323,4 +323,30 @@ describe('CameraViewport geometry integration', () => {
     expect(reticleRect.right).toBeLessThanOrEqual(stageRect.right);
     expect(reticleRect.bottom).toBeLessThanOrEqual(stageRect.bottom);
   });
+
+  it('Retry inside a product form never submits it', () => {
+    const onSubmit = vi.fn((event) => event.preventDefault());
+    const onRetryCamera = vi.fn();
+
+    const view = render(
+      <form onSubmit={onSubmit}>
+        <CameraViewport
+          videoRef={{ current: null }}
+          cameraError="Permiso de cámara denegado"
+          scanFeedback=""
+          isScanning={false}
+          isConfirming={false}
+          onRetryCamera={onRetryCamera}
+          onDecodeRegionChange={vi.fn()}
+        />
+      </form>,
+    );
+
+    const retry = view.getByRole('button', { name: 'Reintentar' });
+    expect(retry).toHaveAttribute('type', 'button');
+    fireEvent.click(retry);
+    expect(onRetryCamera).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
 });
