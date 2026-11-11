@@ -1,75 +1,96 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  capture: vi.fn(), assertCurrent: vi.fn(), loadData: vi.fn(),
+  buildReport: vi.fn(), download: vi.fn(), showMessage: vi.fn()
+}));
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
-  useSettingsActionGuard: () => () => ({ assertCurrent: vi.fn() })
+  useSettingsActionGuard: () => mocks.capture
 }));
-
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: vi.fn((selector) => selector({
-    companyProfile: { business_type: ['farmacia'] }
-  }))
+  useAppStore: vi.fn(selector => selector({ companyProfile: { business_type: ['farmacia'] } }))
 }));
-
 vi.mock('../../../hooks/useFeatureConfig', () => ({
   useFeatureConfig: () => ({ hasLabFields: true })
 }));
-
 vi.mock('../../../hooks/useDismissibleHistoryLayer', () => ({
   useDismissibleHistoryLayer: () => vi.fn()
 }));
-
 vi.mock('../../../services/dataTransfer', () => ({
-  downloadInventorySmart: vi.fn(),
-  processImport: vi.fn(),
-  downloadFile: vi.fn(),
-  generatePharmacyReport: vi.fn(),
-  downloadTemplate: vi.fn()
+  downloadInventorySmart: vi.fn(), processImport: vi.fn(), previewProductCsvImport: vi.fn(),
+  downloadFile: mocks.download, buildPharmacyReport: mocks.buildReport, downloadTemplate: vi.fn()
 }));
-
 vi.mock('../../../services/database', () => ({
-  loadData: vi.fn(),
-  STORES: { SALES: 'sales' }
+  loadData: mocks.loadData, STORES: { SALES: 'sales' }
 }));
-
 vi.mock('../../../services/utils', () => ({
-  showConfirmModal: vi.fn(),
-  showMessageModal: vi.fn()
+  showConfirmModal: vi.fn(), showMessageModal: mocks.showMessage
 }));
 
 import DataTransferModal from '../DataTransferModal';
 
-describe('DataTransferModal sales presentation isolation', () => {
+const mount = (allowSalesExport = true) => render(
+  <DataTransferModal show allowInventory allowSalesExport={allowSalesExport}
+    onClose={vi.fn()} onRefresh={vi.fn()} />
+);
+const clickReport = () => fireEvent.click(screen.getByRole('button', { name: /Reporte auxiliar de dispensaciones/i }));
+
+describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.capture.mockReturnValue({ assertCurrent: mocks.assertCurrent });
+    mocks.loadData.mockResolvedValue([{ id: 'sal-1' }]);
+    mocks.buildReport.mockReturnValue({ csv: 'archivo,seguro', count: 1, issueRows: 1 });
+  });
   afterEach(cleanup);
 
-  it('does not expose the pharmacy sales export without reports authority', () => {
-    render(
-      <DataTransferModal
-        show
-        allowInventory
-        allowSalesExport={false}
-        onClose={vi.fn()}
-        onRefresh={vi.fn()}
-      />
-    );
-
+  it('oculta el reporte cuando el contenedor no concede reportes', () => {
+    mount(false);
     expect(screen.getByRole('button', { name: /Descargar Inventario Completo/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Libro de Control/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reporte auxiliar de dispensaciones/i })).not.toBeInTheDocument();
   });
 
-  it('shows the pharmacy sales export only when its combined authority is supplied', () => {
-    render(
-      <DataTransferModal
-        show
-        allowInventory
-        allowSalesExport
-        onClose={vi.fn()}
-        onRefresh={vi.fn()}
-      />
-    );
+  it('explica alcance local y descarga desde el botón de la app con guard sync+reports', async () => {
+    mount();
+    expect(screen.getByText(/No sustituye los libros de control sanitario autorizados/)).toBeInTheDocument();
+    clickReport();
+    await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(1));
+    expect(mocks.capture).toHaveBeenCalledWith('sync');
+    expect(mocks.assertCurrent).toHaveBeenCalledWith('reports');
+    expect(mocks.download.mock.calls[0][0]).toBe('archivo,seguro');
+    expect(mocks.download.mock.calls[0][1]).toMatch(/^dispensaciones_farmacia_local_\d{4}-\d{2}-\d{2}\.csv$/);
+  });
 
-    expect(screen.getByRole('button', { name: /Libro de Control/i })).toBeInTheDocument();
+  it('staff sin permisos: el guard deniega la acción y no lee ventas', async () => {
+    mocks.capture.mockImplementation(() => { throw new Error('ACTOR_PERMISSION_DENIED'); });
+    mount();
+    clickReport();
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+  });
+
+  it('revocación/cambio de actor durante carga: no se descarga el archivo', async () => {
+    let resolveRead;
+    mocks.loadData.mockReturnValue(new Promise(resolve => { resolveRead = resolve; }));
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.loadData).toHaveBeenCalledTimes(1));
+    mocks.assertCurrent.mockImplementation(() => { throw new Error('CONTEXT_STALE'); });
+    await act(async () => { resolveRead([{ id: 'sal-1' }]); await Promise.resolve(); });
+    expect(mocks.buildReport).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+  });
+
+  it('ningún registro identificable: mensaje delimitado al dispositivo, sin CSV', async () => {
+    mocks.buildReport.mockReturnValue({ csv: 'solo-encabezados', count: 0, issueRows: 0 });
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalled());
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/registros locales de este dispositivo/i);
   });
 });
