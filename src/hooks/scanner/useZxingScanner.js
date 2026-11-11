@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BinaryBitmap,
   BrowserMultiFormatReader,
@@ -19,6 +19,7 @@ const DEFAULT_CONSTRAINTS = {
 };
 
 const CONTINUOUS_FOCUS_MODE = 'continuous';
+const UNAVAILABLE_TORCH = Object.freeze({ supported: false, enabled: false, pending: false });
 const DEFAULT_MISS_DELAY_MS = 150;
 const SUCCESS_DELAY_MS = 500;
 const TRY_HARDER_AFTER_COMPLETE_MISSES = 8;
@@ -74,7 +75,7 @@ export const inspectVideoTrack = (track) => {
   return { capabilities, settings };
 };
 
-export const applyContinuousAutofocus = async (track) => {
+export const applyContinuousAutofocus = async (track, inspectedTrack = null) => {
   if (
     !track
     || track.readyState === 'ended'
@@ -83,7 +84,7 @@ export const applyContinuousAutofocus = async (track) => {
     return false;
   }
 
-  const { capabilities } = inspectVideoTrack(track);
+  const { capabilities } = inspectedTrack || inspectVideoTrack(track);
   const focusModes = capabilities?.focusMode;
 
   if (
@@ -290,14 +291,18 @@ export function useZxingScanner({
   onDecodeResult = () => {},
   onDecodeError = () => {},
   onError = () => {},
+  onTorchError = () => {},
 } = {}) {
   const videoRef = useRef(null);
   const activeSessionRef = useRef(null);
   const sessionIdRef = useRef(0);
+  const mountedRef = useRef(false);
+  const [torch, setTorch] = useState(UNAVAILABLE_TORCH);
 
   const decodeResultHandlerRef = useRef(onDecodeResult);
   const decodeErrorHandlerRef = useRef(onDecodeError);
   const errorHandlerRef = useRef(onError);
+  const torchErrorHandlerRef = useRef(onTorchError);
 
   const missDelay = useMemo(
     () => getSafeMissDelay(timeBetweenDecodingAttempts),
@@ -316,10 +321,23 @@ export function useZxingScanner({
     errorHandlerRef.current = onError;
   }, [onError]);
 
+  useEffect(() => {
+    torchErrorHandlerRef.current = onTorchError;
+  }, [onTorchError]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const cleanupSession = useCallback((session) => {
     if (!session || session.cancelled) return;
 
     session.cancelled = true;
+    session.torchPending = false;
+    if (activeSessionRef.current === session && mountedRef.current) {
+      setTorch(UNAVAILABLE_TORCH);
+    }
 
     if (session.timer !== null) {
       clearTimeout(session.timer);
@@ -369,6 +387,69 @@ export function useZxingScanner({
     cleanupSession(session);
   }, [cleanupSession]);
 
+  // Manual torch is serialized after optional autofocus on this track.
+  // Neither operation delays video playback or ZXing.
+  const toggleTorch = useCallback(async () => {
+    const session = activeSessionRef.current;
+    if (
+      !session || session.cancelled || !session.torchSupported
+      || session.torchPending || session.track?.readyState === 'ended'
+    ) return false;
+
+    const isCurrent = () => (
+      !session.cancelled
+      && activeSessionRef.current === session
+      && sessionIdRef.current === session.id
+      && session.track?.readyState !== 'ended'
+      && session.videoElement?.srcObject === session.stream
+    );
+
+    const nextEnabled = !session.torchEnabled;
+    session.torchPending = true;
+    if (mountedRef.current) {
+      setTorch({ supported: true, enabled: session.torchEnabled, pending: true });
+    }
+
+    try {
+      await session.focusOperation;
+      if (!isCurrent()) return false;
+
+      const advanced = { torch: nextEnabled };
+      if (session.continuousFocusApplied) {
+        // applyConstraints replaces the prior advanced constraints.
+        advanced.focusMode = CONTINUOUS_FOCUS_MODE;
+      }
+      await session.track.applyConstraints({ advanced: [advanced] });
+      if (!isCurrent()) return false;
+
+      const { settings } = inspectVideoTrack(session.track);
+      const effective = typeof settings?.torch === 'boolean'
+        ? settings.torch
+        : nextEnabled;
+      session.torchEnabled = effective;
+      if (mountedRef.current) {
+        setTorch({ supported: true, enabled: effective, pending: false });
+      }
+      if (effective !== nextEnabled) {
+        torchErrorHandlerRef.current(new Error('The torch setting was not applied.'));
+      }
+      return effective === nextEnabled;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      const { settings } = inspectVideoTrack(session.track);
+      if (typeof settings?.torch === 'boolean') {
+        session.torchEnabled = settings.torch;
+      }
+      if (mountedRef.current) {
+        setTorch({ supported: true, enabled: session.torchEnabled, pending: false });
+      }
+      torchErrorHandlerRef.current(error);
+      return false;
+    } finally {
+      session.torchPending = false;
+    }
+  }, []);
+
   useEffect(() => {
     const videoElement = videoRef.current;
 
@@ -384,6 +465,11 @@ export function useZxingScanner({
       stream: null,
       track: null,
       trackEndedHandler: null,
+      torchSupported: false,
+      torchEnabled: false,
+      torchPending: false,
+      continuousFocusApplied: false,
+      focusOperation: Promise.resolve(),
       timer: null,
       pipelineInFlight: false,
       completeMissCount: 0,
@@ -663,6 +749,12 @@ export function useZxingScanner({
 
         session.stream = stream;
         session.track = getActiveVideoTrackFromStream(stream);
+        const inspectedTrack = inspectVideoTrack(session.track);
+        session.torchSupported = (
+          inspectedTrack.capabilities?.torch === true
+          && typeof session.track?.applyConstraints === 'function'
+        );
+        session.torchEnabled = inspectedTrack.settings?.torch === true;
 
         if (session.track && typeof session.track.addEventListener === 'function') {
           session.track.addEventListener('ended', handleTrackEnded);
@@ -682,9 +774,18 @@ export function useZxingScanner({
         // Continuous focus is optional: neither video.play() nor the first
         // decode cycle should wait for its potentially slow constraints.
         if (session.track && isSessionActive()) {
-          void applyContinuousAutofocus(session.track).catch(() => {
+          session.focusOperation = applyContinuousAutofocus(
+            session.track,
+            inspectedTrack,
+          ).then((applied) => {
+            if (isSessionActive()) session.continuousFocusApplied = applied;
+          }).catch(() => {
             // Failure of optional focus must not interrupt a playing camera.
           });
+        }
+
+        if (session.torchSupported && isSessionActive() && mountedRef.current) {
+          setTorch({ supported: true, enabled: session.torchEnabled, pending: false });
         }
       } catch (error) {
         if (isSessionActive()) {
@@ -716,5 +817,7 @@ export function useZxingScanner({
 
   return {
     ref: videoRef,
+    torch,
+    toggleTorch,
   };
 }

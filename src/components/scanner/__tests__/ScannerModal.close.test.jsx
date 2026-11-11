@@ -9,11 +9,13 @@ const {
   mockClearCart,
   mockSetIsConfirming,
   mockUseScannerCart,
+  mockUseZxingScanner,
 } = vi.hoisted(() => ({
   mockClose: vi.fn(),
   mockClearCart: vi.fn(),
   mockSetIsConfirming: vi.fn(),
   mockUseScannerCart: vi.fn(),
+  mockUseZxingScanner: vi.fn(),
 }));
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
@@ -42,7 +44,7 @@ vi.mock('../../../hooks/scanner/useScannerCart', () => ({
 
 vi.mock('../../../hooks/scanner/useZxingScanner', () => ({
   isRecoverableDecodeError: vi.fn(() => false),
-  useZxingScanner: vi.fn(() => ({ ref: { current: null } })),
+  useZxingScanner: mockUseZxingScanner,
 }));
 
 vi.mock('../CameraViewport', () => ({
@@ -88,6 +90,11 @@ beforeEach(() => {
   mockClearCart.mockReset();
   mockSetIsConfirming.mockReset();
   mockUseScannerCart.mockReturnValue(defaultCart);
+  mockUseZxingScanner.mockReturnValue({
+    ref: { current: null },
+    torch: { supported: false, enabled: false, pending: false },
+    toggleTorch: vi.fn(),
+  });
 });
 
 afterEach(() => {
@@ -125,6 +132,38 @@ describe('ScannerModal close control', () => {
     expect(closeButton).toBeDisabled();
     fireEvent.click(closeButton);
     expect(mockClose).not.toHaveBeenCalled();
+  });
+
+  it('hides the torch control if the active camera does not support it', () => {
+    render(<ScannerModal show onClose={mockClose} />);
+    expect(screen.queryByRole('button', { name: 'Encender linterna' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cerrar escaner' })).toBeEnabled();
+  });
+
+  it('offers the torch control when the camera supports it', () => {
+    const toggleTorch = vi.fn();
+    mockUseZxingScanner.mockReturnValue({
+      ref: { current: null },
+      torch: { supported: true, enabled: false, pending: false },
+      toggleTorch,
+    });
+    render(<ScannerModal show onClose={mockClose} />);
+
+    const torchButton = screen.getByRole('button', { name: 'Encender linterna' });
+    expect(torchButton).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(torchButton);
+    expect(toggleTorch).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Cerrar escaner' })).toBeEnabled();
+  });
+
+  it('disables the torch control during an in-flight change', () => {
+    mockUseZxingScanner.mockReturnValue({
+      ref: { current: null },
+      torch: { supported: true, enabled: false, pending: true },
+      toggleTorch: vi.fn(),
+    });
+    render(<ScannerModal show onClose={mockClose} />);
+    expect(screen.getByRole('button', { name: 'Cambiando linterna' })).toBeDisabled();
   });
 
   it('keeps only the close control interactive over the passive camera layers', () => {
