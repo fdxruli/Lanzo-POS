@@ -56,6 +56,17 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
           Boolean(productToEdit.prescriptionType && productToEdit.prescriptionType !== 'otc'))) {
       fieldErrors.pharmacyKind = 'No se permite convertir un medicamento con receta histórica en venta libre.';
     }
+    if (values.sanitaryFraction) {
+      if (productToEdit.prescriptionType === 'controlled' && !['I', 'II', 'III'].includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'La restricción controlada histórica no puede reducirse en esta etapa.';
+      }
+      if (productToEdit.prescriptionType === 'antibiotic' && !values.isAntibiotic) {
+        fieldErrors.isAntibiotic = 'No se permite retirar el control de antibiótico histórico.';
+      }
+      if (productToEdit.requiresPrescription === true && ['V', 'VI'].includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'No se permite eliminar la exigencia histórica de receta.';
+      }
+    }
     const candidate = {
       metadata: { pharmacy: {
         kind: values.pharmacyKind, fraction: values.sanitaryFraction || null,

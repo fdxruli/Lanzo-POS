@@ -64,7 +64,7 @@ export const productSchema = z.object({
   // Campos farmacéuticos persistidos por el formulario canónico.
 
   // Compatibilidad: prescription representa receta ordinaria sin confundirla con control especial.
-  prescriptionType: z.enum(['otc', 'antibiotic', 'controlled', 'prescription']).optional(),
+  prescriptionType: z.enum(['otc', 'antibiotic', 'controlled']).optional(),
 
   // 2. Datos Específicos (Nombres en inglés como los envía el formulario)
   activeSubstance: z.string().optional(),

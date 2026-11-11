@@ -242,6 +242,18 @@ export const productLocalRepository = {
 
     const productId = editing ? hydratedExisting.id : (productData.id || generateID('prod'));
     if (editing) {
+      const currentRestricted = hydratedExisting.rubroContext === 'farmacia' || Boolean(hydratedExisting.metadata?.pharmacy);
+      if (currentRestricted && hydratedExisting.requiresPrescription === true && productData.requiresPrescription === false) {
+        throw new Error('No se permite quitar la exigencia histórica de receta.');
+      }
+      if (currentRestricted && hydratedExisting.prescriptionType === 'controlled' &&
+          productData.prescriptionType && productData.prescriptionType !== 'controlled') {
+        throw new Error('No se permite reducir el control histórico del medicamento.');
+      }
+      if (currentRestricted && hydratedExisting.prescriptionType === 'antibiotic' &&
+          productData.prescriptionType && productData.prescriptionType !== 'antibiotic') {
+        throw new Error('No se permite retirar el control histórico de antibióticos.');
+      }
       if (hasChangedConfirmedClassification(hydratedExisting, productData)) {
         throw new Error('No se permite reclasificar un medicamento confirmado sin autorización sanitaria.');
       }

@@ -41,9 +41,11 @@ export const pharmacyLegacyIndicators = (product = {}) => {
   if (pharma.recorded && pharma.kind === 'other') return { prescriptionType: 'otc', requiresPrescription: false };
   if (pharma.status === 'confirmed') {
     const requiresPrescription = ['I', 'II', 'III', 'IV'].includes(pharma.fraction) || pharma.antibiotic;
+    // IV ordinaria: null/undefined en el contrato legacy, con bandera de receta true.
+    // Evita introducir un cuarto enum que rompa clientes anteriores.
     const prescriptionType = SPECIAL.has(pharma.fraction) ? 'controlled'
       : pharma.antibiotic ? 'antibiotic'
-        : requiresPrescription ? 'prescription' : 'otc';
+        : requiresPrescription ? undefined : 'otc';
     return { prescriptionType, requiresPrescription };
   }
   // No inferir fracciones históricas. Nunca eliminar una restricción heredada.

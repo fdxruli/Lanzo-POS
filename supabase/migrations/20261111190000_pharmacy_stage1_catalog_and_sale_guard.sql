@@ -35,7 +35,9 @@ begin
     if (old.requires_prescription is true
         or old.prescription_type in ('controlled', 'antibiotic', 'prescription'))
        and (new.requires_prescription is distinct from true
-            or new.prescription_type = 'otc') then
+            or new.prescription_type = 'otc'
+            or (old.prescription_type in ('controlled','antibiotic')
+                and new.prescription_type is distinct from old.prescription_type)) then
       raise exception 'PHARMACY_LEGACY_PRESCRIPTION_DOWNGRADE_FORBIDDEN' using errcode = 'P0001';
     end if;
   end if;
@@ -75,8 +77,9 @@ begin
       raise exception 'PHARMACY_SPECIAL_FRACTION_LEGACY_FLAGS_INVALID' using errcode = 'P0001';
     end if;
   elsif v_fraction = 'IV' or v_antibiotic then
-    if new.requires_prescription is distinct from true or
-       new.prescription_type not in ('prescription', 'antibiotic') then
+    if new.requires_prescription is distinct from true
+       or (v_antibiotic and new.prescription_type is distinct from 'antibiotic')
+       or (not v_antibiotic and new.prescription_type is not null) then
       raise exception 'PHARMACY_PRESCRIPTION_FLAGS_INVALID' using errcode = 'P0001';
     end if;
   elsif v_fraction is null then

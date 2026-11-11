@@ -25,7 +25,7 @@ describe('farmacia etapa 1 - clasificación legal y compatibilidad', () => {
   });
   it('fracción IV no antibiótico no se confunde con controlado', () => {
     expect(pharmacyLegacyIndicators(pharmacy('IV'))).toEqual({
-      prescriptionType: 'prescription', requiresPrescription: true
+      prescriptionType: undefined, requiresPrescription: true
     });
   });
   it.each(['V', 'VI'])('fracción %s sin receta es explícita', (fraction) => {
