@@ -669,10 +669,6 @@ export function useZxingScanner({
           session.trackEndedHandler = handleTrackEnded;
         }
 
-        if (session.track) {
-          await applyContinuousAutofocus(session.track);
-        }
-
         if (!ensureSessionCanContinue()) return;
 
         await attachStreamToVideo(videoElement, stream);
@@ -682,6 +678,14 @@ export function useZxingScanner({
         // Initial work is deferred to the event loop; subsequent work always
         // uses the bounded success/miss cadence above.
         scheduleNextCycle(1);
+
+        // Continuous focus is optional: neither video.play() nor the first
+        // decode cycle should wait for its potentially slow constraints.
+        if (session.track && isSessionActive()) {
+          void applyContinuousAutofocus(session.track).catch(() => {
+            // Failure of optional focus must not interrupt a playing camera.
+          });
+        }
       } catch (error) {
         if (isSessionActive()) {
           reportUnexpectedError(error);
