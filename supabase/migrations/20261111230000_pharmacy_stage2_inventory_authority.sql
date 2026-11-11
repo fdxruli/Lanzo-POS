@@ -41,7 +41,7 @@ $$;
 create or replace function private.pharmacy_stage2_protected_product(
   p_license_id uuid,p_product_id text,p_payload jsonb default null
 ) returns boolean language plpgsql stable security definer set search_path to ''
-as $
+as $$
 declare
   v_stored public.pos_products;
   v_source jsonb;
@@ -59,7 +59,7 @@ begin
     or coalesce(v_source->>'requires_prescription',v_source->>'requiresPrescription','false')='true'
     or coalesce(v_source->>'prescription_type',v_source->>'prescriptionType','') in ('controlled','antibiotic','prescription');
 end;
-$;
+$$;
 
 -- Server-only writes: a direct catalog RPC must not create undocumented stock.
 -- The initial cutover uses a separate, limited, server-verified route.
