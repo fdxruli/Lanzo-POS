@@ -63,7 +63,7 @@ export const productSchema = z.object({
   // --- CORRECCIÓN FARMACIA ---
   // Campos farmacéuticos persistidos por el formulario canónico.
 
-  // 1. Tipo de Prescripción (Vital para que no se resetee a OTC)
+  // Compatibilidad: prescription representa receta ordinaria sin confundirla con control especial.
   prescriptionType: z.enum(['otc', 'antibiotic', 'controlled']).optional(),
 
   // 2. Datos Específicos (Nombres en inglés como los envía el formulario)
@@ -75,6 +75,16 @@ export const productSchema = z.object({
   laboratorio: z.string().optional().nullable(),
   requiresPrescription: z.boolean().optional(),
   presentation: z.string().optional().nullable(),
+  pharmacy: z.object({
+    version: z.number().optional(),
+    kind: z.enum(['medicine', 'other']),
+    fraction: z.enum(['I','II','III','IV','V','VI']).nullable().optional(),
+    status: z.enum(['confirmed', 'pending']),
+    antibiotic: z.boolean(),
+    concentration: z.string().optional(),
+    dosageForm: z.string().optional(),
+    sanitaryRegistration: z.string().optional()
+  }).passthrough().optional(),
 
   // Caducidad — SSOT: La fecha real vive en batch.expiryDate
   // Este flag solo indica el modo de expiración del producto.

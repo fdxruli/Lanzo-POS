@@ -51,7 +51,7 @@ const getDate = sale => {
 const classify = item => {
   const type = normalize(item.prescriptionType ?? item.prescription_type);
   const flag = bool(item.requiresPrescription ?? item.requires_prescription);
-  const recognized = type === 'antibiotic' || type === 'controlled';
+  const recognized = ['antibiotic', 'controlled', 'prescription'].includes(type);
   const unknown = Boolean(type && type !== 'otc' && !recognized);
   return { type, flag, unknown, identifiable: flag === true || recognized || unknown };
 };

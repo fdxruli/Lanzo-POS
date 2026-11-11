@@ -27,6 +27,7 @@ import {
     restaurantCloudTableTerminalBlockedResult
 } from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
+import { isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import {
   createFinancialNotificationResult,
   notificationNotRequested
@@ -324,6 +325,13 @@ export const processSaleCore = async ({
         const isEcommerceSale = Boolean(ecommerceCheckout);
         const safePaymentData = sanitizePaymentData(paymentData);
         const productMap = new Map(allProducts.map(p => [p.id, p]));
+        const special = itemsToProcess.find((item) => {
+            const product = productMap.get(item.parentId || item.productId || item.id) || item;
+            return isSpecialPharmacyProduct(product);
+        });
+        if (special) {
+            throw new Error('BLOQUEO SANITARIO: Los medicamentos de fracciones I, II y III no pueden venderse por el flujo genérico.');
+        }
         const saleDiscount = isEcommerceSale
             ? null
             : (paymentData.saleDiscount || paymentData.discount || null);

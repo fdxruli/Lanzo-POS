@@ -3,6 +3,7 @@ import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../
 import { normalizeProductUnit, normalizePurchaseUnit, resolveProductSaleUnit } from '../../../../utils/productUnitConfiguration';
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
 import { normalizeProduceSaleConfiguration } from '../domain/productFormNormalization';
+import { getPharmacyClassification } from '../../../../utils/pharmacyClassification';
 
 const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
 
@@ -30,6 +31,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     ? normalizeProduceSaleConfiguration({ saleMode, saleType: persistedSaleType, unit: productUnit })
     : null;
   const expirationMode = source.expirationMode || (config.strictExpiry && capabilities.hasExpiry !== false ? 'STRICT' : 'NONE');
+  const pharmacy = getPharmacyClassification(source);
 
   return {
     ...source,
@@ -50,7 +52,10 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',
     hasVariants: Boolean(source.hasVariants || source.quickVariants?.length), quickVariants: source.quickVariants || [],
     activeSubstance: source.activeSubstance || '', laboratory: source.laboratory || '', presentation: source.presentation || '',
-    prescriptionType: source.prescriptionType || 'otc', requiresPrescription: Boolean(source.requiresPrescription),
+    pharmacyKind: pharmacy.kind, sanitaryFraction: pharmacy.fraction, isAntibiotic: pharmacy.antibiotic,
+    concentration: pharmacy.concentration, dosageForm: pharmacy.dosageForm,
+    sanitaryRegistration: pharmacy.sanitaryRegistration, classificationStatus: pharmacy.status,
+    prescriptionType: source.prescriptionType, requiresPrescription: Boolean(source.requiresPrescription),
     restaurantType, productType: source.productType || (restaurantType === 'ingredient' ? 'ingredient' : 'sellable'),
     recipe: source.recipe || [], modifiers: source.modifiers || [], prepTime: source.prepTime ?? '', printStation: source.printStation || 'kitchen',
     wholesaleTiers: source.wholesaleTiers || [], batchSummary: null,

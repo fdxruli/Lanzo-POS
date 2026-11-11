@@ -95,7 +95,7 @@ const portableTransferRow = (tableName, source) => {
       'id', 'name', 'barcode', 'sku', 'description', 'categoryId', 'price', 'saleType',
       'productType', 'minStock', 'maxStock', 'isActive', 'trackStock', 'batchManagement',
       'recipe', 'modifiers', 'wholesaleTiers', 'prescriptionType', 'activeSubstance',
-      'laboratory', 'sustancia', 'laboratorio', 'requiresPrescription', 'presentation',
+      'laboratory', 'sustancia', 'laboratorio', 'requiresPrescription', 'presentation', 'pharmacy',
       'expirationMode', 'shelfLifeValue', 'shelfLifeUnit', 'bulkData', 'conversionFactor',
       'unit', 'unitOfMeasure', 'brand', 'marca', 'talla', 'color', 'genero', 'modelo',
       'preparationTime', 'prepTime', 'alergenos', 'allergens', 'attributes', 'image'
@@ -1039,7 +1039,7 @@ const portableCatalogProduct = (source, targetId, categoryId, marker, imageIdMap
     'barcode', 'sku', 'description', 'location', 'rubroContext', 'saleType', 'productType',
     'minStock', 'maxStock', 'trackStock', 'batchManagement', 'recipe', 'modifiers',
     'wholesaleTiers', 'prescriptionType', 'activeSubstance', 'laboratory', 'sustancia',
-    'laboratorio', 'requiresPrescription', 'presentation', 'expirationMode',
+    'laboratorio', 'requiresPrescription', 'presentation', 'pharmacy', 'expirationMode',
     'shelfLifeValue', 'shelfLifeUnit', 'bulkData', 'conversionFactor', 'unit',
     'unitOfMeasure', 'brand', 'marca', 'talla', 'color', 'genero', 'modelo',
     'preparationTime', 'prepTime', 'alergenos', 'allergens', 'attributes'

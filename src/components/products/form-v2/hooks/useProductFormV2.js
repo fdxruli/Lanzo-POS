@@ -164,7 +164,7 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const markClean = useCallback((nextValues) => { initialValuesRef.current = comparableValues(nextValues); }, []);
   const submit = useCallback(async ({ resetAfterSave = false } = {}) => {
     if (isSaving) return false;
-    const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id) });
+    const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id), productToEdit });
     setErrors(nextErrors);
     if (nextErrors.globalErrors.length) return false;
     setIsSaving(true);

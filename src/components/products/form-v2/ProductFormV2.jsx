@@ -27,7 +27,7 @@ import GeneralProductFields from './rubros/GeneralProductFields';
 import './ProductFormV2.css';
 
 const RUBRO_FIELDS = { abarrotes: GroceryProductFields, hardware: HardwareProductFields, 'verduleria/fruteria': ProduceProductFields, apparel: ApparelProductFields, farmacia: PharmacyProductFields, food_service: RestaurantProductFields, otro: GeneralProductFields };
-const ERROR_ACCORDIONS = { maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific', purchaseCost: 'specific' };
+const ERROR_ACCORDIONS = { sanitaryFraction: 'specific', pharmacyKind: 'specific', maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific', purchaseCost: 'specific' };
 
 export default function ProductFormV2({ onSave, onCancel, onDirtyChange, productToEdit, categories = [], activeRubroContext, businessTypes, features: suppliedFeatures, onOpenCategoryManager, onOpenBatches }) {
   const rubros = useMemo(() => normalizeBusinessTypes(businessTypes || activeRubroContext || productToEdit?.rubroContext), [activeRubroContext, businessTypes, productToEdit?.rubroContext]);

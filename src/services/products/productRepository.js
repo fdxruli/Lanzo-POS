@@ -20,6 +20,7 @@ import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
+import { isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { notifyProductsChanged } from './productEvents';
 import {
   actorOriginFromHandle,
@@ -604,10 +605,12 @@ export const productRepository = {
 
   async toggleProductStatus(productOrId, isActiveOverride = undefined, options = {}) {
     const productId = typeof productOrId === 'string' ? productOrId : productOrId?.id;
-    const product = typeof productOrId === 'string'
-      ? await productLocalRepository.getProductById(productId)
-      : productOrId;
+    const product = (await productLocalRepository.getProductById(productId))
+      || (typeof productOrId === 'string' ? null : productOrId);
     const isActive = isActiveOverride === undefined ? !(product?.isActive !== false) : Boolean(isActiveOverride);
+    if (isActive && isSpecialPharmacyProduct(product)) {
+      return { success: false, message: 'La fracción I, II o III no puede activarse para venta genérica.' };
+    }
     const mode = getMode();
     const actorHandle = captureProductInventoryMutation({ products: true });
 

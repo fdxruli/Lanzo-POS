@@ -1,7 +1,8 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { toNumber, variantKey } from './productFormNormalization';
+import { SANITARY_FRACTIONS, hasChangedConfirmedClassification } from '../../../../utils/pharmacyClassification';
 
-export function validateProductForm(values, { activeRubro, isEditing = false } = {}) {
+export function validateProductForm(values, { activeRubro, isEditing = false, productToEdit = null } = {}) {
   const fieldErrors = {};
   const globalErrors = [];
   const stock = toNumber(values.stock);
@@ -31,9 +32,50 @@ export function validateProductForm(values, { activeRubro, isEditing = false } =
     if (values.expiryDate) fieldErrors.expirationMode = 'La vida útil y una fecha concreta no pueden coexistir.';
     if (toNumber(values.shelfLifeValue) <= 0) fieldErrors.shelfLifeValue = 'Indica una vida útil mayor que cero.';
   }
+  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) {
+    const fractions = SANITARY_FRACTIONS.map(({ value }) => value);
+    if (values.pharmacyKind === 'medicine') {
+      if (values.sanitaryFraction && !fractions.includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'Selecciona una fracción sanitaria válida.';
+      }
+      if (!isEditing && !values.sanitaryFraction && values.trackStock && stock > 0) {
+        fieldErrors.sanitaryFraction = 'Confirma la fracción antes de registrar existencias. También puedes guardar sin existencias para revisar después.';
+      }
+      if (values.isAntibiotic && ['V', 'VI'].includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'Un antibiótico sujeto a receta no puede clasificarse como medicamento sin receta.';
+      }
+    }
+  }
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA && !isEditing && values.trackStock && stock > 0) {
     if (!String(values.manufacturerBatchId || '').trim()) fieldErrors.manufacturerBatchId = 'Indica el lote del fabricante.';
     if (!values.expiryDate) fieldErrors.expiryDate = 'Indica la caducidad de la entrada inicial.';
+  }
+  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA && productToEdit?.id) {
+    if (values.pharmacyKind === 'other' &&
+        (productToEdit.requiresPrescription === true ||
+          Boolean(productToEdit.prescriptionType && productToEdit.prescriptionType !== 'otc'))) {
+      fieldErrors.pharmacyKind = 'No se permite convertir un medicamento con receta histórica en venta libre.';
+    }
+    if (values.sanitaryFraction) {
+      if (productToEdit.prescriptionType === 'controlled' && !['I', 'II', 'III'].includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'La restricción controlada histórica no puede reducirse en esta etapa.';
+      }
+      if (productToEdit.prescriptionType === 'antibiotic' && !values.isAntibiotic) {
+        fieldErrors.isAntibiotic = 'No se permite retirar el control de antibiótico histórico.';
+      }
+      if (productToEdit.requiresPrescription === true && ['V', 'VI'].includes(values.sanitaryFraction)) {
+        fieldErrors.sanitaryFraction = 'No se permite eliminar la exigencia histórica de receta.';
+      }
+    }
+    const candidate = {
+      metadata: { pharmacy: {
+        kind: values.pharmacyKind, fraction: values.sanitaryFraction || null,
+        status: values.sanitaryFraction ? 'confirmed' : 'pending', antibiotic: values.isAntibiotic
+      } }
+    };
+    if (hasChangedConfirmedClassification(productToEdit, candidate)) {
+      fieldErrors.sanitaryFraction = 'La reclasificación de un medicamento confirmado requiere un procedimiento autorizado. No está disponible en esta etapa.';
+    }
   }
   if (values.hasVariants) {
     const active = values.quickVariants.filter((variant) => variant.talla || variant.color || variant.sku);
