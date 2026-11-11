@@ -101,6 +101,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
   const [cameraError, setCameraError] = useState(null);
   const [scanCount, setScanCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [transferUncertain, setTransferUncertain] = useState(false);
 
   const mode = onScanSuccess ? 'single' : 'pos';
 
@@ -170,6 +171,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     setScanFeedback('');
     setCameraError(null);
     setScanCount(0);
+    setTransferUncertain(false);
     decodeRegionRef.current = null;
     onClose();
   }, [clearCart, onClose]);
@@ -276,7 +278,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
   // Hook de escaneo - SIEMPRE activo cuando show=true e isConfirming=false
   // La pausa lógica se maneja via processingLockRef, NO via paused
   const { ref: videoRef, torch, toggleTorch, restartCamera } = useZxingScanner({
-    paused: !show || isConfirming, // Solo pausar por condiciones de UI, no por lógica
+    paused: !show || isConfirming || transferUncertain, // Solo pausar por condiciones de UI, no por lógica
     onDecodeResult: handleDecodeResult,
     onError: handleError,
     onTorchError: handleTorchError,
@@ -300,7 +302,10 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Confirmar carrito con manejo robusto de errores
   const handleConfirmScan = useCallback(async () => {
-    if (mode !== 'pos' || items.length === 0 || isConfirming) {
+    if (
+      mode !== 'pos' || items.length === 0 || isConfirming
+      || isProcessing || processingLockRef.current || transferUncertain
+    ) {
       return;
     }
 
@@ -327,35 +332,29 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
       if (!isMountedRef.current) return;
 
-      // Analizar resultado detalladamente
-      const hasPartialSuccess =
-        (result?.addedCount || 0) > 0 || (result?.incrementedCount || 0) > 0;
-      const hasFailures = (result?.failedCount || 0) > 0;
+      // The POS action reports affected quantities after its order update.
+      // Retry only when every input unit is explicitly reported as failed.
+      const addedCount = result?.addedCount ?? 0;
+      const incrementedCount = result?.incrementedCount ?? 0;
+      const failedCount = result?.failedCount ?? 0;
+      const hasPartialSuccess = addedCount > 0 || incrementedCount > 0;
+      const hasFailures = failedCount > 0;
+      const verifiedTotalFailure = (
+        result?.success === false
+        && addedCount === 0
+        && incrementedCount === 0
+        && failedCount === flatItems.length
+      );
 
-      if (hasFailures) {
+      if (hasFailures && hasPartialSuccess) {
+        // Preserve existing partial-success handling outside this PR's scope.
         playErrorBeep();
         Logger.warn('Confirmacion parcial del carrito temporal del escaner.', {
-          addedCount: result?.addedCount || 0,
-          incrementedCount: result?.incrementedCount || 0,
-          failedCount: result?.failedCount || 0,
+          addedCount,
+          incrementedCount,
+          failedCount,
         });
-
-        if (!hasPartialSuccess) {
-          // Fallo total - no reanudar escaneo automáticamente
-          setScanFeedback(
-            `Error: No se pudo agregar ningun producto (${result?.failedCount} fallos)`
-          );
-          setIsConfirming(false);
-          setIsProcessing(false);
-          // No reactivar processingLockRef - requiere acción del usuario
-          return;
-        }
-
-        // Éxito parcial - notificar pero cerrar modal
-        setScanFeedback(
-          `Agregados ${result?.addedCount || 0}, ${result?.failedCount} fallos`
-        );
-        // Pequeño delay para que el usuario vea el mensaje
+        setScanFeedback(`Agregados ${addedCount}, ${failedCount} fallos`);
         setTimeout(() => {
           if (isMountedRef.current) {
             handleClose();
@@ -364,10 +363,15 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
         return;
       }
 
-      if (!result?.success) {
-        // Fallo completo sin detalles
+      if (hasFailures || !result?.success) {
         playErrorBeep();
-        setScanFeedback('No se pudo confirmar el escaneo');
+        if (verifiedTotalFailure) {
+          setScanFeedback(`Error: No se pudo agregar ningun producto (${failedCount} fallos)`);
+          processingLockRef.current = false;
+        } else {
+          // Uncertain result: do not risk transferring the same units twice.
+          setTransferUncertain(true);
+        }
         setIsConfirming(false);
         setIsProcessing(false);
         return;
@@ -380,10 +384,10 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
       Logger.error('Error confirmando carrito temporal del escaner:', error);
       playErrorBeep();
-      setScanFeedback('Error critico al confirmar');
+      // A thrown error does not prove that no POS items were added.
+      setTransferUncertain(true);
       setIsConfirming(false);
       setIsProcessing(false);
-      // No reactivar processingLockRef - requiere acción del usuario
     }
   }, [
     addMultipleScannedProducts,
@@ -391,6 +395,8 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     isConfirming,
     items,
     mode,
+    isProcessing,
+    transferUncertain,
     setIsConfirming,
   ]);
 
@@ -401,6 +407,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       setScanFeedback('');
       setCameraError(null);
       setScanCount(0);
+      setTransferUncertain(false);
       decodeRegionRef.current = null;
       processingLockRef.current = false;
       setIsProcessing(false);
@@ -440,7 +447,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
                 videoRef={videoRef}
                 cameraError={cameraError}
                 scanFeedback={scanFeedback}
-                isScanning={!isProcessing && !isConfirming}
+                isScanning={!isProcessing && !isConfirming && !transferUncertain}
                 isConfirming={isConfirming}
                 onRetryCamera={handleRetryCamera}
                 onDecodeRegionChange={handleDecodeRegionChange}
@@ -471,6 +478,12 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
                 unknownCodes={unknownCodes}
                 onClear={clearUnknownCodes}
               />
+              {transferUncertain && (
+                <p role="alert" className="scanner-error-banner">
+                  No se pudo verificar si los productos llegaron al carrito POS.
+                  Cierra el escáner y revisa el carrito antes de volver a transferirlos.
+                </p>
+              )}
               <ScannerCartList
                 items={items}
                 total={total}
@@ -488,7 +501,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
               type="button"
               className="btn btn-primary scanner-confirm-btn"
               onClick={handleConfirmScan}
-              disabled={items.length === 0 || isConfirming}
+              disabled={items.length === 0 || isConfirming || isProcessing || transferUncertain}
             >
               {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
             </button>
