@@ -548,8 +548,7 @@ export function useZxingScanner({
       }, delay);
     };
 
-    const decodeCanvas = async (reader, canvas) => {
-      const binaryBitmap = createBinaryBitmapFromCanvas(canvas);
+    const decodeBitmap = async (reader, binaryBitmap) => {
       const result = await reader.decodeBitmap(binaryBitmap);
       return result || null;
     };
@@ -621,9 +620,9 @@ export function useZxingScanner({
 
           if (roiFrame) {
             try {
-              const roiResult = await decodeCanvas(
+              const roiResult = await decodeBitmap(
                 session.readers.normalReader,
-                roiFrame,
+                createBinaryBitmapFromCanvas(roiFrame),
               );
               if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
@@ -654,11 +653,14 @@ export function useZxingScanner({
           return;
         }
 
+        // Both normal and sparse TRY_HARDER decoding inspect this same captured
+        // frame. Build its luminance/binarizer once instead of reading pixels twice.
+        const fullBitmap = createBinaryBitmapFromCanvas(fullFrame);
         let fullNormalError = null;
         try {
-          const fullNormalResult = await decodeCanvas(
+          const fullNormalResult = await decodeBitmap(
             session.readers.normalReader,
-            fullFrame,
+            fullBitmap,
           );
           if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
@@ -691,13 +693,13 @@ export function useZxingScanner({
           return;
         }
 
-        // The full-frame canvas is intentionally reused for the sparse hard
-        // pass. No second capture occurs in this cycle.
+        // The same immutable full-frame bitmap is also reused for the sparse
+        // hard pass. No second canvas read or frame capture is needed.
         let hardError = null;
         try {
-          const hardResult = await decodeCanvas(
+          const hardResult = await decodeBitmap(
             session.readers.hardReader,
-            fullFrame,
+            fullBitmap,
           );
           if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
