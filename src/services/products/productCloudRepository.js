@@ -222,6 +222,23 @@ export const productCloudRepository = {
     });
   },
 
+  async listPharmacyInventoryReceipts({ licenseKey, productId, limit = 20, beforeAt = null, beforeId = null }) {
+    return callRpc('pos_list_pharmacy_inventory_receipts', {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_product_id: productId,
+      p_limit: Math.min(Math.max(Number(limit) || 20, 1), 50),
+      p_before_at: beforeAt,
+      p_before_id: beforeId
+    });
+  },
+
+  async completePharmacyInventoryCutover({ licenseKey, batchRoot, actorHandle = null }) {
+    return callCatalogMutationRpc('pos_complete_pharmacy_inventory_cutover', licenseKey, {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_batch_root: batchRoot
+    }, actorHandle, { products: true, inventory: true });
+  },
+
   async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId, actorHandle = null }) {
     return callCatalogMutationRpc('pos_migrate_local_product_catalog', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
