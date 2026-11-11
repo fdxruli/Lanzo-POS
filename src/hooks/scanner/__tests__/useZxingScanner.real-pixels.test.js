@@ -168,7 +168,7 @@ describe('useZxingScanner real pixel decode path', () => {
     expect(hardReader.decodeBitmap(bitmap).getText()).toBe(EAN13_VALUE);
   });
 
-  it('captures and classifies a real blank-frame NotFound as recoverable',
+  it('captures and classifies a real blank-frame NotFound as recoverable', () => {
     const reader = createReader();
     let thrownError;
 
