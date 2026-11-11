@@ -1,7 +1,7 @@
 // src/components/products/DataTransferModal.jsx
 import { useCallback, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { downloadInventorySmart, processImport, previewProductCsvImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
+import { downloadInventorySmart, processImport, previewProductCsvImport, downloadFile, buildPharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -93,7 +93,7 @@ export default function DataTransferModal({
     }
   }
 
-  // Manejador del reporte de Farmacia (Libro de Control)
+  // Reporte auxiliar: conserva autorización combinada sync + reports.
   const handleExportPharmacy = async () => {
     let actorHandle;
     try {
@@ -103,14 +103,16 @@ export default function DataTransferModal({
       const allSales = await loadData(STORES.SALES);
       actorHandle.assertCurrent('sync');
       actorHandle.assertCurrent('reports');
-      const csvContent = generatePharmacyReport(allSales);
+      const report = buildPharmacyReport(allSales);
+      actorHandle.assertCurrent('sync');
+      actorHandle.assertCurrent('reports');
 
-      if (csvContent.split('\n').length <= 1) {
-        showMessageModal('No se encontraron ventas de medicamentos controlados para exportar.');
+      if (report.count === 0) {
+        showMessageModal('No se encontraron dispensaciones identificables en los registros locales de este dispositivo. Esto no confirma ausencia de medicamentos sujetos a receta en el negocio.');
       } else {
         const date = new Date().toISOString().split('T')[0];
-        downloadFile(csvContent, `libro_control_farmacia_${date}.csv`);
-        showMessageModal('✅ Libro de Control generado correctamente.');
+        downloadFile(report.csv, 'dispensaciones_farmacia_local_' + date + '.csv');
+        showMessageModal('Reporte auxiliar generado: ' + report.count + ' registros; ' + report.issueRows + ' con incidencias. No equivale a un libro sanitario autorizado.');
       }
     } catch (error) {
       try {
@@ -280,14 +282,14 @@ export default function DataTransferModal({
 
                 {/* BOTÓN CONDICIONAL: SOLO VISIBLE SI ES FARMACIA */}
                 {allowSalesExport && features.hasLabFields && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleExportPharmacy}
-                    disabled={isLoading}
-                    style={{ backgroundColor: '#0ea5e9' }}
-                  >
-                    💊 Descargar Libro de Control (COFEPRIS)
-                  </button>
+                  <div style={{ textAlign: 'left' }}>
+                    <button type="button" className="btn btn-secondary" onClick={handleExportPharmacy} disabled={isLoading}>
+                      Reporte auxiliar de dispensaciones
+                    </button>
+                    <p style={{ fontSize: '0.875rem', lineHeight: 1.45, opacity: 0.85, margin: '0.5rem 0' }}>
+                      Contiene registros disponibles en este dispositivo. No sustituye los libros de control sanitario autorizados ni las recetas originales. No consolida automáticamente otros dispositivos PRO/Nube.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

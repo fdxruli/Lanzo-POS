@@ -4,6 +4,7 @@ import {
   streamStoreToCSV
 } from './database';
 import Logger from './Logger';
+import { buildPharmacyDispensationRows } from './reports/pharmacyDispensationReport';
 import {
   formulaSafeCell,
   importProductCsv,
@@ -183,35 +184,16 @@ export const downloadFile = (content, filename) => {
 
 // --- REPORTES ESPECÍFICOS ---
 
-export const generatePharmacyReport = (sales) => {
-  const HEADERS = [
-    'Fecha', 'Hora', 'Folio Venta',
-    'Producto', 'Sustancia Activa', 'Cantidad',
-    'Medico Prescriptor', 'Cedula Profesional', 'Notas'
-  ];
-  const rows = [];
-  sales.forEach(sale => {
-    if (sale.prescriptionDetails) {
-      const dateObj = new Date(sale.timestamp);
-      const fecha = Number.isNaN(dateObj.getTime()) ? '' : dateObj.toISOString().slice(0, 10);
-      const hora = Number.isNaN(dateObj.getTime()) ? '' : dateObj.toISOString().slice(11, 19);
-      const folio = String(sale.timestamp || '').slice(-6);
-      const doctor = sale.prescriptionDetails.doctorName || 'N/A';
-      const cedula = sale.prescriptionDetails.licenseNumber || 'N/A';
-      const notas = sale.prescriptionDetails.notes || '';
-      sale.items.forEach(item => {
-        if (item.requiresPrescription) {
-          rows.push([
-            fecha, hora, `#${folio}`,
-            item.name || '',
-            item.sustancia || '',
-            item.quantity,
-            doctor, cedula, notas
-          ].map(formulaSafeCell).join(','));
-        }
-      });
-    }
-  });
-  return [HEADERS.join(','), ...rows].join('\n');
+export const buildPharmacyReport = (sales, options = {}) => {
+  const report = buildPharmacyDispensationRows(sales, options);
+  const csv = [
+    report.headers.map(formulaSafeCell).join(','),
+    ...report.rows.map(row => row.map(formulaSafeCell).join(','))
+  ].join('\r\n');
+  return { ...report, csv };
 };
+
+// Compatibilidad con consumidores anteriores del generador CSV.
+export const generatePharmacyReport = (sales, options) => buildPharmacyReport(sales, options).csv;
+
 
