@@ -102,6 +102,12 @@ export const productMigrationService = {
         }
 
         const counts = await productLocalRepository.applyCloudCatalog(response);
+        if (counts.deferredInventory > 0) {
+          throw createProductCatalogSyncError('Recepción farmacéutica local pendiente: no avanzar cursor ni sobrescribir existencias.', {
+            code: 'PHARMACY_INVENTORY_SNAPSHOT_DEFERRED',
+            phase: 'inventory_receipt_pending', retryable: true, licenseKey
+          });
+        }
         rejected = rejected.concat(counts.rejected || []);
         const count = counts.categories + counts.products + counts.batches;
         applied += count;
