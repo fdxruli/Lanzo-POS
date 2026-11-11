@@ -287,7 +287,7 @@ export const addInventoryEntry = async ({
       timestamp, occurredAt: entry.occurredAt, entryKind, metadata: entry.metadata,
       supplier: entry.supplier, manufacturerBatchId: target?.manufacturerBatchId || null,
       expiryDate: target?.expiryDate || null, licenseKey: resolvedLicenseKey,
-      originActor: actorOriginFromHandle(actorHandle),
+      originActor: localOnly ? null : actorOriginFromHandle(actorHandle),
       requestHash,
       synced: localOnly,
       syncedAt: localOnly ? timestamp : null,
