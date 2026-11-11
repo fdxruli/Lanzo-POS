@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { useAvailableIngredients } from '../../hooks/products/useAvailableIngredients';
 import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
@@ -32,6 +32,7 @@ export default function RecipeBuilderModal({
   }, [categories, ingredients]);
   const hasUncategorized = ingredients.some((ingredient) => !ingredient.categoryId && !ingredient.category_id);
 
+  const dialogRef = useRef(null);
   const [recipeItems, setRecipeItems] = useState([]);
   const [selectedIngredientId, setSelectedIngredientId] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -52,6 +53,13 @@ export default function RecipeBuilderModal({
     setVisibleCount(INITIAL_VISIBLE);
     setNotice('');
   }, [show, existingRecipe]);
+
+  useEffect(() => {
+    if (!show) return undefined;
+    const previousFocus = document.activeElement;
+    dialogRef.current?.querySelector('.recipe-close')?.focus();
+    return () => { previousFocus?.focus?.(); };
+  }, [show]);
 
   const selectedIngredient = ingredientsById.get(selectedIngredientId);
   const selectedItem = recipeItems.find((item) => getRecipeIngredientId(item) === selectedIngredientId);
@@ -138,6 +146,20 @@ export default function RecipeBuilderModal({
   };
 
   const handleKeyDown = (event) => {
+    if (event.key === 'Tab' && dialogRef.current) {
+      const focusable = Array.from(dialogRef.current.querySelectorAll(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled)'
+      ));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
     if (event.key === 'Escape') {
       event.stopPropagation();
       onClose();
@@ -152,7 +174,7 @@ export default function RecipeBuilderModal({
   if (!show) return null;
 
   return <div className="modal recipe-modal-overlay" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
-    <section className="modal-content recipe-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title" onKeyDown={handleKeyDown}>
+    <section ref={dialogRef} className="modal-content recipe-modal" role="dialog" aria-modal="true" aria-labelledby="recipe-modal-title" onKeyDown={handleKeyDown}>
       <header className="recipe-header">
         <div>
           <h2 id="recipe-modal-title">Construir receta</h2>
