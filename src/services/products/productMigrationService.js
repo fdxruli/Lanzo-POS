@@ -189,14 +189,10 @@ export const productMigrationService = {
     }
 
     const totalLocalRows = localCatalog.categories.length + localCatalog.products.length + localCatalog.batches.length;
-    const pharmacyProductIds = new Set(localCatalog.products.filter((product) => {
-      const classification = getPharmacyClassification(product);
-      return classification.recorded && classification.kind === 'medicine';
-    }).map((product) => product.id));
+    // Close the server cutover even when all local pharmacy balances are zero:
+    // otherwise a still-open lease could import unrelated positive stock later.
     const needsPharmacyCutoverClose = localCatalog.products.some((product) =>
-      pharmacyProductIds.has(product.id) && Number(product.stock || 0) > 0
-    ) || localCatalog.batches.some((batch) =>
-      pharmacyProductIds.has(batch.productId) && Number(batch.stock || 0) > 0
+      getPharmacyClassification(product).recorded
     );
     let pharmacyCutoverRoot = null;
 
