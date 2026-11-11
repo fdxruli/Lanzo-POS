@@ -704,6 +704,35 @@ describe('useZxingScanner camera enhancement', () => {
     expect(zxing.contexts.filter((context) => context.drawImage.mock.calls.length > 0))
       .toHaveLength(1);
     expect(zxing.contexts[0].drawImage).toHaveBeenCalledTimes(8);
+    // Eight full frames -> eight pixel reads, not a ninth on TRY_HARDER.
+    expect(zxing.contexts[0].getImageData).toHaveBeenCalledTimes(8);
+    expect(getHardReader().decodeBitmap.mock.calls[0][0])
+      .toBe(getNormalReader().decodeBitmap.mock.calls[7][0]);
+  });
+
+  it('reuses the full bitmap on a hard pass after ROI fallback misses', async () => {
+    vi.useFakeTimers();
+    const decodeRegionRef = { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } };
+    queueMisses(16, 'normal');
+    queueMisses(1, 'hard');
+    const track = createTrack();
+    await renderScanner({ track, decodeRegionRef });
+
+    await flushTimers(1);
+    for (let index = 0; index < 7; index += 1) {
+      await flushTimers(150);
+    }
+
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalledTimes(16);
+    expect(getHardReader().decodeBitmap).toHaveBeenCalledTimes(1);
+    const fullBitmap = getNormalReader().decodeBitmap.mock.calls[15][0];
+    expect(getHardReader().decodeBitmap.mock.calls[0][0]).toBe(fullBitmap);
+    expect(getNormalReader().decodeBitmap.mock.calls[14][0]).not.toBe(fullBitmap);
+    // The ROI and full-frame source each have eight captures, with no extra
+    // pixel extraction for the intensive pass.
+    expect(zxing.contexts).toHaveLength(2);
+    expect(zxing.contexts[0].getImageData).toHaveBeenCalledTimes(8);
+    expect(zxing.contexts[1].getImageData).toHaveBeenCalledTimes(8);
   });
 
   it('resets the miss window after a hard success', async () => {

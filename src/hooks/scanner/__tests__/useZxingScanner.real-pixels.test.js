@@ -155,6 +155,19 @@ describe('useZxingScanner real pixel decode path', () => {
     expect(reader.decodeBitmap(fullBitmap).getText()).toBe(EAN13_VALUE);
   });
 
+  it('decodes a real EAN-13 with normal and TRY_HARDER readers sharing one bitmap', () => {
+    const canvas = createBarcodeCanvas();
+    const bitmap = createBinaryBitmapFromCanvas(canvas);
+    const normalReader = createReader();
+    const hardReader = new BrowserMultiFormatReader(new Map([
+      [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13]],
+      [DecodeHintType.TRY_HARDER, true],
+    ]));
+
+    expect(normalReader.decodeBitmap(bitmap).getText()).toBe(EAN13_VALUE);
+    expect(hardReader.decodeBitmap(bitmap).getText()).toBe(EAN13_VALUE);
+  });
+
   it('captures and classifies a real blank-frame NotFound as recoverable', () => {
     const reader = createReader();
     let thrownError;
