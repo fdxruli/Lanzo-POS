@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getLocalCatalogForMigration: vi.fn(),
   applyCloudCatalog: vi.fn(),
   migrateLocalCatalog: vi.fn(),
+  completePharmacyInventoryCutover: vi.fn(),
   pullCatalogSnapshot: vi.fn(),
   runRecovery: vi.fn(),
   events: []
@@ -28,6 +29,7 @@ vi.mock('../productLocalCatalogRecovery', () => ({ productLocalCatalogRecovery: 
 } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   migrateLocalCatalog: mocks.migrateLocalCatalog,
+  completePharmacyInventoryCutover: mocks.completePharmacyInventoryCutover,
   pullCatalogSnapshot: mocks.pullCatalogSnapshot
 } }));
 vi.mock('../productMapper', () => ({
@@ -75,6 +77,7 @@ describe('product migration FREE to PRO coordination', () => {
     mocks.events.push('pull');
     return { success: true, has_more: false };
   });
+  mocks.completePharmacyInventoryCutover.mockResolvedValue({ success: true, closed: true });
   mocks.migrateLocalCatalog.mockImplementation(async ({ categories = [], products = [], batches = [] }) => (
     successfulMigrationResponse({ categories, products, batches })
   ));
@@ -97,6 +100,46 @@ describe('product migration FREE to PRO coordination', () => {
       true,
       { licenseKey: 'CUTOVER-FIRST' }
     );
+  });
+
+  it('reuses historical import batch root after retry and closes cutover after verified snapshot', async () => {
+    const pharma = {
+      categories: [],
+      products: [{
+        id: 'pharma-1', name: 'Amoxicilina test', stock: 2, price: 10, cost: 5,
+        batchManagement: { enabled: true }, expirationMode: 'STRICT',
+        metadata: { pharmacy: { kind: 'medicine', status: 'confirmed', fraction: 'IV', antibiotic: true } }
+      }],
+      batches: [{
+        id: 'batch-pharma-1', productId: 'pharma-1', stock: 2,
+        manufacturerBatchId: 'AMX-QA-001', expiryDate: '2027-10-31T00:00:00Z'
+      }]
+    };
+    const meta = new Map();
+    mocks.getLocalCatalogForMigration.mockResolvedValue(pharma);
+    mocks.getMeta.mockImplementation(async (key) => meta.get(key) ?? false);
+    mocks.setMeta.mockImplementation(async (key, value) => { meta.set(key, value); });
+    mocks.migrateLocalCatalog.mockResolvedValueOnce({ success: false, code: 'TEMPORARY_FAILURE' });
+    mocks.migrateLocalCatalog.mockImplementation(async ({ categories = [], products = [], batches = [] }) =>
+      successfulMigrationResponse({ categories, products, batches })
+    );
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey: 'PHARMA-RETRY' }))
+      .resolves.toMatchObject({ success: false, blocked: true });
+    const firstBatch = mocks.migrateLocalCatalog.mock.calls[0][0].batchId;
+    expect(mocks.completePharmacyInventoryCutover).not.toHaveBeenCalled();
+    expect(meta.get(buildProductsMigratedMetaKey('PHARMA-RETRY'))).not.toBe(true);
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey: 'PHARMA-RETRY' }))
+      .resolves.toMatchObject({ success: true, migrated: 2 });
+    const retriedBatch = mocks.migrateLocalCatalog.mock.calls[1][0].batchId;
+    expect(retriedBatch).toBe(firstBatch);
+    expect(mocks.completePharmacyInventoryCutover).toHaveBeenCalledTimes(1);
+    expect(mocks.completePharmacyInventoryCutover).toHaveBeenCalledWith({
+      licenseKey: 'PHARMA-RETRY',
+      batchRoot: firstBatch.replace(/-products-0$/, '')
+    });
+    expect(meta.get(buildProductsMigratedMetaKey('PHARMA-RETRY'))).toBe(true);
   });
 
   it('deduplicates concurrent bootstrap and keeps the marker unset after failure', async () => {
