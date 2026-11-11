@@ -387,6 +387,16 @@ export const productSyncHandler = {
       throw asError(response, 'PRODUCT_PUSH_FAILED');
     }
 
+    // A timeout or malformed RPC reply never proves that a receipt committed.
+    // The same key is retried; only a verified canonical movement may be acked.
+    if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY && (
+      response?.success !== true
+      || !response?.inventory_movement?.id
+      || response?.idempotency_key !== idempotencyKey
+    )) {
+      throw asError({ code: 'INVENTORY_RECEIPT_CONFIRMATION_MISSING' }, 'PRODUCT_PUSH_FAILED');
+    }
+
     if (await hasNewerLocalMutation(operation)) {
       const staleResponse = createStaleConflictResponse(operation, response, 'post_rpc');
       await saveStaleConflict(operation, staleResponse, 'post_rpc');
