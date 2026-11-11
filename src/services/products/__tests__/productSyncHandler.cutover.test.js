@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   applyCloudCatalog: vi.fn(),
   getCatalogRecordForSync: vi.fn(),
   setMeta: vi.fn(),
+  getMeta: vi.fn(),
+  pullCatalogChanges: vi.fn(),
   getProductInventoryMutationRequirements: vi.fn(),
   assertProductInventoryOperationActorCurrent: vi.fn(),
   captureProductInventoryMutation: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock('../../sync/posSyncOrchestrator', () => ({
   posSyncOrchestrator: { registerEntitySyncHandler: vi.fn() }
 }));
 vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
-  getMeta: vi.fn(),
+  getMeta: mocks.getMeta,
   setMeta: mocks.setMeta
 } }));
 vi.mock('../productMigrationService', () => ({ productMigrationService: {
@@ -51,7 +53,8 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   upsertProductBatch: mocks.upsertProductBatch,
   deleteProduct: mocks.deleteProduct,
   deleteCategory: mocks.deleteCategory,
-  deleteProductBatch: mocks.deleteProductBatch
+  deleteProductBatch: mocks.deleteProductBatch,
+  pullCatalogChanges: mocks.pullCatalogChanges
 } }));
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   applyCloudCatalog: mocks.applyCloudCatalog,
@@ -69,7 +72,7 @@ vi.mock('../../Logger', () => ({ default: {
 } }));
 
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
-import { productSyncHandler } from '../productSyncHandler';
+import { productSyncHandler, pullCatalogChanges } from '../productSyncHandler';
 
 describe('product sync repeated cutover safety', () => {
   beforeEach(() => {
@@ -86,6 +89,21 @@ describe('product sync repeated cutover safety', () => {
     mocks.runRecovery.mockResolvedValue({ success: true, skipped: true, reason: 'no_unsynced_catalog' });
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
     mocks.getCatalogRecordForSync.mockResolvedValue(null);
+    mocks.getMeta.mockResolvedValue(12);
+  });
+
+  it('does not advance the catalog cursor after deferring a pending pharmacy receipt', async () => {
+    mocks.pullCatalogChanges.mockResolvedValue({
+      success: true, products: [{ id: 'medicine-1', stock: 10 }],
+      batches: [], latestChangeSeq: 13, has_more: false
+    });
+    mocks.applyCloudCatalog.mockResolvedValue({
+      categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 1
+    });
+    await expect(pullCatalogChanges('CUTOVER-HANDLER')).rejects.toMatchObject({
+      code: 'PHARMACY_INVENTORY_CATALOG_DEFERRED'
+    });
+    expect(mocks.setMeta).not.toHaveBeenCalled();
   });
 
   it('replays a historical product row without inventing or persisting current actor provenance', async () => {
