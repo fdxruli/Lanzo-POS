@@ -5,6 +5,7 @@ import { OUTBOX_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConst
 import { syncOutboxService } from '../sync/syncOutboxService';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
+import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventoryEntryService';
 import { getTenantStorageState } from '../tenant/tenantScopedStorage';
 import {
   batchToCloudPayload,
@@ -225,6 +226,43 @@ const fetchCloudStockSnapshot = async ({ licenseKey, productIds, batchIds }) => 
   return { product, batch };
 };
 
+// A Free/Local receipt can be marked local_only and have NO outbox row.
+// Compare its persisted local balances to Cloud; never manufacture a delta.
+const findUnverifiedLocalOnlyBalances = async ({ licenseKey, localCatalog, events }) => {
+  const parents = new Map(localCatalog.products.map((p) => [p.id, p]));
+  const batchesById = new Map(localCatalog.batches.map((b) => [b.id, b]));
+  const related = events.filter((event) =>
+    isProtectedMedicine(parents.get(event.productId)) || event.metadata?.pharmacyReceipt
+  );
+  if (!related.length) return [];
+  const issues = related.filter((event) =>
+    !event.licenseKey || event.licenseKey !== licenseKey || !parents.has(event.productId)
+  ).map((event) => ({
+    code: 'PHARMACY_LOCAL_ONLY_IDENTITY_UNVERIFIED',
+    entityType: 'inventory_entry', entityId: event.productId, operationId: event.operationId
+  }));
+  const validated = related.filter((event) =>
+    event.licenseKey === licenseKey && isProtectedMedicine(parents.get(event.productId))
+  );
+  if (!validated.length) return issues;
+  const productIds = new Set(validated.map((event) => event.productId));
+  const batchIds = new Set(validated.map((event) => event.batchId).filter(Boolean));
+  const cloud = await fetchCloudStockSnapshot({ licenseKey, productIds, batchIds });
+  for (const id of productIds) {
+    const local = parents.get(id);
+    if (Number(local?.stock || 0) !== Number(cloud.product.get(id)?.stock || 0)) {
+      issues.push({ code: 'PHARMACY_LOCAL_ONLY_BALANCE_UNVERIFIED', entityType: 'product', entityId: id });
+    }
+  }
+  for (const id of batchIds) {
+    const local = batchesById.get(id);
+    if (!local || Number(local.stock || 0) !== Number(cloud.batch.get(id)?.stock || 0)) {
+      issues.push({ code: 'PHARMACY_LOCAL_ONLY_BATCH_UNVERIFIED', entityType: 'product_batch', entityId: id });
+    }
+  }
+  return issues;
+};
+
 const assertPharmacyStockReconciled = async ({ licenseKey, catalog, localCatalog }) => {
   const parents = new Map(localCatalog.products.map((p) => [p.id, p]));
   const products = catalog.products.filter(isProtectedMedicine);
@@ -383,6 +421,19 @@ export const productLocalCatalogRecovery = {
   async savePermissionBlockedWarning({ licenseKey } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
 
+    if (localOnlyEvents.length && localCatalog) {
+      const latestCatalog = await productLocalRepository.getLocalCatalogForMigration();
+      const issues = await findUnverifiedLocalOnlyBalances({
+        licenseKey, localCatalog: latestCatalog, events: localOnlyEvents
+      });
+      if (issues.length) {
+        await saveRecoveryWarning({
+          licenseKey, issues, conflictType: 'PHARMACY_LOCAL_ONLY_BALANCE_UNVERIFIED',
+          message: 'Saldo local histórico no conciliado con Cloud. No se inventa una recepción.'
+        });
+        return { success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required', issues };
+      }
+    }
     const catalog = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
     const unsynced = countCatalogRows(catalog);
     if (unsynced === 0) return { success: true, skipped: true, reason: 'no_unsynced_catalog' };
@@ -412,8 +463,9 @@ export const productLocalCatalogRecovery = {
     // A confirmed catalog does not imply that a local receipt is acknowledged.
     // Preserve the local state if its original operation is still unresolved.
     const outbox = await syncOutboxService.listInventoryEntriesForRecovery({ licenseKey });
+    const localOnlyEvents = await listLocalOnlyInventoryEntriesForRecovery({ licenseKey });
     const initialCatalog = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
-    const localCatalog = outbox.length || countCatalogRows(initialCatalog)
+    const localCatalog = outbox.length || localOnlyEvents.length || countCatalogRows(initialCatalog)
       ? await productLocalRepository.getLocalCatalogForMigration() : null;
     if (localCatalog) {
       const pending = await reconcilePharmacyOutbox({ licenseKey, localCatalog, rows: outbox });
