@@ -239,6 +239,30 @@ describe('useZxingScanner camera enhancement', () => {
     expect(track.getSettings).toHaveBeenCalledTimes(1);
   });
 
+  it('starts playback and decodes while continuous autofocus remains pending', async () => {
+    vi.useFakeTimers();
+    const autofocus = createDeferred();
+    const track = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const onDecodeResult = vi.fn();
+    zxing.queues.normal.push({ type: 'result', value: createResult('PENDING_FOCUS') });
+
+    const { stream, video } = await renderScanner({ track, onDecodeResult });
+
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(stream);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+
+    await flushTimers(1);
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalledTimes(1);
+    expect(onDecodeResult.mock.calls[0][0].getText()).toBe('PENDING_FOCUS');
+
+    autofocus.resolve();
+    await flushPromises();
+  });
+
   it('keeps decoding operational when continuous focus is unsupported', async () => {
     const track = createTrack({ focusMode: ['manual', 'single-shot'] });
     await renderScanner({ track });
@@ -268,6 +292,33 @@ describe('useZxingScanner camera enhancement', () => {
     await waitFor(() => expect(applyConstraints).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(getNormalReader().decodeBitmap).toHaveBeenCalled());
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores late autofocus rejection after closing an active scanner', async () => {
+    vi.useFakeTimers();
+    const autofocus = createDeferred();
+    const track = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const onError = vi.fn();
+    const { video, view } = await renderScanner({ track, onError });
+    const reader = getNormalReader();
+
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    await flushTimers(1);
+    const attempts = reader.decodeBitmap.mock.calls.length;
+    view.unmount();
+    autofocus.reject(new Error('late optional autofocus failure'));
+    await flushPromises();
+    await flushTimers(1000);
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+    expect(reader.reset).toHaveBeenCalled();
+    expect(reader.decodeBitmap).toHaveBeenCalledTimes(attempts);
+    expect(onError).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
   });
 
   it('stops readers and the active track on cleanup without reapplying focus', async () => {
@@ -584,6 +635,24 @@ describe('useZxingScanner camera enhancement', () => {
     expect(getHardReader().reset).toHaveBeenCalled();
   });
 
+  it('releases a getUserMedia stream that resolves after unmount', async () => {
+    const acquisition = createDeferred();
+    const track = createTrack();
+    navigator.mediaDevices.getUserMedia.mockImplementation(() => acquisition.promise);
+    const view = render(<ScannerHarness paused={false} />);
+    const video = view.container.querySelector('video');
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    view.unmount();
+    acquisition.resolve(createStream(track));
+    await flushPromises();
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject ?? null).toBe(null);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+  });
+
   it('stops scheduled decoder work when paused and resumes with a new session', async () => {
     vi.useFakeTimers();
     queueMisses(2, 'normal');
@@ -607,6 +676,40 @@ describe('useZxingScanner camera enhancement', () => {
     });
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     expect(nextTrack.readyState).toBe('live');
+  });
+
+  it('releases camera resources across three consecutive openings', async () => {
+    vi.useFakeTimers();
+    const tracks = Array.from({ length: 3 }, () => createTrack());
+    const streams = tracks.map(createStream);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streams[0])
+      .mockResolvedValueOnce(streams[1])
+      .mockResolvedValueOnce(streams[2]);
+    const { view, video } = await renderScanner({
+      track: tracks[0],
+      stream: streams[0],
+      getUserMediaImplementation: getUserMedia,
+    });
+
+    for (let index = 0; index < tracks.length; index += 1) {
+      expect(video.srcObject).toBe(streams[index]);
+      await flushTimers(1);
+      const reader = getLatestNormalReader();
+      expect(reader.decodeBitmap).toHaveBeenCalledTimes(1);
+
+      view.rerender(<ScannerHarness paused />);
+      expect(tracks[index].stop).toHaveBeenCalledTimes(1);
+      expect(video.srcObject).toBe(null);
+      expect(reader.reset).toHaveBeenCalled();
+
+      if (index < tracks.length - 1) {
+        view.rerender(<ScannerHarness paused={false} />);
+        await flushPromises();
+      }
+    }
+
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
   });
 
   it('does not let stale autofocus cleanup stop a newer session', async () => {
@@ -880,25 +983,27 @@ describe('useZxingScanner camera enhancement', () => {
     expect(readerB.reset).not.toHaveBeenCalled();
   });
 
-  it('does not attach or decode after a track ends during autofocus', async () => {
+  it('does not resume decoding after a track ends during pending autofocus', async () => {
+    vi.useFakeTimers();
     const autofocus = createDeferred();
     const track = createTrack({
       focusMode: ['continuous'],
       applyConstraints: vi.fn(() => autofocus.promise),
     });
     const onError = vi.fn();
-    const { video } = await renderScanner({ track, onError });
+    const { video, stream } = await renderScanner({ track, onError });
 
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(stream);
     track.emitEnded();
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
-    expect(video.srcObject ?? null).toBe(null);
-    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+    expect(video.srcObject).toBe(null);
 
     autofocus.resolve();
     await flushPromises();
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    await flushTimers(1000);
     expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
   });
 
   it('cancels the first decode timer when a track ends after play', async () => {
