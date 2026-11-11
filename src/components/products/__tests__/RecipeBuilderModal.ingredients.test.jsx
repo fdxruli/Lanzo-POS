@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   hookResult: {},
@@ -32,6 +32,10 @@ beforeEach(() => {
     refresh: vi.fn()
   };
 });
+
+// This repository does not automatically unmount RTL renders between Vitest cases.
+// Keep each test isolated so full-suite execution matches focused execution.
+afterEach(() => cleanup());
 
 describe('RecipeBuilderModal - explorador de insumos', () => {
   it('shows zero-stock ingredients, preserves legacy references, and allows direct editing', () => {
