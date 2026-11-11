@@ -89,3 +89,27 @@ El flujo legítimo `productMigrationService.runInitialMigrationIfNeeded` llama a
 **Alternativa:** mantener el flujo actual deshabilitado como garantía documental en PRO/Nube; trabajar únicamente con un piloto Free/Local delimitado si el propietario autoriza explícitamente ese recorte. Mantener el PR Draft, sin merge ni nuevas ramas, hasta la decisión.
 
 **Evidencias ejecutadas:** lectura estática de GitHub y `pg_get_functiondef`, RLS y grants en Production. **No ejecutadas:** pruebas transaccionales SQL, Vitest de esta iteración, QA real Preview, pruebas entre dispositivos, restauración y escrituras en Production. Los checks existentes del PR no prueban estos recorridos.
+
+## Actualización del PR #478 — implementación correctiva en Draft (11-nov-2026)
+
+La sección anterior describe el diagnóstico **previo** a la implementación. Desde entonces se añadió, **sin instalar**, la migración canónica `20261111230000_pharmacy_stage2_inventory_authority.sql` y se modificaron servicios/frontend en este mismo PR.
+
+- Recepción nueva: validación de clasificación sanitaria persistida, lote/caducidad, proveedor y comprobante en el SQL propuesto de `pos_add_inventory_entry`; conserva idempotencia y bloqueo transaccional de la RPC existente.
+- Altas nuevas: guardas para stock inicial y lotes positivos en farmacia desde las RPC públicas de catálogo; el flujo usual Free/Local ahora dirige al registro documental.
+- Cutover inicial: autorización por servidor limitada a licencia/dispositivo, sin interpretar el saldo histórico como compra documental. Identificador de tanda persistido para reintentos y cierre al completar el primer catálogo farmacéutico clasificado.
+- Historial Cloud: RPC paginada de solo lectura sobre `pos_inventory_movements`, conectada al modal, con deduplicación por ID de operación; **aún no validada entre dispositivos**.
+
+### HOLD concreto que permanece
+
+`productLocalCatalogRecovery.migrateUnsyncedCatalog` utiliza `upsertProductBatch` con snapshots absolutos de lotes no sincronizados. Si el stock recuperado es mayor que el persistido, la nueva guarda Cloud lo rechaza, incluso si existió una recepción local documentada cuyo evento aún no se reejecutó. No hay en esa llamada un identificador verificable de la operación original. No se debe exceptuar esta ruta por `source: recovery` ni devolver a la sincronización una actualización de stock sin autoridad.
+
+Para cerrarlo se requiere una **modificación limitada del contrato de recuperación/outbox**: primero resolver el origen transaccional verificable de cualquier aumento; solo después aplicar cambios de catálogo que no alteren existencias. Evaluar el impacto con clientes antiguos y un caso real antes de proceder. No ampliar esta parte sin autorización explícita.
+
+### Estado de validación
+
+- Código y SQL: propuestas incorporadas al PR Draft, sin merge.
+- SQL: **no instalado**; no probado con escrituras en PostgreSQL aislado.
+- QA integración Cloud / dispositivos / rehidratación: pendiente.
+- QA manual: pospuesto hasta las etapas finales.
+- Production: **sin modificaciones** por esta iteración.
+- Dictamen: **STRUCTURAL_HOLD**, no `READY_FOR_SQL_REVIEW` hasta resolver o aceptar expresamente el recorte de la recuperación.
