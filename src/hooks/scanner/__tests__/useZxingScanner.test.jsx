@@ -253,6 +253,13 @@ describe('useZxingScanner camera enhancement', () => {
     expect(unsupported.applyConstraints).not.toHaveBeenCalled();
   });
 
+  it('hides torch when the track advertises it but cannot apply constraints', async () => {
+    const track = createTrack({ torch: true });
+    track.applyConstraints = undefined;
+    const { view } = await renderScanner({ track });
+    expect(view.queryByRole('button', { name: 'Linterna' })).toBeNull();
+  });
+
   it('switches the light on and off without replacing video or ZXing', async () => {
     let light = false;
     const track = createTrack({
