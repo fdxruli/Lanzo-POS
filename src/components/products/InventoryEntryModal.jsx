@@ -5,9 +5,30 @@ import { generateIdempotencyKey } from '../../services/sync/idempotency';
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../services/sync/syncConstants';
 import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import { productCloudRepository } from '../../services/products/productCloudRepository';
+import { useAppStore } from '../../store/useAppStore';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled } from '../../services/sync/syncConstants';
 
 const toDateTimeLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const day = (value) => String(value || '').slice(0, 10);
+const toReceiptView = (item, cloud = false) => ({
+  id: item.id,
+  operationId: item.operationId || item.id,
+  receivedAt: cloud ? (item.receipt?.receivedAt || item.createdAt) : (item.occurredAt || item.timestamp),
+  quantity: cloud ? item.quantity : item.delta,
+  receipt: cloud ? item.receipt : item.metadata?.pharmacyReceipt,
+  responsible: cloud ? item.responsible : null,
+  status: cloud ? 'Sincronizado en Cloud' : item.syncDisposition === 'local_only'
+    ? 'Guardado local' : item.synced ? 'Sincronizado' : 'Pendiente de sincronizar'
+});
+const mergeReceiptHistory = (local, cloud) => {
+  const merged = new Map();
+  for (const item of local) merged.set(item.operationId, toReceiptView(item));
+  for (const item of cloud) merged.set(item.operationId || item.id, toReceiptView(item, true));
+  return [...merged.values()].sort((a, b) =>
+    String(b.receivedAt).localeCompare(String(a.receivedAt)) || String(b.id).localeCompare(String(a.id))
+  ).slice(0, 5);
+};
 
 export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const [quantity, setQuantity] = useState('');
@@ -23,6 +44,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const [acquiredAt, setAcquiredAt] = useState('');
   const [notes, setNotes] = useState('');
   const [history, setHistory] = useState([]);
+  const [historyError, setHistoryError] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const submittingRef = useRef(false);
@@ -56,13 +78,28 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         .catch(() => { if (active) setError('No se pudieron consultar los lotes.'); });
     }
     if (medicine) {
+      let localReceipts = [];
+      let cloudReceipts = [];
+      const refresh = () => { if (active) setHistory(mergeReceiptHistory(localReceipts, cloudReceipts)); };
       db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id).toArray()
         .then((events) => {
-          if (!active) return;
-          setHistory(events.filter((item) => item.type === 'INVENTORY_ENTRY' && item.metadata?.pharmacyReceipt)
-            .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 5));
+          localReceipts = events.filter((item) => item.type === 'INVENTORY_ENTRY' && item.metadata?.pharmacyReceipt);
+          refresh();
         })
-        .catch(() => { if (active) setError('No se pudo consultar el historial local de recepciones.'); });
+        .catch(() => { if (active) setHistoryError('No se pudo consultar el historial local.'); });
+      const licenseDetails = useAppStore.getState()?.licenseDetails;
+      const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+      if (licenseKey && isCloudProductsSyncEnabled(licenseDetails)) {
+        productCloudRepository.listPharmacyInventoryReceipts({ licenseKey, productId: product.id, limit: 20 })
+          .then((response) => {
+            if (response?.success !== true || !Array.isArray(response?.receipts)) {
+              throw new Error('PHARMACY_CLOUD_HISTORY_INVALID');
+            }
+            cloudReceipts = response.receipts;
+            refresh();
+          })
+          .catch(() => { if (active) setHistoryError('El historial Cloud no está disponible. Las recepciones locales siguen visibles.'); });
+      }
     }
     return () => { active = false; };
   }, [batchManaged, medicine, product?.id]);
@@ -182,16 +219,20 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
             {' · '}Entrada: <strong>+{Number(quantity) || 0} {unit}</strong>
             {' · '}Total estimado: <strong>{nextStock} {unit}</strong>
           </div>
-          {medicine && history.length > 0 && <section aria-label="Recepciones de este dispositivo">
-            <h4>Últimas recepciones en este dispositivo</h4>
+          {medicine && <section aria-label="Últimas recepciones documentadas">
+            <h4>Últimas recepciones documentadas</h4>
+            {history.length === 0 && <small>No hay recepciones documentadas recuperadas.</small>}
             {history.map((item) => (
-              <p key={item.id}>
-                {day(item.occurredAt)} · +{item.delta} {unit} · {item.metadata.pharmacyReceipt.supplier} ·
-                {' '}{item.metadata.pharmacyReceipt.documentReference} ·
-                {' '}{item.syncDisposition === 'local_only' ? 'Guardado local' : item.synced ? 'Sincronizado' : 'Pendiente de sincronizar'}
+              <p key={item.operationId}>
+                {day(item.receivedAt)} · +{item.quantity} {unit} ·
+                {' '}{item.receipt?.manufacturerBatchId || 'Lote no disponible'} ·
+                {' '}{item.receipt?.supplier || 'Proveedor no disponible'} ·
+                {' '}{item.receipt?.documentType || 'Documento'} {item.receipt?.documentReference || 'sin referencia'} ·
+                {' '}{item.responsible ? `${item.responsible} · ` : ''}{item.status}
               </p>
             ))}
-            <small>Historial auxiliar local. No sustituye los registros sanitarios oficiales ni la recuperación documental Cloud.</small>
+            {historyError && <small role="status">{historyError}</small>}
+            <small>Registro auxiliar local y Cloud; no sustituye libros sanitarios oficiales.</small>
           </section>}
           {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
         </div>
