@@ -21,6 +21,7 @@ export const PRODUCT_CATALOG_LAST_SEQ_KEY = 'products_catalog_last_change_seq';
 export const PRODUCTS_MIGRATED_META_PREFIX = 'products_cloud_migrated_for_license';
 export const PRODUCTS_MIGRATED_AT_META_KEY = 'products_cloud_migrated_at';
 export const PRODUCTS_MIGRATION_WARNING_META_KEY = 'products_cloud_migration_warning';
+export const PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY = 'products_cloud_migration_batch_root';
 export const PRODUCTS_LAST_SNAPSHOT_AT_META_KEY = 'products_last_snapshot_at';
 export const PRODUCTS_UNSYNCED_RESCUE_META_KEY = 'products_unsynced_rescue_warning';
 
