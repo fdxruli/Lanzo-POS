@@ -84,7 +84,7 @@ describe('RecipeBuilderModal - explorador de insumos', () => {
       makeIngredient('ing-' + index, 'Insumo ' + String(index + 1).padStart(2, '0'))
     ));
     render(<RecipeBuilderModal show onClose={vi.fn()} onSave={vi.fn()} />);
-    expect(screen.getByText('30 insumos')).not.toBeInTheDocument();
+    expect(screen.queryByText('30 insumos')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ver más insumos (35 restantes)' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Ver más insumos (35 restantes)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Ver más insumos (5 restantes)' }));
