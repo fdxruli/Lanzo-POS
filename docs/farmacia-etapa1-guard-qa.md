@@ -24,3 +24,31 @@
 **No confundir:** Vitest/CI o examen estático del SQL no prueba llamadas a los RPC reales. Sin esta prueba y sin instalación posterior autorizada, **la protección Cloud NO existe en Production**.
 
 **QA manual Preview pendiente:** negocio farmacia de prueba; crear antibiótico IV, cerrar/reabrir; crear II en stock 0 y comprobar que no se activa; crear VI; editar legado; repetir recuperación Cloud contra el proyecto autorizado (solo acciones QA expresamente aprobadas).
+
+## Corrección de identidad canónica — 11 noviembre 2026
+
+Archivo: `supabase/migrations/20261111190000_pharmacy_stage1_catalog_and_sale_guard.sql`
+SHA-256 SQL corregido: `cb6c46757727b0c592bf7e6dee1e17df870b51b269b038bbb23335e20904b7ef`.
+
+### Evidencia de RPC vigentes (lectura Production)
+- `private.r2b_authorize_sale_financial_request_v1` exige `product_id` y valida `pos_products` por licencia y estado; ausencia de identidad -> `MANUAL_ITEM_PRICE_POLICY_REQUIRED`.
+- `pos_upsert_sale_shadow` delega a `pos_upsert_sale_shadow_unlimited`, que valida sesión y POS, pero sus líneas dependen del JSON y no del catálogo canónico.
+- Las hojas caja/caja-inventario/crédito/shadow insertan `pos_sale_items` en una misma transacción de función; la guarda propuesta actuará antes de insertar cada línea.
+- Tipo de negocio confirmado: `business_profiles.business_type`, tipo `public.business_category[]`, unido por `license_id`.
+- La corrección exige identidad real para **todas las líneas de licencia farmacia** y consulta su fracción en `pos_products.metadata.pharmacy`. Otros rubros no adquieren la restricción general.
+- Artículos no medicinales de farmacia son válidos con producto/lote canónico; una línea manual de farmacia debe registrarse antes en catálogo.
+- No hay modo de determinar el artículo físico cuando un cliente miente deliberadamente utilizando la identidad completa de otro producto canónico válido. Esta limitación no queda resuelta por SQL.
+
+### Preflight y bloqueo vigente
+- Supabase Production: 349 migraciones; última `20261110150000`; versión `20261111190000` ausente; 0 funciones/triggers farmacéuticos nuevos.
+- Catálogo Production: 127 productos, 0 con `metadata.pharmacy`; 146 líneas, 0 sin ambos IDs.
+- SQL real **no validado**: entorno disponible sin PostgreSQL servidor, `psql` ni Docker; no se crean ramas Supabase pagadas ni se sustituyen los RPC con mocks.
+- Archivo canónico **ausente de Git/main** y presente únicamente en PR Draft #476. Sin autorización de merge ni PR SQL adicional, NO instalar (ledger y main divergirían).
+- Al estar ambos gates pendientes, migración no aplicada y sin escrituras productivas.
+
+### QA transaccional real requerido en PostgreSQL aislado
+- Ejecutar los RPC existentes, no versiones simuladas: `pos_create_cloud_sale_cashier`, `pos_create_cloud_sale_cashier_inventory`, `pos_create_cloud_sale_credit`, `pos_upsert_sale_shadow`, sus variantes invocables y sus delegaciones.
+- Negativos: I/II/III con ID correcto, II solo lote, II sin ambos IDs, ID de otro tenant, ID inexistente, producto-lote discordante, metadata falsa, eliminación de clasificación, activación indebida.
+- Positivos: IV/VI, producto no medicinal farmacia con ID, histórico sin clasificación, venta de otro rubro, lotes correctos, permisos Staff.
+- Verificar ventas, pagos, créditos, inventario, sync/audit events antes y después de cada rechazo; comprobar atomicidad e idempotencia con reintentos y concurrencia.
+- Registrar errores SQL y efectos observados. CI, mocks o revisión estática no sustituyen estos resultados.
