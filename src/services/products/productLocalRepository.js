@@ -1,4 +1,6 @@
 import { db, STORES } from '../db/dexie';
+import { POS_SYNC_STORES, OUTBOX_STATUS, SYNC_ENTITY_TYPES, getLicenseKeyFromDetails } from '../sync/syncConstants';
+import { useAppStore } from '../../store/useAppStore';
 import {
   createProductWithInitialInventorySafe,
   loadData,
@@ -25,6 +27,12 @@ import { reconcileActiveTableReservations } from '../sales/tableReservationRecon
 import { assertValidRecipeReferences, getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const nowIso = () => new Date().toISOString();
+const isProtectedMedicine = (product) => {
+  const p = getPharmacyClassification(product);
+  return (p.recorded && p.kind === 'medicine')
+    || product?.requiresPrescription === true
+    || ['controlled', 'antibiotic', 'prescription'].includes(product?.prescriptionType);
+};
 
 const createLocalMutationSync = (sync = {}) => ({
   ...sync,
@@ -504,7 +512,7 @@ export const productLocalRepository = {
   },
 
   async applyCloudCatalog(response = {}) {
-    const applied = { categories: 0, products: 0, batches: 0, rejected: [] };
+    const applied = { categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
     const collections = [
       ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
       ['product', STORES.MENU, [...(response.products || []), ...(response.product ? [response.product] : [])], cloudProductToLocal],
@@ -519,7 +527,7 @@ export const productLocalRepository = {
 
     await ensureOpen();
     try {
-      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), async () => {
+      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), db.table(POS_SYNC_STORES.OUTBOX), async () => {
         for (const [entityType, store, records, mapper] of collections) {
           for (let index = 0; index < records.length; index += 1) {
             const record = records[index];
@@ -535,6 +543,31 @@ export const productLocalRepository = {
             }
             try {
               const existing = await db.table(store).get(entityId);
+              // A pull or another receipt cannot erase still-pending additive
+              // inventory from this device. Only an original confirmed receipt
+              // with no other unresolved receipts may apply its Cloud snapshot.
+              if (entityType === 'product' || entityType === 'product_batch') {
+                const productId = entityType === 'product' ? entityId : parentId;
+                const parent = entityType === 'product'
+                  ? (existing || record)
+                  : await db.table(STORES.MENU).get(productId);
+                if (isProtectedMedicine(parent)) {
+                  const licenseKey = getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+                  const responseKey = response.idempotency_key || response.idempotencyKey;
+                  const otherReceipt = await db.table(POS_SYNC_STORES.OUTBOX)
+                    .where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
+                    .filter((row) =>
+                      (!licenseKey || row.licenseKey === licenseKey)
+                      && (row.entityId === productId || row.payload?.entry?.productId === productId)
+                      && row.status !== OUTBOX_STATUS.SYNCED
+                      && row.idempotencyKey !== responseKey
+                    ).first();
+                  if (otherReceipt) {
+                    applied.deferredInventory += 1;
+                    continue;
+                  }
+                }
+              }
               const local = mapper(record, existing);
               await db.table(store).put(local);
               if (entityType === 'category') applied.categories += 1;
