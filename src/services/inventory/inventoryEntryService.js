@@ -4,6 +4,7 @@ import { buildSyncOutboxRecord } from '../sync/syncOutboxService';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
+import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import {
   actorOriginFromHandle,
@@ -314,6 +315,7 @@ export const addInventoryEntry = async ({
 // and must never be reconstructed as a new acquisition during recovery.
 export const listLocalOnlyInventoryEntriesForRecovery = async ({ licenseKey } = {}) => {
   if (!licenseKey) throw domainError('INVENTORY_ENTRY_LICENSE_REQUIRED');
+  await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'pharmacy_local_only_recovery_read' });
   if (!db.isOpen()) await db.open();
   const events = await db.table(STORES.INVENTORY_EVENTS).toArray();
   return events.filter((event) => event?.type === 'INVENTORY_ENTRY'
