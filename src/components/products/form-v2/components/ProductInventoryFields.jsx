@@ -1,6 +1,6 @@
 import { getProductUnitShortLabel } from '../../../../utils/productUnitConfiguration';
 
-export default function ProductInventoryFields({ values, errors, onTrackStock, onFieldChange, isEditing = false }) {
+export default function ProductInventoryFields({ values, errors, onTrackStock, onFieldChange, isEditing = false, isPharmacy = false }) {
   const unit = getProductUnitShortLabel(values.unit);
   const isFractioned = values.saleMode === 'fractioned' || values.conversionFactor?.enabled === true;
   const stockLabel = `${isEditing ? 'Existencia actual' : 'Existencia inicial'} (${unit})`;
@@ -11,7 +11,7 @@ export default function ProductInventoryFields({ values, errors, onTrackStock, o
       <label className="product-form-v2__toggle-control" htmlFor="product-v2-track-stock"><span /></label>
     </div>
     {values.trackStock && <div className="product-form-v2__inventory-fields">
-      <div className="product-form-v2__field"><label htmlFor="product-v2-stock">{stockLabel}</label>{isEditing ? <><output id="product-v2-stock">{values.stock} {unit}</output><small className="product-form-v2__help">Las nuevas entradas se administran mediante existencias o lotes.</small></> : <><input id="product-v2-stock" type="number" min="0" step="any" value={values.stock} onChange={(event) => onFieldChange('stock', event.target.value)} aria-invalid={Boolean(errors.stock)} />{errors.stock && <small className="product-form-v2__error">{errors.stock}</small>}{isFractioned && <small className="product-form-v2__help">Registra las unidades disponibles para vender. Ejemplo: 2 cajas de 12 = 24 piezas.</small>}</>}</div>
+      <div className="product-form-v2__field"><label htmlFor="product-v2-stock">{stockLabel}</label>{isEditing ? <><output id="product-v2-stock">{values.stock} {unit}</output><small className="product-form-v2__help">Las nuevas entradas se administran mediante existencias o lotes.</small></> : isPharmacy ? <><output id="product-v2-stock">0 {unit}</output><small className="product-form-v2__help">La farmacia inicia sin existencias. Registra las cantidades en Recepción con lote y comprobante.</small></> : <><input id="product-v2-stock" type="number" min="0" step="any" value={values.stock} onChange={(event) => onFieldChange('stock', event.target.value)} aria-invalid={Boolean(errors.stock)} />{errors.stock && <small className="product-form-v2__error">{errors.stock}</small>}{isFractioned && <small className="product-form-v2__help">Registra las unidades disponibles para vender. Ejemplo: 2 cajas de 12 = 24 piezas.</small>}</>}</div>
       <div className="product-form-v2__field"><label htmlFor="product-v2-min-stock">Alerta de stock bajo</label><input id="product-v2-min-stock" type="number" min="0" step="any" value={values.minStock} onChange={(event) => onFieldChange('minStock', event.target.value)} aria-invalid={Boolean(errors.minStock)} />{errors.minStock && <small className="product-form-v2__error">{errors.minStock}</small>}</div>
     </div>}
   </section>;
