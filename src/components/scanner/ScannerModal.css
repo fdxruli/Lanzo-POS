@@ -143,6 +143,52 @@
   object-fit: cover;
 }
 
+/* Control manual de iluminación, independiente de ROI y del vídeo. */
+.scanner-torch-btn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 22;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.scanner-torch-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.scanner-torch-btn--on {
+  background: #fff;
+  color: #171717;
+  border-color: #171717;
+}
+
+.scanner-torch-btn:focus-visible {
+  outline: 3px solid #fcd34d;
+  outline-offset: 2px;
+}
+
+.scanner-torch-btn:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+
 /* Controles del panel: en móvil se superponen al frame sin bloquear la cámara. */
 .scanner-camera-controls {
   position: absolute;
