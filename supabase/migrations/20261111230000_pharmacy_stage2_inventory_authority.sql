@@ -35,6 +35,32 @@ as $$
   );
 $$;
 
+
+-- For existing catalog identity, trust persisted classification, not payload.
+-- For a new item, Stage 1 verifies the classification on the saved product.
+create or replace function private.pharmacy_stage2_protected_product(
+  p_license_id uuid,p_product_id text,p_payload jsonb default null
+) returns boolean language plpgsql stable security definer set search_path to ''
+as $
+declare
+  v_stored public.pos_products;
+  v_source jsonb;
+begin
+  select * into v_stored from public.pos_products
+   where license_id=p_license_id and id=p_product_id and deleted_at is null;
+  if found then
+    return v_stored.metadata->'pharmacy'->>'kind'='medicine'
+      or v_stored.requires_prescription is true
+      or v_stored.prescription_type in ('controlled','antibiotic','prescription');
+  end if;
+  if not private.pharmacy_stage2_business(p_license_id) then return false; end if;
+  v_source := coalesce(p_payload,'{}'::jsonb);
+  return v_source->'metadata'->'pharmacy'->>'kind'='medicine'
+    or coalesce(v_source->>'requires_prescription',v_source->>'requiresPrescription','false')='true'
+    or coalesce(v_source->>'prescription_type',v_source->>'prescriptionType','') in ('controlled','antibiotic','prescription');
+end;
+$;
+
 -- Server-only writes: a direct catalog RPC must not create undocumented stock.
 -- The initial cutover uses a separate, limited, server-verified route.
 create or replace function private.pharmacy_stage2_guard_product_upsert(
@@ -44,7 +70,7 @@ as $$
 declare
   v_license_id uuid := (p_context->>'license_id')::uuid;
 begin
-  if not private.pharmacy_stage2_business(v_license_id) then return; end if;
+  if not private.pharmacy_stage2_protected_product(v_license_id,p_product->>'id',p_product) then return; end if;
   if exists (select 1 from public.pos_products p
              where p.license_id=v_license_id and p.id=nullif(p_product->>'id','')
                and p.deleted_at is null) then return; end if;
@@ -72,9 +98,11 @@ as $$
 declare
  v_license_id uuid := (p_context->>'license_id')::uuid;
  v_old_stock numeric;
- v_new_stock numeric := coalesce(nullif(p_batch->>'stock','')::numeric,0);
+ v_new_stock numeric;
+ v_parent_id text := nullif(coalesce(p_batch->>'product_id',p_batch->>'productId'),'');
 begin
- if not private.pharmacy_stage2_business(v_license_id) then return; end if;
+ if v_parent_id is null then raise exception 'PRODUCT_ID_REQUIRED' using errcode='P0001'; end if;
+ if not private.pharmacy_stage2_protected_product(v_license_id,v_parent_id) then return; end if;
  if nullif(p_batch->>'id','') is null then
    raise exception 'BATCH_ID_REQUIRED' using errcode='P0001';
  end if;
@@ -82,8 +110,9 @@ begin
  from public.pos_product_batches b
  where b.license_id=v_license_id and b.id=p_batch->>'id'
  for update;
- if v_new_stock > coalesce(v_old_stock,0) then
-   raise exception 'PHARMACY_BATCH_STOCK_INCREASE_REQUIRES_DOCUMENTED_RECEIPT'
+ v_new_stock := coalesce(nullif(p_batch->>'stock','')::numeric,v_old_stock,0);
+ if v_new_stock is distinct from coalesce(v_old_stock,0) then
+   raise exception 'PHARMACY_BATCH_STOCK_CHANGE_REQUIRES_DOCUMENTED_MOVEMENT'
      using errcode='P0001';
  end if;
 end;
@@ -113,12 +142,15 @@ begin
   v_root := regexp_replace(coalesce(p_batch_id,''), '-(categories|products|batches)-[0-9]+$', '');
   v_has_stock := exists (
     select 1 from pg_catalog.jsonb_array_elements(p_products) e(x)
-    where greatest(coalesce(nullif(e.x->>'stock','')::numeric,0),
+    where private.pharmacy_stage2_protected_product(v_license_id,e.x->>'id',e.x)
+      and greatest(coalesce(nullif(e.x->>'stock','')::numeric,0),
       coalesce(nullif(e.x->>'committed_stock','')::numeric,0),
       coalesce(nullif(e.x->>'committedStock','')::numeric,0))>0
   ) or exists (
     select 1 from pg_catalog.jsonb_array_elements(p_batches) e(x)
-    where coalesce(nullif(e.x->>'stock','')::numeric,0)>0
+    where private.pharmacy_stage2_protected_product(
+      v_license_id,coalesce(e.x->>'product_id',e.x->>'productId'))
+      and coalesce(nullif(e.x->>'stock','')::numeric,0)>0
   );
   select * into v_cutover from private.pharmacy_inventory_cutovers_v1
    where license_id=v_license_id for update;
@@ -150,6 +182,12 @@ begin
                  coalesce(nullif(v_item->>'committedStock','')::numeric,0))
       else 0 end);
     if v_stock<=0 then continue; end if;
+    if (v_kind='product'
+       and not private.pharmacy_stage2_protected_product(v_license_id,v_item->>'id',v_item))
+       or (v_kind='batch'
+       and not private.pharmacy_stage2_protected_product(
+         v_license_id,coalesce(v_item->>'product_id',v_item->>'productId')))
+    then continue; end if;
     v_entity_id := nullif(v_item->>'id','');
     if v_entity_id is null then
       raise exception 'PHARMACY_HISTORICAL_ITEM_ID_REQUIRED' using errcode='P0001';
@@ -463,6 +501,166 @@ end;
 $function$
 ;
 
+-- Absent 'stock' means metadata-only update. An explicit numeric stock
+-- still follows the protected wrapper's absolute-stock guard.
+CREATE OR REPLACE FUNCTION public.pos_upsert_product_batch_unlimited(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_batch jsonb DEFAULT '{}'::jsonb, p_expected_version integer DEFAULT NULL::integer, p_idempotency_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_context jsonb;
+  v_license_id uuid;
+  v_device_id uuid;
+  v_staff_user_id uuid;
+  v_batch_id text;
+  v_product_id text;
+  v_parent public.pos_products;
+  v_existing public.pos_product_batches;
+  v_saved public.pos_product_batches;
+  v_saved_product public.pos_products;
+  v_event public.pos_sync_events;
+  v_product_event public.pos_sync_events;
+  v_response jsonb;
+  v_idem public.pos_idempotency_keys;
+  v_inserted_idem boolean;
+  v_is_create boolean;
+  v_stock numeric;
+  v_status text;
+  v_sku text;
+  v_sku_key text;
+begin
+  v_context := private.validate_product_inventory_actor(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
+  perform private.assert_cloud_products_sync_enabled(v_context);
+  perform private.assert_inventory_actor_authority(v_context);
+  v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := (v_context->>'device_id')::uuid;
+  v_staff_user_id := nullif(v_context->>'staff_user_id', '')::uuid;
+
+  v_batch_id := nullif(btrim(coalesce(p_batch->>'id', '')), '');
+  if v_batch_id is null then raise exception 'BATCH_ID_REQUIRED' using errcode = 'P0001'; end if;
+  v_product_id := nullif(btrim(coalesce(p_batch->>'product_id', p_batch->>'productId', '')), '');
+  if v_product_id is null then raise exception 'PRODUCT_ID_REQUIRED' using errcode = 'P0001'; end if;
+
+  select * into v_parent from public.pos_products where license_id = v_license_id and id = v_product_id for update;
+  if v_parent.id is null or v_parent.deleted_at is not null then
+    return jsonb_build_object('success', false, 'code', 'PRODUCT_NOT_FOUND', 'message', 'El producto padre no existe o fue eliminado.', 'idempotency_key', p_idempotency_key);
+  end if;
+
+  v_inserted_idem := private.insert_pos_idempotency_processing(v_license_id, p_idempotency_key, 'product_batch.upsert', 'product_batch', v_batch_id, null);
+  if not v_inserted_idem then
+    select * into v_idem from public.pos_idempotency_keys where license_id = v_license_id and idempotency_key = p_idempotency_key limit 1;
+    if v_idem.status = 'completed' and v_idem.response_payload is not null then return v_idem.response_payload; end if;
+    return jsonb_build_object('success', false, 'code', 'IDEMPOTENCY_PROCESSING', 'message', 'La operacion ya esta en proceso.', 'idempotency_key', p_idempotency_key);
+  end if;
+
+  select * into v_existing from public.pos_product_batches where license_id = v_license_id and id = v_batch_id for update;
+  v_is_create := v_existing.id is null;
+  if not v_is_create and v_existing.product_id <> v_product_id then
+    v_response := jsonb_build_object('success', false, 'code', 'BATCH_PRODUCT_MISMATCH', 'message', 'No se puede mover un lote a otro producto.', 'field', 'productId', 'idempotency_key', p_idempotency_key);
+    perform private.complete_pos_idempotency(v_license_id, p_idempotency_key, v_response);
+    return v_response;
+  end if;
+  if not v_is_create and p_expected_version is not null and p_expected_version <> v_existing.server_version then
+    insert into public.pos_sync_conflicts (license_id, entity_type, entity_id, conflict_type, local_payload, server_payload, actor_device_id, actor_staff_user_id)
+    values (v_license_id, 'product_batch', v_batch_id, 'VERSION_CONFLICT', p_batch, private.pos_product_batch_to_jsonb(v_existing), v_device_id, v_staff_user_id);
+    v_response := jsonb_build_object('success', false, 'code', 'VERSION_CONFLICT', 'message', 'El lote fue modificado en otro dispositivo.', 'batch', private.pos_product_batch_to_jsonb(v_existing), 'server_version', v_existing.server_version, 'idempotency_key', p_idempotency_key);
+    perform private.complete_pos_idempotency(v_license_id, p_idempotency_key, v_response);
+    return v_response;
+  end if;
+
+  v_stock := greatest(coalesce(nullif(p_batch->>'stock', '')::numeric, v_existing.stock, 0), 0);
+  if v_parent.expiration_mode = 'STRICT' and v_stock > 0 and (nullif(p_batch->>'expiry_date', '') is null and nullif(p_batch->>'expiryDate', '') is null) then
+    v_response := jsonb_build_object('success', false, 'code', 'STRICT_EXPIRY_REQUIRED', 'message', 'El modo estricto requiere caducidad para lotes con stock.', 'field', 'expiryDate', 'idempotency_key', p_idempotency_key);
+    perform private.complete_pos_idempotency(v_license_id, p_idempotency_key, v_response);
+    return v_response;
+  end if;
+
+  v_sku := nullif(btrim(coalesce(p_batch->>'sku', '')), '');
+  v_sku_key := private.normalize_pos_sku_key(coalesce(p_batch->>'sku_key', p_batch->>'skuKey', v_sku));
+  v_status := lower(coalesce(nullif(p_batch->>'status', ''), v_existing.status, 'active'));
+  if v_status not in ('active','inactive','archived') then v_status := 'active'; end if;
+
+  if v_is_create then
+    insert into public.pos_product_batches (
+      id, license_id, product_id, sku, sku_key, stock, committed_stock, cost, price, track_stock,
+      is_active, status, active_stock_status, expiry_date, alert_target_date, alert_type,
+      manufacturer_batch_id, supplier, attributes, location, notes, update_global_price,
+      created_at, updated_at, server_version, created_by_device_id, updated_by_device_id,
+      created_by_staff_user_id, updated_by_staff_user_id, last_idempotency_key, metadata
+    ) values (
+      v_batch_id, v_license_id, v_product_id, v_sku, v_sku_key, v_stock,
+      greatest(coalesce(nullif(p_batch->>'committed_stock', '')::numeric, nullif(p_batch->>'committedStock', '')::numeric, 0), 0),
+      greatest(coalesce(nullif(p_batch->>'cost', '')::numeric, v_parent.cost, 0), 0),
+      greatest(coalesce(nullif(p_batch->>'price', '')::numeric, v_parent.price, 0), 0),
+      coalesce(nullif(p_batch->>'track_stock', '')::boolean, nullif(p_batch->>'trackStock', '')::boolean, true),
+      coalesce(nullif(p_batch->>'is_active', '')::boolean, nullif(p_batch->>'isActive', '')::boolean, true),
+      v_status,
+      case when coalesce(nullif(p_batch->>'is_active', '')::boolean, nullif(p_batch->>'isActive', '')::boolean, true) and v_status = 'active' and v_stock > 0 then 1 else 0 end,
+      coalesce(nullif(p_batch->>'expiry_date', '')::timestamptz, nullif(p_batch->>'expiryDate', '')::timestamptz, null),
+      coalesce(nullif(p_batch->>'alert_target_date', '')::timestamptz, nullif(p_batch->>'alertTargetDate', '')::timestamptz, nullif(p_batch->>'expiry_date', '')::timestamptz, nullif(p_batch->>'expiryDate', '')::timestamptz, null),
+      nullif(btrim(coalesce(p_batch->>'alert_type', p_batch->>'alertType', '')), ''),
+      nullif(btrim(coalesce(p_batch->>'manufacturer_batch_id', p_batch->>'manufacturerBatchId', '')), ''),
+      nullif(btrim(coalesce(p_batch->>'supplier', '')), ''),
+      p_batch->'attributes',
+      nullif(btrim(coalesce(p_batch->>'location', v_parent.location, '')), ''),
+      nullif(btrim(coalesce(p_batch->>'notes', '')), ''),
+      coalesce(nullif(p_batch->>'update_global_price', '')::boolean, nullif(p_batch->>'updateGlobalPrice', '')::boolean, false),
+      coalesce(nullif(p_batch->>'created_at', '')::timestamptz, nullif(p_batch->>'createdAt', '')::timestamptz, now()),
+      now(), 1, v_device_id, v_device_id, v_staff_user_id, v_staff_user_id, p_idempotency_key,
+      coalesce(p_batch->'metadata', '{}'::jsonb) || jsonb_build_object('phase', 'fase2_products_catalog')
+    ) returning * into v_saved;
+  else
+    update public.pos_product_batches
+    set sku = v_sku,
+        sku_key = v_sku_key,
+        stock = v_stock,
+        committed_stock = greatest(coalesce(nullif(p_batch->>'committed_stock', '')::numeric, nullif(p_batch->>'committedStock', '')::numeric, committed_stock, 0), 0),
+        cost = greatest(coalesce(nullif(p_batch->>'cost', '')::numeric, cost, 0), 0),
+        price = greatest(coalesce(nullif(p_batch->>'price', '')::numeric, price, 0), 0),
+        track_stock = coalesce(nullif(p_batch->>'track_stock', '')::boolean, nullif(p_batch->>'trackStock', '')::boolean, track_stock),
+        is_active = coalesce(nullif(p_batch->>'is_active', '')::boolean, nullif(p_batch->>'isActive', '')::boolean, is_active),
+        status = v_status,
+        active_stock_status = case when coalesce(nullif(p_batch->>'is_active', '')::boolean, nullif(p_batch->>'isActive', '')::boolean, is_active) and v_status = 'active' and v_stock > 0 then 1 else 0 end,
+        expiry_date = coalesce(nullif(p_batch->>'expiry_date', '')::timestamptz, nullif(p_batch->>'expiryDate', '')::timestamptz, expiry_date),
+        alert_target_date = coalesce(nullif(p_batch->>'alert_target_date', '')::timestamptz, nullif(p_batch->>'alertTargetDate', '')::timestamptz, nullif(p_batch->>'expiry_date', '')::timestamptz, nullif(p_batch->>'expiryDate', '')::timestamptz, alert_target_date),
+        alert_type = nullif(btrim(coalesce(p_batch->>'alert_type', p_batch->>'alertType', alert_type, '')), ''),
+        manufacturer_batch_id = nullif(btrim(coalesce(p_batch->>'manufacturer_batch_id', p_batch->>'manufacturerBatchId', manufacturer_batch_id, '')), ''),
+        supplier = nullif(btrim(coalesce(p_batch->>'supplier', supplier, '')), ''),
+        attributes = coalesce(p_batch->'attributes', attributes),
+        location = nullif(btrim(coalesce(p_batch->>'location', location, '')), ''),
+        notes = nullif(btrim(coalesce(p_batch->>'notes', notes, '')), ''),
+        update_global_price = coalesce(nullif(p_batch->>'update_global_price', '')::boolean, nullif(p_batch->>'updateGlobalPrice', '')::boolean, update_global_price),
+        updated_at = now(),
+        server_version = server_version + 1,
+        updated_by_device_id = v_device_id,
+        updated_by_staff_user_id = v_staff_user_id,
+        last_idempotency_key = p_idempotency_key,
+        metadata = coalesce(metadata, '{}'::jsonb) || coalesce(p_batch->'metadata', '{}'::jsonb) || jsonb_build_object('phase', 'fase2_products_catalog')
+    where license_id = v_license_id and id = v_batch_id
+    returning * into v_saved;
+  end if;
+
+  v_saved_product := private.recalculate_pos_product_projection(v_license_id, v_product_id);
+  if v_saved.update_global_price is true then
+    update public.pos_products
+    set price = v_saved.price,
+        updated_at = now(),
+        server_version = server_version + 1
+    where license_id = v_license_id and id = v_product_id
+    returning * into v_saved_product;
+  end if;
+
+  v_event := private.record_pos_sync_event(v_license_id, 'product_batch', v_saved.id, case when v_is_create then 'create' else 'update' end, v_device_id, v_staff_user_id, p_idempotency_key, jsonb_build_object('source', 'pos_upsert_product_batch', 'product_id', v_product_id), v_saved.server_version);
+  v_product_event := private.record_pos_sync_event(v_license_id, 'product', v_saved_product.id, 'update', v_device_id, v_staff_user_id, p_idempotency_key, jsonb_build_object('source', 'pos_upsert_product_batch.recalculate', 'batch_id', v_saved.id), v_saved_product.server_version);
+  v_response := jsonb_build_object('success', true, 'batch', private.pos_product_batch_to_jsonb(v_saved), 'product', private.pos_product_to_jsonb(v_saved_product), 'event', to_jsonb(v_event), 'product_event', to_jsonb(v_product_event), 'server_version', v_saved.server_version, 'change_seq', greatest(v_event.change_seq, v_product_event.change_seq), 'idempotency_key', p_idempotency_key);
+  perform private.complete_pos_idempotency(v_license_id, p_idempotency_key, v_response);
+  return v_response;
+end;
+$function$
+;
+
 -- Additive inventory remains atomic and locked; metadata required for pharmacy.
 CREATE OR REPLACE FUNCTION public.pos_add_inventory_entry(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_product_id text DEFAULT NULL::text, p_batch_id text DEFAULT NULL::text, p_quantity numeric DEFAULT NULL::numeric, p_input_unit text DEFAULT NULL::text, p_base_quantity numeric DEFAULT NULL::numeric, p_base_unit text DEFAULT NULL::text, p_unit_cost numeric DEFAULT NULL::numeric, p_supplier text DEFAULT NULL::text, p_manufacturer_batch_id text DEFAULT NULL::text, p_expiry_date timestamp with time zone DEFAULT NULL::timestamp with time zone, p_occurred_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_entry_kind text DEFAULT 'restock'::text, p_metadata jsonb DEFAULT '{}'::jsonb, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
@@ -623,6 +821,7 @@ end;
 $function$
 ;
 
+revoke all on function private.pharmacy_stage2_protected_product(uuid,text,jsonb) from public,anon,authenticated,service_role;
 revoke all on function private.pharmacy_stage2_business(uuid) from public,anon,authenticated,service_role;
 revoke all on function private.pharmacy_stage2_guard_product_upsert(jsonb,jsonb,jsonb) from public,anon,authenticated,service_role;
 revoke all on function private.pharmacy_stage2_guard_batch_upsert(jsonb,jsonb) from public,anon,authenticated,service_role;
