@@ -527,7 +527,7 @@ export const productLocalRepository = {
 
     await ensureOpen();
     try {
-      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), db.table(POS_SYNC_STORES.OUTBOX), async () => {
+      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), db.table(STORES.INVENTORY_EVENTS), db.table(POS_SYNC_STORES.OUTBOX), async () => {
         for (const [entityType, store, records, mapper] of collections) {
           for (let index = 0; index < records.length; index += 1) {
             const record = records[index];
@@ -560,9 +560,24 @@ export const productLocalRepository = {
                       (!licenseKey || row.licenseKey === licenseKey)
                       && (row.entityId === productId || row.payload?.entry?.productId === productId)
                       && row.status !== OUTBOX_STATUS.SYNCED
-                      && row.idempotencyKey !== responseKey
+                      && (!responseKey || !row.idempotencyKey || row.idempotencyKey !== responseKey)
                     ).first();
                   if (otherReceipt) {
+                    applied.deferredInventory += 1;
+                    continue;
+                  }
+                  const localOnly = await db.table(STORES.INVENTORY_EVENTS)
+                    .where('productId').equals(productId)
+                    .filter((event) =>
+                      event.type === 'INVENTORY_ENTRY'
+                      && event.syncDisposition === 'local_only'
+                      && (!licenseKey || event.licenseKey === licenseKey)
+                      && (entityType === 'product' || event.batchId === entityId)
+                    ).first();
+                  if (localOnly && existing
+                    && Number(existing.stock || 0) !== Number(record.stock || 0)) {
+                    // No outbox means no original Cloud-authorized mutation.
+                    // Preserve the unverified local amount for assisted reconciliation.
                     applied.deferredInventory += 1;
                     continue;
                   }
