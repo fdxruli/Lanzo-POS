@@ -68,6 +68,15 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
   );
 }
 
+const TorchIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M7 3h10l-2 7H9L7 3Z" />
+    <path d="M9 10v7a3 3 0 0 0 6 0v-7" />
+    <path d="M9 21h6" />
+  </svg>
+);
+
 function ScannerModalContent({ show, onClose, onScanSuccess }) {
   const addMultipleScannedProducts = useActiveOrders(
     (state) => state.addMultipleScannedProducts
@@ -259,12 +268,19 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     Logger.warn('Advertencia ZXing:', error.message);
   }, []);
 
+  const handleTorchError = useCallback(() => {
+    if (isMountedRef.current) {
+      setScanFeedback('Error al cambiar la linterna. Puedes seguir escaneando.');
+    }
+  }, []);
+
   // Hook de escaneo - SIEMPRE activo cuando show=true e isConfirming=false
   // La pausa lógica se maneja via processingLockRef, NO via paused
-  const { ref: videoRef } = useZxingScanner({
+  const { ref: videoRef, torch, toggleTorch } = useZxingScanner({
     paused: !show || isConfirming, // Solo pausar por condiciones de UI, no por lógica
     onDecodeResult: handleDecodeResult,
     onError: handleError,
+    onTorchError: handleTorchError,
     constraints: CAMERA_CONSTRAINTS,
     hints: COMMERCIAL_BARCODE_SCAN_HINTS,
     decodeRegionRef,
@@ -429,6 +445,22 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
                 onRetryCamera={handleRetryCamera}
                 onDecodeRegionChange={handleDecodeRegionChange}
               />
+              {torch.supported && !cameraError && (
+                <button
+                  type="button"
+                  className={`scanner-torch-btn${torch.enabled ? ' scanner-torch-btn--on' : ''}`}
+                  onClick={toggleTorch}
+                  disabled={torch.pending || isConfirming}
+                  aria-pressed={torch.enabled}
+                  aria-label={torch.pending
+                    ? 'Cambiando linterna'
+                    : torch.enabled ? 'Apagar linterna' : 'Encender linterna'}
+                  title={torch.enabled ? 'Apagar linterna' : 'Encender linterna'}
+                >
+                  <TorchIcon />
+                  <span>{torch.pending ? 'Cambiando…' : torch.enabled ? 'Encendida' : 'Linterna'}</span>
+                </button>
+              )}
             </div>
           </div>
 
