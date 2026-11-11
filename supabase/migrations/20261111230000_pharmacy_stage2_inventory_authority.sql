@@ -49,13 +49,13 @@ begin
   select * into v_stored from public.pos_products
    where license_id=p_license_id and id=p_product_id and deleted_at is null;
   if found then
-    return v_stored.metadata->'pharmacy'->>'kind'='medicine'
+    return coalesce(v_stored.metadata->'pharmacy'->>'kind'='medicine',false)
       or v_stored.requires_prescription is true
-      or v_stored.prescription_type in ('controlled','antibiotic','prescription');
+      or coalesce(v_stored.prescription_type in ('controlled','antibiotic','prescription'),false);
   end if;
   if not private.pharmacy_stage2_business(p_license_id) then return false; end if;
   v_source := coalesce(p_payload,'{}'::jsonb);
-  return v_source->'metadata'->'pharmacy'->>'kind'='medicine'
+  return coalesce(v_source->'metadata'->'pharmacy'->>'kind'='medicine',false)
     or coalesce(v_source->>'requires_prescription',v_source->>'requiresPrescription','false')='true'
     or coalesce(v_source->>'prescription_type',v_source->>'prescriptionType','') in ('controlled','antibiotic','prescription');
 end;
@@ -264,7 +264,7 @@ declare
  v_manufacturer text := coalesce(nullif(p_batch.manufacturer_batch_id,''),nullif(p_manufacturer_batch_id,''));
  v_expiry timestamptz := coalesce(p_batch.expiry_date,p_expiry_date);
 begin
- if not private.pharmacy_stage2_business(p_license_id) then return; end if;
+ if not private.pharmacy_stage2_protected_product(p_license_id,p_product.id) then return; end if;
  if pg_catalog.jsonb_typeof(v_pharmacy) is distinct from 'object' then
    raise exception 'PHARMACY_CLASSIFICATION_REQUIRED' using errcode='P0001';
  end if;
