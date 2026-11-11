@@ -189,7 +189,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
       : (existing?.modifiers ?? []),
     wholesaleTiers: resolveComplexField(product, existing, 'wholesale_tiers', 'wholesaleTiers')
   });
-  const metadata = product.metadata || existing?.metadata || {};
+  const metadata = { ...(existing?.metadata || {}), ...(product.metadata || {}) };
   const pharmacy = getPharmacyClassification({ metadata, pharmacy: product.pharmacy || existing?.pharmacy });
   const compatible = pharmacyLegacyIndicators({ ...product, metadata, pharmacy });
 

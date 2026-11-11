@@ -417,7 +417,7 @@ export const productLocalRepository = {
 
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
-    const current = typeof product === 'string' ? await this.getProductById(productId) : product;
+    const current = (await this.getProductById(productId)) || (typeof product === 'string' ? null : product);
     if (isActive && isSpecialPharmacyProduct(current)) throw new Error('La fracción I, II o III no puede activarse para venta genérica.');
     await assertIngredientChangeDoesNotBreakRecipes(current, { ...current, isActive });
     const mutationSync = createLocalMutationSync();

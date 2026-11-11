@@ -51,6 +51,11 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
     if (!values.expiryDate) fieldErrors.expiryDate = 'Indica la caducidad de la entrada inicial.';
   }
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA && productToEdit?.id) {
+    if (values.pharmacyKind === 'other' &&
+        (productToEdit.requiresPrescription === true ||
+          Boolean(productToEdit.prescriptionType && productToEdit.prescriptionType !== 'otc'))) {
+      fieldErrors.pharmacyKind = 'No se permite convertir un medicamento con receta histórica en venta libre.';
+    }
     const candidate = {
       metadata: { pharmacy: {
         kind: values.pharmacyKind, fraction: values.sanitaryFraction || null,

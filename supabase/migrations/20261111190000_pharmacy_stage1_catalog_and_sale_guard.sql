@@ -46,7 +46,8 @@ begin
   v_fraction := v_new->>'fraction';
   v_antibiotic := coalesce((v_new->>'antibiotic')::boolean, false);
 
-  if v_kind not in ('medicine', 'other') or v_status not in ('confirmed', 'pending') then
+  if v_kind is null or v_kind not in ('medicine', 'other')
+     or v_status is null or v_status not in ('confirmed', 'pending') then
     raise exception 'PHARMACY_CLASSIFICATION_INVALID' using errcode = 'P0001';
   end if;
   if v_kind = 'other' then

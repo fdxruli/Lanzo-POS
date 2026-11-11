@@ -48,11 +48,11 @@ export const pharmacyLegacyIndicators = (product = {}) => {
   }
   // No inferir fracciones históricas. Nunca eliminar una restricción heredada.
   const legacyType = product.prescriptionType || product.prescription_type;
+  const flag = product.requiresPrescription ?? product.requires_prescription;
   return {
     prescriptionType: legacyType || undefined,
-    requiresPrescription: product.requiresPrescription === true
-      || product.requires_prescription === true
-      || Boolean(legacyType && legacyType !== 'otc')
+    requiresPrescription: flag === true || Boolean(legacyType && legacyType !== 'otc')
+      ? true : (flag === false ? false : undefined)
   };
 };
 

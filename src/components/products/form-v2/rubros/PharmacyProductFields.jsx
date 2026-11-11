@@ -48,12 +48,12 @@ export default function PharmacyProductFields({
         {values.pharmacyKind === 'medicine' && field('concentration', 'Concentración', 'Ej. 500 mg o 250 mg/5 mL')}
         {values.pharmacyKind === 'medicine' && <div className="product-form-v2__field">
           <label htmlFor="product-v2-dosageForm">Forma farmacéutica</label>
-          <select id="product-v2-dosageForm"
-            value={DOSAGE_FORMS.some(([id]) => id === values.dosageForm) ? values.dosageForm : 'other'}
-            onChange={(event) => onFieldChange('dosageForm', event.target.value)}>
-            <option value="">Seleccionar forma</option>
-            {DOSAGE_FORMS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-          </select>
+          <input id="product-v2-dosageForm" list="pharmacy-dosage-forms"
+            value={values.dosageForm || ''} placeholder="Ej. Cápsula"
+            onChange={(event) => onFieldChange('dosageForm', event.target.value)} />
+          <datalist id="pharmacy-dosage-forms">
+            {DOSAGE_FORMS.filter(([id]) => id !== 'other').map(([, label]) => <option value={label} key={label} />)}
+          </datalist>
         </div>}
         {field('presentation', 'Presentación', 'Ej. Caja con 12 cápsulas')}
         {field('laboratory', 'Laboratorio')}
