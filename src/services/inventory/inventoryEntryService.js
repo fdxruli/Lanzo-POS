@@ -310,6 +310,17 @@ export const addInventoryEntry = async ({
   });
 };
 
+// Read-only inspection. Local-only receipts lack a Cloud actor-bound outbox row
+// and must never be reconstructed as a new acquisition during recovery.
+export const listLocalOnlyInventoryEntriesForRecovery = async ({ licenseKey } = {}) => {
+  if (!licenseKey) throw domainError('INVENTORY_ENTRY_LICENSE_REQUIRED');
+  if (!db.isOpen()) await db.open();
+  const events = await db.table(STORES.INVENTORY_EVENTS).toArray();
+  return events.filter((event) => event?.type === 'INVENTORY_ENTRY'
+    && event?.syncDisposition === 'local_only'
+    && (!event.licenseKey || event.licenseKey === licenseKey));
+};
+
 export const markInventoryEntrySynced = async (operationId, response = null) => {
   if (!operationId || !db.isOpen()) return;
   const eventId = `inventory-entry:${operationId}`;
