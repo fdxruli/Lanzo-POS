@@ -100,16 +100,20 @@ declare
  v_old_stock numeric;
  v_new_stock numeric;
  v_parent_id text := nullif(coalesce(p_batch->>'product_id',p_batch->>'productId'),'');
+ v_existing_product text;
 begin
  if v_parent_id is null then raise exception 'PRODUCT_ID_REQUIRED' using errcode='P0001'; end if;
  if not private.pharmacy_stage2_protected_product(v_license_id,v_parent_id) then return; end if;
  if nullif(p_batch->>'id','') is null then
    raise exception 'BATCH_ID_REQUIRED' using errcode='P0001';
  end if;
- select b.stock into v_old_stock
+ select b.stock,b.product_id into v_old_stock,v_existing_product
  from public.pos_product_batches b
  where b.license_id=v_license_id and b.id=p_batch->>'id'
  for update;
+ if v_existing_product is not null and v_existing_product <> v_parent_id then
+   raise exception 'BATCH_PRODUCT_MISMATCH' using errcode='P0001';
+ end if;
  v_new_stock := coalesce(nullif(p_batch->>'stock','')::numeric,v_old_stock,0);
  if v_new_stock is distinct from coalesce(v_old_stock,0) then
    raise exception 'PHARMACY_BATCH_STOCK_CHANGE_REQUIRES_DOCUMENTED_MOVEMENT'
