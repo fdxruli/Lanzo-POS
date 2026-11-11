@@ -750,7 +750,10 @@ export function useZxingScanner({
         session.stream = stream;
         session.track = getActiveVideoTrackFromStream(stream);
         const inspectedTrack = inspectVideoTrack(session.track);
-        session.torchSupported = inspectedTrack.capabilities?.torch === true;
+        session.torchSupported = (
+          inspectedTrack.capabilities?.torch === true
+          && typeof session.track?.applyConstraints === 'function'
+        );
         session.torchEnabled = inspectedTrack.settings?.torch === true;
 
         if (session.track && typeof session.track.addEventListener === 'function') {
