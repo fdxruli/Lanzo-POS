@@ -444,6 +444,7 @@ export function CameraViewport({
         </div>
         <p>{cameraError}</p>
         <button
+          type="button"
           onClick={onRetryCamera}
           className="btn btn-secondary"
           disabled={isConfirming}
