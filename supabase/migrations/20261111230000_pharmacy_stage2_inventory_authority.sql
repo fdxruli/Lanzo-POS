@@ -235,7 +235,7 @@ begin
     or v_pharmacy->>'status' is distinct from 'confirmed' then
    raise exception 'PHARMACY_CLASSIFICATION_REQUIRED' using errcode='P0001';
  end if;
- if v_pharmacy->>'fraction' not in ('IV','V','VI') then
+ if coalesce(v_pharmacy->>'fraction','') not in ('IV','V','VI') then
    raise exception 'PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE' using errcode='P0001';
  end if;
  if not private.product_uses_batches(p_product) then
@@ -246,7 +246,7 @@ begin
    or nullif(pg_catalog.btrim(coalesce(p_supplier,'')),'') is null
    or nullif(pg_catalog.btrim(coalesce(v_receipt->>'supplier','')),'') is null
    or pg_catalog.btrim(p_supplier) is distinct from pg_catalog.btrim(v_receipt->>'supplier')
-   or v_receipt->>'documentType' not in ('factura','remision','otro')
+   or coalesce(v_receipt->>'documentType','') not in ('factura','remision','otro')
    or nullif(pg_catalog.btrim(coalesce(v_receipt->>'documentReference','')),'') is null
    or p_occurred_at is null or nullif(v_receipt->>'receivedAt','') is null then
    raise exception 'PHARMACY_PROVENANCE_REQUIRED' using errcode='P0001';
@@ -421,6 +421,9 @@ begin
     v_index := v_index + 1;
     v_key := concat('migration:', coalesce(p_batch_id, 'default'), ':category:', coalesce(v_item->>'id', v_index::text));
     v_result := public.pos_upsert_category(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token, v_item || jsonb_build_object('metadata', coalesce(v_item->'metadata', '{}'::jsonb) || jsonb_build_object('migration_batch_id', p_batch_id, 'inventory_origin', 'historical_import_unverified')), null, v_key);
+    if coalesce((v_result->>'success')::boolean,false) is not true then
+      raise exception 'PHARMACY_CUTOVER_%_FAILED: %', upper('categories'), coalesce(v_result->>'code','NESTED_UPSERT_FAILED') using errcode='P0001';
+    end if;
     v_results := jsonb_set(v_results, '{categories}', (v_results->'categories') || jsonb_build_array(v_result));
   end loop;
 
@@ -429,6 +432,9 @@ begin
     v_index := v_index + 1;
     v_key := concat('migration:', coalesce(p_batch_id, 'default'), ':product:', coalesce(v_item->>'id', v_index::text));
     v_result := public.pos_upsert_product_legacy_r2d(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token, v_item || jsonb_build_object('metadata', coalesce(v_item->'metadata', '{}'::jsonb) || jsonb_build_object('migration_batch_id', p_batch_id, 'inventory_origin', 'historical_import_unverified')), '[]'::jsonb, null, v_key);
+    if coalesce((v_result->>'success')::boolean,false) is not true then
+      raise exception 'PHARMACY_CUTOVER_%_FAILED: %', upper('products'), coalesce(v_result->>'code','NESTED_UPSERT_FAILED') using errcode='P0001';
+    end if;
     v_results := jsonb_set(v_results, '{products}', (v_results->'products') || jsonb_build_array(v_result));
   end loop;
 
@@ -437,6 +443,9 @@ begin
     v_index := v_index + 1;
     v_key := concat('migration:', coalesce(p_batch_id, 'default'), ':batch:', coalesce(v_item->>'id', v_index::text));
     v_result := public.pos_upsert_product_batch_legacy_r2d(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token, v_item || jsonb_build_object('metadata', coalesce(v_item->'metadata', '{}'::jsonb) || jsonb_build_object('migration_batch_id', p_batch_id, 'inventory_origin', 'historical_import_unverified')), null, v_key);
+    if coalesce((v_result->>'success')::boolean,false) is not true then
+      raise exception 'PHARMACY_CUTOVER_%_FAILED: %', upper('batches'), coalesce(v_result->>'code','NESTED_UPSERT_FAILED') using errcode='P0001';
+    end if;
     v_results := jsonb_set(v_results, '{batches}', (v_results->'batches') || jsonb_build_array(v_result));
   end loop;
 
