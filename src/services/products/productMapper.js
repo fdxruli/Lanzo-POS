@@ -1,5 +1,6 @@
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
 import { normalizeModifierGroups } from '../../utils/restaurantModifiers';
+import { getPharmacyClassification, pharmacyLegacyIndicators } from '../../utils/pharmacyClassification';
 
 const nowIso = () => new Date().toISOString();
 const text = (value) => String(value ?? '').trim();
@@ -57,6 +58,7 @@ const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => {
   };
   const supplier = text(product.supplier);
   if (supplier) metadata.primary_supplier = supplier;
+  if (product.pharmacy && typeof product.pharmacy === 'object') metadata.pharmacy = product.pharmacy;
   return metadata;
 };
 
@@ -127,6 +129,7 @@ export const cloudCategoryToLocal = (category = {}, existing = null, overrides =
 export const productToCloudPayload = (product = {}) => {
   const imageUrl = resolveProductImageUrl(product);
   const imageRef = resolveProductImageRef(product);
+  const compatible = pharmacyLegacyIndicators(product);
 
   return {
     id: product.id,
@@ -157,10 +160,10 @@ export const productToCloudPayload = (product = {}) => {
     recipe: product.recipe ?? null,
     modifiers: normalizeProductModifiersForStorage(product.modifiers),
     wholesale_tiers: product.wholesaleTiers ?? product.wholesale_tiers ?? null,
-    prescription_type: optionalText(product.prescriptionType ?? product.prescription_type),
+    prescription_type: optionalText(compatible.prescriptionType),
     active_substance: optionalText(product.activeSubstance ?? product.active_substance ?? product.sustancia),
     laboratory: optionalText(product.laboratory ?? product.laboratorio),
-    requires_prescription: product.requiresPrescription ?? product.requires_prescription ?? null,
+    requires_prescription: compatible.requiresPrescription,
     presentation: optionalText(product.presentation),
     expiration_mode: product.expirationMode || product.expiration_mode || 'NONE',
     shelf_life_value: product.shelfLifeValue ?? product.shelf_life_value ?? null,
@@ -187,6 +190,8 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     wholesaleTiers: resolveComplexField(product, existing, 'wholesale_tiers', 'wholesaleTiers')
   });
   const metadata = product.metadata || existing?.metadata || {};
+  const pharmacy = getPharmacyClassification({ metadata, pharmacy: product.pharmacy || existing?.pharmacy });
+  const compatible = pharmacyLegacyIndicators({ ...product, metadata, pharmacy });
 
   return {
     ...existing,
@@ -218,10 +223,10 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     productType: product.product_type || product.productType || 'sellable',
     saleType: product.sale_type || product.saleType || 'unit',
     ...complexFields,
-    prescriptionType: product.prescription_type ?? product.prescriptionType ?? undefined,
+    prescriptionType: compatible.prescriptionType,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,
     laboratory: product.laboratory ?? undefined,
-    requiresPrescription: product.requires_prescription ?? product.requiresPrescription ?? undefined,
+    requiresPrescription: compatible.requiresPrescription,
     presentation: product.presentation ?? null,
     expirationMode: product.expiration_mode || product.expirationMode || 'NONE',
     shelfLifeValue: product.shelf_life_value ?? product.shelfLifeValue ?? null,
@@ -239,7 +244,8 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     localMutationId: overrides.localMutationId ?? null,
     deletionPending: deletedAt ? false : (overrides.deletionPending ?? existing?.deletionPending ?? false),
     conflictReason: overrides.conflictReason ?? null,
-    metadata
+    metadata,
+    pharmacy: pharmacy.recorded ? { ...(metadata.pharmacy || product.pharmacy || existing?.pharmacy) } : undefined
   };
 };
 

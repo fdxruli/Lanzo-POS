@@ -4,6 +4,7 @@ import { normalizeProductUnit, normalizePurchaseUnit } from '../../../../utils/p
 import { normalizeWholesaleTiers } from './wholesaleTiers';
 import { normalizeExpirationFields, normalizeProduceSaleConfiguration, toNumber } from './productFormNormalization';
 import { calculateFractionedUnitCost } from './fractionedPricing';
+import { pharmacyLegacyIndicators, isSpecialPharmacyProduct } from '../../../../utils/pharmacyClassification';
 
 export function buildProductFormPayload(values, { activeRubro, productToEdit = null } = {}) {
   const isEditing = Boolean(productToEdit?.id);
@@ -71,7 +72,37 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
   if (!isIngredient || saleType === 'bulk') payload.bulkData = bulkData;
   delete payload.saleMode;
   delete payload.batchSummary;
-  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) Object.assign(payload, { activeSubstance: String(values.activeSubstance || '').trim().toUpperCase(), laboratory: String(values.laboratory || '').trim(), presentation: String(values.presentation || '').trim(), prescriptionType: values.prescriptionType, requiresPrescription: Boolean(values.requiresPrescription), batchManagement: { enabled: trackStock, selectionStrategy: 'fefo' } });
+  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) {
+    // Los datos medicinales se guardan en un solo objeto, también enviado a metadata JSONB Cloud.
+    const pharmacy = {
+      version: 1,
+      kind: values.pharmacyKind === 'other' ? 'other' : 'medicine',
+      fraction: values.pharmacyKind === 'other' ? null : (values.sanitaryFraction || null),
+      status: values.pharmacyKind === 'other' || values.sanitaryFraction ? 'confirmed' : 'pending',
+      antibiotic: values.pharmacyKind === 'medicine' && values.isAntibiotic === true,
+      concentration: String(values.concentration || '').trim(),
+      dosageForm: String(values.dosageForm || '').trim(),
+      sanitaryRegistration: String(values.sanitaryRegistration || '').trim()
+    };
+    const shouldRecord = !isEditing || Boolean(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy)
+      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other');
+    if (shouldRecord) {
+      metadata.pharmacy = pharmacy;
+      payload.pharmacy = pharmacy;
+    }
+    const legacy = pharmacyLegacyIndicators({ ...payload, metadata, pharmacy: shouldRecord ? pharmacy : undefined });
+    Object.assign(payload, {
+      activeSubstance: String(values.activeSubstance || '').trim(),
+      laboratory: String(values.laboratory || '').trim(),
+      presentation: String(values.presentation || '').trim(),
+      prescriptionType: legacy.prescriptionType,
+      requiresPrescription: legacy.requiresPrescription,
+      batchManagement: { enabled: trackStock, selectionStrategy: 'fefo' }
+    });
+    // No tocar el estado de productos históricos sin clasificación.
+    if (!isEditing) payload.isActive = pharmacy.kind === 'other' || (pharmacy.status === 'confirmed' && !isSpecialPharmacyProduct(payload));
+    else if (isSpecialPharmacyProduct(payload)) payload.isActive = false;
+  }
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE) Object.assign(payload, { prepTime: values.prepTime === '' ? null : toNumber(values.prepTime), printStation: values.printStation || 'kitchen' });
   if (isEditing) payload.updatedAt = new Date().toISOString();
   return payload;

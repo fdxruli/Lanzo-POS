@@ -22,7 +22,7 @@ export const restaurantSchema = productSchema.extend({
 export const pharmacySchema = productSchema.extend({
     sustancia: z.string().optional(),
     laboratorio: z.string().optional(),
-    requiresPrescription: z.boolean().default(false),
+    requiresPrescription: z.boolean().optional(),
     presentation: z.string().optional()
 });
 

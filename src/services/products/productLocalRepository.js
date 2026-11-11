@@ -11,6 +11,7 @@ import {
 import { categoriesRepository } from '../db/general';
 import { generateID } from '../utils';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
+import { isSpecialPharmacyProduct, hasChangedConfirmedClassification } from '../../utils/pharmacyClassification';
 import {
   cloudBatchToLocal,
   cloudCategoryToLocal,
@@ -237,6 +238,9 @@ export const productLocalRepository = {
 
     const productId = editing ? hydratedExisting.id : (productData.id || generateID('prod'));
     if (editing) {
+      if (hasChangedConfirmedClassification(hydratedExisting, productData)) {
+        throw new Error('No se permite reclasificar un medicamento confirmado sin autorización sanitaria.');
+      }
       await assertIngredientChangeDoesNotBreakRecipes(hydratedExisting, { ...hydratedExisting, ...productData });
     }
     if (productData.restaurantType === 'dish' || (Array.isArray(productData.recipe) && productData.recipe.length)) {
@@ -269,6 +273,8 @@ export const productLocalRepository = {
         : (productData.batchManagement || hydratedExisting?.batchManagement || { enabled: true, selectionStrategy: 'fifo' })
     };
 
+    if (isSpecialPharmacyProduct(product)) product.isActive = false;
+
     delete product.quickVariants;
     delete product.apparelVariantDelta;
     delete product.imageRemoved;
@@ -276,7 +282,7 @@ export const productLocalRepository = {
     if (!editing) {
       Object.assign(product, {
         stock: 0,
-        isActive: true,
+        isActive: productData.isActive !== false && !isSpecialPharmacyProduct(productData),
         createdAt: nowIso()
       });
     }
@@ -412,6 +418,7 @@ export const productLocalRepository = {
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
     const current = typeof product === 'string' ? await this.getProductById(productId) : product;
+    if (isActive && isSpecialPharmacyProduct(current)) throw new Error('La fracción I, II o III no puede activarse para venta genérica.');
     await assertIngredientChangeDoesNotBreakRecipes(current, { ...current, isActive });
     const mutationSync = createLocalMutationSync();
     return updateProductSafe(productId, {
