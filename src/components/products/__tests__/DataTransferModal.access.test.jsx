@@ -41,7 +41,7 @@ const clickReport = () => fireEvent.click(screen.getByRole('button', { name: /Re
 
 describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.capture.mockReturnValue({ assertCurrent: mocks.assertCurrent });
     mocks.loadData.mockResolvedValue([{ id: 'sal-1' }]);
     mocks.buildReport.mockReturnValue({ csv: 'archivo,seguro', count: 1, issueRows: 1 });
@@ -83,6 +83,45 @@ describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () 
     await act(async () => { resolveRead([{ id: 'sal-1' }]); await Promise.resolve(); });
     expect(mocks.buildReport).not.toHaveBeenCalled();
     expect(mocks.download).not.toHaveBeenCalled();
+  });
+
+  it('lectura local válida vacía: no descarga y no confunde el dispositivo con todo el negocio', async () => {
+    mocks.loadData.mockResolvedValue([]);
+    mocks.buildReport.mockReturnValue({ csv: 'encabezados', count: 0, issueRows: 0 });
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.buildReport).toHaveBeenCalledOnce();
+    expect(mocks.buildReport).toHaveBeenCalledWith([]);
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/registros locales de este dispositivo/);
+    expect(mocks.showMessage.mock.calls[0][0]).not.toMatch(/no fue posible leer/i);
+  });
+
+  it.each([
+    ['null', null], ['undefined', undefined], ['objeto', { rows: [] }],
+    ['cadena', ''], ['número', 0]
+  ])('lectura local inválida (%s): error explícito y cero exportación', async (_name, value) => {
+    mocks.loadData.mockResolvedValue(value);
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.buildReport).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.assertCurrent).toHaveBeenCalledWith('reports');
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/No fue posible leer las ventas almacenadas/);
+    expect(mocks.showMessage.mock.calls[0][0]).not.toMatch(/No se encontraron dispensaciones/);
+  });
+
+  it('excepción durante la lectura: error controlado, sin detalles sensibles y sin descarga', async () => {
+    mocks.loadData.mockRejectedValue(new Error('Doctor: DATO_SENSIBLE, IndexedDB falló'));
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledTimes(1));
+    expect(mocks.buildReport).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/No fue posible leer o procesar las ventas/);
+    expect(mocks.showMessage.mock.calls[0][0]).not.toMatch(/DATO_SENSIBLE|IndexedDB/);
   });
 
   it('ningún registro identificable: mensaje delimitado al dispositivo, sin CSV', async () => {

@@ -103,6 +103,10 @@ export default function DataTransferModal({
       const allSales = await loadData(STORES.SALES);
       actorHandle.assertCurrent('sync');
       actorHandle.assertCurrent('reports');
+      if (!Array.isArray(allSales)) {
+        showMessageModal('No fue posible leer las ventas almacenadas en este dispositivo. No se generó el reporte. Verifica el almacenamiento local e inténtalo nuevamente.');
+        return;
+      }
       const report = buildPharmacyReport(allSales);
       actorHandle.assertCurrent('sync');
       actorHandle.assertCurrent('reports');
@@ -118,8 +122,8 @@ export default function DataTransferModal({
       try {
         actorHandle?.assertCurrent('sync');
         actorHandle?.assertCurrent('reports');
-        Logger.error(error);
-        showMessageModal('Error al generar reporte: ' + error.message);
+        Logger.error('No fue posible generar el reporte auxiliar de dispensaciones.');
+        showMessageModal('No fue posible leer o procesar las ventas almacenadas en este dispositivo. No se generó el reporte. Verifica el almacenamiento local e inténtalo nuevamente.');
       } catch {
         // The actor changed while the report was pending.
       }

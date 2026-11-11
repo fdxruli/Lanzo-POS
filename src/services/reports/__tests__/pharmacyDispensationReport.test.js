@@ -72,6 +72,29 @@ describe('reporte auxiliar de dispensaciones, snapshots históricos', () => {
     expect(result.rows[0][16]).toMatch(/Folio operativo ausente/);
   });
 
+  it('snapshot real de processSaleCore: venta closed sin fulfillmentStatus sigue siendo venta', () => {
+    const persisted = sale({ status: 'closed', fulfillmentStatus: undefined });
+    const result = report([persisted]);
+    expect(result.rows[0][13]).toBe('CERRADA');
+    expect(result.rows[0][14]).toBe('REGISTRO DE VENTA');
+    expect(result.activeRows).toBe(1);
+  });
+
+  it('snapshot status cancelled sin fulfillmentStatus está anulado, nunca vigente', () => {
+    const result = report([sale({ status: 'cancelled', fulfillmentStatus: undefined })]);
+    expect(result.rows[0][13]).toBe('ANULADA');
+    expect(result.rows[0][14]).toBe('NO VIGENTE');
+    expect(result.activeRows).toBe(0);
+    expect(result.issueRows).toBe(1);
+  });
+
+  it('status requires_review sin fulfillmentStatus es pendiente, no venta confirmada', () => {
+    const result = report([sale({ status: 'requires_review', fulfillmentStatus: undefined })]);
+    expect(result.rows[0][13]).toBe('requires_review');
+    expect(result.rows[0][14]).toBe('PENDIENTE DE REVISIÓN');
+    expect(result.activeRows).toBe(0);
+  });
+
   it('marca cancelación Cloud aunque el estado de venta no haya cambiado', () => {
     const result = report([sale({ cancelledAt: '2026-11-11T11:00:00Z' })]);
     expect(result.rows[0][13]).toBe('ANULADA');
