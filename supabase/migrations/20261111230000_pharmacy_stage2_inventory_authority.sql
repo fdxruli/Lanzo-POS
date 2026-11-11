@@ -129,7 +129,7 @@ begin
     perform private.assert_inventory_actor_authority(p_context);
     insert into private.pharmacy_inventory_cutovers_v1
       (license_id,device_id,batch_root,expires_at)
-      values(v_license_id,v_device_id,v_root,now()+interval '2 hours')
+      values(v_license_id,v_device_id,v_root,now()+interval '24 hours')
       returning * into v_cutover;
   end if;
   if not v_has_stock then return; end if;
@@ -158,7 +158,7 @@ begin
      where license_id=v_license_id and entity_kind=v_kind and entity_id=v_entity_id for update;
     if found then
       if v_used.batch_id is distinct from p_batch_id
-         or v_used.payload_hash is distinct from md5(v_item::text) then
+         or v_used.initial_stock is distinct from v_stock then
         raise exception 'PHARMACY_HISTORICAL_ITEM_ALREADY_IMPORTED'
           using errcode='P0001';
       end if;
@@ -196,12 +196,12 @@ begin
    p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
  perform private.assert_cloud_products_sync_enabled(v_context);
  perform private.assert_product_actor_authority(v_context);
- perform private.assert_inventory_actor_authority(v_context);
  v_license_id := (v_context->>'license_id')::uuid;
  v_device_id := (v_context->>'device_id')::uuid;
  if not private.pharmacy_stage2_business(v_license_id) then
    return jsonb_build_object('success',true,'skipped',true);
  end if;
+ perform private.assert_inventory_actor_authority(v_context);
  update private.pharmacy_inventory_cutovers_v1
    set completed_at=coalesce(completed_at,now())
  where license_id=v_license_id and device_id=v_device_id
