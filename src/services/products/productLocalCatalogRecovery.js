@@ -421,19 +421,6 @@ export const productLocalCatalogRecovery = {
   async savePermissionBlockedWarning({ licenseKey } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
 
-    if (localOnlyEvents.length && localCatalog) {
-      const latestCatalog = await productLocalRepository.getLocalCatalogForMigration();
-      const issues = await findUnverifiedLocalOnlyBalances({
-        licenseKey, localCatalog: latestCatalog, events: localOnlyEvents
-      });
-      if (issues.length) {
-        await saveRecoveryWarning({
-          licenseKey, issues, conflictType: 'PHARMACY_LOCAL_ONLY_BALANCE_UNVERIFIED',
-          message: 'Saldo local histórico no conciliado con Cloud. No se inventa una recepción.'
-        });
-        return { success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required', issues };
-      }
-    }
     const catalog = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
     const unsynced = countCatalogRows(catalog);
     if (unsynced === 0) return { success: true, skipped: true, reason: 'no_unsynced_catalog' };
@@ -478,6 +465,19 @@ export const productLocalCatalogRecovery = {
         }));
         // Keep the original outbox rows untouched, including actor origin.
         return { success: false, blocked: true, reason: 'pharmacy_receipts_unconfirmed', issues };
+      }
+    }
+    if (localOnlyEvents.length && localCatalog) {
+      const latestCatalog = await productLocalRepository.getLocalCatalogForMigration();
+      const issues = await findUnverifiedLocalOnlyBalances({
+        licenseKey, localCatalog: latestCatalog, events: localOnlyEvents
+      });
+      if (issues.length) {
+        await saveRecoveryWarning({
+          licenseKey, issues, conflictType: 'PHARMACY_LOCAL_ONLY_BALANCE_UNVERIFIED',
+          message: 'Saldo local histórico no conciliado con Cloud. No se inventa una recepción.'
+        });
+        return { success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required', issues };
       }
     }
     const catalog = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
