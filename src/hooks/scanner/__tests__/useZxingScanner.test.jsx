@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -54,8 +54,18 @@ vi.mock('@zxing/library', async () => {
 });
 
 const ScannerHarness = (props) => {
-  const { ref } = useZxingScanner(props);
-  return <video ref={ref} />;
+  const { ref, torch, toggleTorch } = useZxingScanner(props);
+  return (
+    <>
+      <video ref={ref} />
+      {torch.supported && (
+        <button type="button" onClick={toggleTorch} disabled={torch.pending}
+          aria-pressed={torch.enabled}>
+          Linterna
+        </button>
+      )}
+    </>
+  );
 };
 
 const createResult = (text = '7501234567890') => ({
@@ -77,6 +87,8 @@ const createDeferred = () => {
 
 const createTrack = ({
   focusMode,
+  torch = false,
+  settings,
   includeCapabilities = true,
   applyConstraints = vi.fn(),
 } = {}) => {
@@ -86,7 +98,7 @@ const createTrack = ({
     readyState: 'live',
     stop: vi.fn(() => { track.readyState = 'ended'; }),
     applyConstraints,
-    getSettings: vi.fn(() => ({ facingMode: 'environment' })),
+    getSettings: vi.fn(settings || (() => ({ facingMode: 'environment' }))),
     addEventListener: vi.fn((type, handler) => {
       const handlers = listeners.get(type) || new Set();
       handlers.add(handler);
@@ -107,7 +119,7 @@ const createTrack = ({
   };
 
   if (includeCapabilities) {
-    track.getCapabilities = vi.fn(() => ({ focusMode }));
+    track.getCapabilities = vi.fn(() => ({ focusMode, ...(torch ? { torch: true } : {}) }));
   }
 
   return track;
@@ -227,6 +239,159 @@ afterEach(() => {
 });
 
 describe('useZxingScanner camera enhancement', () => {
+  it('offers torch only when the active track advertises it', async () => {
+    const supported = createTrack({ torch: true });
+    const first = await renderScanner({ track: supported });
+    expect(first.view.queryByRole('button', { name: 'Linterna' })).not.toBeNull();
+    expect(supported.applyConstraints).not.toHaveBeenCalled();
+    first.view.unmount();
+
+    const unsupported = createTrack();
+    const second = await renderScanner({ track: unsupported });
+    expect(second.view.queryByRole('button', { name: 'Linterna' })).toBeNull();
+    expect(unsupported.applyConstraints).not.toHaveBeenCalled();
+  });
+
+  it('switches the light on and off without replacing video or ZXing', async () => {
+    let light = false;
+    const track = createTrack({
+      torch: true,
+      settings: () => ({ torch: light }),
+      applyConstraints: vi.fn(async ({ advanced }) => { light = advanced[0].torch; }),
+    });
+    const { view, stream, video } = await renderScanner({ track });
+    const button = view.getByRole('button', { name: 'Linterna' });
+    await act(async () => { fireEvent.click(button); });
+    expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(video.srcObject).toBe(stream);
+
+    await act(async () => { fireEvent.click(button); });
+    expect(track.applyConstraints).toHaveBeenLastCalledWith({ advanced: [{ torch: false }] });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(getNormalReader().reset).not.toHaveBeenCalled();
+  });
+
+  it('reports optional torch failure while decoding continues', async () => {
+    vi.useFakeTimers();
+    const track = createTrack({
+      torch: true,
+      applyConstraints: vi.fn().mockRejectedValue(new Error('torch blocked')),
+    });
+    const onTorchError = vi.fn();
+    const onError = vi.fn();
+    const { view } = await renderScanner({ track, onTorchError, onError });
+    const button = view.getByRole('button', { name: 'Linterna' });
+    await act(async () => { fireEvent.click(button); });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(onTorchError).toHaveBeenCalledTimes(1);
+    await flushTimers(1);
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('does not claim light is on when track settings contradict a successful call', async () => {
+    const track = createTrack({ torch: true, settings: () => ({ torch: false }) });
+    const onTorchError = vi.fn();
+    const { view } = await renderScanner({ track, onTorchError });
+    const button = view.getByRole('button', { name: 'Linterna' });
+    await act(async () => { fireEvent.click(button); });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(onTorchError).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an in-flight torch rejection after unmount', async () => {
+    const operation = createDeferred();
+    const track = createTrack({ torch: true, applyConstraints: vi.fn(() => operation.promise) });
+    const onTorchError = vi.fn();
+    const { view, video } = await renderScanner({ track, onTorchError });
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Linterna' })); });
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    view.unmount();
+    await act(async () => { operation.reject(new Error('late torch failure')); });
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+    expect(onTorchError).not.toHaveBeenCalled();
+  });
+
+  it('does not let an old torch operation change the next scanner session', async () => {
+    const pending = createDeferred();
+    const oldTrack = createTrack({ torch: true, applyConstraints: vi.fn(() => pending.promise) });
+    const old = await renderScanner({ track: oldTrack });
+    await act(async () => { fireEvent.click(old.view.getByRole('button', { name: 'Linterna' })); });
+    old.view.unmount();
+
+    const newTrack = createTrack({ torch: true });
+    const fresh = await renderScanner({ track: newTrack });
+    const button = fresh.view.getByRole('button', { name: 'Linterna' });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => { pending.resolve(); });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(newTrack.applyConstraints).not.toHaveBeenCalled();
+  });
+
+  it('rejects repeated clicks while a torch request is pending', async () => {
+    const pending = createDeferred();
+    const track = createTrack({ torch: true, applyConstraints: vi.fn(() => pending.promise) });
+    const { view } = await renderScanner({ track });
+    const button = view.getByRole('button', { name: 'Linterna' });
+    await act(async () => { fireEvent.click(button); fireEvent.click(button); });
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    await act(async () => { pending.resolve(); });
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('sequences torch after optional focus without blocking decoding', async () => {
+    vi.useFakeTimers();
+    const focus = createDeferred();
+    let light = false;
+    const track = createTrack({
+      focusMode: ['continuous'],
+      torch: true,
+      settings: () => ({ torch: light }),
+      applyConstraints: vi.fn(({ advanced }) => {
+        if (advanced[0].focusMode === 'continuous' && !('torch' in advanced[0])) {
+          return focus.promise;
+        }
+        light = advanced[0].torch;
+        return Promise.resolve();
+      }),
+    });
+    const { view } = await renderScanner({ track });
+    const button = view.getByRole('button', { name: 'Linterna' });
+    await act(async () => { fireEvent.click(button); });
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+    await flushTimers(1);
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalled();
+
+    await act(async () => { focus.resolve(); });
+    expect(track.applyConstraints).toHaveBeenLastCalledWith({
+      advanced: [{ torch: true, focusMode: 'continuous' }],
+    });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('drops a queued torch request when the camera track ends', async () => {
+    const focus = createDeferred();
+    const track = createTrack({
+      focusMode: ['continuous'],
+      torch: true,
+      applyConstraints: vi.fn(() => focus.promise),
+    });
+    const onTorchError = vi.fn();
+    const { view } = await renderScanner({ track, onTorchError });
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Linterna' })); });
+    track.emitEnded();
+    await act(async () => { focus.resolve(); });
+    expect(track.applyConstraints).toHaveBeenCalledTimes(1);
+    expect(view.queryByRole('button', { name: 'Linterna' })).toBeNull();
+    expect(onTorchError).not.toHaveBeenCalled();
+  });
+
   it('applies continuous autofocus after acquiring a capable camera track', async () => {
     const track = createTrack({ focusMode: ['manual', 'single-shot', 'continuous'] });
     await renderScanner({ track });
