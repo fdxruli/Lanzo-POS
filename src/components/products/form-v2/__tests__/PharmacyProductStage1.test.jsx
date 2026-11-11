@@ -64,7 +64,7 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
       price: 32, cost: 12, stock: 3, prescriptionType: 'antibiotic', requiresPrescription: true
     } });
     openSanitary();
-    expect(screen.getByText(/Clasificación sanitaria pendiente de confirmar/i)).toBeInTheDocument();
+    expect(screen.getByText(/Los datos antiguos de receta se conservan\./i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     const saved = onSave.mock.calls[0][0];
