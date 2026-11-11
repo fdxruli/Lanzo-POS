@@ -17,11 +17,15 @@ const mocks = vi.hoisted(() => ({
   deleteProduct: vi.fn(),
   deleteBatch: vi.fn(),
   listInventoryEntriesForRecovery: vi.fn(),
+  listLocalOnlyInventoryEntriesForRecovery: vi.fn(),
   processOutbox: vi.fn(),
   pullCatalogSnapshot: vi.fn(),
   events: []
 }));
 
+vi.mock('../../inventory/inventoryEntryService', () => ({
+  listLocalOnlyInventoryEntriesForRecovery: mocks.listLocalOnlyInventoryEntriesForRecovery
+}));
 vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: {
   listInventoryEntriesForRecovery: mocks.listInventoryEntriesForRecovery
 } }));
@@ -90,6 +94,7 @@ describe('repeated FREE to PRO catalog recovery', () => {
     mocks.events.length = 0;
     mocks.getMeta.mockResolvedValue(null);
     mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
+    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([]);
     mocks.processOutbox.mockResolvedValue({ processed: 0 });
     mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
       success: true, has_more: false,
@@ -147,6 +152,27 @@ describe('repeated FREE to PRO catalog recovery', () => {
     expect(mocks.processOutbox).toHaveBeenCalledTimes(1);
     expect(mocks.upsertProduct).not.toHaveBeenCalled();
     expect(mocks.upsertProductBatch).not.toHaveBeenCalled();
+  });
+
+  it('holds a Free/Local pharmacy receipt with no outbox even when catalog says synced', async () => {
+    mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
+    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([{
+      type: 'INVENTORY_ENTRY', operationId: 'free-local-entry', productId: medicine.id,
+      batchId: null, licenseKey: 'PHARMA-TEST', syncDisposition: 'local_only',
+      metadata: { pharmacyReceipt: { documentReference: 'QA-LOCAL' } }
+    }]);
+    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.pullCatalogSnapshot.mockResolvedValue({
+      success: true, has_more: false, products: [{ id: medicine.id, stock: 10 }]
+    });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({
+      success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required'
+    });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.saveConflict).toHaveBeenCalled();
   });
 
   it('keeps an unconfirmed original receipt and never applies a catalog snapshot', async () => {
