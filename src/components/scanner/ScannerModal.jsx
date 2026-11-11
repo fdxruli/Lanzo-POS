@@ -249,23 +249,22 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     [isConfirming, mode, onScanSuccess, processScannedCode, handleClose]
   );
 
-  // Manejo de errores de cámara
+  // Un fallo fatal requiere una salida visible; la sesión se limpia en el hook.
   const handleError = useCallback((error) => {
-    if (isRecoverableDecodeError(error)) {
+    if (!isMountedRef.current || isRecoverableDecodeError(error)) return;
+
+    if (error?.name === 'NotAllowedError') {
+      setCameraError('Permiso de cámara denegado. Autorízalo y pulsa Reintentar.');
       return;
     }
 
-    if (error.name === 'NotAllowedError') {
-      setCameraError('Permiso de camara denegado.');
+    if (error?.name === 'NotFoundError') {
+      setCameraError('No se encontró una cámara. Comprueba el dispositivo y pulsa Reintentar.');
       return;
     }
 
-    if (error.name === 'NotFoundError') {
-      setCameraError('No se encontro camara en este dispositivo.');
-      return;
-    }
-
-    Logger.warn('Advertencia ZXing:', error.message);
+    Logger.warn('Fallo del escáner:', error?.message || error);
+    setCameraError('El escáner se detuvo. Pulsa Reintentar para volver a abrir la cámara.');
   }, []);
 
   const handleTorchError = useCallback(() => {
@@ -276,7 +275,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Hook de escaneo - SIEMPRE activo cuando show=true e isConfirming=false
   // La pausa lógica se maneja via processingLockRef, NO via paused
-  const { ref: videoRef, torch, toggleTorch } = useZxingScanner({
+  const { ref: videoRef, torch, toggleTorch, restartCamera } = useZxingScanner({
     paused: !show || isConfirming, // Solo pausar por condiciones de UI, no por lógica
     onDecodeResult: handleDecodeResult,
     onError: handleError,
@@ -291,12 +290,13 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     decodeRegionRef.current = region;
   }, []);
 
-  // Retry de cámara
+  // Reinicia una sesión física nueva sin borrar los artículos ya escaneados.
+  // Un producto aún en resolución conserva su bloqueo contra duplicados.
   const handleRetryCamera = useCallback(() => {
     setCameraError(null);
-    processingLockRef.current = false;
-    setIsProcessing(false);
-  }, []);
+    setScanFeedback('');
+    restartCamera();
+  }, [restartCamera]);
 
   // Confirmar carrito con manejo robusto de errores
   const handleConfirmScan = useCallback(async () => {
