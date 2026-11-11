@@ -11,7 +11,7 @@ import {
 import { categoriesRepository } from '../db/general';
 import { generateID } from '../utils';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
-import { isSpecialPharmacyProduct, hasChangedConfirmedClassification } from '../../utils/pharmacyClassification';
+import { isSpecialPharmacyProduct, hasChangedConfirmedClassification, pharmacyLegacyIndicators, getPharmacyClassification } from '../../utils/pharmacyClassification';
 import {
   cloudBatchToLocal,
   cloudCategoryToLocal,
@@ -229,6 +229,10 @@ export const productLocalRepository = {
   },
 
   async prepareProduct(productData, existingProduct = null) {
+    const classification = getPharmacyClassification(productData);
+    if (classification.recorded && classification.status === 'confirmed') {
+      productData = { ...productData, ...pharmacyLegacyIndicators(productData) };
+    }
     const editing = Boolean(existingProduct?.id && !existingProduct?.isNew);
     const hydratedExisting = editing
       ? ((existingProduct?.name || existingProduct?.createdAt || existingProduct?.serverVersion)
