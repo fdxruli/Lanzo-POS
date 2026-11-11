@@ -298,6 +298,7 @@ export function useZxingScanner({
   const sessionIdRef = useRef(0);
   const mountedRef = useRef(false);
   const [torch, setTorch] = useState(UNAVAILABLE_TORCH);
+  const [restartVersion, setRestartVersion] = useState(0);
 
   const decodeResultHandlerRef = useRef(onDecodeResult);
   const decodeErrorHandlerRef = useRef(onDecodeError);
@@ -386,6 +387,13 @@ export function useZxingScanner({
     const session = activeSessionRef.current;
     cleanupSession(session);
   }, [cleanupSession]);
+
+  // An explicit retry must acquire a new stream even after the error overlay
+  // temporarily unmounts the video element. Never reuse a failed session.
+  const restartCamera = useCallback(() => {
+    stopDecoding();
+    setRestartVersion((version) => version + 1);
+  }, [stopDecoding]);
 
   // Manual torch is serialized after optional autofocus on this track.
   // Neither operation delays video playback or ZXing.
@@ -635,7 +643,7 @@ export function useZxingScanner({
               if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
               if (!isRecoverableDecodeError(error)) {
-                reportUnexpectedError(error);
+                handleSessionFailure(error);
                 return;
               }
             }
@@ -675,7 +683,7 @@ export function useZxingScanner({
           if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
           if (!isRecoverableDecodeError(error)) {
-            reportUnexpectedError(error);
+            handleSessionFailure(error);
             return;
           }
 
@@ -718,7 +726,7 @@ export function useZxingScanner({
 
           session.completeMissCount = 0;
           if (!isRecoverableDecodeError(error)) {
-            reportUnexpectedError(error);
+            handleSessionFailure(error);
             return;
           }
 
@@ -728,7 +736,7 @@ export function useZxingScanner({
         deliverCompleteMiss(hardError || fullNormalError);
         scheduleNextCycle(missDelay);
       } catch (error) {
-        reportUnexpectedError(error);
+        handleSessionFailure(error);
       } finally {
         session.pipelineInFlight = false;
       }
@@ -809,6 +817,7 @@ export function useZxingScanner({
     hints,
     missDelay,
     paused,
+    restartVersion,
     cleanupSession,
     stopDecoding,
   ]);
@@ -821,5 +830,6 @@ export function useZxingScanner({
     ref: videoRef,
     torch,
     toggleTorch,
+    restartCamera,
   };
 }

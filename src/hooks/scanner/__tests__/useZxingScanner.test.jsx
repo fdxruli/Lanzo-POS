@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { act } from 'react';
+import { act, useCallback, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BrowserMultiFormatReader,
@@ -66,6 +66,30 @@ const ScannerHarness = (props) => {
       )}
     </>
   );
+};
+
+
+// Models the real modal switching from a video element to an error panel.
+// Retry must mount a fresh video and acquire a new stream in the same render.
+const RetryHarness = () => {
+  const [error, setError] = useState(null);
+  const handleError = useCallback((cause) => setError(cause), []);
+  const { ref, restartCamera } = useZxingScanner({ onError: handleError });
+
+  if (error) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          restartCamera();
+        }}
+      >
+        Reintentar
+      </button>
+    );
+  }
+  return <video ref={ref} />;
 };
 
 const createResult = (text = '7501234567890') => ({
@@ -1255,6 +1279,99 @@ describe('useZxingScanner camera enhancement', () => {
     track.emitEnded();
     track.emitEnded();
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('reacquires the camera when Retry remounts video after denied permission', async () => {
+    const denied = Object.assign(new Error('camera blocked'), { name: 'NotAllowedError' });
+    const track = createTrack();
+    const stream = createStream(track);
+    navigator.mediaDevices.getUserMedia
+      .mockRejectedValueOnce(denied)
+      .mockResolvedValueOnce(stream);
+
+    const view = render(<RetryHarness />);
+    await waitFor(() => expect(view.getByRole('button', { name: 'Reintentar' })).not.toBeNull());
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(view.getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1));
+    expect(view.container.querySelector('video').srcObject).toBe(stream);
+
+    view.unmount();
+    expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts a stopped session without retaining its old track or reader', async () => {
+    const firstTrack = createTrack();
+    const secondTrack = createTrack();
+    const firstStream = createStream(firstTrack);
+    const secondStream = createStream(secondTrack);
+    const camera = vi.fn().mockResolvedValueOnce(firstStream).mockResolvedValueOnce(secondStream);
+    navigator.mediaDevices.getUserMedia.mockImplementation(camera);
+    const view = render(<RetryHarness />);
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1));
+    const firstReader = getLatestNormalReader();
+
+    // Ended tracks surface the error overlay, then Retry creates a new session.
+    firstTrack.emitEnded();
+    await waitFor(() => expect(view.getByRole('button', { name: 'Reintentar' })).not.toBeNull());
+    fireEvent.click(view.getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(camera).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2));
+
+    expect(firstTrack.readyState).toBe('ended');
+    expect(firstReader.reset).toHaveBeenCalled();
+    expect(view.container.querySelector('video').srcObject).toBe(secondStream);
+    view.unmount();
+    expect(secondTrack.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['full frame', false],
+    ['ROI', true],
+  ])('stops the camera after an unexpected %s decoder error', async (_label, useRoi) => {
+    vi.useFakeTimers();
+    const fatal = new Error('unexpected reader failure');
+    zxing.queues.normal.push(fatal);
+    const onError = vi.fn();
+    const track = createTrack();
+    const decodeRegionRef = useRoi
+      ? { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } }
+      : undefined;
+    const { video } = await renderScanner({ track, onError, decodeRegionRef });
+
+    await flushTimers(1);
+    expect(onError).toHaveBeenCalledExactlyOnceWith(fatal);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+    const reader = getNormalReader();
+    expect(reader.reset).toHaveBeenCalled();
+
+    const attempts = reader.decodeBitmap.mock.calls.length;
+    await flushTimers(1500);
+    expect(reader.decodeBitmap).toHaveBeenCalledTimes(attempts);
+  });
+
+  it('stops after a fatal TRY_HARDER error instead of leaving the preview stalled', async () => {
+    vi.useFakeTimers();
+    queueMisses(8, 'normal');
+    const fatal = new Error('intensive decoding failed');
+    zxing.queues.hard.push(fatal);
+    const onError = vi.fn();
+    const track = createTrack();
+    const { video } = await renderScanner({ track, onError });
+    await flushTimers(1);
+    for (let index = 0; index < 7; index += 1) {
+      await flushTimers(150);
+    }
+
+    expect(getHardReader().decodeBitmap).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledExactlyOnceWith(fatal);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+    await flushTimers(1500);
+    expect(getHardReader().decodeBitmap).toHaveBeenCalledTimes(1);
   });
 
   it('routes unexpected decoder errors to onError without treating them as misses', async () => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -48,7 +49,12 @@ vi.mock('../../../hooks/scanner/useZxingScanner', () => ({
 }));
 
 vi.mock('../CameraViewport', () => ({
-  CameraViewport: () => <div data-testid="camera-viewport" />,
+  CameraViewport: ({ cameraError, onRetryCamera }) => cameraError ? (
+    <div>
+      <p role="alert">{cameraError}</p>
+      <button type="button" onClick={onRetryCamera}>Reintentar</button>
+    </div>
+  ) : <div data-testid="camera-viewport" />,
 }));
 
 vi.mock('../ScannerCartList', () => ({
@@ -94,6 +100,7 @@ beforeEach(() => {
     ref: { current: null },
     torch: { supported: false, enabled: false, pending: false },
     toggleTorch: vi.fn(),
+    restartCamera: vi.fn(),
   });
 });
 
@@ -164,6 +171,50 @@ describe('ScannerModal close control', () => {
     });
     render(<ScannerModal show onClose={mockClose} />);
     expect(screen.getByRole('button', { name: 'Cambiando linterna' })).toBeDisabled();
+  });
+
+  it('shows fatal decoder errors and really restarts without clearing scanned items', () => {
+    const restartCamera = vi.fn();
+    mockUseZxingScanner.mockReturnValue({
+      ref: { current: null },
+      torch: { supported: false, enabled: false, pending: false },
+      toggleTorch: vi.fn(),
+      restartCamera,
+    });
+    render(<ScannerModal show onClose={mockClose} />);
+    mockClearCart.mockClear();
+
+    act(() => {
+      mockUseZxingScanner.mock.lastCall[0].onError(new Error('unexpected decoder crash'));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('El escáner se detuvo.');
+    expect(screen.queryByTestId('camera-viewport')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(restartCamera).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('camera-viewport')).not.toBeNull();
+    expect(mockClearCart).not.toHaveBeenCalled();
+    expect(mockClose).not.toHaveBeenCalled();
+  });
+
+  it('offers a retry after camera permission is denied', () => {
+    const restartCamera = vi.fn();
+    mockUseZxingScanner.mockReturnValue({
+      ref: { current: null },
+      torch: { supported: false, enabled: false, pending: false },
+      toggleTorch: vi.fn(),
+      restartCamera,
+    });
+    render(<ScannerModal show onClose={mockClose} />);
+    act(() => {
+      const denied = Object.assign(new Error('permission denied'), { name: 'NotAllowedError' });
+      mockUseZxingScanner.mock.lastCall[0].onError(denied);
+    });
+
+    expect(screen.getByRole('alert').textContent).toContain('Permiso de cámara denegado.');
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(restartCamera).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('keeps only the close control interactive over the passive camera layers', () => {
