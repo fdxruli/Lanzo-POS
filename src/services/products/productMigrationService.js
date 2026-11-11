@@ -21,6 +21,7 @@ import {
   PRODUCTS_MIGRATION_WARNING_META_KEY
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 const nowIso = () => new Date().toISOString();
@@ -174,6 +175,19 @@ export const productMigrationService = {
       }
 
       const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
+    if (snapshot?.success !== true) return snapshot;
+
+    if (needsPharmacyCutoverClose && pharmacyCutoverRoot) {
+      const closed = await productCloudRepository.completePharmacyInventoryCutover({
+        licenseKey,
+        batchRoot: pharmacyCutoverRoot
+      });
+      if (closed?.success !== true) {
+        const issues = [{ code: 'PHARMACY_CUTOVER_CLOSE_FAILED', message: 'No se cerró el corte histórico en Cloud.' }];
+        await saveBlockedMigrationConflict({ licenseKey, issues });
+        return { success: false, blocked: true, issues, response: closed };
+      }
+    }
       return { ...snapshot, recovery };
     }
 
@@ -187,9 +201,20 @@ export const productMigrationService = {
     }
 
     const totalLocalRows = localCatalog.categories.length + localCatalog.products.length + localCatalog.batches.length;
+    const pharmacyProductIds = new Set(localCatalog.products.filter((product) => {
+      const classification = getPharmacyClassification(product);
+      return classification.recorded && classification.kind === 'medicine';
+    }).map((product) => product.id));
+    const needsPharmacyCutoverClose = localCatalog.products.some((product) =>
+      pharmacyProductIds.has(product.id) && Number(product.stock || 0) > 0
+    ) || localCatalog.batches.some((batch) =>
+      pharmacyProductIds.has(batch.productId) && Number(batch.stock || 0) > 0
+    );
+    let pharmacyCutoverRoot = null;
 
     if (totalLocalRows > 0) {
       const batchId = `products-${licenseKey}-${Date.now()}`;
+      pharmacyCutoverRoot = batchId;
 
       for (let index = 0; index < localCatalog.categories.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
         const categories = localCatalog.categories.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(categoryToCloudPayload);
