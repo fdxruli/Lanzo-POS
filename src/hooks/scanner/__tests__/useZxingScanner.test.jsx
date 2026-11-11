@@ -146,6 +146,7 @@ const renderScanner = async ({
   ...props
 } = {}) => {
   const stream = providedStream || createStream(track);
+  const previousAcquisitions = navigator.mediaDevices.getUserMedia.mock.calls.length;
   if (getUserMediaImplementation) {
     navigator.mediaDevices.getUserMedia.mockImplementation(getUserMediaImplementation);
   } else {
@@ -163,7 +164,7 @@ const renderScanner = async ({
     await Promise.resolve();
     await Promise.resolve();
   });
-  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+  expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(previousAcquisitions + 1);
   return { stream, track, video, view };
 };
 
