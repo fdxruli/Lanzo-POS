@@ -181,7 +181,7 @@ describe('ScannerModal commercial confirmation guards', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(transfer).toHaveBeenCalledTimes(1);
-    expect(confirmButton()).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmando...' })).toBeDisabled();
     await act(async () => {
       pending.resolve({ success: true, addedCount: 1, incrementedCount: 0, failedCount: 0 });
       await Promise.resolve();
