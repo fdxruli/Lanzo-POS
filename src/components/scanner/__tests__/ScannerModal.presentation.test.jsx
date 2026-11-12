@@ -31,6 +31,13 @@ describe('Scanner POS presentation', () => {
 
     const rows = document.querySelectorAll('.scanned-item');
     expect(rows).toHaveLength(2);
+    expect(Array.from(rows[0].children, (node) => node.className)).toEqual([
+      'scanned-item-description',
+      'scanned-item-controls',
+      'scanned-item-price',
+    ]);
+    expect(within(rows[0]).getByTitle(product.name)).toBeInTheDocument();
+    expect(within(rows[0]).getByLabelText('Cantidad: 3')).toHaveTextContent('3');
     expect(within(rows[0]).getByText('$62.50 c/u')).toBeInTheDocument();
     expect(within(rows[0]).getByText('$187.50')).toBeInTheDocument();
     expect(within(rows[1]).getByText('$62.50')).toBeInTheDocument();
