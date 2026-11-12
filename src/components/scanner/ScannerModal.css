@@ -1805,3 +1805,13 @@
   #scanner-modal .scanner-confirm-btn,
   #scanner-modal .scanner-issues-toggle { transition: none; }
 }
+
+/* Only the last-unit removal uses destructive coloring. */
+#scanner-modal .scanner-qty-btn--action .scanner-action-icon,
+#scanner-modal .scanner-qty-btn--action:hover:not(:disabled) .scanner-action-icon {
+  color: currentColor;
+}
+#scanner-modal .scanner-qty-btn--delete .scanner-action-icon,
+#scanner-modal .scanner-qty-btn--delete:hover:not(:disabled) .scanner-action-icon {
+  color: var(--error-color, #dc3545);
+}
