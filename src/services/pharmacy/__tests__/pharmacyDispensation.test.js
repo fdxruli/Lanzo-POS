@@ -80,6 +80,13 @@ describe('Etapa 3: receta y saldo transaccional Local', () => {
       sale('sale-a', 8), salesTable([sale('sale-a', 8)])
     )).resolves.toBeUndefined();
   });
+  it('una venta cancelada sigue consumiendo receta hasta reversión documentada', async () => {
+    await expect(validateLocalPharmacyDispensations(
+      sale('sale-next', 13), salesTable([{
+        ...sale('sale-cancelled', 8), status: 'cancelled'
+      }])
+    )).rejects.toThrow('PHARMACY_PRESCRIPTION_BALANCE_EXCEEDED');
+  });
   it('no permite reutilizar una receta retenida', async () => {
     await expect(validateLocalPharmacyDispensations(
       sale('sale-next', 1), salesTable([sale('sale-final', 20, { pharmacyDispensationV1: rx({ retentionDeclared: true }) })])
