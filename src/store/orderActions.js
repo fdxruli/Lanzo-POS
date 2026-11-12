@@ -339,6 +339,17 @@ export const createOrderActions = (set, get) => ({
               ? getPosStockState(candidate, { tracked: true })
               : { kind: 'unknown', blocked: true, snapshot: null };
             const stockState = observed.blocked ? observed : { kind: 'unknown', blocked: true, snapshot: null };
+            if (candidate.isActive === true && stockState.kind === 'unknown') {
+              // The existing batch/cart guard must identify competing provisional
+              // claims, even when the selected batch has invalid inventory.
+              // It reads the batch again and rejects unknown stock before commit.
+              actorHandle.assertCurrent();
+              const result = await get().addItem({ ...product, batchId: candidate.id }, orderId);
+              if (result?.success === false) {
+                return { ...result, stockState: { ...stockState, batchLabel: candidate.sku || candidate.id } };
+              }
+              throw new Error('POS_INVENTORY_UNKNOWN_UNEXPECTED_ACCEPT');
+            }
             return { success: false, code: 'POS_INVENTORY_BLOCKED', stockState: { ...stockState, batchLabel: candidate.sku || candidate.id } };
           }
           let validBatch = null;
