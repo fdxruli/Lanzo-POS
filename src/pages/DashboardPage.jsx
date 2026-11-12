@@ -45,7 +45,7 @@ import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapsho
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
 import { buildCloudStatsRange } from '../services/reports/dashboardPeriodRange';
-import { hasSalesActorPermission } from '../services/auth/salesPermissionPolicy';
+import { hasSalesActorPermission, canAuditSalesReports } from '../services/auth/salesPermissionPolicy';
 import { customerMigrationService } from '../services/customers/customerMigrationService';
 import { isCustomerVisible } from '../services/customers/customerMapper';
 
@@ -735,7 +735,7 @@ export default function DashboardPage() {
         {features.hasWaste && (
           <button type="button" className={`tab-btn dashboard-tab-danger ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')}>Mermas</button>
         )}
-        {features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && (
+        {features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && canAuditSalesReports(actorRuntime) && (
           <button type="button" className={'tab-btn ' + (activeTab === 'sanitary' ? 'active' : '')} onClick={() => handleTabChange('sanitary')}>Registro sanitario</button>
         )}
       </div>
@@ -861,7 +861,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {activeTab === 'sanitary' && features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && (
+      {activeTab === 'sanitary' && features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && canAuditSalesReports(actorRuntime) && (
         <section className="ui-section dashboard-section" aria-label="Registro sanitario">
           <PharmacySanitaryRegister
             key={salesHistoryContextKey}
