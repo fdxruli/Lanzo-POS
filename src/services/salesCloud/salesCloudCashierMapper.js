@@ -205,6 +205,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
       batchesUsed: explicitBatchesUsed ?? undefined,
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
+      pharmacyDispensationV1: item.pharmacyDispensationV1 || undefined,
       inventoryReservation: allowLocalBatches ? item.inventoryReservation || null : null,
       batchSelectionSource: hasManualBatchSelection(item) ? 'manual' : undefined,
       discount: discount || null,
