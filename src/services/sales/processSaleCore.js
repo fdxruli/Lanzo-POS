@@ -62,11 +62,6 @@ const sameLocalCommit = (sale, binding, attemptId) => Boolean(
     JSON.stringify(sale.localCommitBinding) === JSON.stringify(binding)
 );
 
-const requiresPrescriptionControl = (product = {}) => (
-    product?.requiresPrescription === true ||
-    Boolean(product?.prescriptionType && product.prescriptionType !== 'otc')
-);
-
 const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
     'cloud_cashier_inventory',
     'cloud_credit_inventory'
