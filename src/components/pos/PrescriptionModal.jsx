@@ -43,7 +43,7 @@ export default function PrescriptionModal({ show, onClose, onConfirm, itemsRequi
       issuedOn: current.issuedOn,
       productId: item.productId || item.parentId || item.id
     });
-    if (result?.found && Number(result.prescribedQuantity) !== Number(current.prescribedQuantity)) {
+    if (result?.found && result.prescribedQuantity != null && Number(result.prescribedQuantity) !== Number(current.prescribedQuantity)) {
       throw new Error('La cantidad prescrita no coincide con el registro anterior.');
     }
     if (result?.found && ['retained', 'void'].includes(result.status)) {
