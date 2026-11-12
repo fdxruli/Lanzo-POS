@@ -396,7 +396,13 @@ describe('repeated FREE to PRO catalog recovery', () => {
     expect(firstKey).not.toContain('CUTOVER-IDEMPOTENCY-RETRY');
 
     const secondEdit = { ...firstEdit, name: 'Second FREE edit', localMutationId: 'new-free-mutation-b' };
-    // Recovery reads the unsynced catalog twice per invocation (initial guard and post-reconciliation).\n    // Model both reads for each distinct edit instead of mixing versions within one attempt.\n    mocks.listUnsynced\n      .mockResolvedValueOnce(catalog(firstEdit))\n      .mockResolvedValueOnce(catalog(firstEdit))\n      .mockResolvedValueOnce(catalog(secondEdit))\n      .mockResolvedValueOnce(catalog(secondEdit));
+    // Recovery reads the unsynced catalog twice per invocation (initial guard and post-reconciliation).
+    // Model both reads for each distinct edit instead of mixing versions within one attempt.
+    mocks.listUnsynced
+      .mockResolvedValueOnce(catalog(firstEdit))
+      .mockResolvedValueOnce(catalog(firstEdit))
+      .mockResolvedValueOnce(catalog(secondEdit))
+      .mockResolvedValueOnce(catalog(secondEdit));
     mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [secondEdit], batches: [] });
     mocks.upsertProduct.mockResolvedValue({ success: true, product: secondEdit });
 
