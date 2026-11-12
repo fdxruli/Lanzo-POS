@@ -5,6 +5,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ loadData: vi.fn(), saveDataSafe: vi.fn(), showMessageModal: vi.fn() }));
+// Stage 3 requires a confirmed business timezone before allowing a layaway.
+vi.mock('../../../store/useAppStore', () => ({
+  useAppStore: (selector) => selector({ companyProfile: { timezone: 'America/Merida' } })
+}));
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => mocks.loadData(...args),
   saveDataSafe: (...args) => mocks.saveDataSafe(...args),
@@ -30,6 +34,7 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
     const deadline = container.querySelector('input[type="date"]');
     await user.type(initialPayment, '50');
     const originalDeadline = deadline.value;
+    expect(originalDeadline).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await user.click(screen.getByRole('button', { name: 'Nuevo' }));
     expect(screen.queryByLabelText('Límite de crédito *')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente apartado');
