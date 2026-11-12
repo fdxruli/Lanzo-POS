@@ -48,6 +48,8 @@ insert into public.pos_products values
   '{"pharmacy":{"kind":"medicine","status":"confirmed","fraction":"II"}}',true,'controlled','{"enabled":true}'),
  ('other','00000000-0000-0000-0000-000000000001',null,
   '{"pharmacy":{"kind":"other","status":"pending"}}',false,'otc','{"enabled":true}'),
+ ('misclassified','00000000-0000-0000-0000-000000000001',null,
+  '{"pharmacy":{"kind":"other","status":"pending"}}',true,'prescription','{"enabled":true}'),
  ('food','00000000-0000-0000-0000-000000000002',null,
   '{}',false,'otc','{"enabled":true}');
 insert into public.pos_product_batches values
@@ -97,6 +99,13 @@ test = [
     "raise exception 'CLASSIFICATION_DOWNGRADE_BYPASS'; end if; end $$;",
     expect("iv_new_stock", product("new-iv", 10, "medicine"),
            "PHARMACY_INITIAL_STOCK_REQUIRES_DOCUMENTED_RECEIPT"),
+    # An existing medicine may edit its attributes, but cannot add stock via initial batches.
+    query("private.pharmacy_stage2_guard_product_upsert(" + ctx +
+          ",'{\"id\":\"iv\",\"stock\":10}'::jsonb,'[]'::jsonb)"),
+    expect("existing_iv_initial_batch_stock",
+           "private.pharmacy_stage2_guard_product_upsert(" + ctx +
+           ",'{\"id\":\"iv\"}'::jsonb,'[{\"id\":\"new-batch\",\"stock\":5}]'::jsonb)",
+           "PHARMACY_INITIAL_STOCK_REQUIRES_DOCUMENTED_RECEIPT"),
     query(product("new-other", 10, "other")),
     query("private.pharmacy_stage2_guard_product_upsert(" + ctx_food +
           ",'{\"id\":\"restaurant\",\"stock\":10}'::jsonb,'[]'::jsonb)"),
@@ -111,6 +120,9 @@ test = [
     expect("iv_receipt_without_document", recv("iv", "{}"), "PHARMACY_PROVENANCE_REQUIRED"),
     query(recv("iv", receipt)),
     expect("ii_special", recv("ii", receipt), "PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE"),
+    # Persisted kind='other' must not defeat protected legacy prescription indicators.
+    expect("legacy_conflicting_kind", recv("misclassified", "{}"),
+           "PHARMACY_CLASSIFICATION_REQUIRED"),
     query(recv("other", "{}")),
     "select 'PASS postgres17 pharmacy_stage2_guard_scope' as result;",
 ]
