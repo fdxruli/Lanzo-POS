@@ -155,7 +155,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 NOT_FOUND: `Producto no registrado: ${scanEvent.code}`,
                 DUPLICATE: `Este código pertenece a varios productos: ${scanEvent.code}. ${names || ''} Corrige el código en Productos.`,
                 INACTIVE: `Producto registrado, pero desactivado: ${productName}`,
-                NO_SELLABLE_BATCH: `Producto registrado, sin lote disponible: ${productName}`,
+                NO_SELLABLE_BATCH: `Producto registrado, sin lote disponible: ${productName} (${scanEvent.code})`,
             };
             void playErrorBeep();
             showMessageModal(
