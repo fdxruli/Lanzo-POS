@@ -85,7 +85,6 @@ const EmptyCartIcon = () => (
 
 export function ScannerCartList({
   items,
-  total,
   isConfirming,
   onAddQuantity,
   onRemoveQuantity,
@@ -94,25 +93,31 @@ export function ScannerCartList({
     return (
       <div className="empty-cart-message">
         <EmptyCartIcon />
-        <p>Escanea tu primer producto</p>
+        <p>Escanea un producto para comenzar</p>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="scanned-items-list">
-        {items.map((item, index) => {
-          const lineId = getCartLineId(item, index);
-          return (
-            <div
-              key={lineId}
-              className="scanned-item"
-            >
-              <span className="scanned-item-name">
+    <div className="scanned-items-list" aria-label="Lista de productos escaneados">
+      {items.map((item, index) => {
+        const lineId = getCartLineId(item, index);
+        const unitPrice = Number(item.price || 0);
+        return (
+          <div key={lineId} className="scanned-item">
+            <div className="scanned-item-description">
+              <span
+                className="scanned-item-name"
+                tabIndex={0}
+                title={item.name}
+              >
                 {item.name}
               </span>
-
+              <span className="scanned-item-unit-price">
+                ${unitPrice.toFixed(2)} c/u
+              </span>
+            </div>
+            <div className="scanned-item-bottom">
               <div className="scanned-item-controls">
                 <button
                   type="button"
@@ -120,39 +125,31 @@ export function ScannerCartList({
                   onClick={() => onRemoveQuantity(lineId, item.batchId)}
                   disabled={isConfirming}
                   title={item.quantity === 1 ? 'Eliminar producto' : 'Reducir cantidad'}
-                  aria-label={item.quantity === 1 ? 'Eliminar producto' : 'Reducir cantidad'}
+                  aria-label={`${item.quantity === 1 ? 'Eliminar' : 'Disminuir'} cantidad de ${item.name}`}
                 >
                   {item.quantity === 1 ? <TrashIcon /> : <MinusIcon />}
                 </button>
-
                 <span className="scanner-qty-value" aria-label={`Cantidad: ${item.quantity}`}>
                   {item.quantity}
                 </span>
-
                 <button
                   type="button"
                   className="scanner-qty-btn scanner-qty-btn--action"
                   onClick={() => onAddQuantity(item)}
                   disabled={isConfirming}
                   title="Aumentar cantidad"
-                  aria-label="Aumentar cantidad"
+                  aria-label={`Aumentar cantidad de ${item.name}`}
                 >
                   <PlusIcon />
                 </button>
               </div>
-
-              <span className="scanned-item-price">
-                ${(item.price * item.quantity).toFixed(2)}
-              </span>
+              <strong className="scanned-item-price">
+                ${(unitPrice * item.quantity).toFixed(2)}
+              </strong>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="scanner-total-container">
-        <span className="scanner-total-label">Total:</span>
-        <span className="scanner-total-amount">${total.toFixed(2)}</span>
-      </div>
-    </>
+          </div>
+        );
+      })}
+    </div>
   );
 }
