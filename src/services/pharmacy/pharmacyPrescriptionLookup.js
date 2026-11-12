@@ -44,7 +44,7 @@ export const getPharmacyPrescriptionHistory = async ({
   let quantity = 0;
   let retained = false;
   for (const sale of sales) {
-    if (sale.status !== 'closed') continue;
+    if (!['closed', 'cancelled', 'canceled', 'requires_review'].includes(sale.status)) continue;
     for (const item of sale.items || []) {
       const rx = item.pharmacyDispensationV1;
       if (!rx || prescriptionDocumentKey(rx) !== key) continue;
