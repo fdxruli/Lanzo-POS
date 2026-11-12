@@ -1,4 +1,6 @@
 import { db, STORES } from './dexie';
+import { useAppStore } from '../../store/useAppStore';
+import { assertLayawayPaymentAllowed, getLayawayCalendarDate, isLayawayDeadlineOverdue } from '../../utils/layawayCalendar';
 import { handleDexieError, getCommittedStock, normalizeStock } from './utils';
 import { getOperationalStockSnapshot } from '../inventoryStock';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
@@ -16,6 +18,13 @@ import {
 } from '../auth/actorRuntimeController';
 
 const nowIso = () => new Date().toISOString();
+
+const getBusinessTimezoneForLayaway = (layaway = {}) => (
+    layaway.businessTimezone || useAppStore.getState().companyProfile?.timezone || null
+);
+
+const assertLocalLayawayPayable = (layaway) =>
+    assertLayawayPaymentAllowed(layaway, getBusinessTimezoneForLayaway(layaway));
 
 const requireRefundActorAssertion = (assertActorCurrent, operation) => {
     if (typeof assertActorCurrent !== 'function') {
@@ -335,6 +344,15 @@ export const layawayRepository = {
                 throw new Error('El anticipo debe registrarse mediante la ruta canonica de Caja.');
             }
 
+            const businessTimezone = getBusinessTimezoneForLayaway();
+            const dueDate = getLayawayCalendarDate(layawayData.deadline);
+            const overdue = isLayawayDeadlineOverdue(layawayData.deadline, businessTimezone);
+            if (!dueDate || overdue === null) {
+                throw inventoryError('LAYAWAY_BUSINESS_TIMEZONE_REQUIRED', 'Confirma la zona horaria del negocio y una fecha límite válida.');
+            }
+            if (overdue) {
+                throw inventoryError('LAYAWAY_DEADLINE_IN_PAST', 'La fecha límite debe ser hoy o posterior.');
+            }
             return await db.transaction('rw', transactionTables({ cash: Boolean(cashMovement), stock: true }), async (tx) => {
                 const { reservations: reservedInventory, untrackedLineIndexes: untrackedInventoryLines } = await reserveCommittedStock(layawayData);
 
@@ -343,6 +361,7 @@ export const layawayRepository = {
                     ...layawayData,
                     sourceMode: 'local',
                     inventoryAccountingMode: 'reserved_v1',
+                    businessTimezone,
                     reservedInventory,
                     untrackedInventoryLines,
                     status: 'active',
@@ -394,6 +413,10 @@ export const layawayRepository = {
 
                 const existing = (layaway.payments || []).find((item) => item.id === payment.id);
                 if (existing) return { success: true, duplicate: true, payment: existing, newPaidAmount: layaway.paidAmount || 0 };
+                assertLocalLayawayPayable(layaway);
+                if (!Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) {
+                    throw inventoryError('LAYAWAY_PAYMENT_AMOUNT_INVALID', 'El abono debe ser positivo y válido.');
+                }
 
                 const isConfirmed = payment.status === 'confirmed';
                 const newPaidAmount = (layaway.paidAmount || 0) + (isConfirmed ? Number(payment.amount) : 0);
@@ -421,6 +444,10 @@ export const layawayRepository = {
             if (!layaway) throw new Error('Apartado no encontrado');
             const existing = (layaway.payments || []).find((payment) => payment.id === paymentData.id);
             if (existing?.status === 'confirmed') return { success: true, duplicate: true, payment: existing, newPaidAmount: layaway.paidAmount || 0 };
+            assertLocalLayawayPayable(layaway);
+            if (!Number.isFinite(Number(paymentData.amount)) || Number(paymentData.amount) <= 0) {
+                throw inventoryError('LAYAWAY_PAYMENT_AMOUNT_INVALID', 'El abono debe ser positivo y válido.');
+            }
 
             const payment = buildPaymentRecord({ ...paymentData, status: 'confirmed' }, paymentData.amount);
             const newPaidAmount = Number(layaway.paidAmount || 0) + Number(payment.amount);
@@ -458,9 +485,13 @@ export const layawayRepository = {
             const current = (layaway.payments || []).find((payment) => payment.id === paymentId);
             if (!current) throw new Error('Pago de apartado pendiente no encontrado');
             if (current.status === 'confirmed') return { success: true, duplicate: true, payment: current, layaway };
+            assertLocalLayawayPayable(layaway);
 
             const amount = Number(current.amount);
             const paidAmount = Number(layaway.paidAmount || 0) + amount;
+            if (!Number.isFinite(amount) || amount <= 0 || paidAmount > Number(layaway.totalAmount) + 0.01) {
+                throw inventoryError('LAYAWAY_PAYMENT_AMOUNT_INVALID', 'El abono es inválido o supera el saldo.');
+            }
             const cashPaymentLink = buildCashPaymentLink(cashSessionId, current);
             const payments = (layaway.payments || []).map((payment) => payment.id === paymentId
                 ? { ...payment, status: 'confirmed', cashMovementId, ...cashPaymentLink }
