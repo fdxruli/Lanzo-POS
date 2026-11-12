@@ -24,7 +24,8 @@ const physical = async () => {
 
 const normalSale = (id, qty, batchId = null) => salesRepository.executeSaleTransaction({
   id, timestamp: new Date().toISOString(), items: [{
-    productId: 'shirt', quantity: qty, price: 100, stockDeducted: qty,
+    id: 'shirt', parentId: 'shirt', productId: 'shirt',
+    quantity: qty, price: 100, stockDeducted: qty,
     ...(batchId ? { batchesUsed: [{ batchId, quantity: qty }] } : {})
   }], total: qty * 100, subtotal: qty * 100, paymentMethod: 'tarjeta'
 }, batchId ? [{ productId: 'shirt', batchId, quantity: qty }] : []);
