@@ -29,7 +29,7 @@ export default function ProductCoreFields({ values, errors, onFieldChange, onCos
           </div>
         </section>)}
       </aside>}
-      {!barcodeMatches.length && cloudBarcodeConflict && <small id="product-v2-barcode-warning" className="product-form-v2__error" role="alert">Cloud rechazó este código porque ya está registrado en el catálogo remoto. Sincroniza el catálogo antes de volver a intentarlo.</small>}
+      {!barcodeMatches.length && cloudBarcodeConflict && <small id="product-v2-barcode-warning" className="product-form-v2__error" role="alert">Cloud rechazó la operación por un código de barras o SKU duplicado en el catálogo remoto. Sincroniza el catálogo antes de volver a intentarlo.</small>}
       {!barcodeMatches.length && !cloudBarcodeConflict && barcodeLookupFailed && <small id="product-v2-barcode-warning" className="product-form-v2__error" role="alert">No se pudo comprobar el código local. El guardado volverá a comprobarlo.</small>}
       <Error>{errors.barcode}</Error>
     </div>

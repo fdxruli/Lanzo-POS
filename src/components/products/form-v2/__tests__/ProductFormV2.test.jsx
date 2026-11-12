@@ -3,6 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ProductFormV2 from '../ProductFormV2';
 import { queryBatchesByProductIdAndActive } from '../../../../services/database';
+import { findLocalBarcodeConflicts } from '../../../../services/db/products';
+
+vi.mock('../../../../services/db/products', () => ({
+  findLocalBarcodeConflicts: vi.fn(async () => [])
+}));
 
 vi.mock('../../../../services/database', () => ({
   queryBatchesByProductIdAndActive: vi.fn(async () => [])
@@ -15,6 +20,8 @@ afterEach(() => {
   vi.useRealTimers();
   queryBatchesByProductIdAndActive.mockReset();
   queryBatchesByProductIdAndActive.mockResolvedValue([]);
+  findLocalBarcodeConflicts.mockReset();
+  findLocalBarcodeConflicts.mockResolvedValue([]);
 });
 
 describe('ProductFormV2', () => {
@@ -371,5 +378,72 @@ describe('ProductFormV2', () => {
     expect(screen.getByText(/Esta configuración se aplicará/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Registrar lote/i }));
     expect(onOpenBatches).toHaveBeenCalledWith(product);
+  });
+});
+
+describe('ProductFormV2 duplicate barcode protection', () => {
+  const alreadyRegistered = {
+    id: 'sodio', name: 'Bicarbonato De Sodio', barcode: '7501400800069',
+    isActive: true, stock: 0, trackStock: true, price: 12
+  };
+
+  it('shows the existing product, blocks save, and offers safe editing', async () => {
+    findLocalBarcodeConflicts.mockResolvedValue([alreadyRegistered]);
+    const onSave = vi.fn(async () => ({ success: true }));
+    const onOpenExisting = vi.fn();
+    renderForm({ onSave, onOpenExisting });
+
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Bicarbonato Nordin' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '15' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Código de barras/i }), { target: { value: '7501400800069' } });
+
+    expect(await screen.findByText('Bicarbonato De Sodio')).toBeInTheDocument();
+    expect(screen.getByText('Stock: 0', { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).not.toHaveBeenCalled());
+    expect(screen.getByRole('textbox', { name: /Código de barras/i })).toHaveValue('7501400800069');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar existente' }));
+    expect(onOpenExisting).toHaveBeenCalledWith(alreadyRegistered);
+  });
+
+  it('does not clear the form on Save and add another with a collision', async () => {
+    findLocalBarcodeConflicts.mockResolvedValue([alreadyRegistered]);
+    const onSave = vi.fn(async () => true);
+    renderForm({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Segundo' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '10' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Código de barras/i }), { target: { value: '7501400800069' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar y agregar otro/i }));
+    await screen.findByText('Este código ya pertenece a otro producto.');
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Nombre del producto/i)).toHaveValue('Segundo');
+    expect(screen.queryByText('Producto guardado. Puedes capturar el siguiente.')).not.toBeInTheDocument();
+  });
+
+  it('allows editing the same barcode without false conflicts', async () => {
+    findLocalBarcodeConflicts.mockResolvedValue([alreadyRegistered]);
+    const onSave = vi.fn(async () => true);
+    renderForm({ onSave, productToEdit: {
+      ...alreadyRegistered, name: 'Bicarbonato De Sodio', rubroContext: 'abarrotes',
+      cost: 5, price: 12, trackStock: false
+    } });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Sodio editado' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(findLocalBarcodeConflicts).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a Cloud duplicate rejection without marking the form saved', async () => {
+    findLocalBarcodeConflicts.mockResolvedValue([]);
+    const onSave = vi.fn(async () => ({ success: false, code: 'DUPLICATE_PRODUCT_KEY' }));
+    renderForm({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Producto' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '20' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Código de barras/i }), { target: { value: '009955' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await screen.findByText(/Cloud rechazó la operación/i);
+    expect(screen.getByRole('textbox', { name: /Código de barras/i })).toHaveValue('009955');
+    expect(screen.queryByText(/Producto guardado\./i)).not.toBeInTheDocument();
   });
 });

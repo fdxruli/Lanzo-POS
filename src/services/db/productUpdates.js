@@ -10,7 +10,7 @@
 import { db, STORES } from './dexie';
 import { DatabaseError, DB_ERROR_CODES } from './utils';
 import Logger from '../Logger';
-import { findLocalBarcodeConflicts } from './products';
+import { findBarcodeConflictsInTable } from './barcodeDuplicates';
 import { normalizeBarcodeKey } from '../products/productMapper';
 
 /**
@@ -74,7 +74,7 @@ export const updateProduct = async (id, data) => {
             const nextBarcode = Object.prototype.hasOwnProperty.call(productData, 'barcode')
                 ? productData.barcode : currentProduct.barcode;
             if (normalizeBarcodeKey(nextBarcode) !== normalizeBarcodeKey(currentProduct.barcode)) {
-                const barcodeConflicts = await findLocalBarcodeConflicts(nextBarcode, id);
+                const barcodeConflicts = await findBarcodeConflictsInTable(db.table(STORES.MENU), nextBarcode, id);
                 if (barcodeConflicts.length) {
                     throw new DatabaseError('DUPLICATE_BARCODE',
                         `Este código de barras ya está registrado en "${barcodeConflicts[0].name || 'otro producto'}".`,
