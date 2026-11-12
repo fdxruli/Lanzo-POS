@@ -79,7 +79,9 @@ begin
              and pg_catalog.jsonb_typeof(m.metadata->'pharmacyReceipt') = 'object'
           then 'receipt'
         when m.metadata->>'semantic_type' = 'expiry_write_off'
-             or m.source = 'expiration_waste' then 'waste'
+          or pg_catalog.lower(coalesce(m.reason, '')) in ('caducidad', 'caducidad_parcial')
+          or pg_catalog.lower(coalesce(m.metadata->>'reason', '')) in ('caducidad', 'caducidad_parcial')
+          then 'waste'
         when m.movement_type = 'return_in' then 'return'
         when m.movement_type in ('adjustment_in', 'adjustment_out') then 'adjustment'
         else 'other'
@@ -117,12 +119,14 @@ begin
         'provenance', m.source,
         'traceStatus', case
           when m.source = 'inventory_entry' and m.movement_type = 'manual_in'
+            and m.batch_id is not null
             and nullif(pg_catalog.btrim(m.metadata->'pharmacyReceipt'->>'documentReference'), '') is not null
             and nullif(pg_catalog.btrim(m.metadata->'pharmacyReceipt'->>'manufacturerBatchId'), '') is not null
             and nullif(pg_catalog.btrim(m.metadata->'pharmacyReceipt'->>'expiryDate'), '') is not null
             then 'complete'
-          when m.source = 'inventory_entry' or m.source = 'expiration_waste'
-            or m.metadata->>'semantic_type' = 'expiry_write_off' then 'incomplete'
+          when m.source = 'inventory_entry' or m.metadata->>'semantic_type' = 'expiry_write_off'
+            or pg_catalog.lower(coalesce(m.reason, '')) in ('caducidad', 'caducidad_parcial')
+            or pg_catalog.lower(coalesce(m.metadata->>'reason', '')) in ('caducidad', 'caducidad_parcial') then 'incomplete'
           else 'limited'
         end,
         'syncStatus', 'cloud_confirmed'
