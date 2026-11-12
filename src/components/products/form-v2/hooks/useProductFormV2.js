@@ -263,7 +263,7 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
         }
         return result;
       } finally { setIsSaving(false); }
-      } finally {
+    } finally {
       submitInFlightRef.current = false;
     }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
