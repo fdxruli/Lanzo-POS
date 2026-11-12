@@ -39,6 +39,11 @@ begin
   );
   perform private.assert_cloud_reports_sync_enabled(v_context);
   perform private.assert_pos_permission(v_context, 'reports');
+  -- A consolidated establishment-wide register needs global report authority.
+  -- Ordinary Staff with only personal reports must not see other actors' prescriptions.
+  if not private.reports_audit_allowed(v_context) then
+    raise exception 'REPORT_SCOPE_DENIED' using errcode = 'P0001';
+  end if;
   v_license_id := (v_context->>'license_id')::uuid;
 
   if not exists (
