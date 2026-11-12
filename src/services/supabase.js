@@ -1642,7 +1642,8 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
             phone: profileData.phone || '',
             address: profileData.address || '',
             logo_url: profileData.logo || profileData.logo_url || '',
-            business_type: businessType
+            business_type: businessType,
+            ...(profileData.timezone ? { timezone: profileData.timezone } : {})
         };
 
         actorHandle.assertCurrent('settings_data');
