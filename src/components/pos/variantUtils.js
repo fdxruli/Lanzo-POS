@@ -28,3 +28,13 @@ export const isAvailableVariantBatch = (batch) => (
 export const getAvailableVariantBatches = (batches = []) => (
   Array.isArray(batches) ? batches.filter(isAvailableVariantBatch) : []
 );
+
+// El selector deja visibles las tallas con reservas para explicar el bloqueo.
+// Solo se consideran atributos de variantes reales y lotes activos.
+export const getVisibleVariantBatches = (batches = []) => (
+  Array.isArray(batches)
+    ? batches.filter((batch) => isBatchActiveForFefo(batch)
+      && hasRealVariantAttributes(batch)
+      && (getAvailableBatchStock(batch) > 0 || (Number(batch.stock) > 0 && Number(batch.committedStock ?? batch.committed_stock ?? 0) > 0)))
+    : []
+);

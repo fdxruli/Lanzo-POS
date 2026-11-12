@@ -98,3 +98,19 @@ describe('Prioridad provisional R1, sin afectar inventario durable', () => {
     expect(change.donors[0].orderId).toBe('B');
   });
 });
+
+describe('Inventario inválido no puede justificar incrementos de un carrito', () => {
+  it.each([
+    ['sin físico', { stock: undefined, committedStock: 0 }],
+    ['compromiso inválido', { stock: 2, committedStock: Number.NaN }],
+    ['sobrecomprometido', { stock: 2, committedStock: 3 }],
+    ['físico negativo', { stock: -1, committedStock: 0 }]
+  ])('rechaza %s como inventario desconocido', (_name, fields) => {
+    const state = active(order('A'), order('B'));
+    const conflict = evaluateProvisionalCartChange({
+      state, orderId: 'B', nextItems: [{ ...product(2), ...fields }]
+    });
+    expect(conflict).toMatchObject({ code: 'LOCAL_STOCK_UNKNOWN', available: null });
+    expect(state.activeOrders.get('B').items).toEqual([]);
+  });
+});

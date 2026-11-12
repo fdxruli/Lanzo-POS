@@ -19,11 +19,7 @@ vi.mock('../../services/sales/inventoryFlow', () => ({
 vi.mock('../../services/sales/financialStats', () => ({ SALE_STATUS: {} }));
 
 const batchTable = (batches) => ({
-  where: () => ({
-    equals: () => ({
-      filter: () => ({ toArray: async () => batches })
-    })
-  })
+  where: () => ({ equals: () => ({ toArray: async () => batches }) })
 });
 
 const addWithBatches = async (product, batches) => {

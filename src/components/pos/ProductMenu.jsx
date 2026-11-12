@@ -21,7 +21,8 @@ import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
 import { useInventoryMovement } from '../../hooks/useInventoryMovement';
-import { getAvailableVariantBatches } from './variantUtils';
+import { getAvailableVariantBatches, getVisibleVariantBatches, hasRealVariantAttributes } from './variantUtils';
+import { getPosStockState, getPosStockBlockMessage } from '../../services/inventoryStock';
 import './ProductMenu.css';
 import { PackageSearch, ScanLine, Search } from 'lucide-react';
 
@@ -393,6 +394,15 @@ export default function ProductMenu({
     };
   }, [loadBatchesForProduct, visibleProducts]);
 
+  const showBlockedStockInfo = useCallback((product, status = getPosStockState(product)) => {
+    if (!status?.blocked) return false;
+    showMessageModal(getPosStockBlockMessage(status, product?.name), () => {}, {
+      title: 'Producto sin disponibilidad', confirmButtonText: 'Entendido',
+      showCancel: false, type: 'warning'
+    });
+    return true;
+  }, []);
+
   const addProductSafely = useCallback(async (product) => {
     const state = useActiveOrders.getState?.();
     const current = state?.currentOrderId ? state.activeOrders?.get(state.currentOrderId) : null;
@@ -402,17 +412,21 @@ export default function ProductMenu({
     }
     try {
       const result = await addSmartItem(product);
+      if (result?.success === false && result.stockState?.blocked) {
+        showBlockedStockInfo(product, result.stockState);
+      }
       return result?.success !== false;
     } catch (error) {
       showMessageModal(error?.message || 'No se pudo agregar el producto a la orden.', null, { type: 'warning' });
       return false;
     }
-  }, [addSmartItem]);
+  }, [addSmartItem, showBlockedStockInfo]);
 
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
   const handleCardClick = useCallback(async (product) => {
     if (readOnly) return;
+    if (!product?.batchManagement?.enabled && showBlockedStockInfo(product)) return;
     if (!guardCloudSyncedProduct(product)) return;
     if (!await guardStrictExpirySale(product)) return;
 
@@ -450,7 +464,14 @@ export default function ProductMenu({
           [product.id]: activeBatches.length > 0
         }));
 
-        if (activeBatches.length === 0) {
+        const visibleVariants = getVisibleVariantBatches(allBatches);
+        if (visibleVariants.length === 0 && allBatches.some(hasRealVariantAttributes)) {
+          showMessageModal('No hay variantes con inventario libre verificable. Revisa las existencias de las tallas.', () => {}, {
+            title: 'Variantes sin disponibilidad', confirmButtonText: 'Entendido', showCancel: false, type: 'warning'
+          });
+          return;
+        }
+        if (visibleVariants.length === 0) {
           // Sin variantes reales → agregar el producto base directamente
           const cleanProduct = {
             ...product,
@@ -460,7 +481,7 @@ export default function ProductMenu({
         } else {
           // Con variantes reales → abrir modal con lotes ya cargados (sin spinner)
           setSelectedProductForVariant(product);
-          setPreloadedBatches(activeBatches);
+          setPreloadedBatches(visibleVariants);
           setVariantModalOpen(true);
         }
       } catch (err) {
@@ -513,7 +534,7 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addProductSafely, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale, readOnly]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addProductSafely, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale, showBlockedStockInfo, readOnly]);
 
   const handleConfirmVariants = useCallback(async (variantItem) => {
     if (readOnly) return;
@@ -736,6 +757,7 @@ export default function ProductMenu({
                     product={item}
                     features={features}
                     onCardClick={handleCardClick}
+                    onBlockedClick={showBlockedStockInfo}
                     isLoadingVariant={loadingVariantId === item.id}
                     hasAvailableVariants={variantStatusByProductId[item.id] === true}
                     strictExpiryBlocked={strictExpiryStatus?.blocked === true}

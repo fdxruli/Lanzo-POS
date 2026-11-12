@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
@@ -87,5 +87,60 @@ describe('ProductCard product image placeholder', () => {
 
     expect(screen.getByRole('img', { name: baseProduct.name })).toBeInTheDocument();
     expect(screen.queryByLabelText('Producto sin foto')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProductCard: mercancía comprometida en POS', () => {
+  const base = { id: 'shirt', name: 'Playera negra', price: 100, stock: 2, committedStock: 2, trackStock: true };
+  it('distingue dos unidades comprometidas del agotamiento físico y permite consultar con toque y teclado', () => {
+    const onCardClick = vi.fn();
+    const onBlockedClick = vi.fn();
+    render(<ProductCard product={base} features={{}} onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    const card = screen.getByRole('button');
+    expect(screen.getByText('0 disponibles · 2 comprometidas')).toBeInTheDocument();
+    expect(screen.getByText('Comprometido')).toBeInTheDocument();
+    expect(card).toHaveAttribute('tabindex', '0');
+    fireEvent.click(card);
+    fireEvent.keyDown(card, { key: 'Enter' });
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(onBlockedClick).toHaveBeenCalledTimes(3);
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+  it('no llama agotado a un producto sin stock verificable', () => {
+    const onCardClick = vi.fn(), onBlockedClick = vi.fn();
+    render(<ProductCard product={{ ...base, stock: Number.NaN }} features={{}}
+      onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    expect(screen.getByText('Inventario por verificar')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    expect(onBlockedClick).toHaveBeenCalledOnce();
+    expect(onCardClick).not.toHaveBeenCalled();
+  });
+  it('distingue agotamiento físico y acepta seleccionar al liberarse la reserva', () => {
+    const onCardClick = vi.fn(), onBlockedClick = vi.fn();
+    const { rerender } = render(<ProductCard product={{ ...base, stock: 0, committedStock: 0 }} features={{}}
+      onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    expect(screen.getByText('AGOTADO')).toBeInTheDocument();
+    rerender(<ProductCard product={{ ...base, committedStock: 0 }} features={{}}
+      onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    expect(screen.getByText('Stock bajo · 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    expect(onCardClick).toHaveBeenCalledOnce();
+    expect(onBlockedClick).not.toHaveBeenCalled();
+  });
+  it('no inventa reservas para productos sin control de inventario', () => {
+    const onCardClick = vi.fn(), onBlockedClick = vi.fn();
+    render(<ProductCard product={{ ...base, trackStock: false, batchManagement: { enabled: true } }}
+      features={{ hasVariants: false }} onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(onCardClick).toHaveBeenCalledOnce();
+    expect(onBlockedClick).not.toHaveBeenCalled();
+  });
+  it('permite abrir el selector de variantes aunque el total del padre esté comprometido', () => {
+    const onCardClick = vi.fn(), onBlockedClick = vi.fn();
+    render(<ProductCard product={{ ...base, batchManagement: { enabled: true } }}
+      features={{ hasVariants: true }} onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(onCardClick).toHaveBeenCalledOnce();
+    expect(onBlockedClick).not.toHaveBeenCalled();
   });
 });

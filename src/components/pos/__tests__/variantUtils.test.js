@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getAvailableVariantBatches,
+  getVisibleVariantBatches,
   hasRealVariantAttributes,
   isAvailableVariantBatch
 } from '../variantUtils';
@@ -58,5 +59,18 @@ describe('variantUtils', () => {
     ]);
 
     expect(batches.map((batch) => batch.id)).toEqual(['variant']);
+  });
+});
+
+describe('Apartados Apparel en selector de tallas', () => {
+  it('permite visualizar M disponible y L comprometida sin intercambiar sus inventarios', () => {
+    const batches = [
+      { id: 'M', isActive: true, stock: 5, committedStock: 2, attributes: { talla: 'M' } },
+      { id: 'L', isActive: true, stock: 4, committedStock: 4, attributes: { talla: 'L' } },
+      { id: 'generic', isActive: true, stock: 3, committedStock: 3 },
+      { id: 'inactive', isActive: false, stock: 3, committedStock: 3, attributes: { talla: 'XL' } }
+    ];
+    expect(getAvailableVariantBatches(batches).map((batch) => batch.id)).toEqual(['M']);
+    expect(getVisibleVariantBatches(batches).map((batch) => batch.id)).toEqual(['M', 'L']);
   });
 });

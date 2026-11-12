@@ -284,3 +284,44 @@ describe('selected-batch availability through real cart actions and Dexie', () =
     expect(await db.table(STORES.PRODUCT_BATCHES).get(batch.id)).toMatchObject({ stock: 5, committedStock: 5 });
   });
 });
+
+describe('Apartados Apparel: límite POS mediante tarjetas y escáner', () => {
+  it('suma como máximo dos unidades libres tras comprometer tres de cinco en un único lote', async () => {
+    await db.table(STORES.MENU).update(product.id, { committedStock: 3 });
+    await db.table(STORES.PRODUCT_BATCHES).update(batch.id, { committedStock: 3 });
+    const scanned = { ...product, batchId: batch.id, isVariant: true, parentId: product.id };
+    expect(await state().addScannedProduct(scanned, 'A')).toMatchObject({ success: true });
+    expect(await state().addScannedProduct(scanned, 'A')).toMatchObject({ success: true });
+    const before = state().activeOrders;
+    expect(await state().addScannedProduct(scanned, 'A')).toMatchObject({ success: false });
+    expect(state().activeOrders).toBe(before);
+    expect(items('A')[0].quantity).toBe(2);
+    await db.table(STORES.PRODUCT_BATCHES).update(batch.id, { committedStock: 0 });
+    expect(await state().addScannedProduct(scanned, 'A')).toMatchObject({ success: true });
+    expect(items('A')[0].quantity).toBe(3);
+  });
+  it('nunca usa las tres unidades libres de M para vender una L totalmente comprometida', async () => {
+    await db.table(STORES.PRODUCT_BATCHES).put({ ...batch, id: 'lot-L', stock: 4, committedStock: 4,
+      attributes: { talla: 'L' } });
+    const sizeL = { ...product, parentId: product.id, batchId: 'lot-L', isVariant: true, stock: 99 };
+    const sizeM = { ...product, parentId: product.id, batchId: batch.id, isVariant: true, stock: 99 };
+    const before = state().activeOrders;
+    expect(await state().addItem(sizeL, 'A')).toMatchObject({ success: false });
+    expect(state().activeOrders).toBe(before);
+    expect(await state().addItem(sizeM, 'A')).toMatchObject({ success: true });
+    expect(items('A')[0].batchId).toBe(batch.id);
+  });
+  it('impide añadir un tercer código directo y vuelve a aceptar tras liberarse el compromiso', async () => {
+    const direct = { ...product, batchManagement: { enabled: false }, isVariant: false,
+      stock: 5, committedStock: 3 };
+    await db.table(STORES.MENU).put(direct);
+    expect(await state().addSmartItem(direct, 'A')).toMatchObject({ success: true });
+    expect(await state().addSmartItem(direct, 'A')).toMatchObject({ success: true });
+    const before = state().activeOrders;
+    expect(await state().addSmartItem(direct, 'A')).toMatchObject({ success: false, code: 'LOCAL_FORMAL_RESERVATION' });
+    expect(state().activeOrders).toBe(before);
+    await db.table(STORES.MENU).update(direct.id, { committedStock: 0 });
+    expect(await state().addSmartItem({ ...direct, committedStock: 0 }, 'A')).toMatchObject({ success: true });
+    expect(items('A')[0].quantity).toBe(3);
+  });
+});

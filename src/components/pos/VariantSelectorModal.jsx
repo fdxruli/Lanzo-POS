@@ -6,7 +6,8 @@ import './VariantSelectorFefo.css';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { createCartLineId, ensureCartProductReference } from '../../utils/cartLineIdentity';
-import { getAvailableVariantBatches } from './variantUtils';
+import { getVisibleVariantBatches } from './variantUtils';
+import { getPosStockState, getPosStockBlockMessage } from '../../services/inventoryStock';
 import {
   getAvailableBatchStock,
   getBatchExpiryValue,
@@ -50,7 +51,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
       // los usamos directamente sin hacer una nueva llamada a BD,
       // evitando el spinner y mejorando la percepción de velocidad.
       if (preloadedBatches) {
-        setBatches(getAvailableVariantBatches(preloadedBatches));
+        setBatches(getVisibleVariantBatches(preloadedBatches));
         setLoading(false);
         setSearchTerm('');
         return;
@@ -62,7 +63,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
         try {
           const productBatches = await loadBatchesForProduct(product.id);
           // Filtramos solo los activos con stock positivo
-          const available = getAvailableVariantBatches(productBatches);
+          const available = getVisibleVariantBatches(productBatches);
           setBatches(available);
         } catch (error) {
           Logger.error("Error cargando variantes:", error);
@@ -139,6 +140,13 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
   }
 
   const handleSelectVariant = (batch) => {
+    const stockState = getPosStockState(batch, { tracked: true });
+    if (stockState.blocked) {
+      showMessageModal(getPosStockBlockMessage(stockState, `${product.name} (${batch.displayColor} ${batch.displayTalla})`), () => {}, {
+        title: 'Variante sin disponibilidad', confirmButtonText: 'Entendido', showCancel: false, type: 'warning'
+      });
+      return;
+    }
     const warning = getFefoWarningForSelection({
       selectedBatch: batch,
       recommendedBatch,
@@ -239,6 +247,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
                   <div className="sizes-grid">
                     {variants.map((variant) => {
+                      const inventoryState = getPosStockState(variant, { tracked: true });
                       const cardClassName = [
                         'size-card',
                         `stock-${variant.stockState}`,
@@ -293,7 +302,12 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
                           <div className="card-bottom">
                             <div className={`stock-pill ${variant.stockState}`}>
-                              {variant.fefo?.availableStock ?? variant.stock} disponibles{variant.stockState === 'critical' ? ' · Stock crítico' : variant.stockState === 'low' ? ' · Stock bajo' : ''}
+                              {inventoryState.kind === 'committed'
+                                ? `0 disponibles · ${inventoryState.snapshot.committedStock} comprometidas`
+                                : inventoryState.kind === 'unknown'
+                                  ? 'Inventario por verificar'
+                                  : `${variant.fefo?.availableStock ?? variant.stock} disponibles`}
+                              {!inventoryState.blocked && (variant.stockState === 'critical' ? ' · Stock crítico' : variant.stockState === 'low' ? ' · Stock bajo' : '')}
                             </div>
                           </div>
                         </button>
