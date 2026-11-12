@@ -1517,18 +1517,18 @@
   border: 0;
 }
 #scanner-modal .scanned-item {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 12px 4px;
-  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(62px, 23%);
+  align-items: center;
+  column-gap: 6px;
+  padding: 7px 4px;
+  min-height: 58px;
   border-bottom: 1px solid var(--border-color, #ddd);
 }
 #scanner-modal .scanned-item-description {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 #scanner-modal .scanned-item-name {
@@ -1541,23 +1541,17 @@
   padding: 0;
   font-size: 0.9rem;
   font-weight: 650;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 #scanner-modal .scanned-item-unit-price {
   color: var(--text-light, #666);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
-#scanner-modal .scanned-item-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 #scanner-modal .scanned-item-controls {
   display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
+  justify-self: center;
   gap: 2px;
   min-width: 0;
   padding: 0 2px;
@@ -1570,16 +1564,21 @@
   height: 44px;
 }
 #scanner-modal .scanner-qty-value {
-  min-width: 26px;
+  flex: 0 0 auto;
+  min-width: 24px;
   padding: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 #scanner-modal .scanned-item-price {
-  flex: 0 1 auto;
+  justify-self: end;
   min-width: 0;
+  max-width: 100%;
   padding: 0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  text-align: right;
 }
 #scanner-modal .empty-cart-message { min-height: 120px; height: auto; padding: 14px; }
 
