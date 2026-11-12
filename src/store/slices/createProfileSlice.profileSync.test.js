@@ -528,8 +528,10 @@ describe('profile refresh during authenticated staff transition', () => {
       companyProfile: { license_key: 'LANZO-PRO', name: 'Negocio', phone: '1234',
         address: 'Centro', logo: 'https://logo.test/logo.webp', business_type: ['hardware'], timezone: null }
     };
+    const originalProfile = state.companyProfile;
     Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
-    const saved = await state.updateCompanyProfile({ ...state.companyProfile, timezone: 'America/Merida' });
+    state.companyProfile = originalProfile;
+    const saved = await state.updateCompanyProfile({ ...originalProfile, timezone: 'America/Merida' });
     expect(saved).toMatchObject({ license_key: 'LANZO-PRO', timezone: 'America/Merida',
       name: 'Negocio', phone: '1234', address: 'Centro', logo: 'https://logo.test/logo.webp' });
     expect(mocks.saveBusinessProfile).toHaveBeenCalledWith('LANZO-PRO',
