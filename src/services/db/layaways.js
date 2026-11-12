@@ -4,7 +4,6 @@ import { getOperationalStockSnapshot } from '../inventoryStock';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
 import { isBatchExpiredForSale } from '../../utils/dateUtils';
 import { generateID } from '../utils';
-import { productsRepository } from './products';
 import { SALE_STATUS, buildDailyStatsFromSales } from '../sales/financialStats';
 import { getFinancialQuality } from '../sales/financialPolicy';
 import { Money } from '../../utils/moneyMath';
@@ -94,7 +93,7 @@ const accountingMode = (layaway) => {
 
 const assertStockSnapshot = (record, name) => {
     const snapshot = getOperationalStockSnapshot(record);
-    if (!snapshot.valid || snapshot.committedStock > snapshot.physicalStock + 0.00001) {
+    if (!snapshot.valid || snapshot.physicalStock < 0 || snapshot.committedStock > snapshot.physicalStock + 0.00001) {
         throw inventoryError('LAYAWAY_STOCK_UNKNOWN', `El inventario de ${name} es inconsistente.`);
     }
     return snapshot;
@@ -119,9 +118,9 @@ const getItemQuantity = (item, product) => {
     return quantity;
 };
 
-const getProduct = async (productId) => {
+const getProduct = async (productId, { allowInactive = false } = {}) => {
     const product = productId && await db.table(STORES.MENU).get(productId);
-    if (!product || product.deletedAt || product.isActive === false) {
+    if (!product || (!allowInactive && (product.deletedAt || product.isActive === false))) {
         throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', `Producto inexistente o inactivo: ${productId || 'sin ID'}.`);
     }
     return product;
@@ -224,7 +223,7 @@ const applyReservedStock = async (layaway, { deliver = false } = {}) => {
     const expected = new Map();
     for (const [index, item] of layaway.items.entries()) {
         const productId = getItemProductId(item);
-        const product = await getProduct(productId);
+        const product = await getProduct(productId, { allowInactive: true });
         if (product.trackStock !== false) expected.set(index, getItemQuantity(item, product));
     }
     const received = new Map();
@@ -276,42 +275,6 @@ const applyReservedStock = async (layaway, { deliver = false } = {}) => {
     return physicalDeductions;
 };
 
-const reserveStock = async (layawayData) => {
-    const batchDeductions = [];
-    const genericItems = [];
-
-    (layawayData.items || []).forEach((item) => {
-        if (item.batchId) {
-            batchDeductions.push({
-                batchId: item.batchId,
-                quantity: item.quantity,
-                reason: `Apartado para ${layawayData.customerName}`
-            });
-        } else {
-            genericItems.push(item);
-        }
-    });
-
-    if (batchDeductions.length > 0) {
-        await productsRepository.processBatchDeductions(batchDeductions, {
-            validateStock: true,
-            allowPartial: false,
-            logDetails: true
-        });
-    }
-
-    for (const item of genericItems) {
-        const productId = item.parentId || item.id;
-        const product = await db.table(STORES.MENU).get(productId);
-        if (!product || !product.trackStock) continue;
-        if (product.stock < item.quantity) throw new Error(`Stock insuficiente para: ${product.name}`);
-        await db.table(STORES.MENU).update(productId, {
-            stock: product.stock - item.quantity,
-            updatedAt: nowIso()
-        });
-    }
-};
-
 const restoreStock = async (layaway) => {
     const productsToSync = new Set();
 
@@ -348,6 +311,9 @@ const restoreStock = async (layaway) => {
 export const layawayRepository = {
     async create(layawayData, initialPayment = 0, cashSessionId = null, options = {}) {
         try {
+            if (layawayData?.sourceMode === 'cloud_committed' || layawayData?.cloudLayaway === true) {
+                throw inventoryError('LAYAWAY_CLOUD_PROJECTION', 'No se pueden crear reservas Local desde una proyección Cloud.');
+            }
             const cashMovement = options.cashMovement || null;
             if (initialPayment > 0 && !cashMovement) {
                 throw new Error('El anticipo debe registrarse mediante la ruta canonica de Caja.');
