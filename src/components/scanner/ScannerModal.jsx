@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { resolveWithCache } from '../../services/barcodeCache';
+import { resolveWithCacheResult } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
@@ -84,7 +84,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   const {
     items,
-    unknownCodes,
     total,
     itemCount,
     isConfirming,
@@ -92,12 +91,11 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     addItem,
     addQuantity,
     removeQuantity,
-    addUnknownCode,
-    clearUnknownCodes,
     clearCart,
   } = useScannerCart();
 
   const [scanFeedback, setScanFeedback] = useState('');
+  const [scanIssues, setScanIssues] = useState([]);
   const [cameraError, setCameraError] = useState(null);
   const [scanCount, setScanCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -168,6 +166,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     processingLockRef.current = false;
     setIsProcessing(false);
     clearCart();
+    setScanIssues([]);
     setScanFeedback('');
     setCameraError(null);
     setScanCount(0);
@@ -185,34 +184,51 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       setScanFeedback(`Buscando: ${code}...`);
 
       try {
-        const product = await resolveWithCache(code);
+        const result = await resolveWithCacheResult(code);
 
-        // Verificar si el componente sigue montado antes de actualizar estado
         if (!isMountedRef.current) return;
 
-        if (!product) {
+        if (result.status !== 'RESOLVED') {
           playErrorBeep();
           if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-
-          addUnknownCode(code);
-          setScanFeedback(`Falló: ${code}`);
+          const labels = {
+            NOT_FOUND: 'Producto no registrado',
+            DUPLICATE: 'Este código pertenece a varios productos',
+            INACTIVE: 'Producto registrado, pero desactivado',
+            NO_SELLABLE_BATCH: 'Producto registrado, sin lote disponible',
+          };
+          const message = labels[result.status] || 'No se pudo consultar el catálogo';
+          setScanIssues((previous) => previous.some((issue) => (
+            issue.code === code && issue.status === result.status
+          )) ? previous : [...previous, {
+            code, status: result.status, message,
+            productName: result.product?.name || null,
+            matches: result.matches || [],
+          }]);
+          setScanFeedback(message);
           scheduleReactivation();
           return;
         }
 
+        const product = result.product;
         addItem(product);
-        setScanFeedback(`OK ${product.name} - $${product.price.toFixed(2)}`);
+        setScanFeedback(`Producto reconocido: ${product.name} - $${product.price.toFixed(2)}`);
         scheduleReactivation();
       } catch (error) {
         if (!isMountedRef.current) return;
 
         Logger.error('Error procesando codigo escaneado:', error);
         playErrorBeep();
-        setScanFeedback('Error de base de datos');
+        setScanFeedback('No se pudo consultar el catálogo');
+        setScanIssues((previous) => previous.some((issue) => (
+          issue.code === code && issue.status === 'ERROR'
+        )) ? previous : [...previous, {
+          code, status: 'ERROR', message: 'No se pudo consultar el catálogo',
+        }]);
         scheduleReactivation();
       }
     },
-    [addItem, addUnknownCode, scheduleReactivation]
+    [addItem, scheduleReactivation]
   );
 
   // Handler de decodificación con bloqueo lógico estricto
@@ -404,6 +420,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
   useEffect(() => {
     if (show) {
       clearCart();
+      setScanIssues([]);
       setScanFeedback('');
       setCameraError(null);
       setScanCount(0);
@@ -475,8 +492,8 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
             <div className="scanner-results-container">
               <h3 className="subtitle">Carrito Temporal</h3>
               <UnknownCodesBanner
-                unknownCodes={unknownCodes}
-                onClear={clearUnknownCodes}
+                issues={scanIssues}
+                onClear={() => setScanIssues([])}
               />
               {transferUncertain && (
                 <p role="alert" className="scanner-error-banner">

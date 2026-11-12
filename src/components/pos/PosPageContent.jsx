@@ -10,7 +10,7 @@ import OrderTabs from './OrderTabs';
 import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { usePhysicalBarcodeScanner } from '../../hooks/scanner/usePhysicalBarcodeScanner';
-import { resolveWithCache } from '../../services/barcodeCache';
+import { resolveWithCacheResult } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
@@ -136,24 +136,37 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         };
         if (!isScanCurrent()) return;
 
-        let product;
+        let resolution;
         try {
-            product = await resolveWithCache(scanEvent.code);
+            resolution = await resolveWithCacheResult(scanEvent.code);
         } catch {
             if (!isScanCurrent()) return;
             void playErrorBeep();
-            showMessageModal('No se pudo resolver el código escaneado.', null, { type: 'error', duration: 1500 });
+            showMessageModal('No se pudo consultar el catálogo.', null, { type: 'error', duration: 1500 });
             return;
         }
 
         if (!isScanCurrent()) return;
 
-        if (!product) {
+        if (resolution.status !== 'RESOLVED') {
+            const names = resolution.matches?.map((match) => match.name).filter(Boolean).join(', ');
+            const productName = resolution.product?.name || scanEvent.code;
+            const messages = {
+                NOT_FOUND: `Producto no registrado: ${scanEvent.code}`,
+                DUPLICATE: `Este código pertenece a varios productos: ${scanEvent.code}. ${names || ''} Corrige el código en Productos.`,
+                INACTIVE: `Producto registrado, pero desactivado: ${productName}`,
+                NO_SELLABLE_BATCH: `Producto registrado, sin lote disponible: ${productName} (${scanEvent.code})`,
+            };
             void playErrorBeep();
-            showMessageModal(`⚠️ Producto no encontrado: ${scanEvent.code}`, null, { type: 'error', duration: 1500 });
+            showMessageModal(
+                messages[resolution.status] || 'No se pudo consultar el catálogo.',
+                null,
+                { type: resolution.status === 'DUPLICATE' ? 'warning' : 'error', duration: 2500 }
+            );
             return;
         }
 
+        const product = resolution.product;
         let result;
         try {
             result = await addMultipleScannedProducts?.([product], orderIdAtScan);

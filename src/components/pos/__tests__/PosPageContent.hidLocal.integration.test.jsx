@@ -228,10 +228,10 @@ describe('HID → local catalog → real active order', () => {
   });
 
   it.each(['switch', 'switch-back', 'payment', 'payment-close', 'lock', 'unmount'])('discards a pending real lookup after %s', async (transition) => {
-    const original = resolver.resolveBarcode;
+    const original = resolver.resolveBarcodeResult;
     let release;
     const gate = new Promise(resolve => { release = resolve; });
-    const lookup = vi.spyOn(resolver, 'resolveBarcode').mockImplementation(async code => { await gate; return original(code); });
+    const lookup = vi.spyOn(resolver, 'resolveBarcodeResult').mockImplementation(async code => { await gate; return original(code); });
     const view = await ready();
     scan('00123456');
     expect(lookup).toHaveBeenCalled();
@@ -252,7 +252,7 @@ describe('HID → local catalog → real active order', () => {
   });
 
   it.each([{ activeModal: 'payment' }, { activeModal: 'scanner' }, { isMobileCartOpen: true }])('blocks capture with UI state %j', async (uiOverrides) => {
-    const lookup = vi.spyOn(resolver, 'resolveBarcode');
+    const lookup = vi.spyOn(resolver, 'resolveBarcodeResult');
     await ready({ uiOverrides });
     scan('00123456');
     expect(lookup).not.toHaveBeenCalled();
@@ -260,7 +260,7 @@ describe('HID → local catalog → real active order', () => {
   });
 
   it('blocks a nested catalog dialog even when keyboard focus stays outside it', async () => {
-    const lookup = vi.spyOn(resolver, 'resolveBarcode');
+    const lookup = vi.spyOn(resolver, 'resolveBarcodeResult');
     const view = await ready();
     view.rerender(<><Pos /><div role="dialog" aria-modal="true">Elegir variante</div></>);
     scan('00123456');
@@ -269,7 +269,7 @@ describe('HID → local catalog → real active order', () => {
   });
 
   it('captures ProductForm barcode without resolving a product or changing an order', async () => {
-    const lookup = vi.spyOn(resolver, 'resolveBarcode');
+    const lookup = vi.spyOn(resolver, 'resolveBarcodeResult');
     const onSave = vi.fn();
     await ready({ uiOverrides: { activeModal: 'product' } });
     render(<ProductFormV2 activeRubroContext="abarrotes" categories={[]} features={{}} onSave={onSave} onCancel={() => {}} />);

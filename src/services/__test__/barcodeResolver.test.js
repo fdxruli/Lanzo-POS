@@ -11,8 +11,14 @@ vi.mock('../Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
 
 const resolveScannedBatch = async ({ product, batch }) => {
   db.table.mockImplementation((store) => {
-    if (store === 'product_batches') return { where: () => ({ equals: () => ({ first: async () => batch }) }) };
-    return { get: async () => product };
+    if (store === 'product_batches') return {
+      filter: (fn) => ({ toArray: async () => [batch].filter(fn) }),
+      where: () => ({ equals: () => ({ filter: (fn) => ({ sortBy: async () => [batch].filter(fn) }) }) })
+    };
+    return {
+      filter: (fn) => ({ toArray: async () => [product].filter(fn) }),
+      get: async () => product
+    };
   });
   return resolveBarcode(batch.sku);
 };
