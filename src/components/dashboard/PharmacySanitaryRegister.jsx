@@ -135,7 +135,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
             ).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
         </label>
-        <label>Lote (ID)
+        <label>Lote (ID o fabricante)
           <input value={draft.batchId} placeholder="Opcional" maxLength={150}
             onChange={(e) => setDraft((v) => ({ ...v, batchId: e.target.value }))} />
         </label>
@@ -195,6 +195,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                     <div><dt>Operación</dt><dd>{shown(row.operationId || row.id)}</dd></div>
                     <div><dt>Lote</dt><dd>{shown(row.batchNumber || row.batchId)}</dd></div>
                     <div><dt>Caducidad</dt><dd>{shown(row.expiryDate)}</dd></div>
+                    {row.receiptAt && <div><dt>Recepción declarada</dt><dd>{dateLabel(row.receiptAt)}</dd></div>}
                     <div><dt>Comprobante / receta</dt><dd>{shown(row.documentReference)}</dd></div>
                     <div><dt>Venta</dt><dd>{shown(row.saleId)}</dd></div>
                     <div><dt>Responsable</dt><dd>{shown(row.actor)}</dd></div>
