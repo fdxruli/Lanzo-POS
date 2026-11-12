@@ -60,6 +60,12 @@ const findStockRecord = (productKey, item, catalog = []) => {
 
 const stockSnapshot = (productKey, item, catalog) => {
   const stock = findStockRecord(productKey, item, catalog);
+  // Cart line quantity is a request, never a substitute for missing physical stock.
+  // getOperationalStockSnapshot accepts quantity for other record types, so fail
+  // closed here unless the catalog/cart snapshot explicitly includes stock.
+  if (stock?.stock == null || stock.stock === '') {
+    return { physical: null, committed: null, available: null };
+  }
   const snapshot = getOperationalStockSnapshot(stock);
   if (!snapshot.valid || snapshot.physicalStock < 0
     || snapshot.committedStock > snapshot.physicalStock + 0.00001) {
