@@ -573,6 +573,7 @@ export const layawayRepository = {
                 return { success: true, cashMovementId };
             });
         } catch (error) {
+            if (String(error?.code || '').startsWith('LAYAWAY_')) throw error;
             throw handleDexieError(error, 'Cancel Layaway');
         }
     },
