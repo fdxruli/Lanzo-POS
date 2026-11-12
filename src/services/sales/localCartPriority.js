@@ -1,4 +1,5 @@
-import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
+import { normalizeStock } from '../db/utils';
+import { getOperationalStockSnapshot } from '../inventoryStock';
 import { getCartProductId } from '../../utils/cartLineIdentity';
 
 /**
@@ -59,12 +60,15 @@ const findStockRecord = (productKey, item, catalog = []) => {
 
 const stockSnapshot = (productKey, item, catalog) => {
   const stock = findStockRecord(productKey, item, catalog);
-  const physical = Number(stock?.stock ?? stock?.quantity);
-  const committed = getCommittedStock(stock);
+  const snapshot = getOperationalStockSnapshot(stock);
+  if (!snapshot.valid || snapshot.physicalStock < 0
+    || snapshot.committedStock > snapshot.physicalStock + 0.00001) {
+    return { physical: null, committed: null, available: null };
+  }
   return {
-    physical: Number.isFinite(physical) ? normalizeStock(physical) : null,
-    committed,
-    available: Number.isFinite(physical) ? getAvailableStock(stock) : null
+    physical: snapshot.physicalStock,
+    committed: snapshot.committedStock,
+    available: snapshot.availableStock
   };
 };
 

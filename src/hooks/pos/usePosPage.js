@@ -6,6 +6,7 @@ import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
 import { orderTotals } from '../../services/sales/orderTotals';
 import { showMessageModal } from '../../services/utils';
+import { getPosStockState, getPosStockBlockMessage } from '../../services/inventoryStock';
 import { playBeep, playBulkProductBeep, playErrorBeep } from '../../utils/audio';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 
@@ -69,6 +70,25 @@ export function usePosPage() {
             const result = await useActiveOrders.getState().addSmartItem(product, orderIdAtScan);
             if (result?.success !== true) {
                 playErrorBeep();
+                const stockState = result?.stockState?.blocked
+                    ? result.stockState : (!product.batchManagement?.enabled ? getPosStockState(product) : null);
+                if (stockState?.blocked) {
+                    showMessageModal(getPosStockBlockMessage(stockState, product.name), () => {}, {
+                        title: 'Producto sin disponibilidad', confirmButtonText: 'Entendido',
+                        showCancel: false, type: 'warning'
+                    });
+                } else if (result?.code === 'LOCAL_FORMAL_RESERVATION'
+                    || result?.code === 'LOCAL_INVENTORY_NOT_TRANSFERABLE') {
+                    showMessageModal(
+                        `No puedes agregar otra unidad de ${product.name}. El inventario libre no alcanza: hay unidades comprometidas o reclamadas por otra orden. Revisa el aviso de inventario.`,
+                        () => {}, { title: 'Sin unidades libres', confirmButtonText: 'Entendido', showCancel: false, type: 'warning' }
+                    );
+                } else if (result?.code === 'LOCAL_NO_PHYSICAL_STOCK' || result?.code === 'LOCAL_STOCK_UNKNOWN') {
+                    showMessageModal(result.code === 'LOCAL_STOCK_UNKNOWN'
+                        ? 'Inventario no verificable; revisa el catálogo antes de vender.'
+                        : 'No hay suficientes unidades físicas para esta venta.',
+                    null, { type: 'warning' });
+                }
                 return;
             }
             playBeep(1000, 'sine');

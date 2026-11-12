@@ -2,7 +2,7 @@ import { calculateCompositePrice, validateWholesaleCondition } from '../services
 import { showMessageModal, generateID } from '../services/utils';
 import { db, STORES } from '../services/db/dexie';
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../services/db/utils';
-import { getOperationalStockSnapshot } from '../services/inventoryStock';
+import { getOperationalStockSnapshot, getPosStockState } from '../services/inventoryStock';
 import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
@@ -325,13 +325,21 @@ export const createOrderActions = (set, get) => ({
         });
 
         try {
-          const sellableBatches = await db.table(STORES.PRODUCT_BATCHES)
+          const allBatches = await db.table(STORES.PRODUCT_BATCHES)
             .where('productId')
             .equals(product.id)
-            .filter(batch => batch.isActive === true && batch.stock > 0)
             .toArray();
-
+          const sellableBatches = allBatches.filter((batch) => batch.isActive === true
+            && Number(batch.stock) > 0
+            && getPosStockState(batch, { tracked: true }).kind === 'available');
           const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
+          if (allBatches.length > 0 && sortedBatches.length === 0) {
+            const candidate = allBatches.find((batch) => batch.isActive === true) || allBatches[0];
+            const stockState = candidate.isActive === true
+              ? getPosStockState(candidate, { tracked: true })
+              : { kind: 'unknown', blocked: true, snapshot: null };
+            return { success: false, code: 'POS_INVENTORY_BLOCKED', stockState };
+          }
           let validBatch = null;
 
           if (product.saleType === 'bulk') {
