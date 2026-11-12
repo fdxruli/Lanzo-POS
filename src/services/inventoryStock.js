@@ -79,12 +79,13 @@ export const getPosStockState = (record, {
 };
 
 export const getPosStockBlockMessage = (state, productName = 'Producto') => {
+  const scopedName = state?.batchLabel ? `${productName} — lote ${state.batchLabel}` : productName;
   if (state?.kind === 'committed') {
     const { physicalStock, committedStock } = state.snapshot;
-    return `${productName}: producto sin disponibilidad — unidades comprometidas.
+    return `${scopedName}: producto sin disponibilidad — unidades comprometidas.
 Existencia física: ${physicalStock}. Comprometidas: ${committedStock}. Disponibles: 0.
 Estas unidades pertenecen a reservas vigentes u otras operaciones y no pueden utilizarse en esta venta. Revisa la operación correspondiente para liberarlas.`;
   }
-  if (state?.kind === 'empty') return `${productName}: agotado físicamente. No quedan unidades disponibles.`;
-  return `${productName}: inventario no verificable. Actualiza el catálogo y comprueba las existencias antes de vender.`;
+  if (state?.kind === 'empty') return `${scopedName}: agotado físicamente. No quedan unidades disponibles.`;
+  return `${scopedName}: inventario no verificable. Actualiza el catálogo y comprueba las existencias antes de vender.`;
 };

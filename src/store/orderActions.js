@@ -339,7 +339,7 @@ export const createOrderActions = (set, get) => ({
               ? getPosStockState(candidate, { tracked: true })
               : { kind: 'unknown', blocked: true, snapshot: null };
             const stockState = observed.blocked ? observed : { kind: 'unknown', blocked: true, snapshot: null };
-            return { success: false, code: 'POS_INVENTORY_BLOCKED', stockState };
+            return { success: false, code: 'POS_INVENTORY_BLOCKED', stockState: { ...stockState, batchLabel: candidate.sku || candidate.id } };
           }
           let validBatch = null;
 
