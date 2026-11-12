@@ -1,26 +1,24 @@
-.prescription-modal {
-  max-width: 500px;
-  border-left: 5px solid var(--ui-color-warning);
-}
-
-.prescription-modal__intro {
-  margin-bottom: var(--ui-space-md);
-}
-
-.prescription-modal__items {
-  display: block;
-  margin-bottom: var(--ui-space-lg);
-  padding: var(--ui-space-sm) var(--ui-space-lg);
-  color: var(--ui-text-warning);
-  font-weight: 700;
-  list-style: disc;
-  list-style-position: outside;
-}
-
-.prescription-modal__items li + li {
-  margin-top: var(--ui-space-xs);
-}
-
-.prescription-modal__actions {
-  margin-top: var(--ui-space-lg);
+.prescription-modal { width:min(96vw,880px);max-width:880px;max-height:min(90dvh,920px);overflow:auto;padding:clamp(12px,2.5vw,24px); }
+.prescription-modal__header h2 { margin:0 0 6px; }
+.prescription-modal__header p { margin:0 0 16px;line-height:1.4; }
+.prescription-modal__medicine { border-top:1px solid var(--ui-border,#ddd);padding-block:16px; }
+.prescription-modal__medicine-head { display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px; }
+.prescription-modal__medicine-head span { font-size:.875rem; }
+.prescription-modal__grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.prescription-modal__grid label { display:flex;flex-direction:column;min-width:0;font-weight:600;font-size:.86rem;gap:5px; }
+.prescription-modal__grid input { width:100%;min-width:0;min-height:42px;border:1px solid var(--ui-border,#bbb);border-radius:7px;padding:9px;background:var(--ui-surface,transparent);color:inherit;font:inherit;font-weight:400; }
+.prescription-modal__wide { grid-column:span 2; }
+.prescription-modal__lookup { display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px;font-size:.88rem; }
+.prescription-modal__history { margin-top:10px;font-size:.87rem;overflow-wrap:anywhere; }
+.prescription-modal__history ul { padding-inline-start:20px; }
+.prescription-modal__checks { display:grid;gap:10px;margin-top:14px; }
+.prescription-modal__checks label { display:flex;align-items:start;gap:9px;font-size:.9rem;line-height:1.4; }
+.prescription-modal__checks input { flex:0 0 auto;width:18px;height:18px; }
+.prescription-modal__error { margin-top:10px;color:var(--ui-color-danger,#b91c1c);font-weight:600; }
+.prescription-modal__actions { position:sticky;bottom:-1px;z-index:1;padding:14px 0 0;background:var(--ui-surface,#fff);display:flex;justify-content:flex-end;gap:12px; }
+@media (max-width:600px) {
+ .prescription-modal { width:100%;max-height:94dvh;padding:14px; }
+ .prescription-modal__grid { grid-template-columns:minmax(0,1fr); }
+ .prescription-modal__wide { grid-column:span 1; }
+ .prescription-modal__actions button { flex:1; }
 }

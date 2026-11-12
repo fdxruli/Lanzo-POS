@@ -14,6 +14,7 @@ import {
 import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { Money } from '../../utils/moneyMath';
 import { generateID } from '../utils';
+import { attachPharmacyDispensations, pharmacyPrescriptionRequirement } from '../pharmacy/pharmacyDispensation';
 import { SALE_STATUS } from './financialStats';
 import { evaluator } from '../BackupRiskEvaluator';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
@@ -59,11 +60,6 @@ const sameLocalCommit = (sale, binding, attemptId) => Boolean(
     binding && sale?.localCommitBinding && sale?.status === SALE_STATUS.CLOSED &&
     sale.localCheckoutAttemptId === attemptId &&
     JSON.stringify(sale.localCommitBinding) === JSON.stringify(binding)
-);
-
-const requiresPrescriptionControl = (product = {}) => (
-    product?.requiresPrescription === true ||
-    Boolean(product?.prescriptionType && product.prescriptionType !== 'otc')
 );
 
 const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
@@ -336,22 +332,11 @@ export const processSaleCore = async ({
             ? null
             : (paymentData.saleDiscount || paymentData.discount || null);
 
-        if (features.hasLabFields) {
-            const restrictedItem = itemsToProcess.find(item => {
-                const realProduct = productMap.get(item.parentId || item.id);
-                return requiresPrescriptionControl(realProduct);
-            });
-
-            if (restrictedItem) {
-                const hasValidPrescription = tempPrescriptionData &&
-                    tempPrescriptionData.doctorName &&
-                    tempPrescriptionData.licenseNumber;
-
-                if (!hasValidPrescription) {
-                    throw new Error(`BLOQUEO DE SEGURIDAD: El producto "${restrictedItem.name}" es controlado y requiere datos de receta médica (Doctor y Cédula).`);
-                }
-            }
-        }
+        // El formulario no es autoridad. Las restricciones se revalidan con
+        // catálogo persistido, y Cloud también las valida al insertar cada línea.
+        const pharmacyRequiresRx = Boolean(features?.hasLabFields && itemsToProcess.some(item =>
+            pharmacyPrescriptionRequirement(productMap.get(item.parentId || item.productId || item.id) || item).required
+        ));
 
         const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
             paymentData: safePaymentData,
@@ -360,6 +345,15 @@ export const processSaleCore = async ({
             Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
             return { useCloud: false, reason: 'decision_error' };
         });
+
+        if (pharmacyRequiresRx && !cloudCashierDecision?.useCloud
+            && await salesCloudCashierService.requiresCloudPharmacyAuthority()) {
+            return withFinancialFailure({
+                success: false,
+                code: 'PHARMACY_CLOUD_AUTHORITY_REQUIRED',
+                message: 'Para surtir este medicamento, la receta debe validarse en Cloud. Conéctate y reintenta; no se cobró.'
+            });
+        }
 
         const cloudRestaurantSettlementRequired = Boolean(
             isRestaurantCloudTableShadow(persistedOrder)
@@ -542,7 +536,7 @@ export const processSaleCore = async ({
             allowDirectPartial: directPartialApproved
         });
 
-        const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
+        const { processedItems: stockProcessedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
             itemsToProcess,
             allProducts,
             batchesMap,
@@ -550,6 +544,9 @@ export const processSaleCore = async ({
             enforceExpiryStrict: !isCloudInventorySale,
             allowDirectPartial: directPartialApproved
         });
+        const processedItems = attachPharmacyDispensations(
+            stockProcessedItems, productMap, tempPrescriptionData, features
+        );
 
         const stableSaleTimestamp = await resolveStableSaleTimestamp({
             activeOrderId,

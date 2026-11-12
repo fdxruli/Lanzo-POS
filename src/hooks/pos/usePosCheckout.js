@@ -11,6 +11,7 @@ import { useActiveOrders } from './useActiveOrders';
 import { validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { Money } from '../../utils/moneyMath';
+import { pharmacyPrescriptionRequirement } from '../../services/pharmacy/pharmacyDispensation';
 import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
 import {
     prepareCustomerMessageOutbox,
@@ -1123,11 +1124,20 @@ export function usePosCheckout({
         });
         if (beforeModalTargetError) return beforeModalTargetError;
 
+        // Conservar el índice de la línea congelada del checkout, incluso en
+        // carritos mixtos. No depender de flags legacy del snapshot del carrito.
         const itemsRequiring = features?.hasLabFields
-            ? lockedItemsToProcess.filter((item) =>
-                item.requiresPrescription ||
-                (item.prescriptionType && item.prescriptionType !== 'otc')
-            )
+            ? lockedItemsToProcess.map((item, index) => {
+                const productId = item.parentId || item.productId || item.id;
+                const catalogProduct = posSearch.menuVisual.find(product => product.id === productId) || item;
+                const policy = pharmacyPrescriptionRequirement(catalogProduct);
+                return policy.required ? {
+                    ...item,
+                    productId,
+                    prescriptionOrderIndex: index,
+                    rxAntibiotic: policy.antibiotic
+                } : null;
+            }).filter(Boolean)
             : [];
 
         prescription.setTempPrescriptionData(null);
