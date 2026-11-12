@@ -1,5 +1,7 @@
 // components/pos/LayawayModal.jsx
 import React, { useState, useEffect } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { addBusinessCalendarDays, getBusinessCalendarDate, getLayawayCalendarDate } from '../../utils/layawayCalendar';
 import { loadData, STORES } from '../../services/database';
 import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
 import { useCaja } from '../../hooks/useCaja';
@@ -36,14 +38,12 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
     const { cajaActual } = useCaja();
+    const businessTimezone = useAppStore((state) => state.companyProfile?.timezone || null);
 
     useEffect(() => {
         if (show) {
-            const date = new Date();
-            date.setDate(date.getDate() + 30);
-            // A date input is a calendar date, not an instant. Formatting it
-            // with toISOString() can move it one day around local midnight.
-            setDeadline(formatLocalDateInputValue(date));
+            const today = getBusinessCalendarDate(businessTimezone);
+            setDeadline(today ? addBusinessCalendarDays(today, 30) : '');
             setInitialPayment('');
 
             const fetchCustomers = async () => {
@@ -60,7 +60,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             }
             setFilteredCustomers([]);
         }
-    }, [show, preSelectedCustomer, total]);
+    }, [show, preSelectedCustomer, total, businessTimezone]);
 
     const handleCustomerSearch = (e) => {
         const query = e.target.value;
@@ -96,6 +96,17 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
+        const today = getBusinessCalendarDate(businessTimezone);
+        const due = getLayawayCalendarDate(deadline);
+        if (!today || !due) {
+            showMessageModal('Confirma la zona horaria del negocio en Configuración y selecciona una fecha límite válida.', null, { type: 'warning' });
+            return;
+        }
+        if (due < today) {
+            showMessageModal('La fecha límite debe ser hoy o posterior, según el calendario del negocio.', null, { type: 'warning' });
+            return;
+        }
 
         if (!selectedCustomer) {
             showMessageModal("Es obligatorio asignar un cliente.", null, { type: 'warning' });
