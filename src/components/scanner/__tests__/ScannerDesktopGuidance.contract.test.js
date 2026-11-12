@@ -30,28 +30,17 @@ describe('scanner desktop camera guidance', () => {
     expect(desktopNoticeCss).not.toContain('lectores físicos');
   });
 
-  it('keeps one functional close control anchored to the modal on desktop and the camera area on mobile', () => {
+  it('keeps one accessible close control in the shared compact header', () => {
     expect(scannerModalSource.match(/className="scanner-close-btn"/g)).toHaveLength(1);
     expect(scannerModalSource).toContain('onClick={handleClose}');
     expect(scannerModalSource).toMatch(
-      /<h2 className="modal-title">[\s\S]*<\/h2>\s*<button[\s\S]*className="scanner-close-btn"[\s\S]*<\/button>\s*<div className="scanner-main-container">/
+      /<header className="scanner-modal-header">[\s\S]*?<h2 className="modal-title">[\s\S]*?<button[\s\S]*?className="scanner-close-btn"[\s\S]*?<\/button>[\s\S]*?<\/header>/
     );
-    expect(scannerModalSource).not.toMatch(
-      /className="scanner-camera-controls">[\s\S]*className="scanner-close-btn"/
-    );
-    expect(scannerModalCssSource).toContain('position: relative;');
-    expect(scannerModalCssSource).toContain('.scanner-camera-panel');
-    expect(scannerModalCssSource).toContain('.scanner-camera-controls');
-    expect(scannerModalCssSource).toContain('top: max(var(--spacing-sm, 8px), var(--safe-area-top));');
-    expect(scannerModalCssSource).toContain('right: max(var(--spacing-sm, 8px), var(--safe-area-right));');
-
-    const desktopCloseRule = scannerModalCssSource.match(
-      /@media \(min-width: 768px\) \{[\s\S]*?\.scanner-close-btn\s*\{([\s\S]*?)\}/,
-    )?.[1];
-    expect(desktopCloseRule).toContain('top: var(--ui-space-md');
-    expect(desktopCloseRule).toContain('right: var(--ui-space-md');
-    expect(desktopCloseRule).toContain('width: 40px;');
-    expect(desktopCloseRule).toContain('height: 40px;');
+    expect(scannerModalSource).not.toContain('className="scanner-camera-controls"');
+    expect(scannerModalCssSource).toContain('#scanner-modal .scanner-modal-header');
+    expect(scannerModalCssSource).toContain('#scanner-modal .scanner-close-btn');
+    expect(scannerModalCssSource).toContain('position: static;');
+    expect(scannerModalCssSource).toContain('min-height: 44px');
   });
 
   it('does not change scanner lifecycle or pause behavior', () => {

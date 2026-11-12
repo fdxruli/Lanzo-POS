@@ -72,7 +72,7 @@ const unlockAfterSuccessfulScan = async () => {
   });
 };
 
-const confirmButton = () => screen.getByRole('button', { name: /Confirmar \(/ });
+const confirmButton = () => screen.getByRole('button', { name: /Agregar \d+ unidad(?:es)? al POS/ });
 
 const readProduct = async (name) => {
   resolveCode.mockResolvedValueOnce({ status: 'RESOLVED', product: product(name) });
@@ -107,6 +107,19 @@ afterEach(() => {
 });
 
 describe('ScannerModal commercial confirmation guards', () => {
+  it('keeps Product Form V2 in single-scan mode without a POS cart or transfer', async () => {
+    const onScanSuccess = vi.fn();
+    render(<ScannerModal show onClose={close} onScanSuccess={onScanSuccess} />);
+    expect(screen.queryByRole('button', { name: /Agregar .* al POS/ })).toBeNull();
+    expect(screen.queryByText('Productos escaneados')).toBeNull();
+
+    await scanned('7501400800069');
+    expect(onScanSuccess).toHaveBeenCalledWith(expect.objectContaining({ code: '7501400800069' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(resolveCode).not.toHaveBeenCalled();
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
   it('shows a duplicate once and never adds it, including on repeated reads', async () => {
     render(<ScannerModal show onClose={close} />);
     resolveCode.mockResolvedValue({
@@ -120,7 +133,8 @@ describe('ScannerModal commercial confirmation guards', () => {
     await scanned('7501400800069');
     await unlockAfterSuccessfulScan();
     await scanned('7501400800069');
-    expect(screen.getByText(/Este código pertenece a varios productos/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalles' }));
+    expect(screen.getByText(/Este código está registrado en más de un producto/)).toBeInTheDocument();
     expect(screen.getByText(/Bicarbonato De Sodio, Bicarbonato Nordin/)).toBeInTheDocument();
     expect(document.querySelectorAll('.unknown-badge')).toHaveLength(1);
     expect(screen.getByTestId('scanned-cart')).toBeEmptyDOMElement();
@@ -129,12 +143,13 @@ describe('ScannerModal commercial confirmation guards', () => {
 
   it.each([
     ['NOT_FOUND', 'Producto no registrado'],
-    ['INACTIVE', 'Producto registrado, pero desactivado'],
-    ['NO_SELLABLE_BATCH', 'Producto registrado, sin lote disponible'],
+    ['INACTIVE', 'Producto desactivado'],
+    ['NO_SELLABLE_BATCH', 'Producto sin lote disponible'],
   ])('explains %s without adding a cart item', async (status, message) => {
     render(<ScannerModal show onClose={close} />);
     resolveCode.mockResolvedValue({ status, code: '7501400800069', product: { id: 'a', name: 'Bicarbonato' } });
     await scanned('7501400800069');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalles' }));
     expect(screen.getByText(new RegExp(message))).toBeInTheDocument();
     expect(screen.getByTestId('scanned-cart')).toBeEmptyDOMElement();
     expect(transfer).not.toHaveBeenCalled();
@@ -145,6 +160,8 @@ describe('ScannerModal commercial confirmation guards', () => {
     render(<ScannerModal show onClose={close} />);
     await readProduct('A');
     expect(confirmButton()).toBeEnabled();
+    expect(screen.getByText('$10.00')).toBeInTheDocument();
+    expect(screen.getByText(/1 unidad · 1 línea/)).toBeInTheDocument();
 
     const pendingB = deferred();
     resolveCode.mockReturnValueOnce(pendingB.promise);
@@ -162,6 +179,8 @@ describe('ScannerModal commercial confirmation guards', () => {
     expect(screen.getByTestId('scanned-cart')).toHaveTextContent('B: 1');
     await unlockAfterSuccessfulScan();
     expect(confirmButton()).toBeEnabled();
+    expect(screen.getByText('$20.00')).toBeInTheDocument();
+    expect(screen.getByText(/2 unidades · 2 líneas/)).toBeInTheDocument();
 
     await confirm();
     expect(transfer).toHaveBeenCalledTimes(1);
@@ -211,7 +230,7 @@ describe('ScannerModal commercial confirmation guards', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(transfer).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: 'Confirmando...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Agregando productos…' })).toBeDisabled();
     await act(async () => {
       pending.resolve({ success: true, addedCount: 1, incrementedCount: 0, failedCount: 0 });
       await Promise.resolve();
@@ -245,7 +264,7 @@ describe('ScannerModal commercial confirmation guards', () => {
     render(<ScannerModal show onClose={close} />);
     await readProduct('A');
     await confirm();
-    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo verificar');
+    expect(screen.getByRole('alert')).toHaveTextContent('No pudimos confirmar');
     expect(confirmButton()).toBeDisabled();
     await scanned('B');
     expect(resolveCode).toHaveBeenCalledTimes(1);
@@ -259,7 +278,7 @@ describe('ScannerModal commercial confirmation guards', () => {
     render(<ScannerModal show onClose={close} />);
     await readProduct('A');
     await confirm();
-    expect(screen.getByRole('alert')).toHaveTextContent('revisa el carrito');
+    expect(screen.getByRole('alert')).toHaveTextContent('revisa el POS');
     expect(confirmButton()).toBeDisabled();
   });
 
