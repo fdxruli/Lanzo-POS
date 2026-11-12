@@ -6,6 +6,8 @@ import { buildApparelVariantDelta, rebaseApparelVariantSnapshot } from '../domai
 import { normalizeProduceSaleConfiguration, toNumber } from '../domain/productFormNormalization';
 import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
 import { validateProductForm } from '../domain/validateProductForm';
+import { findLocalBarcodeConflicts } from '../../../../services/db/products';
+import { normalizeBarcodeKey } from '../../../../services/products/productMapper';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { compressImage, generateID } from '../../../../services/utils';
 import { queryBatchesByProductIdAndActive } from '../../../../services/database';
@@ -27,6 +29,10 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const [values, setValues] = useState(getDefaults);
   const [errors, setErrors] = useState({ fieldErrors: {}, globalErrors: [] });
   const [isSaving, setIsSaving] = useState(false);
+  const submitInFlightRef = useRef(false);
+  const [barcodeMatches, setBarcodeMatches] = useState([]);
+  const [barcodeLookupFailed, setBarcodeLookupFailed] = useState(false);
+  const [cloudBarcodeConflict, setCloudBarcodeConflict] = useState(false);
   const [rebasedProduct, setRebasedProduct] = useState(null);
   const blobUrlRef = useRef(null);
   const initialValuesRef = useRef(comparableValues(values));
@@ -68,7 +74,40 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   }, [normalizedRubro, productCost, productPrice, productToEdit?.id]);
 
   useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
-  const setField = useCallback((field, value) => setValues((previous) => ({ ...previous, [field]: value })), []);
+  useEffect(() => {
+    const key = normalizeBarcodeKey(values.barcode);
+    const unchanged = productToEdit?.id && key === normalizeBarcodeKey(productToEdit.barcode);
+    if (!key || unchanged) {
+      setBarcodeMatches([]);
+      setBarcodeLookupFailed(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      findLocalBarcodeConflicts(key, productToEdit?.id || null).then((matches) => {
+        if (cancelled) return;
+        setBarcodeMatches(matches);
+        setBarcodeLookupFailed(false);
+      }).catch(() => {
+        if (cancelled) return;
+        setBarcodeMatches([]);
+        setBarcodeLookupFailed(true);
+      });
+    }, 220);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [values.barcode, productToEdit?.id, productToEdit?.barcode]);
+
+  const setField = useCallback((field, value) => {
+    setValues((previous) => ({ ...previous, [field]: value }));
+    if (field === 'barcode') {
+      setCloudBarcodeConflict(false);
+      setErrors((previous) => {
+        const fieldErrors = { ...previous.fieldErrors };
+        delete fieldErrors.barcode;
+        return { ...previous, fieldErrors };
+      });
+    }
+  }, []);
   const setFields = useCallback((next) => setValues((previous) => ({ ...previous, ...next })), []);
   const setSaleMode = useCallback((saleMode) => setValues((previous) => {
     const nextSaleMode = saleMode === 'bulk' ? 'bulk' : (saleMode === 'fractioned' ? 'fractioned' : 'unit');
@@ -163,37 +202,70 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const isDirty = comparableValues(values) !== initialValuesRef.current;
   const markClean = useCallback((nextValues) => { initialValuesRef.current = comparableValues(nextValues); }, []);
   const submit = useCallback(async ({ resetAfterSave = false } = {}) => {
-    if (isSaving) return false;
-    const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id), productToEdit });
-    setErrors(nextErrors);
-    if (nextErrors.globalErrors.length) return false;
-    setIsSaving(true);
+    if (isSaving || submitInFlightRef.current) return false;
+    submitInFlightRef.current = true;
     try {
-      const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
-      const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
-      if (result?.partial) {
-        originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
-          originalApparelBatchesRef.current,
-          values.quickVariants,
-          result.appliedVariants
-        );
-        const cloudProduct = result.productRebase || {};
-        const cloudVersion = cloudProduct.serverVersion ?? cloudProduct.server_version;
-        if (cloudVersion !== null && cloudVersion !== undefined) {
-          setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
+      const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id), productToEdit });
+      setErrors(nextErrors);
+      if (nextErrors.globalErrors.length) return false;
+      const unchanged = productToEdit?.id
+        && normalizeBarcodeKey(payload.barcode) === normalizeBarcodeKey(productToEdit.barcode);
+      try {
+        const matches = (!normalizeBarcodeKey(payload.barcode) || unchanged)
+          ? []
+          : await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null);
+        setBarcodeMatches(matches);
+        setBarcodeLookupFailed(false);
+        if (matches.length) {
+          setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'Este código ya pertenece a otro producto.' } });
+          return false;
+        }
+      } catch {
+        setBarcodeLookupFailed(true);
+        setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'No se pudo comprobar el código localmente. Inténtalo de nuevo.' } });
+        return false;
+      }
+      setIsSaving(true);
+      try {
+        const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
+        const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
+        if (result?.success === false && ['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result.code || result.error?.code)) {
+          const matches = await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null).catch(() => []);
+          setBarcodeMatches(matches);
+          setCloudBarcodeConflict(matches.length === 0);
+          setErrors((previous) => ({
+            ...previous,
+            fieldErrors: { ...previous.fieldErrors, barcode: 'Este código de barras ya está registrado.' }
+          }));
+          return false;
+        }
+        if (result?.success === false) return false;
+        if (result?.partial) {
+          originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
+            originalApparelBatchesRef.current,
+            values.quickVariants,
+            result.appliedVariants
+          );
+          const cloudProduct = result.productRebase || {};
+          const cloudVersion = cloudProduct.serverVersion ?? cloudProduct.server_version;
+          if (cloudVersion !== null && cloudVersion !== undefined) {
+            setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
+          }
+          return result;
+        }
+        if (result !== false && resetAfterSave && !productToEdit) {
+          const next = getDefaults();
+          setValues(next);
+          markClean(next);
+          setErrors({ fieldErrors: {}, globalErrors: [] });
+        } else if (result !== false) {
+          markClean(values);
         }
         return result;
-      }
-      if (result !== false && resetAfterSave && !productToEdit) {
-        const next = getDefaults();
-        setValues(next);
-        markClean(next);
-        setErrors({ fieldErrors: {}, globalErrors: [] });
-      } else if (result !== false) {
-        markClean(values);
-      }
-      return result;
-    } finally { setIsSaving(false); }
+      } finally { setIsSaving(false); }
+    } finally {
+      submitInFlightRef.current = false;
+    }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

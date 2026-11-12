@@ -83,3 +83,11 @@
   .product-form-v2__pricing--fractioned > .product-form-v2__field--margin { grid-row: 2; }
   .product-form-v2__pricing--ingredient > .product-form-v2__field--cost { grid-row: auto; }
 }
+
+.product-form-v2__barcode-warning { display: grid; gap: 8px; margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--ui-border-danger, #dc2626); background: var(--ui-bg-muted, #f8fafc); border-radius: 6px; font-size: .86rem; }
+.product-form-v2__barcode-match { padding-top: 7px; border-top: 1px solid var(--ui-border-color, #ddd); }
+.product-form-v2__barcode-match p { margin: 0 0 4px; }
+.product-form-v2__barcode-match small { display: block; color: var(--ui-text-muted, #555); }
+.product-form-v2__barcode-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.product-form-v2__barcode-actions button, .product-form-v2__barcode-actions summary { min-height: 40px; padding: 8px 10px; cursor: pointer; border: 1px solid var(--ui-border-color, #ddd); border-radius: 5px; color: var(--ui-text, inherit); background: var(--ui-bg-surface, #fff); font: inherit; }
+.product-form-v2__barcode-actions details p { margin: 5px 0; }
