@@ -324,8 +324,7 @@ begin
     coalesce(v_layaway_payload->'metadata', '{}'::jsonb) || jsonb_build_object(
       'phase', 'cloud_layaways_server_contract_r1',
       'source_mode', 'cloud_committed',
-      'cash_station_id', p_cash_station_id,
-      'business_timezone', v_business_timezone
+      'cash_station_id', p_cash_station_id
     )
   ) returning * into v_layaway;
 
@@ -520,14 +519,11 @@ begin
   if v_layaway.status <> 'active' or v_layaway.balance_due <= 0.005 then
     raise exception 'LAYAWAY_NOT_PAYABLE' using errcode = 'P0001';
   end if;
-  -- The calendar timezone used when the layaway was created is immutable
-  -- for that layaway. Older rows use the business-confirmed timezone.
-  v_business_timezone := nullif(btrim(v_layaway.metadata->>'business_timezone'), '');
-  if v_business_timezone is null then
-    select bp.timezone into v_business_timezone
-      from public.business_profiles bp
-     where bp.license_id = v_license_id for share;
-  end if;
+  -- Always read the actor-guarded business timezone from its authority;
+  -- historical layaway metadata can contain client-supplied values.
+  select bp.timezone into v_business_timezone
+    from public.business_profiles bp
+   where bp.license_id = v_license_id for share;
   if v_business_timezone is null
      or not exists (select 1 from pg_catalog.pg_timezone_names where name = v_business_timezone) then
     raise exception 'LAYAWAY_BUSINESS_TIMEZONE_REQUIRED' using errcode = 'P0001';
