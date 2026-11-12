@@ -69,7 +69,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
     const rows = result?.rows || [];
     return {
       receipts: rows.filter((r) => r.movementType === 'receipt').length,
-      dispensations: rows.filter((r) => r.movementType === 'dispensation' && r.saleStatus !== 'cancelled').length,
+      dispensations: rows.filter((r) => r.movementType === 'dispensation' && r.saleStatus === 'closed').length,
       other: rows.filter((r) => ['waste', 'return', 'adjustment', 'other'].includes(r.movementType)).length,
       issues: rows.filter((r) => r.traceStatus !== 'complete' || sanitaryIncidences(r).length > 0).length
     };
