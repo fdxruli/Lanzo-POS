@@ -8,7 +8,7 @@ const baseLayaway = (id = 'layaway-1') => ({
   id,
   customerId: 'customer-1',
   customerName: 'Cliente',
-  items: [],
+  items: [{ productId: 'product-1', quantity: 1 }],
   totalAmount: 175,
   deadline: '2026-07-30'
 });
@@ -16,6 +16,8 @@ const baseLayaway = (id = 'layaway-1') => ({
 beforeEach(async () => {
   await openTestTenantRuntime();
   await db.table(STORES.LAYAWAYS).clear();
+  await db.table(STORES.MENU).clear();
+  await db.table(STORES.MENU).put({ id: 'product-1', name: 'Servicio sin inventario', trackStock: false, isActive: true });
   await db.table(STORES.SALES).clear();
   await db.table(STORES.DAILY_STATS).clear();
   await db.table(STORES.CAJAS).clear();

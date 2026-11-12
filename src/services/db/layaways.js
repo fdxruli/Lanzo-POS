@@ -1,7 +1,9 @@
 import { db, STORES } from './dexie';
-import { handleDexieError } from './utils';
+import { handleDexieError, getCommittedStock, normalizeStock } from './utils';
+import { getOperationalStockSnapshot } from '../inventoryStock';
+import { getInventoryQuantityForSale } from '../sales/stockValidation';
+import { isBatchExpiredForSale } from '../../utils/dateUtils';
 import { generateID } from '../utils';
-import { productsRepository } from './products';
 import { SALE_STATUS, buildDailyStatsFromSales } from '../sales/financialStats';
 import { getFinancialQuality } from '../sales/financialPolicy';
 import { Money } from '../../utils/moneyMath';
@@ -72,40 +74,218 @@ const transactionTables = ({ cash = false, stock = false } = {}) => [
     ...(cash ? [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)] : [])
 ];
 
-const reserveStock = async (layawayData) => {
-    const batchDeductions = [];
-    const genericItems = [];
 
-    (layawayData.items || []).forEach((item) => {
-        if (item.batchId) {
-            batchDeductions.push({
-                batchId: item.batchId,
-                quantity: item.quantity,
-                reason: `Apartado para ${layawayData.customerName}`
-            });
-        } else {
-            genericItems.push(item);
+const inventoryError = (code, message) => {
+    const error = new Error(`${code}: ${message}`);
+    error.code = code;
+    return error;
+};
+
+const accountingMode = (layaway) => {
+    if (layaway?.sourceMode === 'cloud_committed' || layaway?.cloudLayaway === true) {
+        throw inventoryError('LAYAWAY_CLOUD_PROJECTION', 'El apartado Cloud solo puede modificarse en el servidor.');
+    }
+    if (layaway?.inventoryAccountingMode === 'reserved_v1'
+        && (layaway?.sourceMode == null || layaway.sourceMode === 'local')) return 'reserved_v1';
+    if (layaway?.inventoryAccountingMode == null
+        && layaway?.reservedInventory == null
+        && (layaway?.sourceMode == null || layaway.sourceMode === 'local')) return 'legacy';
+    throw inventoryError('LAYAWAY_ORIGIN_AMBIGUOUS', 'No se puede determinar el origen contable de este apartado.');
+};
+
+const assertStockSnapshot = (record, name) => {
+    const snapshot = getOperationalStockSnapshot(record);
+    if (!snapshot.valid || snapshot.physicalStock < 0 || snapshot.committedStock > snapshot.physicalStock + 0.00001) {
+        throw inventoryError('LAYAWAY_STOCK_UNKNOWN', `El inventario de ${name} es inconsistente.`);
+    }
+    return snapshot;
+};
+
+const getItemProductId = (item) => {
+    if (item.productId && item.parentId && item.productId !== item.parentId) {
+        throw inventoryError('LAYAWAY_PRODUCT_MISMATCH', 'La variante no corresponde a su producto.');
+    }
+    return item.productId || item.parentId || item.id;
+};
+
+const getItemQuantity = (item, product) => {
+    const requested = Number(item?.quantity);
+    if (!Number.isFinite(requested) || requested <= 0) {
+        throw inventoryError('LAYAWAY_QUANTITY_INVALID', 'La cantidad del apartado debe ser positiva.');
+    }
+    const quantity = normalizeStock(getInventoryQuantityForSale(item, product));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw inventoryError('LAYAWAY_QUANTITY_INVALID', 'La cantidad de inventario no es válida.');
+    }
+    return quantity;
+};
+
+const getProduct = async (productId, { allowInactive = false } = {}) => {
+    const product = productId && await db.table(STORES.MENU).get(productId);
+    if (!product || (!allowInactive && (product.deletedAt || product.isActive === false))) {
+        throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', `Producto inexistente o inactivo: ${productId || 'sin ID'}.`);
+    }
+    if (product.trackStock !== true && product.trackStock !== false) {
+        throw inventoryError('LAYAWAY_TRACKING_UNKNOWN', 'El producto no tiene una configuración de inventario verificable.');
+    }
+    return product;
+};
+
+const syncBatchParent = async (productId, { physical = false } = {}) => {
+    const batches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(productId).toArray();
+    const parent = await db.table(STORES.MENU).get(productId);
+    if (!parent) throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', 'El producto padre ya no existe.');
+    const updates = {
+        committedStock: normalizeStock(batches.reduce((total, batch) => total + getCommittedStock(batch), 0)),
+        updatedAt: nowIso()
+    };
+    if (physical) {
+        updates.stock = normalizeStock(batches.reduce((total, batch) =>
+            total + (batch.isActive !== false && batch.stock > 0 ? normalizeStock(batch.stock) : 0), 0));
+    }
+    await db.table(STORES.MENU).update(productId, updates);
+};
+
+const reserveCommittedStock = async (layawayData) => {
+    if (!layawayData?.customerId || !Array.isArray(layawayData.items) || layawayData.items.length === 0) {
+        throw inventoryError('LAYAWAY_ITEMS_INVALID', 'El apartado requiere cliente y productos.');
+    }
+    const reservations = [];
+    const untrackedLineIndexes = [];
+    const batchParents = new Set();
+
+    for (const [lineIndex, item] of layawayData.items.entries()) {
+        const productId = getItemProductId(item);
+        const product = await getProduct(productId);
+        const quantity = getItemQuantity(item, product);
+        if (item.isVariant && !item.batchId) {
+            throw inventoryError('LAYAWAY_BATCH_REQUIRED', 'La variante debe identificar su lote.');
         }
-    });
+        if (item.batchId && !product.batchManagement?.enabled) {
+            throw inventoryError('LAYAWAY_BATCH_MISMATCH', 'El lote no pertenece a un producto por lotes.');
+        }
+        if (product.trackStock === false) {
+            if (item.batchId) {
+                const batch = await db.table(STORES.PRODUCT_BATCHES).get(item.batchId);
+                if (!batch || batch.productId !== productId) {
+                    throw inventoryError('LAYAWAY_BATCH_MISMATCH', 'El lote no pertenece al producto.');
+                }
+            }
+            untrackedLineIndexes.push(lineIndex);
+            continue;
+        }
 
-    if (batchDeductions.length > 0) {
-        await productsRepository.processBatchDeductions(batchDeductions, {
-            validateStock: true,
-            allowPartial: false,
-            logDetails: true
-        });
+        if (!product.batchManagement?.enabled) {
+            const stock = assertStockSnapshot(product, product.name);
+            if (stock.availableStock + 0.00001 < quantity) {
+                throw inventoryError('LAYAWAY_STOCK_INSUFFICIENT', `Solo hay ${stock.availableStock} libres de ${product.name}.`);
+            }
+            await db.table(STORES.MENU).update(productId, {
+                committedStock: normalizeStock(getCommittedStock(product) + quantity),
+                updatedAt: nowIso()
+            });
+            reservations.push({ lineIndex, productId, quantity });
+            continue;
+        }
+
+        const allBatches = item.batchId
+            ? [await db.table(STORES.PRODUCT_BATCHES).get(item.batchId)]
+            : await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(productId).toArray();
+        if (item.batchId && (!allBatches[0] || allBatches[0].productId !== productId)) {
+            throw inventoryError('LAYAWAY_BATCH_MISMATCH', 'El lote no existe o no pertenece al producto.');
+        }
+        const eligible = allBatches.filter((batch) => batch && batch.productId === productId
+            && batch.isActive !== false && batch.status !== 'inactive'
+            && (product.expirationMode !== 'STRICT' || Boolean(batch.expiryDate))
+            && !isBatchExpiredForSale(batch, product));
+        eligible.sort((left, right) => String(left.expiryDate || '9999').localeCompare(String(right.expiryDate || '9999'))
+            || String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+            || String(left.id).localeCompare(String(right.id)));
+        let pending = quantity;
+        for (const batch of eligible) {
+            const stock = assertStockSnapshot(batch, batch.sku || batch.id);
+            const allocation = normalizeStock(Math.min(pending, stock.availableStock));
+            if (allocation <= 0) continue;
+            await db.table(STORES.PRODUCT_BATCHES).update(batch.id, {
+                committedStock: normalizeStock(getCommittedStock(batch) + allocation),
+                updatedAt: nowIso()
+            });
+            reservations.push({ lineIndex, productId, batchId: batch.id, quantity: allocation });
+            batchParents.add(productId);
+            pending = normalizeStock(pending - allocation);
+            if (pending <= 0) break;
+        }
+        if (pending > 0.00001) {
+            throw inventoryError('LAYAWAY_STOCK_INSUFFICIENT', `No hay suficientes unidades libres de ${product.name} en sus lotes.`);
+        }
+    }
+    for (const productId of batchParents) await syncBatchParent(productId);
+    return { reservations, untrackedLineIndexes };
+};
+
+const applyReservedStock = async (layaway, { deliver = false } = {}) => {
+    if (!Array.isArray(layaway.reservedInventory) || !Array.isArray(layaway.items)
+        || !Array.isArray(layaway.untrackedInventoryLines)) {
+        throw inventoryError('LAYAWAY_RESERVATION_MISSING', 'La reserva no tiene asignación verificable.');
+    }
+    const untracked = new Set(layaway.untrackedInventoryLines);
+    if (untracked.size !== layaway.untrackedInventoryLines.length
+        || [...untracked].some((index) => !Number.isInteger(index) || index < 0 || index >= layaway.items.length)) {
+        throw inventoryError('LAYAWAY_RESERVATION_INVALID', 'La reserva contiene líneas no válidas.');
+    }
+    const expected = new Map();
+    for (const [index, item] of layaway.items.entries()) {
+        const productId = getItemProductId(item);
+        const product = await getProduct(productId, { allowInactive: true });
+        if (!untracked.has(index)) expected.set(index, getItemQuantity(item, product));
+    }
+    const received = new Map();
+    for (const entry of layaway.reservedInventory) {
+        const qty = Number(entry?.quantity);
+        if (!Number.isInteger(entry?.lineIndex) || !expected.has(entry.lineIndex)
+            || !entry.productId || !Number.isFinite(qty) || qty <= 0
+            || normalizeStock(qty) !== qty
+            || getItemProductId(layaway.items[entry.lineIndex]) !== entry.productId) {
+            throw inventoryError('LAYAWAY_RESERVATION_INVALID', 'La reserva persistida no coincide con los productos.');
+        }
+        received.set(entry.lineIndex, normalizeStock((received.get(entry.lineIndex) || 0) + qty));
+    }
+    for (const [index, qty] of expected) {
+        if (Math.abs(qty - (received.get(index) || 0)) > 0.00001) {
+            throw inventoryError('LAYAWAY_RESERVATION_INVALID', 'La reserva no cubre las unidades del apartado.');
+        }
     }
 
-    for (const item of genericItems) {
-        const productId = item.parentId || item.id;
-        const product = await db.table(STORES.MENU).get(productId);
-        if (!product || !product.trackStock) continue;
-        if (product.stock < item.quantity) throw new Error(`Stock insuficiente para: ${product.name}`);
-        await db.table(STORES.MENU).update(productId, {
-            stock: product.stock - item.quantity,
+    const batchParents = new Set();
+    const physicalDeductions = new Map();
+    for (const entry of layaway.reservedInventory) {
+        const table = db.table(entry.batchId ? STORES.PRODUCT_BATCHES : STORES.MENU);
+        const record = await table.get(entry.batchId || entry.productId);
+        if (!record || (entry.batchId && record.productId !== entry.productId)) {
+            throw inventoryError('LAYAWAY_RESERVATION_MISSING', 'El producto o lote reservado ya no existe.');
+        }
+        const qty = entry.quantity;
+        const currentCommitted = getCommittedStock(record);
+        if (currentCommitted + 0.00001 < qty) {
+            throw inventoryError('LAYAWAY_COMMITTED_UNDERFLOW', 'No existe suficiente inventario comprometido para este apartado.');
+        }
+        const physical = assertStockSnapshot(record, entry.batchId || entry.productId).physicalStock;
+        if (deliver && physical + 0.00001 < qty) {
+            throw inventoryError('LAYAWAY_PHYSICAL_UNDERFLOW', 'El inventario físico no alcanza para entregar.');
+        }
+        await table.update(entry.batchId || entry.productId, {
+            committedStock: normalizeStock(currentCommitted - qty),
+            ...(deliver ? { stock: normalizeStock(physical - qty) } : {}),
+            ...(deliver && entry.batchId && physical - qty <= 0 ? { isActive: false } : {}),
             updatedAt: nowIso()
         });
+        if (entry.batchId) batchParents.add(entry.productId);
+        if (deliver) {
+            physicalDeductions.set(entry.productId, normalizeStock((physicalDeductions.get(entry.productId) || 0) + qty));
+        }
     }
+    for (const productId of batchParents) await syncBatchParent(productId, { physical: deliver });
+    return physicalDeductions;
 };
 
 const restoreStock = async (layaway) => {
@@ -114,7 +294,7 @@ const restoreStock = async (layaway) => {
     for (const item of layaway.items || []) {
         if (item.batchId) {
             const batch = await db.table(STORES.PRODUCT_BATCHES).get(item.batchId);
-            if (!batch) continue;
+            if (!batch) throw inventoryError('LAYAWAY_BATCH_MISSING', 'No se puede restaurar el lote histórico inexistente.');
             await db.table(STORES.PRODUCT_BATCHES).update(item.batchId, {
                 stock: batch.stock + item.quantity,
                 isActive: true,
@@ -122,9 +302,12 @@ const restoreStock = async (layaway) => {
             });
             productsToSync.add(batch.productId);
         } else {
-            const productId = item.parentId || item.id;
-            const product = await db.table(STORES.MENU).get(productId);
-            if (product?.trackStock) {
+            const productId = item.parentId || item.productId || item.id;
+            const product = productId && await db.table(STORES.MENU).get(productId);
+            if (!product) {
+                throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', 'No se puede restaurar el producto histórico inexistente.');
+            }
+            if (product.trackStock) {
                 await db.table(STORES.MENU).update(productId, { stock: product.stock + item.quantity });
             }
         }
@@ -144,17 +327,24 @@ const restoreStock = async (layaway) => {
 export const layawayRepository = {
     async create(layawayData, initialPayment = 0, cashSessionId = null, options = {}) {
         try {
+            if (layawayData?.sourceMode === 'cloud_committed' || layawayData?.cloudLayaway === true) {
+                throw inventoryError('LAYAWAY_CLOUD_PROJECTION', 'No se pueden crear reservas Local desde una proyección Cloud.');
+            }
             const cashMovement = options.cashMovement || null;
             if (initialPayment > 0 && !cashMovement) {
                 throw new Error('El anticipo debe registrarse mediante la ruta canonica de Caja.');
             }
 
             return await db.transaction('rw', transactionTables({ cash: Boolean(cashMovement), stock: true }), async (tx) => {
-                await reserveStock(layawayData);
+                const { reservations: reservedInventory, untrackedLineIndexes: untrackedInventoryLines } = await reserveCommittedStock(layawayData);
 
                 const now = nowIso();
                 const newLayaway = {
                     ...layawayData,
+                    sourceMode: 'local',
+                    inventoryAccountingMode: 'reserved_v1',
+                    reservedInventory,
+                    untrackedInventoryLines,
                     status: 'active',
                     paidAmount: initialPayment,
                     createdAt: layawayData.createdAt || now,
@@ -187,6 +377,7 @@ export const layawayRepository = {
                 return { success: true, layaway: newLayaway };
             });
         } catch (error) {
+            if (String(error?.code || '').startsWith('LAYAWAY_')) throw error;
             throw handleDexieError(error, 'Create Layaway');
         }
     },
@@ -314,7 +505,14 @@ export const layawayRepository = {
             assertCurrent();
             if (!layaway) throw new Error('Apartado no encontrado');
             if (layaway.status === 'cancelled') return { success: true, duplicate: true, cashMovementId: layaway.refundCashMovementId };
-            await restoreStock(layaway);
+            if (!['active', 'ready'].includes(layaway.status)) {
+                throw inventoryError('LAYAWAY_STATE_INVALID', 'Solo se pueden cancelar apartados activos o listos.');
+            }
+            if (accountingMode(layaway) === 'reserved_v1') {
+                await applyReservedStock(layaway);
+            } else {
+                await restoreStock(layaway);
+            }
             await tx.table(STORES.LAYAWAYS).update(layawayId, {
                 status: 'cancelled',
                 updatedAt: nowIso(),
@@ -348,7 +546,11 @@ export const layawayRepository = {
                     throw new Error('Solo se pueden cancelar apartados activos o listos para entrega');
                 }
 
+                if (accountingMode(layaway) === 'reserved_v1') {
+                await applyReservedStock(layaway);
+            } else {
                 await restoreStock(layaway);
+            }
                 let cashMovementId = null;
                 if (layaway.paidAmount > 0 && !retainMoney) {
                     const result = await registrarMovimientoCajaEnTransaccion(
@@ -374,19 +576,25 @@ export const layawayRepository = {
                 return { success: true, cashMovementId };
             });
         } catch (error) {
+            if (String(error?.code || '').startsWith('LAYAWAY_')) throw error;
             throw handleDexieError(error, 'Cancel Layaway');
         }
     },
 
     async convertToSale(layawayId, cashierId = 'system') {
-        return db.transaction('rw', [db.table(STORES.LAYAWAYS), db.table(STORES.SALES), db.table(STORES.DAILY_STATS)], async () => {
+        return db.transaction('rw', [db.table(STORES.LAYAWAYS), db.table(STORES.SALES), db.table(STORES.DAILY_STATS),
+            db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.INVENTORY_EVENTS)], async () => {
             const layaway = await db.table(STORES.LAYAWAYS).get(layawayId);
             if (!layaway) throw new Error('Apartado no encontrado');
+            const mode = accountingMode(layaway);
             const existingSale = await db.table(STORES.SALES)
                 .toCollection()
                 .filter((sale) => sale.isLayawayConversion === true && sale.originalLayawayId === layawayId)
                 .first();
             if (existingSale) {
+                if (mode === 'reserved_v1' && layaway.status !== 'completed') {
+                    throw inventoryError('LAYAWAY_RECONCILIATION_REQUIRED', 'La venta existe, pero la reserva no consta como entregada.');
+                }
                 if (layaway.status !== 'completed') {
                     await db.table(STORES.LAYAWAYS).update(layawayId, {
                         status: 'completed',
@@ -402,6 +610,15 @@ export const layawayRepository = {
             if (Number(layaway.totalAmount) - Number(layaway.paidAmount || 0) > 0.05) throw new Error('El apartado debe estar liquidado para entregar.');
 
             const deliveredAt = nowIso();
+            const physicalBefore = new Map();
+            if (mode === 'reserved_v1') {
+                for (const { productId } of layaway.reservedInventory || []) {
+                    if (!physicalBefore.has(productId)) {
+                        physicalBefore.set(productId, (await db.table(STORES.MENU).get(productId))?.stock);
+                    }
+                }
+            }
+            const deducted = mode === 'reserved_v1' ? await applyReservedStock(layaway, { deliver: true }) : new Map();
             const saleRecord = {
                 id: generateID('sal'), timestamp: deliveredAt, customerId: layaway.customerId, customerName: layaway.customerName,
                 items: layaway.items.map((item) => ({ ...item, stockManaged: true })), total: layaway.totalAmount,
@@ -409,6 +626,15 @@ export const layawayRepository = {
                 fulfillmentStatus: 'fulfilled', cashierId, isLayawayConversion: true, originalLayawayId: layaway.id
             };
             await db.table(STORES.SALES).add(saleRecord);
+            for (const [productId, quantity] of deducted) {
+                const product = await db.table(STORES.MENU).get(productId);
+                await db.table(STORES.INVENTORY_EVENTS).add({
+                    id: generateID('evt'), type: 'INVENTORY_DEDUCTION', productId,
+                    delta: -quantity, saleId: saleRecord.id,
+                    previousStock: physicalBefore.get(productId), newStock: product?.stock,
+                    timestamp: deliveredAt, batchManagementEnabled: Boolean(product?.batchManagement?.enabled)
+                });
+            }
             const [saleDayStat] = buildDailyStatsFromSales([saleRecord]);
             if (saleDayStat) {
                 const existingDay = await db.table(STORES.DAILY_STATS).get(saleDayStat.id);
