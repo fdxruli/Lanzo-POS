@@ -77,15 +77,15 @@ vi.mock('../../../services/db/dexie', () => ({
           return ids.map((id) => batches.find((batch) => batch.id === id));
         }),
         where: vi.fn(() => ({
-          equals: vi.fn(() => ({
-            filter: vi.fn(() => ({
-              toArray: vi.fn(async () => (
-                dbState.batchLoadPromise
-                  ? await dbState.batchLoadPromise
-                  : dbState.batches
-              ))
-            }))
-          }))
+          equals: vi.fn(() => {
+            const toArray = vi.fn(async () => (
+              dbState.batchLoadPromise
+                ? await dbState.batchLoadPromise
+                : dbState.batches
+            ));
+            // Support both the previous filtered query and Dexie's direct toArray().
+            return { toArray, filter: vi.fn(() => ({ toArray })) };
+          })
         }))
       };
     })
