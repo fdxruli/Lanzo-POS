@@ -16,6 +16,7 @@ import { collectBatchRestorations, restoreBatchStock } from '../sales/batchResto
 import { searchProductsInTable } from './productSearch';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
+import { findBarcodeConflictsInTable } from './barcodeDuplicates';
 
 const validateInitialBatchForProduct = (batch, product) => {
     if (!batch?.id) {
@@ -111,6 +112,10 @@ export const searchProductsInDB = async (searchTerm, status = 'active') => {
     }
 };
 
+export const findLocalBarcodeConflicts = (barcode, currentId = null) => (
+    findBarcodeConflictsInTable(db.table(STORES.MENU), barcode, currentId)
+);
+
 /**
  * Repositorio especializado en Inventario y Productos.
  * Maneja lógica compleja de lotes, variantes y sincronización de precios.
@@ -150,6 +155,12 @@ export const productsRepository = {
         };
 
         const validatedProduct = validateOrThrow(productSchema, productToCreate, 'Create Product');
+        const barcodeConflicts = await findLocalBarcodeConflicts(validatedProduct.barcode, validatedProduct.id);
+        if (barcodeConflicts.length) {
+          throw new DatabaseError('DUPLICATE_BARCODE',
+            `Este código de barras ya está registrado en "${barcodeConflicts[0].name || 'otro producto'}".`,
+            { productIds: barcodeConflicts.map((product) => product.id) });
+        }
 
         if (
           validatedProduct.trackStock !== false
@@ -1185,12 +1196,7 @@ export const productsRepository = {
      */
     async isBarcodeTaken(barcode, currentId = null) {
         try {
-            const existing = await db.table(STORES.MENU)
-                .where('barcode').equals(barcode)
-                .first();
-
-            if (!existing) return false;
-            return existing.id !== currentId; // True si existe y es de otro producto
+            return (await findLocalBarcodeConflicts(barcode, currentId)).length > 0;
         } catch (error) {
             throw handleDexieError(error, 'Check Barcode');
         }
