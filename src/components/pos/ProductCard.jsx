@@ -13,7 +13,7 @@ import {
 import LazyImage from '../common/LazyImage';
 import { LogoMark } from '../common/Logo';
 import { getProductAlerts } from '../../services/utils';
-import { getAvailableStock } from '../../services/db/utils';
+import { getPosStockState } from '../../services/inventoryStock';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
 import { resolveProductSaleUnitLabel } from '../../utils/productUnitConfiguration';
 import './ProductCardStrictExpiry.css';
@@ -150,6 +150,8 @@ function buildBadgeDescriptors(features, product, suppress, context = {}) {
  */
 function resolveFooterState({
   isOutOfStock,
+  stockKind,
+  committedStock,
   strictExpiryBlocked,
   isNearingExpiry,
   isLowStock,
@@ -158,6 +160,18 @@ function resolveFooterState({
   unit,
   expiryDate,
 }) {
+  if (stockKind === 'unknown') {
+    return { type: 'out-of-stock', Icon: AlertTriangle, label: 'Inventario por verificar', iconAriaLabel: 'Inventario no verificable' };
+  }
+
+  if (stockKind === 'committed') {
+    return {
+      type: 'out-of-stock', Icon: Ban,
+      label: `0 disponibles · ${formatStock(committedStock)} comprometidas`,
+      iconAriaLabel: 'Existencias comprometidas en reservas u otras operaciones'
+    };
+  }
+
   // 1. AGOTADO — mata cualquier otra evaluación
   if (isOutOfStock) {
     return {
@@ -223,6 +237,7 @@ const ProductCard = memo(function ProductCard({
   product,
   features,
   onCardClick,
+  onBlockedClick,
   isLoadingVariant,
   hasAvailableVariants,
   strictExpiryBlocked = false,
@@ -232,9 +247,12 @@ const ProductCard = memo(function ProductCard({
   const isRecipeBased = Array.isArray(product?.recipe) && product.recipe.length > 0;
 
   const alerts = useMemo(() => getProductAlerts(product), [product]);
-  const availableStock = useMemo(() => getAvailableStock(product), [product]);
-
-  const isOutOfStock = isRecipeBased ? false : alerts.isOutOfStock;
+  const stockState = useMemo(() => getPosStockState(product), [product]);
+  const availableStock = stockState.snapshot?.availableStock ?? null;
+  const isOutOfStock = !isRecipeBased && stockState.kind === 'empty';
+  // Un producto con lotes se resuelve por lote; el total del padre no bloquea
+  // la apertura del selector ni autoriza una venta.
+  const blockedByInventory = !isRecipeBased && !product?.batchManagement?.enabled && stockState.blocked;
   const isLowStock = isRecipeBased ? false : alerts.isLowStock;
   const isNearingExpiry = alerts.isNearingExpiry;
 
@@ -284,6 +302,8 @@ const ProductCard = memo(function ProductCard({
   const footerState = useMemo(
     () => resolveFooterState({
       isOutOfStock,
+      stockKind: isRecipeBased ? 'untracked' : stockState.kind,
+      committedStock: stockState.snapshot?.committedStock,
       strictExpiryBlocked,
       isNearingExpiry,
       isLowStock,
@@ -292,29 +312,32 @@ const ProductCard = memo(function ProductCard({
       unit,
       expiryDate,
     }),
-    [isOutOfStock, strictExpiryBlocked, isNearingExpiry, isLowStock, isTracking, availableStock, unit, expiryDate]
+    [isOutOfStock, stockState, isRecipeBased, strictExpiryBlocked, isNearingExpiry, isLowStock, isTracking, availableStock, unit, expiryDate]
   );
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleClick = useCallback(() => {
-    if (!isOutOfStock && !strictExpiryBlocked && !selectionDisabled) onCardClick?.(product);
-  }, [isOutOfStock, strictExpiryBlocked, selectionDisabled, onCardClick, product]);
+    if (selectionDisabled || strictExpiryBlocked) return;
+    if (blockedByInventory) onBlockedClick?.(product);
+    else onCardClick?.(product);
+  }, [blockedByInventory, strictExpiryBlocked, selectionDisabled, onBlockedClick, onCardClick, product]);
 
   const handleKeyDown = useCallback((e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !isOutOfStock && !strictExpiryBlocked && !selectionDisabled) {
-      e.preventDefault();
-      onCardClick?.(product);
-    }
-  }, [isOutOfStock, strictExpiryBlocked, selectionDisabled, onCardClick, product]);
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (selectionDisabled || strictExpiryBlocked) return;
+    e.preventDefault();
+    if (blockedByInventory) onBlockedClick?.(product);
+    else onCardClick?.(product);
+  }, [blockedByInventory, strictExpiryBlocked, selectionDisabled, onBlockedClick, onCardClick, product]);
 
   // ── Clases dinámicas ───────────────────────────────────────────────────────────────────
   const cardClasses = useMemo(() => [
     'product-card',
-    isOutOfStock ? 'product-card--out-of-stock' : '',
+    (isOutOfStock || stockState.kind === 'committed' || stockState.kind === 'unknown') ? 'product-card--out-of-stock' : '',
     strictExpiryBlocked ? 'product-card--strict-expiry-blocked' : '',
     selectionDisabled ? 'product-card--read-only' : '',
     isLoadingVariant ? 'product-card--loading-variant' : '',
-  ].filter(Boolean).join(' '), [isOutOfStock, strictExpiryBlocked, selectionDisabled, isLoadingVariant]);
+  ].filter(Boolean).join(' '), [isOutOfStock, stockState.kind, strictExpiryBlocked, selectionDisabled, isLoadingVariant]);
 
   const footerClasses = useMemo(() => [
     'product-card__footer',
@@ -327,10 +350,10 @@ const ProductCard = memo(function ProductCard({
       className={cardClasses}
       onClick={handleClick}
       role="button"
-      tabIndex={isOutOfStock || strictExpiryBlocked || selectionDisabled ? -1 : 0}
-      aria-disabled={isOutOfStock || strictExpiryBlocked || selectionDisabled}
+      tabIndex={strictExpiryBlocked || selectionDisabled ? -1 : 0}
+      aria-disabled={strictExpiryBlocked || selectionDisabled}
       title={selectionDisabled ? 'Mesa de solo lectura: no se pueden agregar productos.' : undefined}
-      aria-label={`${product?.name || ''} precio ${product?.price || 0}`}
+      aria-label={`${product?.name || ''} precio ${product?.price || 0}. ${stockState.kind === 'committed' ? 'Sin unidades libres: existencias comprometidas, toca para consultar' : stockState.kind === 'unknown' ? 'Inventario por verificar, toca para consultar' : footerState.label}`}
       onKeyDown={handleKeyDown}
     >
       {/* ── ZONA 1: IMAGEN + OVERLAY DE DEGRADADO ── */}
@@ -352,9 +375,9 @@ const ProductCard = memo(function ProductCard({
         )}
 
         {/* Overlay de agotado */}
-        {isOutOfStock && (
+        {(isOutOfStock || stockState.kind === 'committed' || stockState.kind === 'unknown') && (
           <div className="product-card__out-of-stock-overlay">
-            <span>Agotado</span>
+            <span>{stockState.kind === 'committed' ? 'Comprometido' : stockState.kind === 'unknown' ? 'Por verificar' : 'Agotado'}</span>
           </div>
         )}
 
@@ -418,6 +441,7 @@ export default memo(ProductCard, (prevProps, nextProps) => {
   return (
     prevProps.product === nextProps.product &&
     prevProps.onCardClick === nextProps.onCardClick &&
+    prevProps.onBlockedClick === nextProps.onBlockedClick &&
     prevProps.isLoadingVariant === nextProps.isLoadingVariant &&
     prevProps.hasAvailableVariants === nextProps.hasAvailableVariants &&
     prevProps.strictExpiryBlocked === nextProps.strictExpiryBlocked &&

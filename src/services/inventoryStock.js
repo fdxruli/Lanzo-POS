@@ -55,3 +55,36 @@ export const getOperationalStockSnapshot = (record) => {
     availableStock: normalizeStock(physicalStock - committedStock)
   };
 };
+
+// Etiquetas POS basadas en un único snapshot operativo; committedStock puede
+// agrupar apartados, mesas y otras reservas. No se infiere el origen.
+export const getPosStockState = (record, {
+  tracked = record?.trackStock === true || record?.batchManagement?.enabled === true
+} = {}) => {
+  if (!tracked) return { kind: 'untracked', blocked: false, snapshot: null };
+  const snapshot = getOperationalStockSnapshot(record);
+  if (!snapshot.valid || snapshot.physicalStock < 0
+    || snapshot.committedStock > snapshot.physicalStock + 0.00001
+    || snapshot.availableStock < 0) {
+    return { kind: 'unknown', blocked: true, snapshot: null };
+  }
+  if (snapshot.availableStock > 0) {
+    return { kind: 'available', blocked: false, snapshot };
+  }
+  return {
+    kind: snapshot.physicalStock > 0 && snapshot.committedStock > 0 ? 'committed' : 'empty',
+    blocked: true,
+    snapshot
+  };
+};
+
+export const getPosStockBlockMessage = (state, productName = 'Producto') => {
+  if (state?.kind === 'committed') {
+    const { physicalStock, committedStock } = state.snapshot;
+    return `${productName}: producto sin disponibilidad — unidades comprometidas.
+Existencia física: ${physicalStock}. Comprometidas: ${committedStock}. Disponibles: 0.
+Estas unidades pertenecen a reservas vigentes u otras operaciones y no pueden utilizarse en esta venta. Revisa la operación correspondiente para liberarlas.`;
+  }
+  if (state?.kind === 'empty') return `${productName}: agotado físicamente. No quedan unidades disponibles.`;
+  return `${productName}: inventario no verificable. Actualiza el catálogo y comprueba las existencias antes de vender.`;
+};
