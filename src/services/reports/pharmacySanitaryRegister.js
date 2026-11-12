@@ -149,7 +149,8 @@ export const pageSanitaryRows = (rows, f, cursor = null, limit = SANITARY_PAGE_S
     if (!row?.id || !row.occurredAt || row.occurredAt < f.dateFrom || row.occurredAt >= f.dateTo) continue;
     if (f.movementType && row.movementType !== f.movementType) continue;
     if (f.traceStatus && row.traceStatus !== f.traceStatus) continue;
-    if (f.batchId && identity(row.batchId) !== f.batchId) continue;
+    if (f.batchId && identity(row.batchId).toLowerCase() !== f.batchId.toLowerCase()
+        && identity(row.batchNumber).toLowerCase() !== f.batchId.toLowerCase()) continue;
     if (f.search && ![row.productName, row.productId, row.activeSubstance, row.barcode]
       .some((v) => String(v || '').toLowerCase().includes(f.search))) continue;
     if (cursor && (row.occurredAt > cursor.at || (row.occurredAt === cursor.at && row.id >= cursor.id))) continue;
@@ -202,7 +203,7 @@ export const getSanitaryRegisterPage = async ({
 };
 
 export const SANITARY_CSV_HEADERS = [
-  'Fecha UTC', 'Movimiento', 'Trazabilidad', 'ID operación', 'Medicamento',
+  'Fecha UTC', 'Fecha recepción declarada', 'Movimiento', 'Trazabilidad', 'ID operación', 'Medicamento',
   'Origen nombre', 'Sustancia activa histórica', 'Clasificación histórica',
   'Cantidad', 'Unidad', 'Lote ID', 'Lote fabricante', 'Caducidad', 'Fuente caducidad',
   'Comprobante o receta', 'Tipo documento', 'ID receta', 'Venta', 'Línea venta',
@@ -218,7 +219,7 @@ const formulaSafe = (value) => {
 
 export const buildSanitaryCsv = (rows) => {
   const values = rows.map((r) => [
-    r.occurredAt, r.movementType, r.traceStatus, r.operationId || r.id, r.productName,
+    r.occurredAt, r.receiptAt, r.movementType, r.traceStatus, r.operationId || r.id, r.productName,
     r.nameSource, r.activeSubstance, r.classificationAtOperation, r.quantity,
     r.unit, r.batchId, r.batchNumber, r.expiryDate, r.expirySource,
     r.documentReference, r.documentType, r.prescriptionId, r.saleId, r.saleItemId,
