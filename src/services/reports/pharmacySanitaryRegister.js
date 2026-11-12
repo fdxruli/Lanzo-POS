@@ -40,8 +40,7 @@ export const assertSanitaryReader = (expectedIdentity) => {
 };
 
 const statusFromSale = (sale) =>
-  ['cancelled', 'canceled', 'requires_review'].includes(String(sale?.status || '').toLowerCase())
-    ? 'incomplete' : 'complete';
+  String(sale?.status || '').toLowerCase() === 'closed' ? 'complete' : 'incomplete';
 
 const localRows = async (f) => {
   if (!db.isOpen()) await db.open();
