@@ -107,6 +107,19 @@ afterEach(() => {
 });
 
 describe('ScannerModal commercial confirmation guards', () => {
+  it('keeps Product Form V2 in single-scan mode without a POS cart or transfer', async () => {
+    const onScanSuccess = vi.fn();
+    render(<ScannerModal show onClose={close} onScanSuccess={onScanSuccess} />);
+    expect(screen.queryByRole('button', { name: /Agregar .* al POS/ })).toBeNull();
+    expect(screen.queryByText('Productos escaneados')).toBeNull();
+
+    await scanned('7501400800069');
+    expect(onScanSuccess).toHaveBeenCalledWith(expect.objectContaining({ code: '7501400800069' }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(resolveCode).not.toHaveBeenCalled();
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
   it('shows a duplicate once and never adds it, including on repeated reads', async () => {
     render(<ScannerModal show onClose={close} />);
     resolveCode.mockResolvedValue({
@@ -147,6 +160,8 @@ describe('ScannerModal commercial confirmation guards', () => {
     render(<ScannerModal show onClose={close} />);
     await readProduct('A');
     expect(confirmButton()).toBeEnabled();
+    expect(screen.getByText('$10.00')).toBeInTheDocument();
+    expect(screen.getByText(/1 unidad · 1 línea/)).toBeInTheDocument();
 
     const pendingB = deferred();
     resolveCode.mockReturnValueOnce(pendingB.promise);
@@ -164,6 +179,8 @@ describe('ScannerModal commercial confirmation guards', () => {
     expect(screen.getByTestId('scanned-cart')).toHaveTextContent('B: 1');
     await unlockAfterSuccessfulScan();
     expect(confirmButton()).toBeEnabled();
+    expect(screen.getByText('$20.00')).toBeInTheDocument();
+    expect(screen.getByText(/2 unidades · 2 líneas/)).toBeInTheDocument();
 
     await confirm();
     expect(transfer).toHaveBeenCalledTimes(1);
