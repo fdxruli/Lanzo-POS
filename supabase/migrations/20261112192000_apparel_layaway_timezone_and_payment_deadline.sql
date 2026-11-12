@@ -60,7 +60,7 @@ begin
 
   return json_build_object('success', true, 'data', v_data);
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.save_business_profile_secure(license_key_param text, device_fingerprint_param text, security_token_param text, actor_session_token_param text, profile_data jsonb)
@@ -176,7 +176,7 @@ exception
       'error', 'BUSINESS_PROFILE_SAVE_FAILED'
     );
 end;
-$function$
+$function$;
 
 -- No Cloud financial function is altered in this preparatory phase.
 commit;

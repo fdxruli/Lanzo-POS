@@ -158,7 +158,7 @@ const scan = async (code) => {
 
 const confirm = async () => {
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /Confirmar \(/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Agregar \d+ unidad(?:es)? al POS/ }));
     await Promise.resolve();
   });
 };

@@ -244,7 +244,8 @@ function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onI
               <option key={zone} value={zone} />)}
           </datalist>
           <small id={`${fieldId}-timezone-help`} className="form-help-text">
-            Confirma la zona IANA del negocio; controla cuándo vencen los apartados, incluso en PRO.
+            {timezone ? 'Zona IANA del negocio. La protección Cloud de vencimientos se activará por separado.'
+              : 'Sin configurar. Los apartados conservan temporalmente sus reglas anteriores.'}
           </small>
           {!timezone && detectedZone.includes('/') && (
             <button type="button" className="btn btn-cancel" onClick={() =>
@@ -450,6 +451,10 @@ function GeneralSettingsContent() {
       actorHandle = captureSettingsAction('settings_data');
       actorHandle.assertCurrent();
       const businessTimezone = profileState.timezone.trim();
+      if (!businessTimezone && companyProfile?.timezone) {
+        showMessageModal('No se puede quitar una zona horaria confirmada desde este formulario.', null, { type: 'warning' });
+        return;
+      }
       if (businessTimezone && !isValidBusinessTimezone(businessTimezone)) {
         showMessageModal('La zona horaria no es válida. Usa un identificador IANA como America/Merida.', null, { type: 'warning' });
         return;
@@ -465,13 +470,17 @@ function GeneralSettingsContent() {
         updates.logoUploadSource = profileState.pendingLogoUploadSource;
       }
 
-      await updateCompanyProfile({
+      const savedProfile = await updateCompanyProfile({
         ...companyProfile,
         id: 'company',
         business_type: companyProfile?.business_type || [],
         ...updates
       });
       actorHandle.assertCurrent();
+      if (!savedProfile || (companyProfile?.license_key && savedProfile.license_key !== companyProfile.license_key)) return;
+      if (businessTimezone && savedProfile.timezone !== businessTimezone) {
+        throw new Error('No se confirmó la zona horaria guardada.');
+      }
       dispatchProfile({ type: 'saved' });
       showMessageModal('Datos actualizados correctamente. Los campos nuevos se han bloqueado.');
     } catch (error) {
@@ -485,7 +494,7 @@ function GeneralSettingsContent() {
       const imagePrivacyError = error?.code === 'IMAGE_PROCESSING_FAILED'
         || error?.code === 'IMAGE_PRIVACY_UNSUPPORTED';
       showMessageModal(
-        imagePrivacyError ? error.message : 'Error al guardar.',
+        error?.message || (imagePrivacyError ? 'No se pudo procesar el logotipo.' : 'Error al guardar.'),
         null,
         { type: 'error' }
       );

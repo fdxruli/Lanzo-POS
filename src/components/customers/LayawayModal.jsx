@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
 import { useAppStore } from '../../store/useAppStore';
-import { isLayawayDeadlineOverdue, assertLayawayPaymentAllowed } from '../../utils/layawayCalendar';
+import { isLayawayOverdueForDisplay, assertLayawayPaymentAllowed, isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
 import { reportsRepository } from '../../services/reports/reportsRepository';
 import { useCaja } from '../../hooks/useCaja';
@@ -72,7 +72,11 @@ export default function LayawayModal({
     const [activePaymentId, setActivePaymentId] = useState(null); // ID del apartado que se está abonando
 
     const { cajaActual } = useCaja();
-    const companyTimezone = useAppStore((state) => state.companyProfile?.timezone || null);
+    const companyTimezone = useAppStore((state) => (
+        state.companyProfile?.license_key && state.licenseDetails?.license_key
+            && state.companyProfile.license_key !== state.licenseDetails.license_key
+            ? null : state.companyProfile?.timezone || null
+    ));
     const actorRuntime = useActorRuntimeSnapshot();
     const salesHistoryScope = getSalesFinalHistoryScope(actorRuntime);
     const loadVersionRef = useRef(0);
@@ -140,11 +144,14 @@ export default function LayawayModal({
             showMessageModal('Este apartado ya es histórico y no acepta más abonos.', null, { type: 'warning' });
             return;
         }
-        try {
-            assertLayawayPaymentAllowed(layaway, companyTimezone);
-        } catch (error) {
-            showMessageModal(error.message, null, { type: 'warning' });
-            return;
+        // Cloud financial authority is unchanged until Stage 3B is installed.
+        if (isValidBusinessTimezone(companyTimezone)) {
+            try {
+                assertLayawayPaymentAllowed(layaway, companyTimezone);
+            } catch (error) {
+                showMessageModal(error.message, null, { type: 'warning' });
+                return;
+            }
         }
         if (!cajaActual || cajaActual.estado !== 'abierta') {
             showMessageModal('⚠️ Necesitas una caja abierta para recibir dinero.');
@@ -217,7 +224,7 @@ export default function LayawayModal({
 
     if (!show || !customer) return null;
 
-    const checkIsOverdue = (deadline) => isLayawayDeadlineOverdue(deadline, companyTimezone) === true;
+    const checkIsOverdue = (deadline) => isLayawayOverdueForDisplay(deadline, companyTimezone);
 
     const handleCancel = async (layaway) => {
     if (!isActionableLayaway(layaway)) {
@@ -369,9 +376,7 @@ export default function LayawayModal({
                                 const progress = Math.min((layaway.paidAmount / layaway.totalAmount) * 100, 100);
                                 // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
                                 const isReady = !isHistorical && (pending <= 0.01 || status === 'ready');
-                                const dueState = isHistorical ? false : isLayawayDeadlineOverdue(layaway.deadline, companyTimezone);
-                                const isOverdue = dueState === true;
-                                const timezoneUnknown = dueState === null;
+                                const isOverdue = !isHistorical && checkIsOverdue(layaway.deadline);
                                 const isPayingThis = activePaymentId === layaway.id;
                                 const paymentInputId = `customer-layaway-payment-${layaway.id}`;
                                 const completionFolio = historicalFolios[layaway.id] || null;
@@ -396,12 +401,6 @@ export default function LayawayModal({
 </div>
 
                                         {/* Banner de alerta para apartados vencidos */}
-                                        {timezoneUnknown && !isReady && (
-                                            <div className="customer-layaway-card__overdue-alert" role="status">
-                                                <AlertTriangle size={18} aria-hidden="true" />
-                                                <span>Confirma la zona horaria del negocio en Configuración para habilitar abonos.</span>
-                                            </div>
-                                        )}
                                         {isOverdue && !isReady && (
                                             <div className="customer-layaway-card__overdue-alert">
                                                 <AlertTriangle
@@ -506,9 +505,9 @@ export default function LayawayModal({
             setActivePaymentId(layaway.id);
             setPaymentAmount('');
         }}
-        disabled={dueState !== false}
+        disabled={isOverdue}
     >
-        <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos bloqueados (vencido)' : timezoneUnknown ? 'Zona horaria por confirmar' : 'Registrar nuevo abono'}
+        <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos bloqueados (vencido)' : 'Registrar nuevo abono'}
     </button>
 )}
 
@@ -539,7 +538,7 @@ export default function LayawayModal({
                                                             className="ui-button ui-button--primary customer-layaway-payment__action"
                                                             type="button"
                                                             onClick={() => handleAddPayment(layaway)}
-                                                            disabled={processingId === layaway.id || dueState !== false}
+                                                            disabled={processingId === layaway.id || isOverdue}
                                                         >
                                                             <CheckCircle size={18} aria-hidden="true" /> Confirmar
                                                         </button>

@@ -4,10 +4,9 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ loadData: vi.fn(), saveDataSafe: vi.fn(), showMessageModal: vi.fn() }));
-// Stage 3 requires a confirmed business timezone before allowing a layaway.
+const mocks = vi.hoisted(() => ({ loadData: vi.fn(), saveDataSafe: vi.fn(), showMessageModal: vi.fn(), timezone: 'America/Merida' }));
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ companyProfile: { timezone: 'America/Merida' } })
+  useAppStore: (selector) => selector({ companyProfile: { timezone: mocks.timezone } })
 }));
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => mocks.loadData(...args),
@@ -22,7 +21,7 @@ vi.mock('../../../hooks/useDismissibleHistoryLayer', () => ({ useDismissibleHist
 
 import LayawayModal from '../LayawayModal';
 
-beforeEach(() => { mocks.loadData.mockResolvedValue([]); mocks.saveDataSafe.mockResolvedValue({ success: true }); });
+beforeEach(() => { mocks.timezone = 'America/Merida'; mocks.loadData.mockResolvedValue([]); mocks.saveDataSafe.mockResolvedValue({ success: true }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('LayawayModal shared QuickAdd compatibility', () => {
@@ -47,6 +46,18 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
     expect(deadline).toHaveValue(originalDeadline);
     await user.click(screen.getByRole('button', { name: 'CONFIRMAR APARTADO' }));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ initialPayment: 50, deadline: originalDeadline, expectedCashSessionId: 'cash-open', customer: expect.objectContaining({ id: 'cust-layaway', creditLimit: 0 }) }));
+    expect(mocks.showMessageModal).not.toHaveBeenCalled();
+  });
+
+  it('allows the previous POS create flow without a configured business timezone', async () => {
+    mocks.timezone = null;
+    const onConfirm = vi.fn();
+    const { container } = render(<LayawayModal show onClose={vi.fn()} onConfirm={onConfirm} total={250}
+      customer={{ id: 'legacy-customer', name: 'Legacy', creditLimit: 0, debt: 0 }} />);
+    const deadline = container.querySelector('input[type="date"]');
+    expect(deadline.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'CONFIRMAR APARTADO' }));
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ deadline: deadline.value }));
     expect(mocks.showMessageModal).not.toHaveBeenCalled();
   });
 

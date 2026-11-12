@@ -185,6 +185,22 @@ describe('layaway cash consistency in Free', () => {
     expect((await db.table(STORES.LAYAWAYS).get('late')).paidAmount).toBe(0);
   });
 
+  it('allows legacy Free creation and a valid Cash installment with timezone unset', async () => {
+    useAppStore.setState({ companyProfile: { timezone: null } });
+    await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
+    const created = await layawayRepository.create({ ...baseLayaway('without-zone'), deadline: '2020-01-01' });
+    expect(created.success).toBe(true);
+    const payment = await layawayRepository.addPaymentWithCash('without-zone',
+      { id: 'legacy-pay', amount: 25 }, 'cash-1', { idempotencyKey: 'layaway:without-zone:payment:legacy-pay' });
+    expect(payment.success).toBe(true);
+    expect((await db.table(STORES.LAYAWAYS).get('without-zone')).paidAmount).toBe(25);
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(1);
+    const duplicate = await layawayRepository.addPaymentWithCash('without-zone',
+      { id: 'legacy-pay', amount: 25 }, 'cash-1', { idempotencyKey: 'layaway:without-zone:payment:legacy-pay' });
+    expect(duplicate.duplicate).toBe(true);
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(1);
+  });
+
   it('rejects an installment on a cancelled layaway even if an old form remained open', async () => {
     await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
     await db.table(STORES.LAYAWAYS).put({ ...baseLayaway('cancelled'), status: 'cancelled', paidAmount: 0, payments: [] });

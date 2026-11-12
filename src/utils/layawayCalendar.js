@@ -55,9 +55,9 @@ export const assertLayawayPaymentAllowed = (layaway, timezone, now = new Date())
     throw error;
   }
   const overdue = isLayawayDeadlineOverdue(layaway?.deadline, timezone, now);
-  if (overdue === null) {
-    const error = new Error('Confirma la zona horaria del negocio en Configuración antes de registrar abonos.');
-    error.code = 'LAYAWAY_BUSINESS_TIMEZONE_REQUIRED';
+  if (overdue === null && isValidBusinessTimezone(timezone)) {
+    const error = new Error('La fecha límite del apartado no es válida.');
+    error.code = 'LAYAWAY_DEADLINE_INVALID';
     throw error;
   }
   if (overdue) {
@@ -65,4 +65,15 @@ export const assertLayawayPaymentAllowed = (layaway, timezone, now = new Date())
     error.code = 'LAYAWAY_OVERDUE';
     throw error;
   }
+};
+
+// Legacy UI behavior while the business has not confirmed a timezone.
+// Never use the device calendar as authoritative Cloud validation.
+export const isLayawayOverdueForDisplay = (deadline, timezone, now = new Date()) => {
+  if (isValidBusinessTimezone(timezone)) return isLayawayDeadlineOverdue(deadline, timezone, now) === true;
+  const due = getLayawayCalendarDate(deadline);
+  if (!due || !(now instanceof Date) || !Number.isFinite(now.getTime())) return false;
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0')].join('-');
+  return today > due;
 };

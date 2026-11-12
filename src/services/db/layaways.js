@@ -1,6 +1,6 @@
 import { db, STORES } from './dexie';
 import { useAppStore } from '../../store/useAppStore';
-import { assertLayawayPaymentAllowed, getLayawayCalendarDate, isLayawayDeadlineOverdue } from '../../utils/layawayCalendar';
+import { assertLayawayPaymentAllowed, getLayawayCalendarDate, isLayawayDeadlineOverdue, isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import { handleDexieError, getCommittedStock, normalizeStock } from './utils';
 import { getOperationalStockSnapshot } from '../inventoryStock';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
@@ -19,9 +19,12 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
-const getBusinessTimezoneForLayaway = () => (
-    useAppStore.getState().companyProfile?.timezone || null
-);
+const getBusinessTimezoneForLayaway = () => {
+    const state = useAppStore.getState();
+    if (state.companyProfile?.license_key && state.licenseDetails?.license_key
+        && state.companyProfile.license_key !== state.licenseDetails.license_key) return null;
+    return state.companyProfile?.timezone || null;
+};
 
 const assertLocalLayawayPayable = (layaway) =>
     assertLayawayPaymentAllowed(layaway, getBusinessTimezoneForLayaway(layaway));
@@ -345,14 +348,16 @@ export const layawayRepository = {
             }
 
             const businessTimezone = getBusinessTimezoneForLayaway();
-            const dueDate = getLayawayCalendarDate(layawayData.deadline);
-            const overdue = isLayawayDeadlineOverdue(layawayData.deadline, businessTimezone);
-            if (!dueDate || overdue === null) {
-                throw inventoryError('LAYAWAY_BUSINESS_TIMEZONE_REQUIRED', 'Confirma la zona horaria del negocio y una fecha límite válida.');
+            if (isValidBusinessTimezone(businessTimezone)) {
+                const dueDate = getLayawayCalendarDate(layawayData.deadline);
+                if (!dueDate) {
+                    throw inventoryError('LAYAWAY_DEADLINE_INVALID', 'Selecciona una fecha límite válida.');
+                }
+                if (isLayawayDeadlineOverdue(layawayData.deadline, businessTimezone)) {
+                    throw inventoryError('LAYAWAY_DEADLINE_IN_PAST', 'La fecha límite debe ser hoy o posterior.');
+                }
             }
-            if (overdue) {
-                throw inventoryError('LAYAWAY_DEADLINE_IN_PAST', 'La fecha límite debe ser hoy o posterior.');
-            }
+            // Before a timezone is confirmed, retain the existing Local creation contract.
             return await db.transaction('rw', transactionTables({ cash: Boolean(cashMovement), stock: true }), async (tx) => {
                 const { reservations: reservedInventory, untrackedLineIndexes: untrackedInventoryLines } = await reserveCommittedStock(layawayData);
 

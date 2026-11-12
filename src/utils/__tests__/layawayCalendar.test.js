@@ -5,6 +5,7 @@ import {
   getBusinessCalendarDate,
   getLayawayCalendarDate,
   isLayawayDeadlineOverdue,
+  isLayawayOverdueForDisplay,
   isValidBusinessTimezone
 } from '../layawayCalendar';
 
@@ -25,10 +26,12 @@ describe('Apartados: calendario del negocio, sin UTC ni teléfono', () => {
     expect(addBusinessCalendarDays('2026-11-12', 30)).toBe('2026-12-12');
   });
 
-  it('permite el último día, bloquea vencido o terminal y falla cerrado sin zona', () => {
+  it('permite el último día y bloquea vencido o terminal con zona confirmada', () => {
     expect(() => assertLayawayPaymentAllowed(sample, 'America/Merida', new Date('2026-11-16T05:59:00Z'))).not.toThrow();
     expect(() => assertLayawayPaymentAllowed(sample, 'America/Merida', new Date('2026-11-16T06:01:00Z'))).toThrow(/vencido/);
-    expect(() => assertLayawayPaymentAllowed(sample, null)).toThrow(/zona horaria/);
+    expect(() => assertLayawayPaymentAllowed(sample, null)).not.toThrow();
+    expect(() => assertLayawayPaymentAllowed({ ...sample, deadline: '2026-02-30' }, 'America/Merida'))
+      .toThrow(/fecha límite/);
     expect(() => assertLayawayPaymentAllowed({ ...sample, status: 'cancelled' }, 'America/Merida')).toThrow(/no admite/);
     expect(() => assertLayawayPaymentAllowed({ ...sample, status: 'ready', paidAmount: 1000 }, 'America/Merida')).toThrow(/no admite/);
   });
@@ -36,6 +39,13 @@ describe('Apartados: calendario del negocio, sin UTC ni teléfono', () => {
   it('ningún huso se infiere silenciosamente', () => {
     expect(isValidBusinessTimezone('')).toBe(false);
     expect(isValidBusinessTimezone('America/Fake_City')).toBe(false);
+    expect(isLayawayDeadlineOverdue('2026-11-15', null)).toBeNull();
+  });
+  it('sin zona mantiene la comparación local de presentación anterior, no una autoridad Cloud', () => {
+    const localNoon = new Date(2026, 10, 16, 12);
+    expect(isLayawayOverdueForDisplay('2026-11-15', null, localNoon)).toBe(true);
+    expect(isLayawayOverdueForDisplay('2026-11-16', null, localNoon)).toBe(false);
+    expect(isLayawayOverdueForDisplay('2026-11-15', 'America/Merida', new Date('2026-11-16T05:59:00Z'))).toBe(false);
     expect(isLayawayDeadlineOverdue('2026-11-15', null)).toBeNull();
   });
 });

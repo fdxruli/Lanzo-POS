@@ -1397,3 +1397,420 @@
     min-width: 0;
   }
 }
+
+
+/* Scanner UI redesign: one scroll region and a persistent POS action area.
+   Keep CameraViewport geometry and fit-mode ownership unchanged. */
+#scanner-modal .scanner-modal-content {
+  color: var(--text-color, #222);
+}
+
+#scanner-modal .scanner-modal-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 12px 6px 16px;
+  background: var(--card-background-color, #fff);
+  border-bottom: 1px solid var(--border-color, #ddd);
+}
+
+#scanner-modal .scanner-modal-header .modal-title {
+  display: block;
+  margin: 0;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+  font-weight: 700;
+  color: var(--text-color, #222);
+}
+
+#scanner-modal .scanner-close-btn {
+  position: static;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-color, #ddd);
+  background: var(--light-background, #f3f4f6);
+  color: var(--text-color, #222);
+  border-radius: 12px;
+}
+#scanner-modal .scanner-close-btn svg { color: currentColor; }
+#scanner-modal .scanner-close-btn:focus-visible,
+#scanner-modal .scanner-issues-toggle:focus-visible,
+#scanner-modal .btn-clear-errors:focus-visible,
+#scanner-modal .scanner-qty-btn:focus-visible,
+#scanner-modal .scanner-confirm-btn:focus-visible,
+#scanner-modal .scanned-item-name:focus-visible {
+  outline: 3px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+#scanner-modal .scanner-main-container { min-height: 0; overflow: hidden; }
+#scanner-modal .pos-scan-mode .scanner-camera-panel {
+  height: clamp(160px, 30dvh, 300px);
+  min-height: 150px;
+  flex: 0 0 clamp(160px, 30dvh, 300px);
+}
+#scanner-modal .scanner-torch-btn {
+  left: auto;
+  right: 12px;
+  top: 12px;
+}
+
+#scanner-modal .scanner-pos-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--card-background-color, #fff);
+}
+#scanner-modal .scanner-results-container {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}
+#scanner-modal .scanner-results-heading {
+  flex: 0 0 auto;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border-color, #ddd);
+}
+#scanner-modal .scanner-results-container .subtitle {
+  margin: 0;
+  color: var(--text-color, #222);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+#scanner-modal .scanner-results-count {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-light, #666);
+}
+#scanner-modal .scanner-scrolling-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px 12px;
+}
+#scanner-modal .scanned-items-list {
+  display: block;
+  flex: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+}
+#scanner-modal .scanned-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(62px, 23%);
+  align-items: center;
+  column-gap: 6px;
+  padding: 7px 4px;
+  min-height: 58px;
+  border-bottom: 1px solid var(--border-color, #ddd);
+}
+#scanner-modal .scanned-item-description {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+#scanner-modal .scanned-item-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+#scanner-modal .scanned-item-unit-price {
+  color: var(--text-light, #666);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+#scanner-modal .scanned-item-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px;
+  border-radius: 12px;
+  background: var(--card-background-color, #fff);
+}
+#scanner-modal .scanner-qty-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+}
+#scanner-modal .scanner-qty-value {
+  flex: 0 0 auto;
+  min-width: 24px;
+  padding: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#scanner-modal .scanned-item-price {
+  justify-self: end;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+#scanner-modal .empty-cart-message { min-height: 120px; height: auto; padding: 14px; }
+
+#scanner-modal .scanner-issues {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 10px;
+  background: var(--light-background, #f7f7f7);
+  color: var(--text-color, #222);
+}
+#scanner-modal .scanner-issues-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#scanner-modal .scanner-issues-indicator {
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ui-action-warning-bg, #fef3c7);
+  color: var(--ui-action-warning-text, #78350f);
+  font-weight: 800;
+}
+#scanner-modal .scanner-issues-count { flex: 1 1 auto; min-width: 0; font-size: 0.8rem; font-weight: 650; }
+#scanner-modal .scanner-issues-toggle {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
+  text-decoration: underline;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+#scanner-modal .unknown-codes-list {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-height: none;
+  overflow: visible;
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+#scanner-modal .unknown-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px;
+  min-width: 0;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  background: var(--card-background-color, #fff);
+  color: var(--text-color, #222);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+#scanner-modal .unknown-badge p { margin: 0; }
+#scanner-modal .scanner-issue-title { font-size: 0.85rem; }
+#scanner-modal .scanner-issue-code { color: var(--text-light, #666); word-break: break-all; }
+#scanner-modal .scanner-issue-action { font-weight: 600; }
+#scanner-modal .btn-clear-errors {
+  min-height: 44px;
+  padding: 7px 10px;
+  border-color: var(--border-color, #ddd);
+  color: var(--text-color, #222);
+  font-size: 0.8rem;
+}
+#scanner-modal .scanner-transfer-uncertain {
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+  padding: 10px;
+  border: 1px solid var(--error-color, #dc3545);
+  border-radius: 8px;
+  color: var(--text-color, #222);
+  background: var(--light-background, #fff4f4);
+  font-size: 0.8rem;
+}
+
+#scanner-modal .scanner-actions {
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--border-color, #ddd);
+  background: var(--card-background-color, #fff);
+}
+#scanner-modal .scanner-total-container {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#scanner-modal .scanner-total-label { font-size: 0.85rem; }
+#scanner-modal .scanner-total-amount {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#scanner-modal .scanner-actions .scanner-confirm-btn {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  border-radius: 10px;
+  box-shadow: none;
+}
+#scanner-modal .scanner-action-hint {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--text-light, #666);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-align: center;
+}
+#scanner-modal .scan-toast {
+  bottom: 10px;
+  min-width: 0;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  border-radius: 10px;
+}
+#scanner-modal .scan-toast-message {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+#scanner-modal .scan-toast-success {
+  background: var(--ui-action-success-bg, #dcfce7);
+  color: var(--ui-action-success-text, #14532d);
+}
+#scanner-modal .scan-toast-info {
+  background: var(--ui-action-info-bg, #dbeafe);
+  color: var(--ui-action-info-text, #1e3a8a);
+}
+#scanner-modal .scan-toast-warning {
+  background: var(--ui-action-warning-bg, #fef3c7);
+  color: var(--ui-action-warning-text, #78350f);
+}
+#scanner-modal .scan-toast-error {
+  background: var(--ui-action-danger-bg, #fee2e2);
+  color: var(--ui-action-danger-text, #7f1d1d);
+}
+
+/* Product Form V2 uses the same component without the POS results or footer. */
+#scanner-modal .simple-scan-mode .scanner-camera-panel {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+@media (min-width: 768px) {
+  #scanner-modal .scanner-modal-content {
+    width: min(100%, 1050px);
+    height: min(720px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
+    padding: 0;
+  }
+  #scanner-modal .scanner-modal-header { padding: 8px 16px 8px 20px; }
+  #scanner-modal .scanner-main-container { flex-direction: row; gap: 0; }
+  #scanner-modal .pos-scan-mode .scanner-camera-panel {
+    width: 52%;
+    height: auto;
+    min-height: 0;
+    flex: 1 1 52%;
+    padding: 16px;
+    background: var(--light-background, #f5f5f5);
+  }
+  #scanner-modal .pos-scan-mode .scanner-video-container {
+    height: 100%;
+    flex: 1 1 auto;
+    border-radius: 12px;
+  }
+  #scanner-modal .scanner-pos-panel {
+    flex: 1 1 48%;
+    width: 48%;
+    height: 100%;
+    border-left: 1px solid var(--border-color, #ddd);
+  }
+  #scanner-modal .simple-scan-mode { height: min(520px, calc(100dvh - 48px)); }
+  #scanner-modal .simple-scan-mode .scanner-main-container { flex-direction: column; }
+  #scanner-modal .simple-scan-mode .scanner-camera-panel {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 16px;
+  }
+  #scanner-modal .simple-scan-mode .scanner-video-container { height: 100%; }
+}
+@media (max-height: 560px) and (max-width: 767px) {
+  #scanner-modal .scanner-modal-header { min-height: 48px; padding-block: 2px; }
+  #scanner-modal .pos-scan-mode .scanner-camera-panel {
+    height: max(126px, 27dvh);
+    min-height: 126px;
+    flex-basis: max(126px, 27dvh);
+  }
+  #scanner-modal .scanner-actions { gap: 4px; padding-block: 6px; }
+  #scanner-modal .scanner-action-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #scanner-modal .scan-toast { animation: none; opacity: 1; transform: translateX(-50%); }
+  #scanner-modal .scanner-confirm-btn,
+  #scanner-modal .scanner-issues-toggle { transition: none; }
+}
+
+/* Only the last-unit removal uses destructive coloring. */
+#scanner-modal .scanner-qty-btn--action .scanner-action-icon,
+#scanner-modal .scanner-qty-btn--action:hover:not(:disabled) .scanner-action-icon {
+  color: currentColor;
+}
+#scanner-modal .scanner-qty-btn--delete .scanner-action-icon,
+#scanner-modal .scanner-qty-btn--delete:hover:not(:disabled) .scanner-action-icon {
+  color: var(--error-color, #dc3545);
+}
