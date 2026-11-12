@@ -71,7 +71,8 @@ const localRows = async (f) => {
       movementType: 'receipt',
       productId: identity(event.productId), productName: product?.name || 'Medicamento no disponible',
       nameSource: 'current_catalog', activeSubstance: null, classificationAtOperation: null,
-      barcode: product?.barcode || null, quantity: Number(event.delta), unit: null, batchId: event.batchId || null,
+      barcode: product?.barcode || null, searchHints: product?.activeSubstance || null,
+      quantity: Number(event.delta), unit: null, batchId: event.batchId || null,
       batchNumber: event.manufacturerBatchId || null, expiryDate: event.expiryDate || null,
       expirySource: 'receipt_event', documentReference: receipt.documentReference || null,
       documentType: receipt.documentType || null, supplier: receipt.supplier || event.supplier || null,
@@ -95,7 +96,9 @@ const localRows = async (f) => {
         movementType: 'dispensation', productId: identity(item.parentId || item.productId || item.id),
         productName: item.name || item.productName || 'Medicamento',
         nameSource: 'sale_snapshot', activeSubstance: null, classificationAtOperation: null,
-        barcode: item.barcode || null, quantity: Number(item.quantity), unit: null, batchId: batch,
+        barcode: item.barcode || null, searchHints: item.activeSubstance ||
+          catalog.get(identity(item.parentId || item.productId || item.id))?.activeSubstance || null,
+        quantity: Number(item.quantity), unit: null, batchId: batch,
         batchNumber: item.batchSku || null, expiryDate: item.batchExpiryDate || null,
         expirySource: item.batchExpiryDate ? 'sale_snapshot' : null,
         documentReference: rx.reference || null, documentType: 'prescription',
@@ -117,6 +120,7 @@ const localRows = async (f) => {
       productName: log.productName || catalog.get(identity(log.productId))?.name || 'Medicamento',
       nameSource: log.productName ? 'waste_snapshot' : 'current_catalog',
       activeSubstance: null, classificationAtOperation: null,
+      searchHints: catalog.get(identity(log.productId))?.activeSubstance || null,
       quantity: Number(log.quantity), unit: log.unit || null,
       batchId: log.batchId || null, batchNumber: log.batchSku || null,
       expiryDate: null, documentReference: null, documentType: null, actor: null,
@@ -150,7 +154,7 @@ export const pageSanitaryRows = (rows, f, cursor = null, limit = SANITARY_PAGE_S
     if (f.traceStatus && row.traceStatus !== f.traceStatus) continue;
     if (f.batchId && identity(row.batchId).toLowerCase() !== f.batchId.toLowerCase()
         && identity(row.batchNumber).toLowerCase() !== f.batchId.toLowerCase()) continue;
-    if (f.search && ![row.productName, row.productId, row.activeSubstance, row.barcode]
+    if (f.search && ![row.productName, row.productId, row.activeSubstance, row.barcode, row.searchHints]
       .some((v) => String(v || '').toLowerCase().includes(f.search))) continue;
     if (cursor && (row.occurredAt > cursor.at || (row.occurredAt === cursor.at && row.id >= cursor.id))) continue;
     unique.set(row.id, row);
