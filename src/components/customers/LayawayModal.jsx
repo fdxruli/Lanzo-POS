@@ -45,8 +45,6 @@ const getCalendarDateParts = (value) => {
         : null;
 };
 
-const calendarDateKey = (parts) => parts && (parts.year * 10000 + parts.month * 100 + parts.day);
-
 const formatCalendarDate = (value) => {
     const parts = getCalendarDateParts(value);
     if (!parts) return 'Fecha inválida';
