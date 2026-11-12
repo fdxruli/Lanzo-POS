@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db, STORES } from '../dexie';
 import { layawayRepository } from '../layaways';
+import { useAppStore } from '../../../store/useAppStore';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 const baseLayaway = (id = 'layaway-1') => ({
@@ -10,10 +11,11 @@ const baseLayaway = (id = 'layaway-1') => ({
   customerName: 'Cliente',
   items: [{ productId: 'product-1', quantity: 1 }],
   totalAmount: 175,
-  deadline: '2026-07-30'
+  deadline: '2030-07-30'
 });
 
 beforeEach(async () => {
+  useAppStore.setState({ companyProfile: { timezone: 'America/Merida' } });
   await openTestTenantRuntime();
   await db.table(STORES.LAYAWAYS).clear();
   await db.table(STORES.MENU).clear();
@@ -23,7 +25,10 @@ beforeEach(async () => {
   await db.table(STORES.CAJAS).clear();
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
 });
-afterEach(() => closeTestTenantRuntime());
+afterEach(async () => {
+  await closeTestTenantRuntime();
+  useAppStore.setState({ companyProfile: null });
+});
 
 describe('layaway cash consistency in Free', () => {
   it('fails closed at every refund repository boundary without actor evidence', async () => {
@@ -168,6 +173,24 @@ describe('layaway cash consistency in Free', () => {
     expect(refunds).toHaveLength(1);
     expect(refunds[0]).toMatchObject({ monto: '75', cash_session_id: 'cash-1', refundId: 'refund-1' });
     expect(cash.salidas_efectivo).toBe('75');
+  });
+
+  it('rejects an expired installment inside the same transaction without changing Cash', async () => {
+    await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
+    await db.table(STORES.LAYAWAYS).put({ ...baseLayaway('late'), status: 'active', paidAmount: 0,
+      deadline: '2020-01-01', businessTimezone: 'America/Merida', payments: [] });
+    await expect(layawayRepository.addPaymentWithCash('late', { id: 'late-pay', amount: 25 }, 'cash-1',
+      { idempotencyKey: 'layaway:late:payment:late-pay' })).rejects.toMatchObject({ code: 'LAYAWAY_OVERDUE' });
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+    expect((await db.table(STORES.LAYAWAYS).get('late')).paidAmount).toBe(0);
+  });
+
+  it('rejects an installment on a cancelled layaway even if an old form remained open', async () => {
+    await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
+    await db.table(STORES.LAYAWAYS).put({ ...baseLayaway('cancelled'), status: 'cancelled', paidAmount: 0, payments: [] });
+    await expect(layawayRepository.addPaymentWithCash('cancelled', { id: 'late-pay', amount: 25 }, 'cash-1',
+      { idempotencyKey: 'layaway:cancelled:payment:late-pay' })).rejects.toMatchObject({ code: 'LAYAWAY_NOT_PAYABLE' });
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
   });
 
   it('reports legacy payments without creating a new cash movement', async () => {
