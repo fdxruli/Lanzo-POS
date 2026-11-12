@@ -18,6 +18,7 @@ import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
 import OperationalDiagnostics from '../components/dashboard/OperationalDiagnostics';
 import WasteHistory from '../components/dashboard/WasteHistory';
+import PharmacySanitaryRegister from '../components/dashboard/PharmacySanitaryRegister';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
 import ExpirationAlert from '../components/dashboard/ExpirationAlert';
 import SaleCancellationModal from '../components/dashboard/SaleCancellationModal';
@@ -44,7 +45,7 @@ import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapsho
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
 import { buildCloudStatsRange } from '../services/reports/dashboardPeriodRange';
-import { hasSalesActorPermission } from '../services/auth/salesPermissionPolicy';
+import { hasSalesActorPermission, canAuditSalesReports } from '../services/auth/salesPermissionPolicy';
 import { customerMigrationService } from '../services/customers/customerMigrationService';
 import { isCustomerVisible } from '../services/customers/customerMapper';
 
@@ -511,15 +512,18 @@ export default function DashboardPage() {
       restock: 'restock',
       history: 'history',
       expiration: 'expiration',
-      waste: 'waste'
+      waste: 'waste',
+      sanitary: 'sanitary'
     };
 
     const nextTab = tabParam && tabMap[tabParam]
       ? tabMap[tabParam]
       : readAIReportUiState().activeTab || 'stats';
-    setActiveTab(nextTab);
-    writeAIReportUiState({ activeTab: nextTab });
-  }, [searchParams]);
+    const availableTab = nextTab === 'sanitary' && !features.activeRubros.includes('farmacia')
+      ? 'stats' : nextTab;
+    setActiveTab(availableTab);
+    writeAIReportUiState({ activeTab: availableTab });
+  }, [searchParams, features.activeRubros]);
 
   const handleTabChange = (tabKey) => {
     writeAIReportUiState({ activeTab: tabKey });
@@ -731,6 +735,9 @@ export default function DashboardPage() {
         {features.hasWaste && (
           <button type="button" className={`tab-btn dashboard-tab-danger ${activeTab === 'waste' ? 'active' : ''}`} onClick={() => handleTabChange('waste')}>Mermas</button>
         )}
+        {features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && canAuditSalesReports(actorRuntime) && (
+          <button type="button" className={'tab-btn ' + (activeTab === 'sanitary' ? 'active' : '')} onClick={() => handleTabChange('sanitary')}>Registro sanitario</button>
+        )}
       </div>
       </section>
 
@@ -851,6 +858,17 @@ export default function DashboardPage() {
       {activeTab === 'expiration' && (
         <section className="ui-section dashboard-section dashboard-section--expiration" aria-label="Alertas de caducidad">
           <ExpirationAlert reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+        </section>
+      )}
+
+      {activeTab === 'sanitary' && features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && canAuditSalesReports(actorRuntime) && (
+        <section className="ui-section dashboard-section" aria-label="Registro sanitario">
+          <PharmacySanitaryRegister
+            key={salesHistoryContextKey}
+            licenseKey={licenseKey}
+            cloud={dashboardReportMode.cloudReports}
+            actorIdentity={salesActorIdentity}
+          />
         </section>
       )}
 
