@@ -141,7 +141,7 @@ export default function LayawayModal({
             return;
         }
         try {
-            assertLayawayPaymentAllowed(layaway, layaway.businessTimezone || companyTimezone);
+            assertLayawayPaymentAllowed(layaway, companyTimezone);
         } catch (error) {
             showMessageModal(error.message, null, { type: 'warning' });
             return;
@@ -369,7 +369,7 @@ export default function LayawayModal({
                                 const progress = Math.min((layaway.paidAmount / layaway.totalAmount) * 100, 100);
                                 // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
                                 const isReady = !isHistorical && (pending <= 0.01 || status === 'ready');
-                                const dueState = isHistorical ? false : isLayawayDeadlineOverdue(layaway.deadline, layaway.businessTimezone || companyTimezone);
+                                const dueState = isHistorical ? false : isLayawayDeadlineOverdue(layaway.deadline, companyTimezone);
                                 const isOverdue = dueState === true;
                                 const timezoneUnknown = dueState === null;
                                 const isPayingThis = activePaymentId === layaway.id;
