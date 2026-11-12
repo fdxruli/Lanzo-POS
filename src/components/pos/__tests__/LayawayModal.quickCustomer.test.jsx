@@ -56,8 +56,15 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
       customer={{ id: 'legacy-customer', name: 'Legacy', creditLimit: 0, debt: 0 }} />);
     const deadline = container.querySelector('input[type="date"]');
     expect(deadline.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'CONFIRMAR APARTADO' }));
-    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ deadline: deadline.value }));
+    // The pre-existing POS form requires an explicit initial payment, even when it is zero.
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('spinbutton'), '50');
+    await user.click(screen.getByRole('button', { name: 'CONFIRMAR APARTADO' }));
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      initialPayment: 50,
+      deadline: deadline.value,
+      expectedCashSessionId: 'cash-open'
+    }));
     expect(mocks.showMessageModal).not.toHaveBeenCalled();
   });
 
