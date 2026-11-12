@@ -205,7 +205,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
       batchesUsed: explicitBatchesUsed ?? undefined,
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
-      pharmacyDispensationV1: item.pharmacyDispensationV1 || undefined,
+      pharmacyDispensationV1: options.includePrescription === false ? undefined : (item.pharmacyDispensationV1 || undefined),
       inventoryReservation: allowLocalBatches ? item.inventoryReservation || null : null,
       batchSelectionSource: hasManualBatchSelection(item) ? 'manual' : undefined,
       discount: discount || null,
@@ -358,7 +358,7 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
 
   return {
     sale,
-    items: (Array.isArray(localSale.items) ? localSale.items : []).map((item, index) => mapItem(item, index)),
+    items: (Array.isArray(localSale.items) ? localSale.items : []).map((item, index) => mapItem(item, index, { includePrescription: false })),
     payments: extractPayments(localSale),
     idempotencyKey: `sales.shadow_upsert:${localSale.id}:${options.deviceId || 'device'}`
   };
