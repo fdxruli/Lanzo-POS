@@ -396,9 +396,11 @@ const ScanFeedbackToast = ({ message, type = 'info' }) => {
   const feedbackType = ['success', 'info', 'warning', 'error'].includes(type) ? type : 'info';
   return (
     <div className={`scan-toast scan-toast-${feedbackType}`} role="status" aria-live="polite">
-      <span className="scan-toast-icon">
-        {feedbackType === 'error' || feedbackType === 'warning' ? <AlertIcon /> : <CheckIcon />}
-      </span>
+      {feedbackType !== 'info' && (
+        <span className="scan-toast-icon">
+          {feedbackType === 'success' ? <CheckIcon /> : <AlertIcon />}
+        </span>
+      )}
       <span className="scan-toast-message">{message}</span>
     </div>
   );
