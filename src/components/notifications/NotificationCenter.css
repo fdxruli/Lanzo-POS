@@ -26,6 +26,7 @@
 .notification-center-action:focus-visible,
 .notification-item:focus-visible,
 .notification-item__action:focus-visible,
+.notification-item__read:focus-visible,
 .notification-item__archive:focus-visible,
 .notification-tab:focus-visible,
 .notification-preference-toggle input:focus-visible,
@@ -292,7 +293,7 @@
   align-items: flex-start;
   gap: 10px;
   padding: 12px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .notification-item.is-unread {
@@ -413,9 +414,10 @@
   margin: 0;
 }
 
-.notification-item__action {
-  min-height: 28px;
-  padding: 0 9px;
+.notification-item__action,
+.notification-item__read {
+  min-height: 40px;
+  padding: 6px 10px;
   border: 1px solid var(--ui-border-brand);
   border-radius: 8px;
   background: var(--ui-bg-brand-soft);
@@ -424,14 +426,27 @@
   font-weight: 850;
 }
 
-.notification-item__action:hover {
+.notification-item__read {
+  border-color: var(--ui-border-color);
+  background: var(--ui-bg-surface);
+  color: var(--ui-text-muted);
+}
+
+.notification-item__action:hover:not(:disabled),
+.notification-item__read:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ui-bg-brand-soft) 70%, var(--ui-bg-surface));
+}
+
+.notification-item__action:disabled,
+.notification-item__read:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .notification-item__archive {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   flex: 0 0 auto;
   padding: 0;
