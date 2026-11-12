@@ -335,9 +335,10 @@ export const createOrderActions = (set, get) => ({
           const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
           if (allBatches.length > 0 && sortedBatches.length === 0) {
             const candidate = allBatches.find((batch) => batch.isActive === true) || allBatches[0];
-            const stockState = candidate.isActive === true
+            const observed = candidate.isActive === true
               ? getPosStockState(candidate, { tracked: true })
               : { kind: 'unknown', blocked: true, snapshot: null };
+            const stockState = observed.blocked ? observed : { kind: 'unknown', blocked: true, snapshot: null };
             return { success: false, code: 'POS_INVENTORY_BLOCKED', stockState };
           }
           let validBatch = null;
@@ -516,7 +517,11 @@ export const createOrderActions = (set, get) => ({
               productId: getCartProductId(currentItem) ?? productForCart.productId,
               quantity: newQuantity,
               price: finalPrice,
-              exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock ?? 99999),
+              // Refresh the provisional snapshot after a cancellation or inventory sync.
+              // Final checkout still uses Dexie/Supabase as the authority.
+              stock: product.stock,
+              committedStock: product.committedStock ?? product.committed_stock ?? currentItem.committedStock,
+              exceedsStock: currentItem.trackStock && newQuantity > (product.stock ?? 99999),
               priceWarning: isPriceWarning,
               forceWholesale: validation.status === 'conflict' ? (currentItem.forceWholesale || false) : false,
               forceSafePrice: validation.status === 'conflict' ? (currentItem.forceSafePrice || false) : false,
@@ -573,7 +578,9 @@ export const createOrderActions = (set, get) => ({
                 ...existingItem,
                 productId: getCartProductId(existingItem) ?? productForCart.productId,
                 quantity: newQuantity,
-                exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock ?? 99999)
+                stock: resolvedProduct.stock,
+                committedStock: resolvedProduct.committedStock ?? resolvedProduct.committed_stock ?? existingItem.committedStock,
+                exceedsStock: existingItem.trackStock && newQuantity > (resolvedProduct.stock ?? 99999)
               };
 
               result.success = true;
