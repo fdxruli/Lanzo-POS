@@ -636,6 +636,14 @@ export const salesCloudCashierService = {
     return Boolean(context.licenseKey && context.inventoryFeatureEnabled);
   },
 
+  async requiresCloudPharmacyAuthority() {
+    const context = await getRuntimeContext();
+    const details = context.licenseDetails || {};
+    const plan = String(details.plan_code || details.plan || details.subscription_plan || details.product_code || '').toLowerCase();
+    return Boolean(context.featureEnabled || context.inventoryFeatureEnabled ||
+      plan.includes('pro') || plan.includes('nube'));
+  },
+
   async canUseCloudCashierSale(licenseDetails = null) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
