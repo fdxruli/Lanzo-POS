@@ -94,14 +94,15 @@ begin
         'productId', m.product_id,
         'productName', p.name,
         'nameSource', 'current_catalog',
-        'activeSubstance', p.active_substance,
+        'activeSubstance', null,
         'classificationAtOperation', null,
         'quantity', m.quantity,
         'unit', null,
         'batchId', m.batch_id,
-        'batchNumber', b.manufacturer_batch_id,
-        'expiryDate', b.expiry_date,
-        'expirySource', case when b.id is not null then 'current_batch' else null end,
+        'batchNumber', coalesce(m.metadata->'pharmacyReceipt'->>'manufacturerBatchId', b.manufacturer_batch_id),
+        'expiryDate', coalesce(m.metadata->'pharmacyReceipt'->>'expiryDate', b.expiry_date::date::text),
+        'expirySource', case when m.metadata->'pharmacyReceipt'->>'expiryDate' is not null
+          then 'receipt_event' when b.id is not null then 'current_batch' else null end,
         'documentReference', m.metadata->'pharmacyReceipt'->>'documentReference',
         'documentType', m.metadata->'pharmacyReceipt'->>'documentType',
         'receiptAt', m.metadata->'pharmacyReceipt'->>'receivedAt',
@@ -204,7 +205,8 @@ begin
       row_data || pg_catalog.jsonb_build_object('movementType', movement_type) as record
     from candidates
     where (p_movement_type is null or movement_type = p_movement_type)
-      and (p_batch_id is null or batch_id = p_batch_id)
+      and (p_batch_id is null or batch_id = p_batch_id
+        or pg_catalog.lower(record->>'batchNumber') = pg_catalog.lower(p_batch_id))
       and (v_search = '' or pg_catalog.strpos(search_text, v_search) > 0)
       and (p_trace_status is null or row_data->>'traceStatus' = p_trace_status)
       and (p_before_at is null or (happened_at, id) < (p_before_at, p_before_id))
