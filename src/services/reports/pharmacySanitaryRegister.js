@@ -2,7 +2,7 @@ import { db, STORES } from '../db/dexie';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { canReadSalesReports, getSalesActorIdentity } from '../auth/salesPermissionPolicy';
+import { canReadSalesReports, canAuditSalesReports, getSalesActorIdentity } from '../auth/salesPermissionPolicy';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 
 export const SANITARY_PAGE_SIZE = 50;
@@ -33,7 +33,7 @@ export const sanitaryFilters = ({ from, to, search = '', movementType = '', batc
 
 export const assertSanitaryReader = (expectedIdentity) => {
   const actor = actorRuntimeController.getState();
-  if (!expectedIdentity || !canReadSalesReports(actor)
+  if (!expectedIdentity || !canReadSalesReports(actor) || !canAuditSalesReports(actor)
       || getSalesActorIdentity(actor) !== expectedIdentity) {
     throw new Error('Sesión o permiso de Reportes no vigente.');
   }
