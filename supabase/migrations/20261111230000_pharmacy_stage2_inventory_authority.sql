@@ -71,14 +71,16 @@ declare
   v_license_id uuid := (p_context->>'license_id')::uuid;
 begin
   if not private.pharmacy_stage2_protected_product(v_license_id,p_product->>'id',p_product) then return; end if;
-  if exists (select 1 from public.pos_products p
-             where p.license_id=v_license_id and p.id=nullif(p_product->>'id','')
-               and p.deleted_at is null) then return; end if;
-  if greatest(
+  if (
+    not exists (select 1 from public.pos_products p
+                where p.license_id=v_license_id and p.id=nullif(p_product->>'id','')
+                  and p.deleted_at is null)
+    and greatest(
       coalesce(nullif(p_product->>'stock','')::numeric,0),
       coalesce(nullif(p_product->>'committed_stock','')::numeric,0),
       coalesce(nullif(p_product->>'committedStock','')::numeric,0)
-    ) > 0 or exists (
+    ) > 0
+  ) or exists (
       select 1 from pg_catalog.jsonb_array_elements(
         case when pg_catalog.jsonb_typeof(p_initial_batches)='array'
              then p_initial_batches else '[]'::jsonb end
@@ -272,7 +274,7 @@ begin
  if pg_catalog.jsonb_typeof(v_pharmacy) is distinct from 'object' then
    raise exception 'PHARMACY_CLASSIFICATION_REQUIRED' using errcode='P0001';
  end if;
- if v_pharmacy->>'kind'='other' then return; end if;
+ -- A protected product cannot bypass receipt validation with kind='other'.
  if v_pharmacy->>'kind' is distinct from 'medicine'
     or v_pharmacy->>'status' is distinct from 'confirmed' then
    raise exception 'PHARMACY_CLASSIFICATION_REQUIRED' using errcode='P0001';
