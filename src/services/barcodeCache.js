@@ -1,6 +1,5 @@
 import {
-  resolveBarcode,
-  resolveBarcodeByStaticReference,
+  resolveBarcodeResult,
 } from './barcodeResolver';
 import Logger from './Logger';
 
@@ -23,59 +22,52 @@ const toStaticReference = (product) => ({
   skuDetected: product.skuDetected || null,
 });
 
-export const resolveWithCache = async (code, skipCache = false) => {
-  if (!code || typeof code !== 'string') {
+// A cache entry never grants sale authority. Every read rechecks the
+// tenant-local catalog, including newly inserted duplicate barcodes.
+export const resolveWithCacheResult = async (code, skipCache = false) => {
+  if (!code || typeof code !== 'string' || !code.trim()) {
     throw new Error('Codigo invalido');
   }
-
   const normalizedCode = normalizeCode(code);
+  const cachedReference = !skipCache ? barcodeCache.get(normalizedCode) : null;
 
-  if (!skipCache) {
-    const cachedReference = barcodeCache.get(normalizedCode);
+  try {
+    const result = await resolveBarcodeResult(code);
 
     if (cachedReference) {
       stats.hits += 1;
-
-      // Actualizar posición para LRU (Least Recently Used)
       barcodeCache.delete(normalizedCode);
-      barcodeCache.set(normalizedCode, cachedReference);
-
-      const liveProduct = await resolveBarcodeByStaticReference(cachedReference, code);
-
-      if (liveProduct) {
-        return structuredClone(liveProduct);
-      }
-
-      barcodeCache.delete(normalizedCode);
-    }
-  }
-
-  stats.misses += 1;
-
-  try {
-    const product = await resolveBarcode(code);
-
-    if (!product) {
-      return null;
+    } else {
+      stats.misses += 1;
     }
 
-    if (!barcodeCache.has(normalizedCode) && barcodeCache.size >= MAX_CACHE_SIZE) {
-      // Eliminar el 10% de los elementos más antiguos
-      const keysToDelete = Math.ceil(MAX_CACHE_SIZE * 0.1);
-      const iterator = barcodeCache.keys();
-      for (let i = 0; i < keysToDelete; i++) {
-        barcodeCache.delete(iterator.next().value);
+    if (result.status !== 'RESOLVED') {
+      barcodeCache.delete(normalizedCode);
+      return structuredClone(result);
+    }
+
+    if (!cachedReference || String(cachedReference.id) !== String(result.product.id)) {
+      if (barcodeCache.size >= MAX_CACHE_SIZE) {
+        const keysToDelete = Math.ceil(MAX_CACHE_SIZE * 0.1);
+        const iterator = barcodeCache.keys();
+        for (let index = 0; index < keysToDelete; index += 1) {
+          barcodeCache.delete(iterator.next().value);
+        }
       }
     }
 
-    barcodeCache.set(normalizedCode, toStaticReference(product));
-
-    return structuredClone(product);
+    barcodeCache.set(normalizedCode, toStaticReference(result.product));
+    return structuredClone(result);
   } catch (error) {
     stats.errors += 1;
     Logger.error('Error en resolveWithCache:', error);
     throw error;
   }
+};
+
+export const resolveWithCache = async (code, skipCache = false) => {
+  const result = await resolveWithCacheResult(code, skipCache);
+  return result.status === 'RESOLVED' ? result.product : null;
 };
 
 export const invalidateCacheEntry = (code) => {
