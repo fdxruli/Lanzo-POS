@@ -2,12 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { addBusinessCalendarDays, getBusinessCalendarDate, getLayawayCalendarDate } from '../../utils/layawayCalendar';
-
-const formatLocalDateInputValue = (date) => [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-].join('-');
 import { loadData, STORES } from '../../services/database';
 import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
 import { useCaja } from '../../hooks/useCaja';
@@ -26,6 +20,13 @@ import {
 } from 'lucide-react';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 import './LayawayModal.css';
+
+const formatLocalDateInputValue = (date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+].join('-');
+
 
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
     const [initialPayment, setInitialPayment] = useState('');
