@@ -7,17 +7,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   app: null,
   actorRuntime: null,
+  access: null,
   closeNotificationCenter: vi.fn()
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(mocks.app)
+  useAppStore: Object.assign((selector) => selector(mocks.app), { getState: () => mocks.app })
+}));
+vi.mock('../../../services/auth/useActorAccess', () => ({ useActorAccess: () => mocks.access }));
+vi.mock('../../../services/auth/actorAccessPolicy', async (importOriginal) => ({
+  ...await importOriginal(), readActorAccess: () => mocks.access
 }));
 
-vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
-  useActorRuntimeSnapshot: () => mocks.actorRuntime
-}));
-
+import { getNotificationAuthorizationKey } from '../../../services/notifications/notificationAccess';
 import NotificationItem from '../NotificationItem';
 
 function LocationProbe() {
@@ -41,7 +43,19 @@ const notification = {
   is_dismissible: true
 };
 
-const renderItem = (onRead = vi.fn().mockResolvedValue({ success: true })) => render(
+const renderItem = (onRead = vi.fn().mockResolvedValue({ success: true })) => {
+  const role = mocks.actorRuntime.actorType;
+  const permissions = mocks.actorRuntime.permissions;
+  const isAdmin = role === 'admin';
+  mocks.access = {
+    isAuthorizedActor: true, isAdmin, actorType: role, actorId: mocks.actorRuntime.actorId,
+    runtimeSnapshot: { ...mocks.actorRuntime, generation: 1, tenant: 'license-test' },
+    permissionSession: { currentDeviceRole: role, currentStaffUser: { permissions } },
+    ecommerceSession: { currentDeviceRole: role, currentStaffUser: { permissions } },
+    canAccessPermission: (permission) => isAdmin || permissions?.[permission] === true
+  };
+  mocks.app.notificationAuthorizationKey = getNotificationAuthorizationKey(mocks.app, mocks.access);
+  return render(
   <MemoryRouter initialEntries={['/']}>
     <NotificationItem
       notification={notification}
@@ -51,7 +65,8 @@ const renderItem = (onRead = vi.fn().mockResolvedValue({ success: true })) => re
     />
     <LocationProbe />
   </MemoryRouter>
-);
+  );
+};
 
 afterEach(() => cleanup());
 
@@ -61,7 +76,11 @@ beforeEach(() => {
     closeNotificationCenter: mocks.closeNotificationCenter,
     currentDeviceRole: 'admin',
     currentStaffUser: null,
-    canAccess: vi.fn(() => true)
+    canAccess: vi.fn(() => true),
+    licenseDetails: {
+      license_id: 'license-test',
+      features: { notification_center: true, cloud_notifications: true }
+    }
   };
   mocks.actorRuntime = {
     status: 'granted',
@@ -80,7 +99,7 @@ describe('NotificationItem inventory actor-safe navigation', () => {
     expect(screen.getByText('Inventario')).toBeInTheDocument();
     expect(screen.getByText('Crítica')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver reabastecimiento' }));
 
     await waitFor(() => {
       expect(onRead).toHaveBeenCalledWith('inventory-notification-1');
@@ -108,7 +127,7 @@ describe('NotificationItem inventory actor-safe navigation', () => {
     };
 
     renderItem();
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver productos' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/productos');
@@ -137,7 +156,7 @@ describe('NotificationItem inventory actor-safe navigation', () => {
     const onRead = vi.fn().mockResolvedValue({ success: true });
     renderItem(onRead);
 
-    expect(screen.queryByRole('button', { name: 'Revisar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver productos' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Marcar como leída' }));
 
     await waitFor(() => expect(onRead).toHaveBeenCalled());
