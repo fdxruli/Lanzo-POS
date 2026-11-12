@@ -247,6 +247,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
                   <div className="sizes-grid">
                     {variants.map((variant) => {
+                      const inventoryState = getPosStockState(variant, { tracked: true });
                       const cardClassName = [
                         'size-card',
                         `stock-${variant.stockState}`,
@@ -301,10 +302,12 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
                           <div className="card-bottom">
                             <div className={`stock-pill ${variant.stockState}`}>
-                              {getPosStockState(variant, { tracked: true }).kind === 'committed'
-                                ? `0 disponibles · ${getPosStockState(variant, { tracked: true }).snapshot.committedStock} comprometidas`
-                                : `${variant.fefo?.availableStock ?? variant.stock} disponibles`}
-                              {variant.stockState === 'critical' ? ' · Stock crítico' : variant.stockState === 'low' ? ' · Stock bajo' : ''}
+                              {inventoryState.kind === 'committed'
+                                ? `0 disponibles · ${inventoryState.snapshot.committedStock} comprometidas`
+                                : inventoryState.kind === 'unknown'
+                                  ? 'Inventario por verificar'
+                                  : `${variant.fefo?.availableStock ?? variant.stock} disponibles`}
+                              {!inventoryState.blocked && (variant.stockState === 'critical' ? ' · Stock crítico' : variant.stockState === 'low' ? ' · Stock bajo' : '')}
                             </div>
                           </div>
                         </button>
