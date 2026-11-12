@@ -127,6 +127,14 @@ describe('ProductCard: mercancía comprometida en POS', () => {
     expect(onCardClick).toHaveBeenCalledOnce();
     expect(onBlockedClick).not.toHaveBeenCalled();
   });
+  it('no inventa reservas para productos sin control de inventario', () => {
+    const onCardClick = vi.fn(), onBlockedClick = vi.fn();
+    render(<ProductCard product={{ ...base, trackStock: false, batchManagement: { enabled: true } }}
+      features={{ hasVariants: false }} onCardClick={onCardClick} onBlockedClick={onBlockedClick} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(onCardClick).toHaveBeenCalledOnce();
+    expect(onBlockedClick).not.toHaveBeenCalled();
+  });
   it('permite abrir el selector de variantes aunque el total del padre esté comprometido', () => {
     const onCardClick = vi.fn(), onBlockedClick = vi.fn();
     render(<ProductCard product={{ ...base, batchManagement: { enabled: true } }}

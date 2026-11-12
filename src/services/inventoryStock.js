@@ -59,7 +59,7 @@ export const getOperationalStockSnapshot = (record) => {
 // Etiquetas POS basadas en un único snapshot operativo; committedStock puede
 // agrupar apartados, mesas y otras reservas. No se infiere el origen.
 export const getPosStockState = (record, {
-  tracked = record?.trackStock === true || record?.batchManagement?.enabled === true
+  tracked = record?.trackStock === true || (record?.trackStock !== false && record?.batchManagement?.enabled === true)
 } = {}) => {
   if (!tracked) return { kind: 'untracked', blocked: false, snapshot: null };
   const snapshot = getOperationalStockSnapshot(record);
