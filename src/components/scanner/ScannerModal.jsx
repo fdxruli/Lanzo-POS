@@ -94,7 +94,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     clearCart,
   } = useScannerCart();
 
-  const [scanFeedback, setScanFeedback] = useState('');
+  const [scanFeedback, setScanFeedback] = useState({ message: '', type: 'info' });
   const [scanIssues, setScanIssues] = useState([]);
   const [cameraError, setCameraError] = useState(null);
   const [scanCount, setScanCount] = useState(0);
@@ -124,13 +124,13 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   const clearFeedback = useCallback(() => {
     if (isMountedRef.current) {
-      setScanFeedback('');
+      setScanFeedback({ message: '', type: 'info' });
     }
   }, []);
 
   // El feedback ya se muestra dentro del viewport; aqui solo controlamos su expiracion.
   useEffect(() => {
-    if (!scanFeedback) {
+    if (!scanFeedback.message) {
       return undefined;
     }
 
@@ -139,7 +139,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     }, FEEDBACK_CLEAR_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [clearFeedback, scanFeedback]);
+  }, [clearFeedback, scanFeedback.message]);
 
   // Reactivar escaneo lógico después del delay (sin pausar video)
   const scheduleReactivation = useCallback(() => {
@@ -167,7 +167,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     setIsProcessing(false);
     clearCart();
     setScanIssues([]);
-    setScanFeedback('');
+    setScanFeedback({ message: '', type: 'info' });
     setCameraError(null);
     setScanCount(0);
     setTransferUncertain(false);
@@ -181,7 +181,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       if (!isMountedRef.current) return;
 
       const code = scanEvent.code;
-      setScanFeedback(`Buscando: ${code}...`);
+      setScanFeedback({ message: `Buscando producto: ${code}`, type: 'info' });
 
       try {
         const result = await resolveWithCacheResult(code);
@@ -205,21 +205,21 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
             productName: result.product?.name || null,
             matches: result.matches || [],
           }]);
-          setScanFeedback(message);
+          setScanFeedback({ message, type: result.status === 'ERROR' ? 'error' : 'warning' });
           scheduleReactivation();
           return;
         }
 
         const product = result.product;
         addItem(product);
-        setScanFeedback(`Producto reconocido: ${product.name} - $${product.price.toFixed(2)}`);
+        setScanFeedback({ message: `Producto agregado: ${product.name}`, type: 'success' });
         scheduleReactivation();
       } catch (error) {
         if (!isMountedRef.current) return;
 
         Logger.error('Error procesando codigo escaneado:', error);
         playErrorBeep();
-        setScanFeedback('No se pudo consultar el catálogo');
+        setScanFeedback({ message: 'No se pudo consultar el catálogo', type: 'error' });
         setScanIssues((previous) => previous.some((issue) => (
           issue.code === code && issue.status === 'ERROR'
         )) ? previous : [...previous, {
@@ -287,7 +287,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   const handleTorchError = useCallback(() => {
     if (isMountedRef.current) {
-      setScanFeedback('Error al cambiar la linterna. Puedes seguir escaneando.');
+      setScanFeedback({ message: 'No se pudo cambiar la linterna', type: 'error' });
     }
   }, []);
 
@@ -312,7 +312,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
   // Un producto aún en resolución conserva su bloqueo contra duplicados.
   const handleRetryCamera = useCallback(() => {
     setCameraError(null);
-    setScanFeedback('');
+    setScanFeedback({ message: '', type: 'info' });
     restartCamera();
   }, [restartCamera]);
 
@@ -370,7 +370,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
           incrementedCount,
           failedCount,
         });
-        setScanFeedback(`Agregados ${addedCount}, ${failedCount} fallos`);
+        setScanFeedback({ message: `Transferencia parcial: ${addedCount + incrementedCount} agregadas, ${failedCount} fallidas`, type: 'warning' });
         setTimeout(() => {
           if (isMountedRef.current) {
             handleClose();
@@ -382,7 +382,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       if (hasFailures || !result?.success) {
         playErrorBeep();
         if (verifiedTotalFailure) {
-          setScanFeedback(`Error: No se pudo agregar ningun producto (${failedCount} fallos)`);
+          setScanFeedback({ message: `No se agregaron productos (${failedCount} fallidos)`, type: 'error' });
           processingLockRef.current = false;
         } else {
           // Uncertain result: do not risk transferring the same units twice.
@@ -421,7 +421,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     if (show) {
       clearCart();
       setScanIssues([]);
-      setScanFeedback('');
+      setScanFeedback({ message: '', type: 'info' });
       setCameraError(null);
       setScanCount(0);
       setTransferUncertain(false);
@@ -434,36 +434,29 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   return (
     <div id="scanner-modal" className="modal" style={{ display: 'flex' }}>
-      <div
-        className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'
-          }`}
-      >
-        <h2 className="modal-title">
-          Escanear Codigos{scanCount > 0 ? ` (${scanCount})` : ''}
-        </h2>
-
-        <button
-          type="button"
-          className="scanner-close-btn"
-          onClick={handleClose}
-          disabled={isConfirming}
-          aria-label="Cerrar escaner"
-          title="Cerrar"
-        >
-          <CloseIcon />
-        </button>
+      <div className={`modal-content scanner-modal-content ${mode === 'pos' ? 'pos-scan-mode' : 'simple-scan-mode'}`}>
+        <header className="scanner-modal-header">
+          <h2 className="modal-title">Escanear productos</h2>
+          <button
+            type="button"
+            className="scanner-close-btn"
+            onClick={handleClose}
+            disabled={isConfirming}
+            aria-label="Cerrar escaner"
+            title="Cerrar escáner"
+          >
+            <CloseIcon />
+          </button>
+        </header>
 
         <div className="scanner-main-container">
           <div className="scanner-camera-panel">
-            <div className="scanner-camera-controls">
-              <span className="scanner-camera-label">Cámara</span>
-            </div>
-
             <div className="scanner-video-container">
               <CameraViewport
                 videoRef={videoRef}
                 cameraError={cameraError}
-                scanFeedback={scanFeedback}
+                scanFeedback={scanFeedback.message}
+                scanFeedbackType={scanFeedback.type}
                 isScanning={!isProcessing && !isConfirming && !transferUncertain}
                 isConfirming={isConfirming}
                 onRetryCamera={handleRetryCamera}
@@ -489,41 +482,58 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
           </div>
 
           {mode === 'pos' && (
-            <div className="scanner-results-container">
-              <h3 className="subtitle">Carrito Temporal</h3>
-              <UnknownCodesBanner
-                issues={scanIssues}
-                onClear={() => setScanIssues([])}
-              />
-              {transferUncertain && (
-                <p role="alert" className="scanner-error-banner">
-                  No se pudo verificar si los productos llegaron al carrito POS.
-                  Cierra el escáner y revisa el carrito antes de volver a transferirlos.
+            <section className="scanner-pos-panel" aria-label="Productos del escaneo">
+              <div className="scanner-results-container">
+                <div className="scanner-results-heading">
+                  <h3 className="subtitle">Productos escaneados</h3>
+                  <p className="scanner-results-count">
+                    {itemCount} {itemCount === 1 ? 'unidad' : 'unidades'} · {items.length} {items.length === 1 ? 'línea' : 'líneas'}
+                  </p>
+                </div>
+                {transferUncertain && (
+                  <p role="alert" className="scanner-transfer-uncertain">
+                    No pudimos confirmar si todos los productos llegaron al carrito.
+                    Cierra el escáner y revisa el POS antes de intentar nuevamente.
+                  </p>
+                )}
+                <div className="scanner-scrolling-content">
+                  <UnknownCodesBanner
+                    issues={scanIssues}
+                    onClear={() => setScanIssues([])}
+                  />
+                  <ScannerCartList
+                    items={items}
+                    isConfirming={isConfirming}
+                    onAddQuantity={addQuantity}
+                    onRemoveQuantity={removeQuantity}
+                  />
+                </div>
+              </div>
+
+              <footer className="scanner-actions">
+                <div className="scanner-total-container">
+                  <span className="scanner-total-label">Total del escaneo</span>
+                  <strong className="scanner-total-amount">${total.toFixed(2)}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary scanner-confirm-btn"
+                  onClick={handleConfirmScan}
+                  disabled={items.length === 0 || isConfirming || isProcessing || transferUncertain}
+                >
+                  {isConfirming ? 'Agregando productos…' : `Agregar ${itemCount} ${itemCount === 1 ? 'unidad' : 'unidades'} al POS`}
+                </button>
+                <p className="scanner-action-hint">
+                  {transferUncertain
+                    ? 'Verifica el carrito POS antes de repetir la operación.'
+                    : items.length === 0
+                      ? 'Escanea un producto para continuar.'
+                      : 'No se realizará ningún cobro todavía.'}
                 </p>
-              )}
-              <ScannerCartList
-                items={items}
-                total={total}
-                isConfirming={isConfirming}
-                onAddQuantity={addQuantity}
-                onRemoveQuantity={removeQuantity}
-              />
-            </div>
+              </footer>
+            </section>
           )}
         </div>
-
-        {mode === 'pos' && (
-          <div className="scanner-actions">
-            <button
-              type="button"
-              className="btn btn-primary scanner-confirm-btn"
-              onClick={handleConfirmScan}
-              disabled={items.length === 0 || isConfirming || isProcessing || transferUncertain}
-            >
-              {isConfirming ? 'Confirmando...' : `Confirmar (${itemCount})`}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
