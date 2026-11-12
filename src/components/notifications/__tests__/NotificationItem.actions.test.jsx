@@ -74,7 +74,7 @@ describe('NotificationItem safe actions', () => {
     expect(screen.getByText(/diagnóstico detallado todavía no está disponible/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Revisar sincronización' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Marcar como leída' }));
-    await waitFor(() => expect(onRead).toHaveBeenCalledWith('notif-1', { openSupport: false }));
+    await waitFor(() => expect(onRead).toHaveBeenCalledWith('notif-1'));
     expect(screen.getByTestId('location')).toHaveTextContent('/');
   });
 

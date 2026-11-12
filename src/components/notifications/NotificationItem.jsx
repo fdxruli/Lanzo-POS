@@ -128,7 +128,9 @@ export default function NotificationItem({
     setReadError('');
 
     try {
-      const result = await onRead?.(id, { openSupport: openAction && action?.kind === 'support' });
+      const result = openAction && action?.kind === 'support'
+        ? await onRead?.(id, { openSupport: true })
+        : await onRead?.(id);
       if (result?.success !== true) {
         if (isCurrentContext()) setReadError('No se pudo marcar como leída. Intenta de nuevo.');
         return;
