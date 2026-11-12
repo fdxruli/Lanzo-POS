@@ -41,6 +41,7 @@ export const getPharmacyPrescriptionHistory = async ({
   const sales = await db.table(STORES.SALES).toArray();
   const history = [];
   let first = null;
+  let matchingRx = null;
   let quantity = 0;
   let retained = false;
   for (const sale of sales) {
@@ -51,6 +52,7 @@ export const getPharmacyPrescriptionHistory = async ({
       if (!first) first = rx;
       if (rx.retentionDeclared === true) retained = true;
       if (String(item.parentId || item.productId || item.id) !== String(productId)) continue;
+      matchingRx = matchingRx || rx;
       quantity += Number(item.quantity) || 0;
       history.push({
         saleId: sale.id, saleItemId: item.lineId || item.cartLineId || null,
@@ -65,8 +67,8 @@ export const getPharmacyPrescriptionHistory = async ({
     prescriberName: first.prescriberName, prescriberLicense: first.prescriberLicense,
     prescriberAddress: first.prescriberAddress, issuedOn: first.issuedOn,
     treatmentUntil: first.treatmentUntil,
-    prescribedQuantity: first.prescribedQuantity,
-    dispensedQuantity: quantity, remainingQuantity: Number(first.prescribedQuantity) - quantity,
+    prescribedQuantity: matchingRx?.prescribedQuantity ?? null,
+    dispensedQuantity: quantity, remainingQuantity: matchingRx ? Number(matchingRx.prescribedQuantity) - quantity : null,
     status: retained ? 'retained' : 'active', history: history.sort((a, b) => String(b.dispensedAt).localeCompare(String(a.dispensedAt)))
   } : { success: true, found: false, dispensedQuantity: 0, history: [] };
 };
