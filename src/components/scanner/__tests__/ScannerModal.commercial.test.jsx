@@ -14,7 +14,7 @@ const { transfer, resolveCode, close, scanner } = vi.hoisted(() => ({
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
   useActiveOrders: (selector) => selector({ addMultipleScannedProducts: transfer }),
 }));
-vi.mock('../../../services/barcodeCache', () => ({ resolveWithCache: resolveCode }));
+vi.mock('../../../services/barcodeCache', () => ({ resolveWithCacheResult: resolveCode }));
 vi.mock('../../../services/audioBeep', () => ({
   playBeep: vi.fn(),
   playErrorBeep: vi.fn(),
@@ -31,9 +31,6 @@ vi.mock('../commercialBarcodeFormats', () => ({
 }));
 vi.mock('../CameraViewport', () => ({
   CameraViewport: () => <div data-testid="camera-preview" />,
-}));
-vi.mock('../UnknownCodesBanner', () => ({
-  UnknownCodesBanner: () => null,
 }));
 vi.mock('../ScannerCartList', () => ({
   ScannerCartList: ({ items }) => (
@@ -78,7 +75,7 @@ const unlockAfterSuccessfulScan = async () => {
 const confirmButton = () => screen.getByRole('button', { name: /Confirmar \(/ });
 
 const readProduct = async (name) => {
-  resolveCode.mockResolvedValueOnce(product(name));
+  resolveCode.mockResolvedValueOnce({ status: 'RESOLVED', product: product(name) });
   await scanned(name);
   await unlockAfterSuccessfulScan();
 };
@@ -110,6 +107,39 @@ afterEach(() => {
 });
 
 describe('ScannerModal commercial confirmation guards', () => {
+  it('shows a duplicate once and never adds it, including on repeated reads', async () => {
+    render(<ScannerModal show onClose={close} />);
+    resolveCode.mockResolvedValue({
+      status: 'DUPLICATE',
+      code: '7501400800069',
+      matches: [
+        { id: 'a', name: 'Bicarbonato De Sodio' },
+        { id: 'b', name: 'Bicarbonato Nordin' },
+      ],
+    });
+    await scanned('7501400800069');
+    await unlockAfterSuccessfulScan();
+    await scanned('7501400800069');
+    expect(screen.getByText(/Este código pertenece a varios productos/)).toBeInTheDocument();
+    expect(screen.getByText(/Bicarbonato De Sodio, Bicarbonato Nordin/)).toBeInTheDocument();
+    expect(document.querySelectorAll('.unknown-badge')).toHaveLength(1);
+    expect(screen.getByTestId('scanned-cart')).toBeEmptyDOMElement();
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['NOT_FOUND', 'Producto no registrado'],
+    ['INACTIVE', 'Producto registrado, pero desactivado'],
+    ['NO_SELLABLE_BATCH', 'Producto registrado, sin lote disponible'],
+  ])('explains %s without adding a cart item', async (status, message) => {
+    render(<ScannerModal show onClose={close} />);
+    resolveCode.mockResolvedValue({ status, code: '7501400800069', product: { id: 'a', name: 'Bicarbonato' } });
+    await scanned('7501400800069');
+    expect(screen.getByText(new RegExp(message))).toBeInTheDocument();
+    expect(screen.getByTestId('scanned-cart')).toBeEmptyDOMElement();
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
   it('holds A while B resolves; ignores a click before React paints disabled; transfers both once', async () => {
     transfer.mockResolvedValue({ success: true, addedCount: 2, incrementedCount: 0, failedCount: 0 });
     render(<ScannerModal show onClose={close} />);
@@ -127,7 +157,7 @@ describe('ScannerModal commercial confirmation guards', () => {
     expect(transfer).not.toHaveBeenCalled();
     expect(confirmButton()).toBeDisabled();
 
-    await act(async () => { pendingB.resolve(product('B')); await Promise.resolve(); });
+    await act(async () => { pendingB.resolve({ status: 'RESOLVED', product: product('B') }); await Promise.resolve(); });
     expect(screen.getByTestId('scanned-cart')).toHaveTextContent('A: 1');
     expect(screen.getByTestId('scanned-cart')).toHaveTextContent('B: 1');
     await unlockAfterSuccessfulScan();
@@ -147,7 +177,7 @@ describe('ScannerModal commercial confirmation guards', () => {
     resolveCode.mockReturnValueOnce(unknown.promise);
     await scanned('UNKNOWN');
     expect(confirmButton()).toBeDisabled();
-    await act(async () => { unknown.resolve(null); await Promise.resolve(); });
+    await act(async () => { unknown.resolve({ status: 'NOT_FOUND', code: 'UNKNOWN' }); await Promise.resolve(); });
     await unlockAfterSuccessfulScan();
     expect(screen.getByTestId('scanned-cart')).toHaveTextContent('A: 1');
     await confirm();

@@ -9,7 +9,7 @@ describe('physical scanner foundation architecture', () => {
     const source = read('src/components/pos/PosPageContent.jsx');
 
     expect(source).toContain("usePhysicalBarcodeScanner");
-    expect(source).toContain("resolveWithCache(scanEvent.code)");
+    expect(source).toContain("resolveWithCacheResult(scanEvent.code)");
     expect(source).toContain("addMultipleScannedProducts?.([product], orderIdAtScan)");
     expect(source).toContain("!ui.activeModal");
     expect(source).toContain("!ui.isMobileCartOpen");

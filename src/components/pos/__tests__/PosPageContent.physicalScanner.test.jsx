@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   activeState: null,
   appState: { enableMultipleOrders: false },
-  resolveWithCache: vi.fn(),
+  resolveWithCacheResult: vi.fn(),
   showMessageModal: vi.fn(),
   playBeep: vi.fn(),
   playErrorBeep: vi.fn()
@@ -38,7 +38,7 @@ vi.mock('../../../store/useAppStore', () => ({
 }));
 
 vi.mock('../../../services/barcodeCache', () => ({
-  resolveWithCache: mocks.resolveWithCache
+  resolveWithCacheResult: mocks.resolveWithCacheResult
 }));
 
 vi.mock('../../../services/utils', () => ({
@@ -149,7 +149,7 @@ beforeEach(() => {
     loadOrdersFromDB: vi.fn().mockResolvedValue(undefined),
     addMultipleScannedProducts: vi.fn(() => ({ success: true, addedCount: 1, incrementedCount: 0, failedCount: 0 }))
   };
-  mocks.resolveWithCache.mockResolvedValue({ id: 'product-1', name: 'Producto', price: 12 });
+  mocks.resolveWithCacheResult.mockResolvedValue({ status: 'RESOLVED', product: { id: 'product-1', name: 'Producto', price: 12 } });
 });
 
 afterEach(() => {
@@ -159,6 +159,37 @@ afterEach(() => {
 });
 
 describe('POS physical scanner integration', () => {
+  it.each([
+    ['DUPLICATE', 'Este código pertenece a varios productos'],
+    ['INACTIVE', 'Producto registrado, pero desactivado'],
+    ['NO_SELLABLE_BATCH', 'Producto registrado, sin lote disponible'],
+  ])('does not add a %s read to the active order', async (status, message) => {
+    mocks.resolveWithCacheResult.mockResolvedValue({
+      status, code: '7501400800069',
+      product: { id: 'a', name: 'Bicarbonato' },
+      matches: [{ id: 'a', name: 'Bicarbonato A' }, { id: 'b', name: 'Bicarbonato B' }],
+    });
+    renderPos();
+    await waitForPosReady();
+    sendScan('7501400800069');
+    await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalled());
+    expect(mocks.showMessageModal.mock.calls[0][0]).toContain(message);
+    expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes a technical lookup exception from an unknown code', async () => {
+    mocks.resolveWithCacheResult.mockRejectedValue(new Error('Dexie failed'));
+    renderPos();
+    await waitForPosReady();
+    sendScan('7501400800069');
+    await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'No se pudo consultar el catálogo.',
+      null,
+      { type: 'error', duration: 1500 }
+    ));
+    expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
+  });
+
   it('resolves a known physical barcode and uses the existing scanned-product mutation seam', async () => {
     renderPos();
     await waitForPosReady();
@@ -168,20 +199,20 @@ describe('POS physical scanner integration', () => {
     await waitFor(() => expect(mocks.activeState.addMultipleScannedProducts).toHaveBeenCalledWith([
       { id: 'product-1', name: 'Producto', price: 12 }
     ], 'active-order'));
-    expect(mocks.resolveWithCache).toHaveBeenCalledWith('7501234567890');
+    expect(mocks.resolveWithCacheResult).toHaveBeenCalledWith('7501234567890');
   });
 
   it('preserves the existing safe unknown-code semantics', async () => {
-    mocks.resolveWithCache.mockResolvedValue(null);
+    mocks.resolveWithCacheResult.mockResolvedValue({ status: 'NOT_FOUND', code: 'UNKNOWN9' });
     renderPos();
     await waitForPosReady();
 
     sendScan('UNKNOWN9');
 
     await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalledWith(
-      '⚠️ Producto no encontrado: UNKNOWN9',
+      'Producto no registrado: UNKNOWN9',
       null,
-      { type: 'error', duration: 1500 }
+      { type: 'error', duration: 2500 }
     ));
     expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
   });
@@ -192,7 +223,7 @@ describe('POS physical scanner integration', () => {
 
     sendScan('ABC');
 
-    expect(mocks.resolveWithCache).not.toHaveBeenCalled();
+    expect(mocks.resolveWithCacheResult).not.toHaveBeenCalled();
     expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
   });
 
@@ -206,7 +237,7 @@ describe('POS physical scanner integration', () => {
 
     sendScan('7501234567890');
 
-    expect(mocks.resolveWithCache).not.toHaveBeenCalled();
+    expect(mocks.resolveWithCacheResult).not.toHaveBeenCalled();
     expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
   });
 
@@ -217,7 +248,7 @@ describe('POS physical scanner integration', () => {
 
     sendScan('7501234567890');
 
-    expect(mocks.resolveWithCache).not.toHaveBeenCalled();
+    expect(mocks.resolveWithCacheResult).not.toHaveBeenCalled();
     expect(mocks.activeState.addMultipleScannedProducts).not.toHaveBeenCalled();
   });
 });

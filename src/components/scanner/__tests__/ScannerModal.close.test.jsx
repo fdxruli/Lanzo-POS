@@ -24,7 +24,7 @@ vi.mock('../../../hooks/pos/useActiveOrders', () => ({
 }));
 
 vi.mock('../../../services/barcodeCache', () => ({
-  resolveWithCache: vi.fn(),
+  resolveWithCacheResult: vi.fn(),
 }));
 
 vi.mock('../../../services/audioBeep', () => ({

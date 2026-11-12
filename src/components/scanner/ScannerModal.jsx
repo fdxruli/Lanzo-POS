@@ -84,7 +84,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   const {
     items,
-    unknownCodes,
     total,
     itemCount,
     isConfirming,
@@ -92,8 +91,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     addItem,
     addQuantity,
     removeQuantity,
-    addUnknownCode,
-    clearUnknownCodes,
     clearCart,
   } = useScannerCart();
 
