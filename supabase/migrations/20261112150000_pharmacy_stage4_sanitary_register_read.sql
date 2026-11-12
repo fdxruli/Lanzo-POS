@@ -206,7 +206,7 @@ begin
     from candidates
     where (p_movement_type is null or movement_type = p_movement_type)
       and (p_batch_id is null or batch_id = p_batch_id
-        or pg_catalog.lower(record->>'batchNumber') = pg_catalog.lower(p_batch_id))
+        or pg_catalog.lower(row_data->>'batchNumber') = pg_catalog.lower(p_batch_id))
       and (v_search = '' or pg_catalog.strpos(search_text, v_search) > 0)
       and (p_trace_status is null or row_data->>'traceStatus' = p_trace_status)
       and (p_before_at is null or (happened_at, id) < (p_before_at, p_before_id))
