@@ -16,8 +16,22 @@ const mocks = vi.hoisted(() => ({
   deleteCategory: vi.fn(),
   deleteProduct: vi.fn(),
   deleteBatch: vi.fn(),
+  listInventoryEntriesForRecovery: vi.fn(),
+  listLocalOnlyInventoryEntriesForRecovery: vi.fn(),
+  processOutbox: vi.fn(),
+  pullCatalogSnapshot: vi.fn(),
   events: []
 }));
+
+vi.mock('../../inventory/inventoryEntryService', () => ({
+  listLocalOnlyInventoryEntriesForRecovery: mocks.listLocalOnlyInventoryEntriesForRecovery
+}));
+vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: {
+  listInventoryEntriesForRecovery: mocks.listInventoryEntriesForRecovery
+} }));
+vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: {
+  processOutbox: mocks.processOutbox
+} }));
 
 vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
   getMeta: mocks.getMeta,
@@ -42,6 +56,7 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   upsertCategory: mocks.upsertCategory,
   upsertProduct: mocks.upsertProduct,
   upsertProductBatch: mocks.upsertProductBatch,
+  pullCatalogSnapshot: mocks.pullCatalogSnapshot,
   deleteCategory: mocks.deleteCategory,
   deleteProduct: mocks.deleteProduct,
   deleteProductBatch: mocks.deleteBatch
@@ -78,6 +93,14 @@ describe('repeated FREE to PRO catalog recovery', () => {
     vi.clearAllMocks();
     mocks.events.length = 0;
     mocks.getMeta.mockResolvedValue(null);
+    mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
+    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([]);
+    mocks.processOutbox.mockResolvedValue({ processed: 0 });
+    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
+      success: true, has_more: false,
+      products: entityType === 'product' ? [] : undefined,
+      batches: entityType === 'product_batch' ? [] : undefined
+    }));
     mocks.setMeta.mockResolvedValue(undefined);
     mocks.saveConflict.mockResolvedValue({ id: 'recovery-conflict' });
     mocks.getLocalCatalog.mockResolvedValue(localCatalog);
@@ -103,6 +126,114 @@ describe('repeated FREE to PRO catalog recovery', () => {
       mocks.events.push({ type: 'delete-batch', payload });
       return { success: true };
     });
+  });
+
+  const medicine = {
+    id: 'medicine-1', name: 'Amoxicilina', stock: 15,
+    metadata: { pharmacy: { kind: 'medicine', status: 'confirmed', fraction: 'IV' } }
+  };
+  const receipt = (status) => ({
+    id: 'entry-op-original', idempotencyKey: 'entry-op-original',
+    entityType: 'inventory_entry', entityId: 'medicine-1',
+    status, licenseKey: 'PHARMA-TEST',
+    payload: { entry: { productId: 'medicine-1', quantity: 5,
+      metadata: { pharmacyReceipt: { documentReference: 'QA-FAC-1' } } } }
+  });
+
+  it('replays a pending documented receipt through the original outbox before snapshot', async () => {
+    mocks.listInventoryEntriesForRecovery
+      .mockResolvedValueOnce([receipt('pending')])
+      .mockResolvedValueOnce([receipt('synced')]);
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({ success: true });
+    expect(mocks.processOutbox).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.upsertProductBatch).not.toHaveBeenCalled();
+  });
+
+  it('holds a Free/Local pharmacy receipt with no outbox even when catalog says synced', async () => {
+    mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
+    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([{
+      type: 'INVENTORY_ENTRY', operationId: 'free-local-entry', productId: medicine.id,
+      batchId: null, licenseKey: 'PHARMA-TEST', syncDisposition: 'local_only',
+      metadata: { pharmacyReceipt: { documentReference: 'QA-LOCAL' } }
+    }]);
+    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.pullCatalogSnapshot.mockResolvedValue({
+      success: true, has_more: false, products: [{ id: medicine.id, stock: 10 }]
+    });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({
+      success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required'
+    });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.saveConflict).toHaveBeenCalled();
+  });
+
+  it('keeps an unconfirmed original receipt and never applies a catalog snapshot', async () => {
+    mocks.listInventoryEntriesForRecovery.mockResolvedValue([receipt('pending')]);
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.listUnsynced.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({
+      success: false, blocked: true, reason: 'pharmacy_receipts_unconfirmed'
+    });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('recognizes an already synced receipt without a second replay', async () => {
+    mocks.listInventoryEntriesForRecovery.mockResolvedValue([receipt('synced')]);
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({ success: true });
+    expect(mocks.processOutbox).not.toHaveBeenCalled();
+  });
+
+  it('patches pharmacy batch attributes without sending stock or committed stock', async () => {
+    const batch = { id: 'batch-1', productId: medicine.id, stock: 15,
+      committedStock: 0, serverVersion: 4, supplier: 'Proveedor QA' };
+    mocks.listUnsynced.mockResolvedValue({
+      products: [], batches: [batch], categories: [], deletes: {}
+    });
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [batch], categories: [] });
+    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
+      success: true, has_more: false,
+      products: entityType === 'product' ? [{ id: medicine.id, stock: 15 }] : undefined,
+      batches: entityType === 'product_batch' ? [{ id: batch.id, stock: 15 }] : undefined
+    }));
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({ success: true, recovered: 1 });
+    const sent = mocks.upsertProductBatch.mock.calls[0][0].batch;
+    expect(Object.keys(sent)).not.toContain('stock');
+    expect(Object.keys(sent)).not.toContain('committedStock');
+    expect(Object.keys(sent)).not.toContain('committed_stock');
+    expect(sent.supplier).toBe('Proveedor QA');
+  });
+
+  it('holds an unexplained historical delta without inventing an inventory receipt', async () => {
+    mocks.listUnsynced.mockResolvedValue({
+      products: [medicine], batches: [], categories: [], deletes: {}
+    });
+    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
+    mocks.pullCatalogSnapshot.mockResolvedValue({
+      success: true, has_more: false, products: [{ id: medicine.id, stock: 10 }]
+    });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'PHARMA-TEST'
+    })).resolves.toMatchObject({ success: false, blocked: true });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.upsertProductBatch).not.toHaveBeenCalled();
+    expect(mocks.saveConflict).toHaveBeenCalled();
   });
 
   it('reconciles FREE updates and creates through canonical OCC upserts', async () => {
@@ -265,7 +396,13 @@ describe('repeated FREE to PRO catalog recovery', () => {
     expect(firstKey).not.toContain('CUTOVER-IDEMPOTENCY-RETRY');
 
     const secondEdit = { ...firstEdit, name: 'Second FREE edit', localMutationId: 'new-free-mutation-b' };
-    mocks.listUnsynced.mockResolvedValueOnce(catalog(firstEdit)).mockResolvedValueOnce(catalog(secondEdit));
+    // Recovery reads the unsynced catalog twice per invocation (initial guard and post-reconciliation).
+    // Model both reads for each distinct edit instead of mixing versions within one attempt.
+    mocks.listUnsynced
+      .mockResolvedValueOnce(catalog(firstEdit))
+      .mockResolvedValueOnce(catalog(firstEdit))
+      .mockResolvedValueOnce(catalog(secondEdit))
+      .mockResolvedValueOnce(catalog(secondEdit));
     mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [secondEdit], batches: [] });
     mocks.upsertProduct.mockResolvedValue({ success: true, product: secondEdit });
 

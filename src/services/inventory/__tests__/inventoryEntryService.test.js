@@ -93,3 +93,120 @@ describe('inventoryEntryService', () => {
       .rejects.toMatchObject({ code: 'INVALID_QUANTITY' });
   });
 });
+
+
+const medicine = (overrides = {}) => product({
+  stock: 0, expirationMode: 'STRICT', batchManagement: { enabled: true },
+  metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'IV', status: 'confirmed', antibiotic: true } },
+  ...overrides
+});
+
+const pharmacyEntry = ({ operationId, batchId = null, quantity, invoice, manufacturerBatchId = null, expiryDate = null }) => ({
+  operationId, productId: 'product-1', batchId, quantity, baseQuantity: quantity,
+  inputUnit: 'caja', baseUnit: 'caja', supplier: 'Distribuidora QA',
+  manufacturerBatchId, expiryDate, occurredAt: '2026-11-11T14:00:00.000Z',
+  metadata: {
+    pharmacyReceipt: {
+      version: 1, supplier: 'Distribuidora QA', documentType: 'factura',
+      documentReference: invoice, receivedAt: '2026-11-11T14:00:00.000Z'
+    }
+  }
+});
+
+describe('pharmacy stage 2 - local reception', () => {
+  beforeEach(async () => { await openTestTenantRuntime(); });
+  afterEach(() => { closeTestTenantRuntime(); });
+
+  it('stores separate documentary evidence for two receipts of the same lot and no duplicate on retry', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    const first = pharmacyEntry({
+      operationId: 'pharma-first', quantity: 10, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    });
+    const received = await addInventoryEntry(first);
+    const second = pharmacyEntry({
+      operationId: 'pharma-second', batchId: received.batch.id, quantity: 5, invoice: 'FAC-QA-002'
+    });
+    await addInventoryEntry(second);
+    const retry = await addInventoryEntry(second);
+    expect(retry.duplicate).toBe(true);
+
+    const currentBatch = await db.table(STORES.PRODUCT_BATCHES).get(received.batch.id);
+    expect(currentBatch.stock).toBe(15);
+    expect(currentBatch.manufacturerBatchId).toBe('AMX-QA-2026-A');
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(15);
+    const events = await db.table(STORES.INVENTORY_EVENTS).where('productId').equals('product-1').toArray();
+    expect(events).toHaveLength(2);
+    expect(events.map((item) => item.metadata.pharmacyReceipt.documentReference).sort())
+      .toEqual(['FAC-QA-001', 'FAC-QA-002']);
+    expect(events.every((item) => item.supplier === 'Distribuidora QA' && item.originActor)).toBe(true);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(2);
+    const outbox = await db.table(POS_SYNC_STORES.OUTBOX).toArray();
+    expect(outbox.map((item) => JSON.stringify(item)).join(' ')).toContain('FAC-QA-002');
+  });
+
+  it('projects independent batches and preserves the earlier expiry date', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    const first = await addInventoryEntry(pharmacyEntry({
+      operationId: 'pharma-a', quantity: 10, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    }));
+    const second = await addInventoryEntry(pharmacyEntry({
+      operationId: 'pharma-b', quantity: 8, invoice: 'FAC-QA-003',
+      manufacturerBatchId: 'AMX-QA-2026-B', expiryDate: '2027-04-30'
+    }));
+    expect(first.batch.id).not.toBe(second.batch.id);
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(18);
+    expect((await db.table(STORES.PRODUCT_BATCHES).get(second.batch.id)).expiryDate).toBe('2027-04-30');
+  });
+
+  it('rejects missing evidence, expired lots and duplicate manufacturer identities', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    const entry = pharmacyEntry({
+      operationId: 'pharma-check', quantity: 10, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    });
+    await expect(addInventoryEntry({ ...entry, metadata: {} }))
+      .rejects.toMatchObject({ code: 'PHARMACY_PROVENANCE_REQUIRED' });
+    await expect(addInventoryEntry({ ...entry, expiryDate: '2020-01-01' }))
+      .rejects.toMatchObject({ code: 'PHARMACY_EXPIRED_BATCH' });
+    await addInventoryEntry(entry);
+    await expect(addInventoryEntry({ ...entry, operationId: 'pharma-duplicate', metadata: {
+      pharmacyReceipt: { ...entry.metadata.pharmacyReceipt, documentReference: 'FAC-QA-002' }
+    } })).rejects.toMatchObject({ code: 'PHARMACY_EXISTING_BATCH_REQUIRED' });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(10);
+  });
+
+  it('rejects unsupported special fractions and medicine without batch management', async () => {
+    const entry = pharmacyEntry({
+      operationId: 'pharma-special', quantity: 1, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    });
+    await db.table(STORES.MENU).put(medicine({
+      metadata: { pharmacy: { kind: 'medicine', fraction: 'II', status: 'confirmed', antibiotic: false } }
+    }));
+    await expect(addInventoryEntry(entry)).rejects.toMatchObject({
+      code: 'PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE'
+    });
+    await db.table(STORES.MENU).put(medicine({ batchManagement: { enabled: false } }));
+    await expect(addInventoryEntry(entry)).rejects.toMatchObject({ code: 'PHARMACY_BATCHES_REQUIRED' });
+  });
+
+  it('adds concurrent local receipts without lost updates', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    const first = await addInventoryEntry(pharmacyEntry({
+      operationId: 'pharma-create', quantity: 10, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    }));
+    await Promise.all([
+      addInventoryEntry(pharmacyEntry({
+        operationId: 'pharma-concurrent-a', batchId: first.batch.id, quantity: 5, invoice: 'FAC-QA-002'
+      })),
+      addInventoryEntry(pharmacyEntry({
+        operationId: 'pharma-concurrent-b', batchId: first.batch.id, quantity: 3, invoice: 'FAC-QA-003'
+      }))
+    ]);
+    expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(18);
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(18);
+  });
+});

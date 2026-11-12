@@ -4,16 +4,22 @@ const rows = {
   categories: new Map(),
   menu: new Map(),
   productBatches: new Map(),
-  sales: new Map()
+  sales: new Map(),
+  posSyncOutbox: new Map(),
+  inventoryEvents: new Map()
 };
 let transactionImpl;
 
 const table = (name) => ({
   toArray: vi.fn(async () => [...rows[name].values()]),
   bulkPut: vi.fn(async (records) => records.forEach((record) => rows[name].set(record.id, record))),
-  where: vi.fn((field) => ({ equals: (value) => ({
-    toArray: async () => [...rows[name].values()].filter((record) => record[field] === value)
-  }) })),
+  where: vi.fn((field) => ({ equals: (value) => {
+    const matched = () => [...rows[name].values()].filter((record) => record[field] === value);
+    return {
+      toArray: async () => matched(),
+      filter: (predicate) => ({ first: async () => matched().find(predicate) || null })
+    };
+  } })),
   get: vi.fn(async (id) => rows[name].get(id) || null),
   put: vi.fn(async (record) => {
     rows[name].set(record.id, record);
@@ -33,10 +39,19 @@ vi.mock('../../db/dexie', () => ({
     MENU: 'menu',
     PRODUCT_BATCHES: 'productBatches',
     SALES: 'sales',
+    INVENTORY_EVENTS: 'inventoryEvents',
     DELETED_CATEGORIES: 'deletedCategories',
     DELETED_MENU: 'deletedMenu'
   }
 }));
+
+vi.mock('../../sync/syncConstants', async (loadActual) => {
+  const actual = await loadActual();
+  return {
+    ...actual,
+    POS_SYNC_STORES: { ...actual.POS_SYNC_STORES, OUTBOX: 'posSyncOutbox' }
+  };
+});
 
 vi.mock('../../database', () => ({
   createProductWithInitialInventorySafe: vi.fn(), loadData: vi.fn(), loadDataPaginated: vi.fn(),
@@ -66,6 +81,46 @@ describe('product catalog snapshot application', () => {
       entityType: 'product', entityId: null, index: 1, code: 'PRODUCT_CATALOG_RECORD_ID_REQUIRED'
     })]);
     expect(rows.menu.get('legacy-1')).toMatchObject({ serverVersion: 2, syncStatus: 'synced' });
+  });
+
+
+  it('does not overwrite locally pending pharmacy inventory during a pull', async () => {
+    rows.menu.set('medicine-1', {
+      id: 'medicine-1', name: 'Amoxicilina', stock: 15,
+      metadata: { pharmacy: { kind: 'medicine', fraction: 'IV', status: 'confirmed' } }
+    });
+    rows.posSyncOutbox.set('receipt-original', {
+      id: 'receipt-original', idempotencyKey: 'receipt-original',
+      licenseKey: 'PHARMACY-TEST', entityType: 'inventory_entry',
+      entityId: 'medicine-1', status: 'pending'
+    });
+
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const result = await productLocalRepository.applyCloudCatalog({
+      products: [{ id: 'medicine-1', name: 'Amoxicilina', stock: 10, server_version: 2 }]
+    });
+    expect(result.deferredInventory).toBe(1);
+    expect(rows.menu.get('medicine-1').stock).toBe(15);
+    expect(rows.posSyncOutbox.get('receipt-original').status).toBe('pending');
+  });
+
+  it('does not overwrite local-only Free receipts lacking any outbox row', async () => {
+    rows.menu.set('medicine-1', {
+      id: 'medicine-1', name: 'Amoxicilina', stock: 18,
+      metadata: { pharmacy: { kind: 'medicine', fraction: 'IV', status: 'confirmed' } }
+    });
+    rows.inventoryEvents.set('local-only-receipt', {
+      id: 'local-only-receipt', type: 'INVENTORY_ENTRY', productId: 'medicine-1',
+      syncDisposition: 'local_only', licenseKey: 'PHARMACY-TEST'
+    });
+
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const result = await productLocalRepository.applyCloudCatalog({
+      products: [{ id: 'medicine-1', name: 'Amoxicilina', stock: 10, server_version: 2 }]
+    });
+    expect(result.deferredInventory).toBe(1);
+    expect(rows.menu.get('medicine-1').stock).toBe(18);
+    expect(rows.inventoryEvents.size).toBe(1);
   });
 
   it('surfaces an IndexedDB transaction failure with an actionable phase', async () => {

@@ -175,7 +175,8 @@ beforeEach(async () => {
   const database = new Dexie(`split-reservations-${crypto.randomUUID()}`);
   database.version(1).stores({ sales: 'id,status', menu: 'id', categories: 'id', product_batches: 'id,productId',
     customers: 'id', sync_cache: 'key', transaction_log: 'id',
-    inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id' });
+    inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id',
+    sync_outbox: 'id,status,entityType,createdAt,[status+createdAt],idempotencyKey' });
   await database.open();
   runtime.database = database;
   await database.table('menu').bulkPut(['burger', 'pizza', 'drink'].map((id) => ({

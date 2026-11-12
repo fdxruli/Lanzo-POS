@@ -160,6 +160,12 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
     }
 
     const counts = await productLocalRepository.applyCloudCatalog(response);
+    if (counts.deferredInventory > 0) {
+      const error = new Error('Recepción farmacéutica local pendiente: no avanzar cursor ni sobrescribir existencias.');
+      error.code = 'PHARMACY_INVENTORY_CATALOG_DEFERRED';
+      error.catalogSyncContext = { phase: 'inventory_receipt_pending', licenseKey, retryable: true };
+      throw error;
+    }
     applied += counts.categories + counts.products + counts.batches;
     for (const product of [...(response.products || []), ...(response.product ? [response.product] : [])]) {
       if (product?.id) changedProductIds.add(product.id);
@@ -385,6 +391,16 @@ export const productSyncHandler = {
 
     if (response?.success === false) {
       throw asError(response, 'PRODUCT_PUSH_FAILED');
+    }
+
+    // A timeout or malformed RPC reply never proves that a receipt committed.
+    // The same key is retried; only a verified canonical movement may be acked.
+    if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY && (
+      response?.success !== true
+      || !response?.inventory_movement?.id
+      || response?.idempotency_key !== idempotencyKey
+    )) {
+      throw asError({ code: 'INVENTORY_RECEIPT_CONFIRMATION_MISSING' }, 'PRODUCT_PUSH_FAILED');
     }
 
     if (await hasNewerLocalMutation(operation)) {

@@ -379,6 +379,21 @@ export const syncOutboxService = {
     return this.markFailed(id, error || new Error('Retry programado'), { retry: true, licenseKey });
   },
 
+  // Read-only recovery inspection. Include conflicted, processing and legacy
+  // actor-unresolved rows: excluding them would falsely imply there is no
+  // receipt to reconcile. Never change ownership or operation identity here.
+  async listInventoryEntriesForRecovery({ licenseKey } = {}) {
+    if (!licenseKey) throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+      reason: 'inventory_recovery_license_missing'
+    });
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'inventory_recovery_outbox_read' });
+    await ensureOpen();
+    return db.table(POS_SYNC_STORES.OUTBOX).where('entityType')
+      .equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
+      .filter((row) => row.licenseKey === licenseKey)
+      .toArray();
+  },
+
   async getPendingOperations({ limit = SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT, licenseKey = null } = {}) {
     if (!licenseKey) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {

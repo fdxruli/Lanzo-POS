@@ -4,6 +4,8 @@ import { buildSyncOutboxRecord } from '../sync/syncOutboxService';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
+import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
+import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import {
   actorOriginFromHandle,
   assertProductInventoryMutationCurrent,
@@ -34,6 +36,20 @@ const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.
 const usesBatches = (product) => product?.batchManagement?.enabled === true;
 const hasVariantAttributes = (batch) => batch?.attributes && Object.keys(batch.attributes).length > 0;
 const isStrict = (product) => String(product?.expirationMode || '').toUpperCase() === 'STRICT';
+const isPharmacyMedicine = (product) => {
+  const pharmacy = getPharmacyClassification(product);
+  return pharmacy.recorded && pharmacy.kind === 'medicine';
+};
+const expiryDay = (value) => {
+  const day = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const parsed = new Date(`${day}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day ? day : null;
+};
+const localToday = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
 const payloadHash = (payload) => JSON.stringify(payload);
 const assertInventoryMutationCurrent = (actorHandle) => (
   assertProductInventoryMutationCurrent(actorHandle, { inventory: true })
@@ -168,6 +184,22 @@ export const addInventoryEntry = async ({
     if (product.trackStock === false) throw domainError('STOCK_TRACKING_DISABLED');
     if (hasRecipe(product)) throw domainError('RECIPE_INVENTORY_ENTRY_NOT_ALLOWED');
 
+    const pharmacyMedicine = isPharmacyMedicine(product);
+    if (pharmacyMedicine) {
+      const classification = getPharmacyClassification(product);
+      if (classification.status !== 'confirmed') throw domainError('PHARMACY_CLASSIFICATION_REQUIRED');
+      if (isSpecialPharmacyProduct(product)) throw domainError('PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE');
+      if (!usesBatches(product)) throw domainError('PHARMACY_BATCHES_REQUIRED');
+      if (product.conversionFactor?.enabled === true) throw domainError('INVALID_UNIT_PRECISION');
+      const receipt = entry.metadata?.pharmacyReceipt;
+      if (!receipt || receipt.version !== 1 || !entry.supplier ||
+          !['factura', 'remision', 'otro'].includes(receipt.documentType) ||
+          !String(receipt.documentReference || '').trim() ||
+          !Number.isFinite(Date.parse(entry.occurredAt))) {
+        throw domainError('PHARMACY_PROVENANCE_REQUIRED');
+      }
+    }
+
     const timestamp = nowIso();
     let target = null;
     let parent = product;
@@ -188,7 +220,26 @@ export const addInventoryEntry = async ({
       if (target && productHasVariants && !hasVariantAttributes(target)) throw domainError('VARIANT_NOT_FOUND');
       if (!target) {
         if (productHasVariants) throw domainError('VARIANT_REQUIRED');
+        if (pharmacyMedicine) {
+          const manufacturer = String(entry.manufacturerBatchId || '').trim().toLowerCase();
+          if (!manufacturer || !expiryDay(entry.expiryDate)) throw domainError('PHARMACY_BATCH_IDENTITY_REQUIRED');
+          const matchingManufacturer = batches.find((batch) =>
+            batch?.isActive !== false && batch?.status !== 'archived' &&
+            String(batch.manufacturerBatchId || '').trim().toLowerCase() === manufacturer
+          );
+          if (matchingManufacturer) throw domainError('PHARMACY_EXISTING_BATCH_REQUIRED');
+        }
         target = makeNewBatch({ product, operationId: resolvedOperationId, entry, timestamp });
+      }
+      if (pharmacyMedicine) {
+        if (target.isActive === false || target.status === 'archived' || target.deletedAt) {
+          throw domainError('BATCH_NOT_FOUND');
+        }
+        const expiry = expiryDay(target.expiryDate);
+        if (!String(target.manufacturerBatchId || '').trim() || !expiry) {
+          throw domainError('PHARMACY_BATCH_IDENTITY_REQUIRED');
+        }
+        if (expiry < localToday()) throw domainError('PHARMACY_EXPIRED_BATCH');
       }
       if (isStrict(product) && (!target.manufacturerBatchId || !target.expiryDate)) {
         throw domainError(!target.manufacturerBatchId ? 'STRICT_MANUFACTURER_BATCH_REQUIRED' : 'STRICT_EXPIRY_REQUIRED');
@@ -235,6 +286,9 @@ export const addInventoryEntry = async ({
       id: eventId, type: 'INVENTORY_ENTRY', operationId: resolvedOperationId, productId: product.id,
       batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock,
       timestamp, occurredAt: entry.occurredAt, entryKind, metadata: entry.metadata,
+      supplier: entry.supplier, manufacturerBatchId: target?.manufacturerBatchId || null,
+      expiryDate: target?.expiryDate || null, licenseKey: resolvedLicenseKey,
+      originActor: localOnly ? null : actorOriginFromHandle(actorHandle),
       requestHash,
       synced: localOnly,
       syncedAt: localOnly ? timestamp : null,
@@ -257,6 +311,18 @@ export const addInventoryEntry = async ({
   });
 };
 
+// Read-only inspection. Local-only receipts lack a Cloud actor-bound outbox row
+// and must never be reconstructed as a new acquisition during recovery.
+export const listLocalOnlyInventoryEntriesForRecovery = async ({ licenseKey } = {}) => {
+  if (!licenseKey) throw domainError('INVENTORY_ENTRY_LICENSE_REQUIRED');
+  await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'pharmacy_local_only_recovery_read' });
+  if (!db.isOpen()) await db.open();
+  const events = await db.table(STORES.INVENTORY_EVENTS).toArray();
+  return events.filter((event) => event?.type === 'INVENTORY_ENTRY'
+    && event?.syncDisposition === 'local_only'
+    && (!event.licenseKey || event.licenseKey === licenseKey));
+};
+
 export const markInventoryEntrySynced = async (operationId, response = null) => {
   if (!operationId || !db.isOpen()) return;
   const eventId = `inventory-entry:${operationId}`;
@@ -272,5 +338,13 @@ export const inventoryEntryErrors = Object.freeze({
   VARIANT_NOT_FOUND: 'La variante seleccionada ya no existe.',
   STRICT_MANUFACTURER_BATCH_REQUIRED: 'Se requiere el lote del fabricante.',
   STRICT_EXPIRY_REQUIRED: 'Se requiere la fecha de caducidad.',
-  IDEMPOTENCY_PAYLOAD_MISMATCH: 'Esta operación ya existe con datos distintos.'
+  IDEMPOTENCY_PAYLOAD_MISMATCH: 'Esta operación ya existe con datos distintos.',
+  PHARMACY_CLASSIFICATION_REQUIRED: 'Confirma la clasificación sanitaria antes de recibir este medicamento.',
+  PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE: 'Los medicamentos de fracciones I–III requieren un procedimiento de control especial no disponible en esta recepción.',
+  PHARMACY_BATCHES_REQUIRED: 'Activa el control por lotes del medicamento antes de recibir existencias.',
+  PHARMACY_PROVENANCE_REQUIRED: 'Registra el proveedor, tipo y referencia del comprobante.',
+  PHARMACY_BATCH_IDENTITY_REQUIRED: 'Registra un lote de fabricante y una caducidad válidos.',
+  PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe este lote de fabricante: selecciónalo para registrar otra recepción.',
+  PHARMACY_EXPIRED_BATCH: 'No se pueden recibir lotes vencidos como existencia vendible.',
+  BATCH_NOT_FOUND: 'El lote seleccionado no está disponible.'
 });

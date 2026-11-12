@@ -20,7 +20,7 @@ import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
-import { isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { notifyProductsChanged } from './productEvents';
 import {
   actorOriginFromHandle,
@@ -391,6 +391,17 @@ export const productRepository = {
 
   async saveProduct(productData, { existingProduct = null, ...options } = {}) {
     const prepared = await productLocalRepository.prepareProduct(productData, existingProduct);
+    const pharmacy = getPharmacyClassification(prepared.product);
+    if (!prepared.editing && pharmacy.recorded && pharmacy.kind === 'medicine' && (
+      Number(prepared.product.stock || 0) > 0 ||
+      prepared.batches.some((batch) => Number(batch.stock || 0) > 0)
+    )) {
+      return {
+        success: false,
+        code: 'PHARMACY_INITIAL_STOCK_REQUIRES_DOCUMENTED_RECEIPT',
+        message: 'Guarda el medicamento con existencia cero y registra la recepción con comprobante.'
+      };
+    }
     const mode = getMode();
 
     const operation = prepared.editing ? 'updated' : 'created';
@@ -703,6 +714,18 @@ export const productRepository = {
   },
 
   async saveBatch(batchData, { existingBatch = null, ...options } = {}) {
+    const parent = await productLocalRepository.getProductById(batchData.productId);
+    const pharmacy = getPharmacyClassification(parent || {});
+    if (pharmacy.recorded && pharmacy.kind === 'medicine') {
+      const original = existingBatch || (batchData.id ? await productLocalRepository.getBatchById(batchData.id) : null);
+      if (Number(batchData.stock || 0) > Number(original?.stock || 0)) {
+        return {
+          success: false,
+          code: 'PHARMACY_BATCH_STOCK_INCREASE_REQUIRES_DOCUMENTED_RECEIPT',
+          message: 'El lote se crea con cero unidades. Para aumentar existencias usa la recepción con comprobante.'
+        };
+      }
+    }
     const mode = getMode();
     const actorHandle = captureProductInventoryMutation({ inventory: true });
 
