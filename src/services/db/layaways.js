@@ -85,8 +85,10 @@ const accountingMode = (layaway) => {
     if (layaway?.sourceMode === 'cloud_committed' || layaway?.cloudLayaway === true) {
         throw inventoryError('LAYAWAY_CLOUD_PROJECTION', 'El apartado Cloud solo puede modificarse en el servidor.');
     }
-    if (layaway?.inventoryAccountingMode === 'reserved_v1') return 'reserved_v1';
-    if ((layaway?.inventoryAccountingMode == null)
+    if (layaway?.inventoryAccountingMode === 'reserved_v1'
+        && (layaway?.sourceMode == null || layaway.sourceMode === 'local')) return 'reserved_v1';
+    if (layaway?.inventoryAccountingMode == null
+        && layaway?.reservedInventory == null
         && (layaway?.sourceMode == null || layaway.sourceMode === 'local')) return 'legacy';
     throw inventoryError('LAYAWAY_ORIGIN_AMBIGUOUS', 'No se puede determinar el origen contable de este apartado.');
 };
@@ -122,6 +124,9 @@ const getProduct = async (productId, { allowInactive = false } = {}) => {
     const product = productId && await db.table(STORES.MENU).get(productId);
     if (!product || (!allowInactive && (product.deletedAt || product.isActive === false))) {
         throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', `Producto inexistente o inactivo: ${productId || 'sin ID'}.`);
+    }
+    if (product.trackStock !== true && product.trackStock !== false) {
+        throw inventoryError('LAYAWAY_TRACKING_UNKNOWN', 'El producto no tiene una configuración de inventario verificable.');
     }
     return product;
 };
