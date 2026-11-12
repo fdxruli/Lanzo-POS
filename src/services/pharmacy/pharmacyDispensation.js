@@ -38,9 +38,13 @@ export const validatePharmacyLine = (raw = {}, quantity, { antibiotic = false } 
   }
   const issuedOn = requiredText(raw.issuedOn, 10, 10, 'ISSUED_ON');
   const treatmentUntil = requiredText(raw.treatmentUntil, 10, 10, 'TREATMENT_UNTIL');
-  if (!DATE_RE.test(issuedOn) || !DATE_RE.test(treatmentUntil) ||
-      !Number.isFinite(Date.parse(issuedOn)) || !Number.isFinite(Date.parse(treatmentUntil)) ||
-      treatmentUntil < issuedOn) {
+  const validDay = (day) => DATE_RE.test(day) &&
+    Number.isFinite(Date.parse(day)) && new Date(day).toISOString().slice(0, 10) === day;
+  const today = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Merida', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  if (!validDay(issuedOn) || !validDay(treatmentUntil) ||
+      treatmentUntil < issuedOn || issuedOn > today || treatmentUntil < today) {
     throw new Error('PHARMACY_PRESCRIPTION_DATES_INVALID');
   }
   if (antibiotic && raw.stampDeclared !== true) {
