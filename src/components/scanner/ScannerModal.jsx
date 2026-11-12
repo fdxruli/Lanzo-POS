@@ -97,7 +97,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
   const [scanFeedback, setScanFeedback] = useState({ message: '', type: 'info' });
   const [scanIssues, setScanIssues] = useState([]);
   const [cameraError, setCameraError] = useState(null);
-  const [scanCount, setScanCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transferUncertain, setTransferUncertain] = useState(false);
 
@@ -169,7 +168,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     setScanIssues([]);
     setScanFeedback({ message: '', type: 'info' });
     setCameraError(null);
-    setScanCount(0);
     setTransferUncertain(false);
     decodeRegionRef.current = null;
     onClose();
@@ -248,7 +246,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
       processingLockRef.current = true;
       setIsProcessing(true);
-      setScanCount((count) => count + 1);
 
       // Modo simple: escanear y cerrar inmediatamente
       if (mode === 'single' && onScanSuccess) {
@@ -423,7 +420,6 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       setScanIssues([]);
       setScanFeedback({ message: '', type: 'info' });
       setCameraError(null);
-      setScanCount(0);
       setTransferUncertain(false);
       decodeRegionRef.current = null;
       processingLockRef.current = false;
