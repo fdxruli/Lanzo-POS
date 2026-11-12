@@ -85,6 +85,11 @@ export const attachPharmacyDispensations = (processedItems, productMap, form, fe
 export const validateLocalPharmacyDispensations = async (sale, salesTable) => {
   const incoming = (sale.items || []).filter(item => item.pharmacyDispensationV1);
   if (incoming.length === 0) return;
+  for (const item of incoming) {
+    const assignedBatches = Array.isArray(item.batchesUsed) ? item.batchesUsed : [];
+    const hasLot = Boolean(item.batchId || item.batch_id || assignedBatches.some(batch => batch.batchId || batch.id));
+    if (!hasLot) throw new Error('PHARMACY_DISPENSATION_BATCH_REQUIRED');
+  }
   const history = await salesTable.toArray();
   const counts = new Map();
   const authorized = new Map();
