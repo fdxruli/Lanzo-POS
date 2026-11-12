@@ -29,6 +29,7 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const [values, setValues] = useState(getDefaults);
   const [errors, setErrors] = useState({ fieldErrors: {}, globalErrors: [] });
   const [isSaving, setIsSaving] = useState(false);
+  const submitInFlightRef = useRef(false);
   const [barcodeMatches, setBarcodeMatches] = useState([]);
   const [barcodeLookupFailed, setBarcodeLookupFailed] = useState(false);
   const [cloudBarcodeConflict, setCloudBarcodeConflict] = useState(false);
@@ -201,63 +202,70 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const isDirty = comparableValues(values) !== initialValuesRef.current;
   const markClean = useCallback((nextValues) => { initialValuesRef.current = comparableValues(nextValues); }, []);
   const submit = useCallback(async ({ resetAfterSave = false } = {}) => {
-    if (isSaving) return false;
-    const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id), productToEdit });
-    setErrors(nextErrors);
-    if (nextErrors.globalErrors.length) return false;
-    const unchanged = productToEdit?.id
-      && normalizeBarcodeKey(payload.barcode) === normalizeBarcodeKey(productToEdit.barcode);
+    if (isSaving || submitInFlightRef.current) return false;
+    submitInFlightRef.current = true;
     try {
-      const matches = unchanged ? [] : await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null);
-      setBarcodeMatches(matches);
-      setBarcodeLookupFailed(false);
-      if (matches.length) {
-        setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'Este código ya pertenece a otro producto.' } });
-        return false;
-      }
-    } catch {
-      setBarcodeLookupFailed(true);
-      setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'No se pudo comprobar el código localmente. Inténtalo de nuevo.' } });
-      return false;
-    }
-    setIsSaving(true);
-    try {
-      const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
-      const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
-      if (result?.success === false && ['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result.code || result.error?.code)) {
-        const matches = await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null).catch(() => []);
+      const nextErrors = validateProductForm(values, { activeRubro: normalizedRubro, isEditing: Boolean(productToEdit?.id), productToEdit });
+      setErrors(nextErrors);
+      if (nextErrors.globalErrors.length) return false;
+      const unchanged = productToEdit?.id
+        && normalizeBarcodeKey(payload.barcode) === normalizeBarcodeKey(productToEdit.barcode);
+      try {
+        const matches = (!normalizeBarcodeKey(payload.barcode) || unchanged)
+          ? []
+          : await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null);
         setBarcodeMatches(matches);
-        setCloudBarcodeConflict(matches.length === 0);
-        setErrors((previous) => ({
-          ...previous,
-          fieldErrors: { ...previous.fieldErrors, barcode: 'Este código de barras ya está registrado.' }
-        }));
+        setBarcodeLookupFailed(false);
+        if (matches.length) {
+          setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'Este código ya pertenece a otro producto.' } });
+          return false;
+        }
+      } catch {
+        setBarcodeLookupFailed(true);
+        setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'No se pudo comprobar el código localmente. Inténtalo de nuevo.' } });
         return false;
       }
-      if (result?.success === false) return false;
-      if (result?.partial) {
-        originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
-          originalApparelBatchesRef.current,
-          values.quickVariants,
-          result.appliedVariants
-        );
-        const cloudProduct = result.productRebase || {};
-        const cloudVersion = cloudProduct.serverVersion ?? cloudProduct.server_version;
-        if (cloudVersion !== null && cloudVersion !== undefined) {
-          setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
+      setIsSaving(true);
+      try {
+        const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
+        const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
+        if (result?.success === false && ['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result.code || result.error?.code)) {
+          const matches = await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null).catch(() => []);
+          setBarcodeMatches(matches);
+          setCloudBarcodeConflict(matches.length === 0);
+          setErrors((previous) => ({
+            ...previous,
+            fieldErrors: { ...previous.fieldErrors, barcode: 'Este código de barras ya está registrado.' }
+          }));
+          return false;
+        }
+        if (result?.success === false) return false;
+        if (result?.partial) {
+          originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
+            originalApparelBatchesRef.current,
+            values.quickVariants,
+            result.appliedVariants
+          );
+          const cloudProduct = result.productRebase || {};
+          const cloudVersion = cloudProduct.serverVersion ?? cloudProduct.server_version;
+          if (cloudVersion !== null && cloudVersion !== undefined) {
+            setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
+          }
+          return result;
+        }
+        if (result !== false && resetAfterSave && !productToEdit) {
+          const next = getDefaults();
+          setValues(next);
+          markClean(next);
+          setErrors({ fieldErrors: {}, globalErrors: [] });
+        } else if (result !== false) {
+          markClean(values);
         }
         return result;
-      }
-      if (result !== false && resetAfterSave && !productToEdit) {
-        const next = getDefaults();
-        setValues(next);
-        markClean(next);
-        setErrors({ fieldErrors: {}, globalErrors: [] });
-      } else if (result !== false) {
-        markClean(values);
-      }
-      return result;
-    } finally { setIsSaving(false); }
+      } finally { setIsSaving(false); }
+      } finally {
+      submitInFlightRef.current = false;
+    }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
   return { values, errors, isSaving, isDirty, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }
