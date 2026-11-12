@@ -390,24 +390,14 @@ const ScannerReticle = ({ isScanning, isConfirming, reticleRef }) => {
  * Componente de Toast Feedback
  * Reemplaza el overlay invasivo con una píldora flotante no invasiva
  */
-const ScanFeedbackToast = ({ message }) => {
+const ScanFeedbackToast = ({ message, type = 'info' }) => {
   if (!message) return null;
 
-  // Detectar tipo de mensaje basado en contenido
-  const isError = message.toLowerCase().includes('falló') ||
-                  message.toLowerCase().includes('error') ||
-                  message.toLowerCase().includes('no se');
-  const isSearching = message.toLowerCase().includes('buscando');
-
-  let toastClass = 'scan-toast';
-  if (isError) toastClass += ' scan-toast-error';
-  else if (isSearching) toastClass += ' scan-toast-info';
-  else toastClass += ' scan-toast-success';
-
+  const feedbackType = ['success', 'info', 'warning', 'error'].includes(type) ? type : 'info';
   return (
-    <div className={toastClass} role="status" aria-live="polite">
+    <div className={`scan-toast scan-toast-${feedbackType}`} role="status" aria-live="polite">
       <span className="scan-toast-icon">
-        {isError ? <AlertIcon /> : <CheckIcon />}
+        {feedbackType === 'error' || feedbackType === 'warning' ? <AlertIcon /> : <CheckIcon />}
       </span>
       <span className="scan-toast-message">{message}</span>
     </div>
@@ -418,6 +408,7 @@ export function CameraViewport({
   videoRef,
   cameraError,
   scanFeedback,
+  scanFeedbackType = 'info',
   isScanning,
   isConfirming,
   onRetryCamera,
@@ -498,7 +489,7 @@ export function CameraViewport({
       </div>
 
       {/* El feedback permanece relativo al viewport completo, no a las barras. */}
-      <ScanFeedbackToast message={scanFeedback} />
+      <ScanFeedbackToast message={scanFeedback} type={scanFeedbackType} />
     </div>
   );
 }
