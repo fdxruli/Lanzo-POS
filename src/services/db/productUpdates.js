@@ -10,6 +10,8 @@
 import { db, STORES } from './dexie';
 import { DatabaseError, DB_ERROR_CODES } from './utils';
 import Logger from '../Logger';
+import { findBarcodeConflictsInTable } from './barcodeDuplicates';
+import { normalizeBarcodeKey } from '../products/productMapper';
 
 /**
  * Tipos de intención soportados
@@ -65,6 +67,19 @@ export const updateProduct = async (id, data) => {
             const currentProduct = await db.table(STORES.MENU).get(id);
             if (!currentProduct) {
                 throw new Error(`Producto ${id} no encontrado`);
+            }
+
+            // Allow legitimate edits to historical duplicates while rejecting
+            // new barcode collisions within the same transaction.
+            const nextBarcode = Object.prototype.hasOwnProperty.call(productData, 'barcode')
+                ? productData.barcode : currentProduct.barcode;
+            if (normalizeBarcodeKey(nextBarcode) !== normalizeBarcodeKey(currentProduct.barcode)) {
+                const barcodeConflicts = await findBarcodeConflictsInTable(db.table(STORES.MENU), nextBarcode, id);
+                if (barcodeConflicts.length) {
+                    throw new DatabaseError('DUPLICATE_BARCODE',
+                        `Este código de barras ya está registrado en "${barcodeConflicts[0].name || 'otro producto'}".`,
+                        { productIds: barcodeConflicts.map((product) => product.id) });
+                }
             }
 
             let batchOperationResult = null;

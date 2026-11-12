@@ -416,6 +416,7 @@ export default function ProductsPage() {
                 return true;
             }
 
+            if (['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result?.code || result?.error?.code)) return result;
             handleActionableError(result);
             return false;
         } catch (error) {
@@ -425,6 +426,16 @@ export default function ProductsPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleOpenExistingFromBarcode = async (product) => {
+        if (isProductFormDirty && !(await showConfirmModal(PRODUCT_FORM_EXIT_MESSAGE, {
+            title: '¿Editar el producto existente?',
+            confirmButtonText: 'Descartar cambios y editar',
+            cancelButtonText: 'Seguir capturando'
+        }))) return;
+        setIsProductFormDirty(false);
+        setEditingProduct(product);
     };
 
     const handleEditProduct = (product) => {
@@ -567,9 +578,11 @@ export default function ProductsPage() {
             <section className="ui-section products-workspace">
             {activeTab === 'add-product' && canManageProducts && (
                 <ProductForm
+                    key={editingProduct?.id || 'new-product'}
                     onSave={handleSaveProduct}
                     onCancel={() => handleTabChange('view-products')}
                     onDirtyChange={setIsProductFormDirty}
+                    onOpenExisting={handleOpenExistingFromBarcode}
                     productToEdit={editingProduct}
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}
