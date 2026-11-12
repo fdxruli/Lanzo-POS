@@ -3,7 +3,7 @@ import { getProductUnitName } from '../../../../utils/productUnitConfiguration';
 
 const Error = ({ children }) => children ? <small className="product-form-v2__error">{children}</small> : null;
 
-export default function ProductCoreFields({ values, errors, onFieldChange, onCostChange, onPriceChange, onMarginChange, onScan, isIngredient = false, saleSetup = null }) {
+export default function ProductCoreFields({ values, errors, onFieldChange, onCostChange, onPriceChange, onMarginChange, onScan, barcodeMatches = [], barcodeLookupFailed = false, cloudBarcodeConflict = false, onEditExisting, isIngredient = false, saleSetup = null }) {
   const isFractioned = values.saleMode === 'fractioned' || values.conversionFactor?.enabled === true;
   const unitName = getProductUnitName(values.unit);
   const costLabel = `Costo por ${unitName}`;
@@ -16,7 +16,22 @@ export default function ProductCoreFields({ values, errors, onFieldChange, onCos
     </div>
     <div className="product-form-v2__field product-form-v2__barcode product-form-v2__field--wide">
       <label htmlFor="product-v2-barcode">Código de barras</label>
-      <div><input id="product-v2-barcode" data-scanner-physical-capture="true" value={values.barcode} onChange={(event) => onFieldChange('barcode', event.target.value)} inputMode="numeric" /><button type="button" onClick={onScan} aria-label="Escanear código de barras"><ScanLine size={18} aria-hidden="true" /></button></div>
+      <div><input id="product-v2-barcode" data-scanner-physical-capture="true" aria-invalid={Boolean(errors.barcode || barcodeMatches.length || cloudBarcodeConflict)} aria-describedby={barcodeMatches.length || cloudBarcodeConflict || barcodeLookupFailed ? 'product-v2-barcode-warning' : undefined} value={values.barcode} onChange={(event) => onFieldChange('barcode', event.target.value)} inputMode="numeric" /><button type="button" onClick={onScan} aria-label="Escanear código de barras"><ScanLine size={18} aria-hidden="true" /></button></div>
+      {barcodeMatches.length > 0 && <aside id="product-v2-barcode-warning" className="product-form-v2__barcode-warning" role="status">
+        <strong>Este código de barras ya está registrado.</strong>
+        {barcodeMatches.map((product) => <section key={product.id} className="product-form-v2__barcode-match">
+          <p><strong>{product.name || 'Producto sin nombre'}</strong> · {product.isActive === false ? 'Inactivo' : 'Activo'}</p>
+          <small>Código: {product.barcode}{product.trackStock !== false ? ` · Stock: ${product.stock ?? 0}` : ' · Sin control de stock'}</small>
+          <div className="product-form-v2__barcode-actions">
+            <details><summary>Ver producto</summary><p>Precio: {product.price ?? 0}{product.sku ? ` · SKU: ${product.sku}` : ''}</p></details>
+            {onEditExisting && <button type="button" onClick={() => onEditExisting(product)}>Editar existente</button>}
+            <button type="button" onClick={() => document.getElementById('product-v2-barcode')?.select()}>Cambiar código</button>
+          </div>
+        </section>)}
+      </aside>}
+      {!barcodeMatches.length && cloudBarcodeConflict && <small id="product-v2-barcode-warning" className="product-form-v2__error" role="alert">Cloud rechazó este código porque ya está registrado en el catálogo remoto. Sincroniza el catálogo antes de volver a intentarlo.</small>}
+      {!barcodeMatches.length && !cloudBarcodeConflict && barcodeLookupFailed && <small id="product-v2-barcode-warning" className="product-form-v2__error" role="alert">No se pudo comprobar el código local. El guardado volverá a comprobarlo.</small>}
+      <Error>{errors.barcode}</Error>
     </div>
     {saleSetup && <div className="product-form-v2__primary-sale-setup">{saleSetup}</div>}
     <div className={`product-form-v2__pricing${isFractioned ? ' product-form-v2__pricing--fractioned' : ''}${isIngredient ? ' product-form-v2__pricing--ingredient' : ''}`}>
