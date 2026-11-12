@@ -141,6 +141,14 @@ describe('pharmacy sanitary register', () => {
     expect(page.source).toBe('local_device');
   });
 
+  it('denies establishment-wide register to Staff without global audit permission', () => {
+    mocks.state = {
+      status: 'granted', actorType: 'staff', actorId: 'staff-1', sessionId: 's2',
+      permissions: { reports: true }
+    };
+    expect(() => assertSanitaryReader('staff:staff-1:s2')).toThrow('Sesión o permiso');
+  });
+
   it('rejects revoked actors and explicitly failed Cloud responses', async () => {
     mocks.state = { status: 'denied' };
     expect(() => assertSanitaryReader(actorIdentity)).toThrow();
