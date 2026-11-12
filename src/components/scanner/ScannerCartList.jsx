@@ -117,7 +117,6 @@ export function ScannerCartList({
                 ${unitPrice.toFixed(2)} c/u
               </span>
             </div>
-            <div className="scanned-item-bottom">
               <div className="scanned-item-controls">
                 <button
                   type="button"
@@ -146,7 +145,6 @@ export function ScannerCartList({
               <strong className="scanned-item-price">
                 ${(unitPrice * item.quantity).toFixed(2)}
               </strong>
-            </div>
           </div>
         );
       })}
