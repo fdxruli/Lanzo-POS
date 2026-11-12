@@ -52,7 +52,7 @@ import { usePosModals } from '../../../hooks/pos/usePosModals';
 
 const HISTORY_KEY = '__lanzoDismissibleLayer';
 
-const installHistoryModel = () => {
+const installHistoryModel = ({ backDelayMs = 0, suppressPopState = false } = {}) => {
   const nativeReplace = window.history.replaceState.bind(window.history);
   const entries = [
     { state: { route: 'previous' }, url: '/previous' },
@@ -72,10 +72,22 @@ const installHistoryModel = () => {
     nativeReplace(state, title, pathname);
   });
   const back = vi.spyOn(window.history, 'back').mockImplementation(() => {
-    if (index <= 0) return;
-    index -= 1;
-    nativeReplace(entries[index].state, document.title, entries[index].url);
-    window.dispatchEvent(new PopStateEvent('popstate', { state: entries[index].state }));
+    const completeTraversal = () => {
+      if (index <= 0) return;
+      index -= 1;
+      const entry = entries[index];
+      nativeReplace(entry.state, document.title, entry.url);
+      if (!suppressPopState) {
+        window.dispatchEvent(new PopStateEvent('popstate', { state: entry.state }));
+      }
+    };
+    // Chrome dispatches popstate asynchronously; a 0ms mock stays synchronous for
+    // the existing baseline, while delayed traversals exercise the pending-dismiss path.
+    if (backDelayMs > 0) {
+      window.setTimeout(completeTraversal, backDelayMs);
+    } else {
+      completeTraversal();
+    }
   });
   return { entries, back, pushState, replaceState, get index() { return index; } };
 };
@@ -211,6 +223,60 @@ describe('POS scanner first confirmation and history', () => {
     expect(history.back).toHaveBeenCalledTimes(2);
     expect(history.index).toBe(1);
     expect(window.location.pathname).toBe('/pos');
+  });
+
+  it.each([
+    ['delayed popstate', 25, false],
+    ['popstate after fallback', 200, false],
+    ['missing popstate', 25, true],
+  ])('first confirmation closes with %s without another back or duplicate transfer', async (_case, backDelayMs, suppressPopState) => {
+    const history = installHistoryModel({ backDelayMs, suppressPopState });
+    render(<StrictMode><PosHarness /></StrictMode>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir escáner' }));
+    const firstToken = window.history.state[HISTORY_KEY];
+    expect(firstToken).toContain('pos-scanner');
+    await scan('A');
+    await scan('B');
+    await confirm();
+
+    // The POS reacts to the new cart before browser history has delivered popstate.
+    expect(mocks.transfer).toHaveBeenCalledTimes(1);
+    expect(mocks.transfer.mock.calls[0][0]).toHaveLength(2);
+    expect(screen.getByTestId('pos-items')).toHaveTextContent('2');
+    expect(document.querySelector('.floating-pos-bar')).not.toBeNull();
+    expect(history.back).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('active-modal')).toHaveTextContent('scanner');
+    expect(document.querySelector('#scanner-modal')).not.toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('active-modal')).toHaveTextContent('none');
+    expect(document.querySelector('#scanner-modal')).toBeNull();
+    expect(window.history.state).not.toHaveProperty(HISTORY_KEY);
+    expect(history.index).toBe(1);
+    expect(window.location.pathname).toBe('/pos');
+    expect(history.back).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir escáner' }));
+    await scan('C');
+    await confirm();
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+
+    expect(mocks.transfer).toHaveBeenCalledTimes(2);
+    expect(mocks.transfer.mock.calls[1][0]).toHaveLength(1);
+    expect(screen.getByTestId('pos-items')).toHaveTextContent('3');
+    expect(screen.getByTestId('active-modal')).toHaveTextContent('none');
+    expect(document.querySelector('#scanner-modal')).toBeNull();
+    expect(window.location.pathname).toBe('/pos');
+    expect(history.back).toHaveBeenCalledTimes(2);
+    expect(history.index).toBe(1);
   });
 
   it('closes with Android Back semantics before confirming, without transferring', () => {
