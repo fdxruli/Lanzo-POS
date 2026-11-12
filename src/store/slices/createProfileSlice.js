@@ -112,6 +112,7 @@ const buildCompanyData = (rawProfile, licenseKey, id = getProfileCacheKey(licens
   name: rawProfile?.business_name || rawProfile?.name || '',
   phone: rawProfile?.phone_number || rawProfile?.phone || '',
   address: rawProfile?.address || '',
+  timezone: rawProfile?.timezone || null,
   logo: rawProfile?.logo_url || rawProfile?.logo || '',
   business_type: normalizeBusinessTypes(rawProfile?.business_type)
 });
