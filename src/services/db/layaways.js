@@ -294,7 +294,7 @@ const restoreStock = async (layaway) => {
     for (const item of layaway.items || []) {
         if (item.batchId) {
             const batch = await db.table(STORES.PRODUCT_BATCHES).get(item.batchId);
-            if (!batch) continue;
+            if (!batch) throw inventoryError('LAYAWAY_BATCH_MISSING', 'No se puede restaurar el lote histórico inexistente.');
             await db.table(STORES.PRODUCT_BATCHES).update(item.batchId, {
                 stock: batch.stock + item.quantity,
                 isActive: true,
@@ -302,9 +302,12 @@ const restoreStock = async (layaway) => {
             });
             productsToSync.add(batch.productId);
         } else {
-            const productId = item.parentId || item.id;
-            const product = await db.table(STORES.MENU).get(productId);
-            if (product?.trackStock) {
+            const productId = item.parentId || item.productId || item.id;
+            const product = productId && await db.table(STORES.MENU).get(productId);
+            if (!product) {
+                throw inventoryError('LAYAWAY_PRODUCT_NOT_FOUND', 'No se puede restaurar el producto histórico inexistente.');
+            }
+            if (product.trackStock) {
                 await db.table(STORES.MENU).update(productId, { stock: product.stock + item.quantity });
             }
         }
