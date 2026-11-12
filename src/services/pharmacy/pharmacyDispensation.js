@@ -24,7 +24,7 @@ const requiredText = (value, min, max, field) => {
 };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export const validatePharmacyLine = (raw = {}, quantity, { antibiotic = false } = {}) => {
+export const validatePharmacyLine = (raw, quantity, { antibiotic = false } = {}) => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('PHARMACY_PRESCRIPTION_REQUIRED');
   }
