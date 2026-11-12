@@ -1,5 +1,5 @@
 import { db, STORES } from './dexie';
-import { handleDexieError, getAvailableStock, getCommittedStock, normalizeStock } from './utils';
+import { handleDexieError, getCommittedStock, normalizeStock } from './utils';
 import { getOperationalStockSnapshot } from '../inventoryStock';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
 import { isBatchExpiredForSale } from '../../utils/dateUtils';
@@ -146,6 +146,7 @@ const reserveCommittedStock = async (layawayData) => {
         throw inventoryError('LAYAWAY_ITEMS_INVALID', 'El apartado requiere cliente y productos.');
     }
     const reservations = [];
+    const untrackedLineIndexes = [];
     const batchParents = new Set();
 
     for (const [lineIndex, item] of layawayData.items.entries()) {
@@ -165,6 +166,7 @@ const reserveCommittedStock = async (layawayData) => {
                     throw inventoryError('LAYAWAY_BATCH_MISMATCH', 'El lote no pertenece al producto.');
                 }
             }
+            untrackedLineIndexes.push(lineIndex);
             continue;
         }
 
@@ -213,18 +215,24 @@ const reserveCommittedStock = async (layawayData) => {
         }
     }
     for (const productId of batchParents) await syncBatchParent(productId);
-    return reservations;
+    return { reservations, untrackedLineIndexes };
 };
 
 const applyReservedStock = async (layaway, { deliver = false } = {}) => {
-    if (!Array.isArray(layaway.reservedInventory) || !Array.isArray(layaway.items)) {
+    if (!Array.isArray(layaway.reservedInventory) || !Array.isArray(layaway.items)
+        || !Array.isArray(layaway.untrackedInventoryLines)) {
         throw inventoryError('LAYAWAY_RESERVATION_MISSING', 'La reserva no tiene asignación verificable.');
+    }
+    const untracked = new Set(layaway.untrackedInventoryLines);
+    if (untracked.size !== layaway.untrackedInventoryLines.length
+        || [...untracked].some((index) => !Number.isInteger(index) || index < 0 || index >= layaway.items.length)) {
+        throw inventoryError('LAYAWAY_RESERVATION_INVALID', 'La reserva contiene líneas no válidas.');
     }
     const expected = new Map();
     for (const [index, item] of layaway.items.entries()) {
         const productId = getItemProductId(item);
         const product = await getProduct(productId, { allowInactive: true });
-        if (product.trackStock !== false) expected.set(index, getItemQuantity(item, product));
+        if (!untracked.has(index)) expected.set(index, getItemQuantity(item, product));
     }
     const received = new Map();
     for (const entry of layaway.reservedInventory) {
@@ -320,7 +328,7 @@ export const layawayRepository = {
             }
 
             return await db.transaction('rw', transactionTables({ cash: Boolean(cashMovement), stock: true }), async (tx) => {
-                const reservedInventory = await reserveCommittedStock(layawayData);
+                const { reservations: reservedInventory, untrackedLineIndexes: untrackedInventoryLines } = await reserveCommittedStock(layawayData);
 
                 const now = nowIso();
                 const newLayaway = {
@@ -328,6 +336,7 @@ export const layawayRepository = {
                     sourceMode: 'local',
                     inventoryAccountingMode: 'reserved_v1',
                     reservedInventory,
+                    untrackedInventoryLines,
                     status: 'active',
                     paidAmount: initialPayment,
                     createdAt: layawayData.createdAt || now,
