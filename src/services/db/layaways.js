@@ -19,8 +19,8 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
-const getBusinessTimezoneForLayaway = (layaway = {}) => (
-    layaway.businessTimezone || useAppStore.getState().companyProfile?.timezone || null
+const getBusinessTimezoneForLayaway = () => (
+    useAppStore.getState().companyProfile?.timezone || null
 );
 
 const assertLocalLayawayPayable = (layaway) =>
@@ -361,7 +361,6 @@ export const layawayRepository = {
                     ...layawayData,
                     sourceMode: 'local',
                     inventoryAccountingMode: 'reserved_v1',
-                    businessTimezone,
                     reservedInventory,
                     untrackedInventoryLines,
                     status: 'active',
