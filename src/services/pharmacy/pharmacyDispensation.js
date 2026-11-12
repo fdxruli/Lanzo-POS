@@ -33,7 +33,7 @@ export const validatePharmacyLine = (raw = {}, quantity, { antibiotic = false } 
   if (!Number.isFinite(prescribedQuantity) || prescribedQuantity <= 0 ||
       !Number.isFinite(soldQuantity) || soldQuantity <= 0 ||
       soldQuantity > prescribedQuantity ||
-      Math.round(prescribedQuantity * 1000) !== prescribedQuantity * 1000) {
+      Math.abs(Math.round(prescribedQuantity * 1000) - prescribedQuantity * 1000) > 1e-7) {
     throw new Error('PHARMACY_PRESCRIPTION_QUANTITY_INVALID');
   }
   const issuedOn = requiredText(raw.issuedOn, 10, 10, 'ISSUED_ON');
