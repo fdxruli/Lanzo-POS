@@ -27,6 +27,7 @@ const line = (quantity, overrides = {}) => ({
   id: 'med-1',
   name: 'Producto de prueba',
   quantity,
+  batchId: 'batch-1',
   pharmacyDispensationV1: rx(),
   ...overrides
 });
