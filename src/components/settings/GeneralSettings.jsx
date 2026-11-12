@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../common/TermsAndConditionsModal';
 import NoPermission from '../common/NoPermission';
+import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import {
   useSettingsAccess,
   useSettingsActionGuard
@@ -38,6 +39,7 @@ const initialProfileState = {
   name: '',
   phone: '',
   address: '',
+  timezone: '',
   logoPreview: logoPlaceholder,
   pendingLogoFile: null,
   pendingLogoUploadSource: null,
@@ -92,12 +94,14 @@ function getProfileState(companyProfile) {
   const name = companyProfile.name || '';
   const phone = companyProfile.phone || '';
   const address = companyProfile.address || '';
+  const timezone = companyProfile.timezone || '';
   const logoPreview = companyProfile.logo || logoPlaceholder;
 
   return {
     name,
     phone,
     address,
+    timezone,
     logoPreview,
     pendingLogoFile: null,
     pendingLogoUploadSource: null,
@@ -135,7 +139,8 @@ function InputStatusIcon({ isLocked }) {
 }
 
 function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onImageChange, onSubmit, dispatchProfile }) {
-  const { name, phone, address, logoPreview, lockedFields } = profileState;
+  const { name, phone, address, timezone, logoPreview, lockedFields } = profileState;
+  const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   const updateField = (fieldName) => (event) => dispatchProfile({ type: 'field', name: fieldName, value: event.target.value });
 
   return (
@@ -225,6 +230,28 @@ function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onI
               aria-label="Subir logo del negocio"
             />
           </div>
+        </div>
+
+        <div className="form-group settings-field-relative">
+          <label className="form-label" htmlFor={`${fieldId}-timezone`}>Zona horaria del negocio</label>
+          <input id={`${fieldId}-timezone`} className="form-input" type="text" list={`${fieldId}-timezone-options`}
+            value={timezone} onChange={updateField('timezone')} placeholder="America/Merida"
+            autoComplete="off" aria-describedby={`${fieldId}-timezone-help`} />
+          <datalist id={`${fieldId}-timezone-options`}>
+            {['America/Merida', 'America/Mexico_City', 'America/Cancun', 'America/Monterrey',
+              'America/Chihuahua', 'America/Mazatlan', 'America/Hermosillo', 'America/Tijuana',
+              'America/Matamoros', 'America/New_York', 'America/Los_Angeles'].map((zone) =>
+              <option key={zone} value={zone} />)}
+          </datalist>
+          <small id={`${fieldId}-timezone-help`} className="form-help-text">
+            Confirma la zona IANA del negocio; controla cuándo vencen los apartados, incluso en PRO.
+          </small>
+          {!timezone && detectedZone.includes('/') && (
+            <button type="button" className="btn btn-cancel" onClick={() =>
+              dispatchProfile({ type: 'field', name: 'timezone', value: detectedZone })}>
+              Usar zona detectada: {detectedZone}
+            </button>
+          )}
         </div>
 
         <div className="form-group settings-field-relative settings-address-field">
@@ -357,6 +384,7 @@ function GeneralSettingsContent() {
       profileState.name.trim() !== (companyProfile.name || '') ||
       profileState.phone.trim() !== (companyProfile.phone || '') ||
       profileState.address.trim() !== (companyProfile.address || '') ||
+      profileState.timezone.trim() !== (companyProfile.timezone || '') ||
       profileState.pendingLogoFile !== null
     );
   }, [profileState, companyProfile]);
@@ -421,10 +449,16 @@ function GeneralSettingsContent() {
     try {
       actorHandle = captureSettingsAction('settings_data');
       actorHandle.assertCurrent();
+      const businessTimezone = profileState.timezone.trim();
+      if (businessTimezone && !isValidBusinessTimezone(businessTimezone)) {
+        showMessageModal('La zona horaria no es válida. Usa un identificador IANA como America/Merida.', null, { type: 'warning' });
+        return;
+      }
       const updates = {
         name: profileState.name,
         phone: profileState.phone,
-        address: profileState.address
+        address: profileState.address,
+        ...(businessTimezone ? { timezone: businessTimezone } : {})
       };
       if (profileState.pendingLogoFile) {
         updates.logo = profileState.pendingLogoFile;
@@ -432,6 +466,7 @@ function GeneralSettingsContent() {
       }
 
       await updateCompanyProfile({
+        ...companyProfile,
         id: 'company',
         business_type: companyProfile?.business_type || [],
         ...updates
