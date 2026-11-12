@@ -91,7 +91,7 @@ export const validateLocalPharmacyDispensations = async (sale, salesTable) => {
   const retainedDocs = new Set();
 
   for (const previous of history) {
-    if (previous.id === sale.id || previous.status !== 'closed') continue;
+    if (previous.id === sale.id || !['closed', 'cancelled', 'canceled', 'requires_review'].includes(previous.status)) continue;
     for (const item of previous.items || []) {
       const rx = item.pharmacyDispensationV1;
       if (!rx?.reference) continue;
