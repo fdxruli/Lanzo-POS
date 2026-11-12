@@ -1,4 +1,5 @@
 import { db, STORES } from './dexie';
+import { validateLocalPharmacyDispensations } from '../pharmacy/pharmacyDispensation';
 import {
     handleDexieError,
     DatabaseError,
@@ -884,6 +885,7 @@ export const salesRepository = {
                 if (sale.localCheckoutAttemptId && existing?.checkoutAttemptId !== sale.localCheckoutAttemptId) {
                     throw new Error('LOCAL_CHECKOUT_ATTEMPT_MISMATCH');
                 }
+                await validateLocalPharmacyDispensations(sale, tables.sales);
                 const result = await processSaleWithinTransaction({ sale, deductions, tables, logType: 'SALE' });
                 // Still inside Dexie's transaction: a failed check rolls back
                 // the sale, stock, ledger, folio and log together.
