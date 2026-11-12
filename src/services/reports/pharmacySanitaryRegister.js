@@ -72,7 +72,7 @@ const localRows = async (f) => {
       movementType: 'receipt',
       productId: identity(event.productId), productName: product?.name || 'Medicamento no disponible',
       nameSource: 'current_catalog', activeSubstance: null, classificationAtOperation: null,
-      quantity: Number(event.delta), unit: null, batchId: event.batchId || null,
+      barcode: product?.barcode || null, quantity: Number(event.delta), unit: null, batchId: event.batchId || null,
       batchNumber: event.manufacturerBatchId || null, expiryDate: event.expiryDate || null,
       expirySource: 'receipt_event', documentReference: receipt.documentReference || null,
       documentType: receipt.documentType || null, supplier: receipt.supplier || event.supplier || null,
@@ -96,7 +96,7 @@ const localRows = async (f) => {
         movementType: 'dispensation', productId: identity(item.parentId || item.productId || item.id),
         productName: item.name || item.productName || 'Medicamento',
         nameSource: 'sale_snapshot', activeSubstance: null, classificationAtOperation: null,
-        quantity: Number(item.quantity), unit: null, batchId: batch,
+        barcode: item.barcode || null, quantity: Number(item.quantity), unit: null, batchId: batch,
         batchNumber: item.batchSku || null, expiryDate: item.batchExpiryDate || null,
         expirySource: item.batchExpiryDate ? 'sale_snapshot' : null,
         documentReference: rx.reference || null, documentType: 'prescription',
@@ -240,6 +240,9 @@ export const collectSanitaryExport = async (args) => {
         seen.add(row.id);
         all.push(row);
       }
+    }
+    if (all.length > SANITARY_EXPORT_LIMIT) {
+      throw new Error('La consulta supera el límite de exportación. Reduce el periodo.');
     }
     if (!page.hasMore) return all;
     if (all.length >= SANITARY_EXPORT_LIMIT || !page.nextCursor ||
