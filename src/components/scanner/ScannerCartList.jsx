@@ -121,7 +121,7 @@ export function ScannerCartList({
               <div className="scanned-item-controls">
                 <button
                   type="button"
-                  className="scanner-qty-btn scanner-qty-btn--action"
+                  className={`scanner-qty-btn scanner-qty-btn--action${item.quantity === 1 ? ' scanner-qty-btn--delete' : ''}`}
                   onClick={() => onRemoveQuantity(lineId, item.batchId)}
                   disabled={isConfirming}
                   title={item.quantity === 1 ? 'Eliminar producto' : 'Reducir cantidad'}
