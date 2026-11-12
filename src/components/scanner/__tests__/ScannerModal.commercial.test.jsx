@@ -72,7 +72,7 @@ const unlockAfterSuccessfulScan = async () => {
   });
 };
 
-const confirmButton = () => screen.getByRole('button', { name: /Agregar \d+ unidades? al POS/ });
+const confirmButton = () => screen.getByRole('button', { name: /Agregar \d+ unidad(?:es)? al POS/ });
 
 const readProduct = async (name) => {
   resolveCode.mockResolvedValueOnce({ status: 'RESOLVED', product: product(name) });
