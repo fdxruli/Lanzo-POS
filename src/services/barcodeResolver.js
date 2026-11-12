@@ -3,9 +3,8 @@ import { getAvailableStock } from './db/utils';
 import Logger from './Logger';
 import { isCommercialVariantProduct } from './products/commercialVariants';
 import { isBatchActiveForFefo, isBatchExpiredForSale, isBatchRemoved } from './products/fefoUtils';
-import { isStrictExpiryBatchManagedProduct } from './products/strictExpirySaleGuards';
+import { getStrictExpirySaleGuard, isStrictExpiryBatchManagedProduct } from './products/strictExpirySaleGuards';
 import { normalizeBarcodeKey, normalizeSkuKey } from './products/productMapper';
-import { getStrictExpirySaleGuard } from './products/strictExpirySaleGuards';
 
 const BULK_BATCH_THRESHOLD = 0.02;
 
@@ -222,7 +221,7 @@ const resolveBarcodeInTransaction = async (code) => {
     .filter((batch) => isSellableBatch(batch, product))
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))[0] || null;
 
-  if (matchingProductBatches.length && !matchedBatch && requiresBatch) {
+  if (matchingProductBatches.length && !matchedBatch) {
     return unavailable(BARCODE_RESOLUTION_STATUS.NO_SELLABLE_BATCH, code, product, 'matching_batch_unavailable');
   }
 

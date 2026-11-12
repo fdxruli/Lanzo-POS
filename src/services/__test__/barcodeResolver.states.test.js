@@ -105,6 +105,19 @@ describe('barcode resolution: identity before availability', () => {
     });
   });
 
+  it('does not bypass an explicitly scanned unavailable lot even if stock tracking is disabled', async () => {
+    await menu().add(makeProduct('untracked', {
+      barcode: 'different',
+      batchManagement: { enabled: true },
+      trackStock: false,
+    }));
+    await batches().add(makeBatch('expired', 'untracked', {
+      sku: 'LOT-UNAVAILABLE', isActive: false,
+    }));
+    expect((await resolveBarcodeResult('LOT-UNAVAILABLE')).status).toBe('NO_SELLABLE_BATCH');
+    expect((await resolveBarcodeResult('different')).status).toBe('RESOLVED');
+  });
+
   it('detects a batch SKU colliding with a different product barcode', async () => {
     await menu().bulkAdd([
       makeProduct('one', { barcode: 'LOT-COLLISION' }),
