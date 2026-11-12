@@ -21,12 +21,6 @@ import {
 import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 import './LayawayModal.css';
 
-const formatLocalDateInputValue = (date) => [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')
-].join('-');
-
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
     const [initialPayment, setInitialPayment] = useState('');
     const [deadline, setDeadline] = useState('');
