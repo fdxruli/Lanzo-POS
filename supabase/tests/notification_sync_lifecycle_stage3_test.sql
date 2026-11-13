@@ -29,6 +29,16 @@ begin
     raise exception 'NOTIF-LIFE: closed incident must expire only its linked sync notification';
   end if;
 
+  if position('as active_sync_rank' in v_list) = 0
+     or position('i.notification_id = n.id' in v_list) = 0
+     or position('i.resolved_at is null' in v_list) = 0
+     or position('order by active_sync_rank asc, created_at desc, id desc' in v_list) = 0
+     or (
+       length(v_list) - length(replace(v_list, 'order by active_sync_rank asc, created_at desc, id desc', ''))
+     ) <> 2 * length('order by active_sync_rank asc, created_at desc, id desc') then
+    raise exception 'NOTIF-LIFE: active sync incident must be prioritized in the authorized first page';
+  end if;
+
   if position('n.expires_at is null or n.expires_at >= now()' in v_list) = 0
      or position('from visible_notifications where read_at is null and archived_at is null' in v_list) = 0
      or position('from visible_notifications where seen_at is null and archived_at is null' in v_list) = 0 then
