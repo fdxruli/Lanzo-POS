@@ -2,7 +2,12 @@ import { useActorAccess } from '../../services/auth/useActorAccess';
 import { readActorAccess } from '../../services/auth/actorAccessPolicy';
 import { isPendingSyncConflictNotification } from '../../services/notifications/notificationActionNavigation';
 import { fetchCloudSyncConflictDiagnostics } from '../../services/notifications/cloudSyncConflictDiagnostics';
-import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey, NOTIFICATION_ACCESS_MESSAGE } from '../../services/notifications/notificationAccess';
+import {
+  canAccessCloudNotificationCenter,
+  getNotificationAuthorizationKey,
+  isNotificationAccessDenied,
+  NOTIFICATION_ACCESS_MESSAGE
+} from '../../services/notifications/notificationAccess';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -36,7 +41,7 @@ const syncEntityName = (type) => ({
   product_batch: 'Lotes', customer_credit: 'Crédito de clientes'
 }[type] || type);
 const syncDiagnosisError = (error) => (
-  error?.code === '42501' || String(error?.message || '').includes('SYNC_DIAG_ACCESS_DENIED')
+  isNotificationAccessDenied(error) || String(error?.message || '').includes('SYNC_DIAG_ACCESS_DENIED')
     ? 'denied' : 'error'
 );
 const NOTIFICATION_CATEGORY_TABS = ['ecommerce', 'inventory', 'operations', 'license', 'system'];
@@ -76,10 +81,12 @@ export default function NotificationCenterDrawer({
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [syncDiagnosticsAvailable, setSyncDiagnosticsAvailable] = useState(false);
+  const [syncDiagnosticsStatus, setSyncDiagnosticsStatus] = useState('idle');
   const [syncDiagnosticsOpen, setSyncDiagnosticsOpen] = useState(false);
   const [syncDiagnosticsKey, setSyncDiagnosticsKey] = useState(null);
   const [syncDiagnosis, setSyncDiagnosis] = useState({ status: 'idle', summary: null });
+  const syncDiagnosticsProbeRequest = useRef(0);
+  const activeSyncDiagnosticsProbe = useRef(null);
   const syncDiagnosisRequest = useRef(0);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const notifications = useAppStore((state) => state.notifications);
@@ -155,26 +162,72 @@ export default function NotificationCenterDrawer({
       state.notificationAuthorizationKey === authorizationKey &&
       getNotificationAuthorizationKey(state, readActorAccess(state)) === authorizationKey);
   }, [authorizationKey]);
+  const syncDiagnosticsAvailable = syncDiagnosticsStatus === 'available';
   const syncContextChanged = syncDiagnosticsOpen && (
     syncDiagnosticsKey !== authorizationKey || !runtimeCurrent || !isCurrentDiagnosticsContext()
   );
 
+  const probeSyncDiagnostics = useCallback(async () => {
+    if (
+      !isOpen || !cloudNotificationsEnabled || !actorAccess.isAdmin
+      || !hasSyncConflictAlert || !isCurrentDiagnosticsContext()
+    ) return;
+
+    const activeProbe = activeSyncDiagnosticsProbe.current;
+    if (activeProbe?.authorizationKey === authorizationKey) return activeProbe.promise;
+
+    const request = ++syncDiagnosticsProbeRequest.current;
+    setSyncDiagnosticsStatus('checking');
+    const isCurrentProbe = () => (
+      request === syncDiagnosticsProbeRequest.current
+      && isOpen
+      && cloudNotificationsEnabled
+      && actorAccess.isAdmin
+      && hasSyncConflictAlert
+      && isCurrentDiagnosticsContext()
+    );
+    const promise = (async () => {
+      try {
+        // A successful read is the capability probe: an absent RPC remains unavailable.
+        const result = await fetchCloudSyncConflictDiagnostics(licenseDetails);
+        if (!isCurrentProbe()) return;
+        setSyncDiagnosticsStatus(result.available ? 'available' : 'unavailable');
+      } catch (error) {
+        if (!isCurrentProbe()) return;
+        setSyncDiagnosticsStatus(syncDiagnosisError(error));
+      } finally {
+        if (activeSyncDiagnosticsProbe.current?.request === request) {
+          activeSyncDiagnosticsProbe.current = null;
+        }
+      }
+    })();
+    activeSyncDiagnosticsProbe.current = { request, authorizationKey, promise };
+    return promise;
+  }, [
+    actorAccess.isAdmin,
+    authorizationKey,
+    cloudNotificationsEnabled,
+    hasSyncConflictAlert,
+    isCurrentDiagnosticsContext,
+    isOpen,
+    licenseDetails
+  ]);
+
   useEffect(() => {
     let cancelled = false;
-    setSyncDiagnosticsAvailable(false);
-    if (isOpen && cloudNotificationsEnabled && actorAccess.isAdmin && hasSyncConflictAlert) {
-      // A successful read is the capability probe: absent RPC => no action.
-      void fetchCloudSyncConflictDiagnostics(licenseDetails).then((result) => {
-        if (!cancelled && isCurrentDiagnosticsContext()) {
-          setSyncDiagnosticsAvailable(result.available);
-        }
-      }).catch(() => {
-        // Keep the Stage 1 informative action when Cloud cannot be verified.
+    setSyncDiagnosticsStatus('idle');
+    if (isOpen) {
+      // Deferring one microtask lets StrictMode's mount replay cancel its first setup.
+      void Promise.resolve().then(() => {
+        if (!cancelled) void probeSyncDiagnostics();
       });
     }
-    return () => { cancelled = true; };
-  }, [isOpen, cloudNotificationsEnabled, actorAccess.isAdmin,
-      hasSyncConflictAlert, authorizationKey, licenseDetails, isCurrentDiagnosticsContext]);
+    return () => {
+      cancelled = true;
+      syncDiagnosticsProbeRequest.current += 1;
+      activeSyncDiagnosticsProbe.current = null;
+    };
+  }, [isOpen, probeSyncDiagnostics]);
 
   useEffect(() => {
     syncDiagnosisRequest.current += 1;
@@ -204,7 +257,7 @@ export default function NotificationCenterDrawer({
         return;
       }
       if (!result.available) {
-        setSyncDiagnosticsAvailable(false);
+        setSyncDiagnosticsStatus('unavailable');
         setSyncDiagnosis({ status: 'unavailable', summary: null });
         return;
       }
@@ -214,16 +267,15 @@ export default function NotificationCenterDrawer({
       });
     } catch (error) {
       if (request !== syncDiagnosisRequest.current) return;
-      setSyncDiagnosis({
-        status: !isCurrentDiagnosticsContext() ? 'changed'
-          : (typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : syncDiagnosisError(error)),
-        summary: null
-      });
+      const diagnosisStatus = !isCurrentDiagnosticsContext() ? 'changed'
+        : (typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : syncDiagnosisError(error));
+      if (diagnosisStatus === 'denied') setSyncDiagnosticsStatus('denied');
+      setSyncDiagnosis({ status: diagnosisStatus, summary: null });
     }
   };
 
   const handleShowSyncDiagnostics = () => {
-    if (!syncDiagnosticsAvailable || !actorAccess.isAdmin || !isCurrentDiagnosticsContext()) return;
+    if (syncDiagnosticsStatus !== 'available' || !actorAccess.isAdmin || !isCurrentDiagnosticsContext()) return;
     setSyncDiagnosticsKey(authorizationKey);
     setSyncDiagnosticsOpen(true);
     void refreshSyncDiagnostics();
@@ -417,6 +469,10 @@ export default function NotificationCenterDrawer({
 
   const handleRefresh = async () => {
     setIsManualRefreshing(true);
+    if (hasSyncConflictAlert && syncDiagnosticsStatus === 'error') {
+      // Retry only after an explicit refresh and deduplicate an in-flight probe.
+      void probeSyncDiagnostics();
+    }
 
     try {
       if (activeTab === 'support' && supportCenterEnabled) {
