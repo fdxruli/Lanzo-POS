@@ -297,7 +297,17 @@ export const productRepository = {
           response,
           localPayload: category
         });
-        return normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
+        const failure = normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
+        if (response?.code === 'VERSION_CONFLICT' && response.category) {
+          try {
+            assertProductInventoryMutationCurrent(actorHandle, { products: true });
+            await productLocalRepository.applyCloudCategory(response.category);
+          } catch (refreshError) {
+            Logger.warn('[Products] No se pudo actualizar la categoría después de un conflicto de versión:', refreshError);
+            failure.categoryRefreshFailed = true;
+          }
+        }
+        return failure;
       }
 
       assertProductInventoryMutationCurrent(actorHandle, { products: true });

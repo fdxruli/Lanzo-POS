@@ -75,15 +75,12 @@ describe('CategoryForm reliable saving', () => {
     expect(screen.getByLabelText('Nombre de la categoria')).toHaveValue('');
   });
 
-  it('retains edits after a version conflict and retries with the returned server version', async () => {
-    const onSave = vi.fn()
-      .mockResolvedValueOnce({
-        success: false,
-        code: 'VERSION_CONFLICT',
-        message: 'La categoria fue modificada en otro dispositivo.',
-        response: { server_version: 8 }
-      })
-      .mockResolvedValueOnce({ id: 'category-9', name: 'Fríos', serverVersion: 9 });
+  it('locks the stale edit after VERSION_CONFLICT and preserves its values for reopen', async () => {
+    const onSave = vi.fn().mockResolvedValue({
+      success: false,
+      code: 'VERSION_CONFLICT',
+      message: 'La categoría cambió en otro dispositivo. Cancela esta edición y vuelve a abrirla para revisar los cambios actuales.'
+    });
     const onSaveSuccess = vi.fn();
 
     render(<CategoryForm
@@ -94,15 +91,18 @@ describe('CategoryForm reliable saving', () => {
     fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'Fríos' } });
     fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('modificada en otro dispositivo');
+    expect(await screen.findByRole('alert')).toHaveTextContent('vuelve a abrirla para revisar los cambios actuales');
     expect(screen.getByLabelText('Nombre de la categoria')).toHaveValue('Fríos');
     expect(screen.getByLabelText('Color de la categoria')).toHaveValue('#3b82f6');
     expect(screen.getByLabelText('Orden de visualizacion')).toHaveValue(2);
+    expect(screen.getByRole('button', { name: 'Actualizar' })).toBeDisabled();
+    expect(screen.getByLabelText('Nombre de la categoria')).toBeDisabled();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'category-9', serverVersion: 7, name: 'Fríos' }));
     expect(onSaveSuccess).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
-    await waitFor(() => expect(onSaveSuccess).toHaveBeenCalledOnce());
-    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'category-9', serverVersion: 8, name: 'Fríos' }));
+    fireEvent.submit(screen.getByLabelText('Nombre de la categoria').closest('form'));
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onSaveSuccess).not.toHaveBeenCalled();
   });
 
   it('blocks simultaneous submissions and labels an offline save as pending', async () => {

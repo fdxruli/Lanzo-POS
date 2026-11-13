@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   deleteProductLocal: vi.fn(),
   toggleProductStatusLocal: vi.fn(),
   applyCloudCatalog: vi.fn(),
+  applyCloudCategory: vi.fn(),
   getProductById: vi.fn(),
   upsertCategory: vi.fn(),
   upsertProduct: vi.fn(),
@@ -84,13 +85,14 @@ vi.mock('../productLocalRepository', () => ({
     savePreparedProductLocal: mocks.savePreparedProductLocal,
     deleteProductLocal: mocks.deleteProductLocal,
     toggleProductStatusLocal: mocks.toggleProductStatusLocal,
+    applyCloudCategory: mocks.applyCloudCategory,
     applyCloudCatalog: mocks.applyCloudCatalog,
     getProductById: mocks.getProductById
   }
 }));
 vi.mock('../productConflictService', () => ({
   productConflictService: {
-    isConflictResponse: () => false,
+    isConflictResponse: (response) => response?.code === 'VERSION_CONFLICT',
     normalizeFailure: (value, fallback = 'PRODUCT_CLOUD_ERROR') => ({
       ...value,
       success: false,
@@ -136,6 +138,7 @@ beforeEach(() => {
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
   mocks.toggleProductStatusLocal.mockResolvedValue({ success: true });
   mocks.applyCloudCatalog.mockResolvedValue({ products: 1, categories: 0, batches: 0 });
+  mocks.applyCloudCategory.mockResolvedValue({ id: 'category-1', name: 'Category', serverVersion: 1 });
   mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'category-1', name: 'Category' } });
   mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1' } });
   vi.stubGlobal('navigator', { onLine: true });
@@ -202,6 +205,36 @@ describe('productRepository directed catalog events', () => {
     await expect(productRepository.saveCategory({ id: 'category-unconfirmed', name: 'Sin confirmar' }))
       .resolves.toMatchObject({ success: false, code: 'CATEGORY_SYNC_FAILED' });
     expect(mocks.applyCloudCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the cached category from the RPC conflict payload without retrying the stale write', async () => {
+    mocks.cloudEnabled = true;
+    const serverCategory = {
+      id: 'category-1',
+      name: 'Bebidas Cloud',
+      color: '#abcdef',
+      sort_order: 8,
+      server_version: 9
+    };
+    mocks.upsertCategory.mockResolvedValueOnce({
+      success: false,
+      code: 'VERSION_CONFLICT',
+      message: 'La categoria fue modificada en otro dispositivo.',
+      category: serverCategory,
+      server_version: 9
+    });
+
+    const result = await productRepository.saveCategory({
+      id: 'category-1',
+      name: 'Bebidas local',
+      serverVersion: 7
+    });
+
+    expect(result).toMatchObject({ success: false, code: 'VERSION_CONFLICT' });
+    expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 7 }));
+    expect(mocks.applyCloudCategory).toHaveBeenCalledOnce();
+    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(serverCategory);
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
   });
 
   it('updates only the apparel batch delta and never sends existing batches as initial batches', async () => {

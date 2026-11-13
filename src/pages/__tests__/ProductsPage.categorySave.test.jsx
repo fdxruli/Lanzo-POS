@@ -114,13 +114,16 @@ describe('ProductsPage category save flow', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Categoría guardada.');
   });
 
-  it('does not refresh, broadcast, or clear the edit form after a PRO conflict', async () => {
+  it('refreshes the Cloud category after a PRO conflict without clearing or saving the stale edit', async () => {
     shared.app.licenseDetails = PRO_LICENSE;
     shared.repository.saveCategory.mockResolvedValue({
       success: false,
       code: 'VERSION_CONFLICT',
       message: 'La categoria fue modificada en otro dispositivo.',
-      response: { server_version: 9 }
+      response: {
+        server_version: 9,
+        category: { id: 'category-1', name: 'Bebidas Cloud', color: '#abcdef', sort_order: 8, server_version: 9 }
+      }
     });
     renderPage();
     await screen.findByRole('heading', { name: 'Nueva categoria' });
@@ -132,14 +135,15 @@ describe('ProductsPage category save flow', () => {
     fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'Bebidas actualizadas' } });
     fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('modificada en otro dispositivo');
+    expect(await screen.findByRole('alert')).toHaveTextContent('cambió en otro dispositivo');
+    expect(screen.getByRole('alert')).toHaveTextContent('vuelve a abrir la categoría');
     expect(screen.getByLabelText('Nombre de la categoria')).toHaveValue('Bebidas actualizadas');
     expect(shared.repository.saveCategory).toHaveBeenCalledWith(expect.objectContaining({
       id: 'category-1',
       serverVersion: 4,
       name: 'Bebidas actualizadas'
     }));
-    expect(shared.catalog.refreshCategories).not.toHaveBeenCalled();
+    expect(shared.catalog.refreshCategories).toHaveBeenCalledOnce();
     expect(shared.catalog.loadInitialProducts).not.toHaveBeenCalled();
     expect(shared.broadcastDBChange).not.toHaveBeenCalled();
     expect(shared.showMessageModal).not.toHaveBeenCalled();

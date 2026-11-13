@@ -30,6 +30,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [hasVersionConflict, setHasVersionConflict] = useState(false);
   const isSavingRef = useRef(false);
 
   if (initialData !== prevInitialData) {
@@ -37,17 +38,19 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
     setFormData(buildCategoryFormData(initialData));
     if (error) setError('');
     if (initialData && status) setStatus('');
+    setHasVersionConflict(false);
   }
 
   const resetForm = () => {
     setFormData({ ...DEFAULT_CATEGORY_FORM });
     setError('');
     setStatus('');
+    setHasVersionConflict(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSavingRef.current) return;
+    if (isSavingRef.current || hasVersionConflict) return;
     setError('');
     setStatus('');
 
@@ -76,11 +79,6 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
           ? savedCategory.error
           : new Error(savedCategory.message || savedCategory.error?.message || savedCategory.code || 'No se pudo guardar la categoria.');
         saveError.code = saveError.code || savedCategory.code || savedCategory.error?.code;
-        saveError.serverVersion = saveError.serverVersion
-          ?? savedCategory.serverVersion
-          ?? savedCategory.response?.server_version
-          ?? savedCategory.response?.category?.server_version
-          ?? savedCategory.response?.category?.serverVersion;
         throw saveError;
       }
 
@@ -95,9 +93,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
         setStatus('Categoría guardada.');
       }
     } catch (err) {
-      if (err?.code === 'VERSION_CONFLICT' && err.serverVersion !== null && err.serverVersion !== undefined) {
-        setFormData((current) => ({ ...current, serverVersion: err.serverVersion }));
-      }
+      if (err?.code === 'VERSION_CONFLICT') setHasVersionConflict(true);
       if (!err?.categorySaveHandledByModal) {
         setError(err?.message || (typeof err === 'string' ? err : 'No se pudo guardar la categoria.'));
       }
@@ -133,7 +129,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
           className="form-input"
           aria-label="Nombre de la categoria"
           value={formData.name}
-          disabled={isSaving}
+          disabled={isSaving || hasVersionConflict}
           onChange={(e) => {
             setStatus('');
             setFormData({ ...formData, name: e.target.value });
@@ -153,7 +149,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
             className="category-color-input"
             aria-label="Color de la categoria"
             value={formData.color}
-            disabled={isSaving}
+            disabled={isSaving || hasVersionConflict}
             onChange={(e) => {
               setStatus('');
               setFormData({ ...formData, color: e.target.value });
@@ -172,7 +168,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
             className="form-input"
             aria-label="Orden de visualizacion"
             value={formData.sortOrder}
-            disabled={isSaving}
+            disabled={isSaving || hasVersionConflict}
             onChange={(e) => {
               setStatus('');
               setFormData({ ...formData, sortOrder: Number(e.target.value) });
@@ -182,7 +178,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
       </div>
 
       <div className="category-form-actions">
-        <button type="submit" className="btn btn-save" disabled={isSaving}>
+        <button type="submit" className="btn btn-save" disabled={isSaving || hasVersionConflict}>
           <Save size={16} />
           {isSaving ? 'Guardando…' : (formData.id ? 'Actualizar' : 'Guardar')}
         </button>
