@@ -202,12 +202,17 @@ export default function NotificationItem({
         <Icon size={18} />
       </span>
       <div className="notification-item__copy">
-        <div className="notification-item__badges" aria-label="Tipo y prioridad">
+        <div
+          className="notification-item__badges"
+          aria-label={itemTone === 'info' ? 'Categoría de la notificación' : 'Categoría y gravedad'}
+        >
+          {itemTone !== 'info' && SEVERITY_LABELS[itemTone] && (
+            <span className={`notification-item__badge notification-item__badge--severity-${itemTone}`}>
+              {severityLabel}
+            </span>
+          )}
           <span className={`notification-item__badge notification-item__badge--type-${category}`}>
             {typeLabel}
-          </span>
-          <span className={`notification-item__badge notification-item__badge--severity-${itemTone}`}>
-            {severityLabel}
           </span>
           {isMuted && (
             <span className="notification-item__badge notification-item__badge--muted">
@@ -215,7 +220,10 @@ export default function NotificationItem({
             </span>
           )}
         </div>
-        <h3>{title}</h3>
+        <div className="notification-item__title-row">
+          <h3>{title}</h3>
+          {!isRead && <span className="notification-item__unread-mark" aria-hidden="true" />}
+        </div>
         {displayBody && <p>{displayBody}</p>}
         {isPendingSyncConflictNotification(notification) && !syncDiagnosticsAvailable && (
           <p>Hay conflictos pendientes. Su diagnóstico detallado todavía no está disponible aquí.</p>

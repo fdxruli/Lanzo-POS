@@ -182,7 +182,7 @@ describe('NotificationCenterDrawer sync diagnostics recovery', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Actualizar' })).toBeEnabled());
     expect(mocks.fetchDiagnostics).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole('button', { name: 'Ver conflictos' })).toBeInTheDocument();
-    expect(screen.getByText('Centro de notificaciones')).toBeInTheDocument();
+    expect(screen.getByText('Notificaciones')).toBeInTheDocument();
   });
 
   it('keeps diagnosis disabled when the retry fails or the RPC is absent', async () => {
