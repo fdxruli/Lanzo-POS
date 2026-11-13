@@ -1,4 +1,7 @@
 import { useActorAccess } from '../../services/auth/useActorAccess';
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
+import { isPendingSyncConflictNotification } from '../../services/notifications/notificationActionNavigation';
+import { fetchCloudSyncConflictDiagnostics } from '../../services/notifications/cloudSyncConflictDiagnostics';
 import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey, NOTIFICATION_ACCESS_MESSAGE } from '../../services/notifications/notificationAccess';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
@@ -28,6 +31,14 @@ const isUnreadNotification = (notification) => (
 );
 
 const getNotificationGroup = (notification) => getNotificationCategory(notification);
+const syncEntityName = (type) => ({
+  product: 'Productos', customer: 'Clientes', category: 'Categorías',
+  product_batch: 'Lotes', customer_credit: 'Crédito de clientes'
+}[type] || type);
+const syncDiagnosisError = (error) => (
+  error?.code === '42501' || String(error?.message || '').includes('SYNC_DIAG_ACCESS_DENIED')
+    ? 'denied' : 'error'
+);
 const NOTIFICATION_CATEGORY_TABS = ['ecommerce', 'inventory', 'operations', 'license', 'system'];
 const REQUESTABLE_NOTIFICATION_TABS = new Set([
   'all',
@@ -65,6 +76,11 @@ export default function NotificationCenterDrawer({
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [syncDiagnosticsAvailable, setSyncDiagnosticsAvailable] = useState(false);
+  const [syncDiagnosticsOpen, setSyncDiagnosticsOpen] = useState(false);
+  const [syncDiagnosticsKey, setSyncDiagnosticsKey] = useState(null);
+  const [syncDiagnosis, setSyncDiagnosis] = useState({ status: 'idle', summary: null });
+  const syncDiagnosisRequest = useRef(0);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const notifications = useAppStore((state) => state.notifications);
   const notificationsLoading = useAppStore((state) => state.notificationsLoading);
@@ -131,6 +147,87 @@ export default function NotificationCenterDrawer({
     )),
     [licenseDetails, notifications, staffSession]
   );
+
+  const hasSyncConflictAlert = visibleNotifications.some(isPendingSyncConflictNotification);
+  const isCurrentDiagnosticsContext = () => {
+    const state = useAppStore.getState();
+    return Boolean(authorizationKey &&
+      state.notificationAuthorizationKey === authorizationKey &&
+      getNotificationAuthorizationKey(state, readActorAccess(state)) === authorizationKey);
+  };
+  const syncContextChanged = syncDiagnosticsOpen && (
+    syncDiagnosticsKey !== authorizationKey || !runtimeCurrent || !isCurrentDiagnosticsContext()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setSyncDiagnosticsAvailable(false);
+    if (isOpen && cloudNotificationsEnabled && actorAccess.isAdmin && hasSyncConflictAlert) {
+      // A successful read is the capability probe: absent RPC => no action.
+      void fetchCloudSyncConflictDiagnostics(licenseDetails).then((result) => {
+        if (!cancelled && isCurrentDiagnosticsContext()) {
+          setSyncDiagnosticsAvailable(result.available);
+        }
+      }).catch(() => {
+        // Keep the Stage 1 informative action when Cloud cannot be verified.
+      });
+    }
+    return () => { cancelled = true; };
+  }, [isOpen, cloudNotificationsEnabled, actorAccess.isAdmin,
+      hasSyncConflictAlert, authorizationKey, licenseDetails]);
+
+  useEffect(() => {
+    syncDiagnosisRequest.current += 1;
+    if (!isOpen) {
+      setSyncDiagnosticsOpen(false);
+      setSyncDiagnosis({ status: 'idle', summary: null });
+      setSyncDiagnosticsKey(null);
+    }
+  }, [isOpen, authorizationKey]);
+
+  const refreshSyncDiagnostics = async () => {
+    if (!isCurrentDiagnosticsContext()) {
+      setSyncDiagnosis({ status: 'changed', summary: null });
+      return;
+    }
+    const request = ++syncDiagnosisRequest.current;
+    setSyncDiagnosis({ status: 'loading', summary: null });
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSyncDiagnosis({ status: 'offline', summary: null });
+      return;
+    }
+    try {
+      const result = await fetchCloudSyncConflictDiagnostics(licenseDetails);
+      if (request !== syncDiagnosisRequest.current) return;
+      if (!isCurrentDiagnosticsContext()) {
+        setSyncDiagnosis({ status: 'changed', summary: null });
+        return;
+      }
+      if (!result.available) {
+        setSyncDiagnosticsAvailable(false);
+        setSyncDiagnosis({ status: 'unavailable', summary: null });
+        return;
+      }
+      setSyncDiagnosis({
+        status: result.summary.pendingCount === 0 ? 'empty' : 'ready',
+        summary: result.summary
+      });
+    } catch (error) {
+      if (request !== syncDiagnosisRequest.current) return;
+      setSyncDiagnosis({
+        status: !isCurrentDiagnosticsContext() ? 'changed'
+          : (typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : syncDiagnosisError(error)),
+        summary: null
+      });
+    }
+  };
+
+  const handleShowSyncDiagnostics = () => {
+    if (!syncDiagnosticsAvailable || !actorAccess.isAdmin || !isCurrentDiagnosticsContext()) return;
+    setSyncDiagnosticsKey(authorizationKey);
+    setSyncDiagnosticsOpen(true);
+    void refreshSyncDiagnostics();
+  };
 
   const notificationCounts = useMemo(() => {
     const counts = {
@@ -392,6 +489,55 @@ export default function NotificationCenterDrawer({
     return result;
   };
 
+  const renderSyncDiagnostics = () => {
+    const status = syncContextChanged ? 'changed' : syncDiagnosis.status;
+    const summary = status === 'ready' || status === 'empty' ? syncDiagnosis.summary : null;
+    return (
+      <section className="notification-sync-diagnostics" aria-label="Diagnóstico de sincronización">
+        <div className="notification-sync-diagnostics__actions">
+          <button type="button" onClick={() => setSyncDiagnosticsOpen(false)}>Volver a notificaciones</button>
+          <button type="button" onClick={() => void refreshSyncDiagnostics()} disabled={status === 'loading' || status === 'changed'}>
+            Actualizar diagnóstico
+          </button>
+        </div>
+        <h3>Conflictos de sincronización Cloud</h3>
+        {status === 'loading' && <p role="status">Consultando conflictos pendientes...</p>}
+        {status === 'changed' && <p role="alert">Cambió el negocio o la sesión. Vuelve a abrir el diagnóstico desde la notificación.</p>}
+        {status === 'offline' && <p role="alert">Sin conexión. Comprueba internet e intenta de nuevo.</p>}
+        {status === 'denied' && <p role="alert">Acceso denegado. Se requiere una sesión activa del administrador.</p>}
+        {status === 'error' && <p role="alert">No fue posible consultar Cloud. Intenta de nuevo.</p>}
+        {status === 'unavailable' && <p role="status">El diagnóstico todavía no está instalado en Cloud.</p>}
+        {status === 'empty' && <p role="status">No hay conflictos pendientes registrados en Cloud.</p>}
+        {summary && (
+          <>
+            {status === 'ready' && (
+              <>
+                <p className="notification-sync-diagnostics__total">Conflictos pendientes: {summary.pendingCount}</p>
+                <ul>
+                  {summary.entities.map(({ type, count }) => (
+                    <li key={type}>{syncEntityName(type)}: {count}</li>
+                  ))}
+                </ul>
+                {summary.conflictTypes.some(({ type }) => type !== 'VERSION_CONFLICT') && (
+                  <p>Tipos técnicos: {summary.conflictTypes.map(({ type, count }) => `${type}: ${count}`).join(', ')}</p>
+                )}
+                <p>Algunos cambios registrados en Cloud no pudieron conciliarse automáticamente.</p>
+              </>
+            )}
+            {summary.checkedAt && <p className="notification-sync-diagnostics__date">Consulta Cloud: {new Date(summary.checkedAt).toLocaleString('es-MX')}</p>}
+            <p>Conserva tus datos y evita repetir operaciones para corregir el conflicto manualmente. Si persiste, solicita asistencia.</p>
+          </>
+        )}
+        {supportCenterEnabled && (
+          <button type="button" className="notification-sync-diagnostics__support" onClick={() => {
+            setSyncDiagnosticsOpen(false);
+            setActiveTab('support');
+          }}>Ir a soporte</button>
+        )}
+      </section>
+    );
+  };
+
   const renderSupportContent = () => {
     if (!supportCenterEnabled) return null;
 
@@ -542,18 +688,23 @@ export default function NotificationCenterDrawer({
 
         <NotificationTabs
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            setSyncDiagnosticsOpen(false);
+          }}
           showSupport={supportCenterEnabled}
           showInventory={inventoryAccessEnabled}
           counts={notificationCounts}
         />
 
         <div className="notification-center-body">
-          <CashSessionAgeAttention
-            attention={cashSessionAgeAttention}
-            onReview={onReviewCashSessions}
-          />
-          {activeTab === 'support' && supportCenterEnabled ? (
+          {!syncDiagnosticsOpen && (
+            <CashSessionAgeAttention
+              attention={cashSessionAgeAttention}
+              onReview={onReviewCashSessions}
+            />
+          )}
+          {syncDiagnosticsOpen ? renderSyncDiagnostics() : activeTab === 'support' && supportCenterEnabled ? (
             renderSupportContent()
           ) : (
             <NotificationList
@@ -564,6 +715,8 @@ export default function NotificationCenterDrawer({
               onRetry={handleNotificationsRetry}
               onNotificationRead={handleNotificationRead}
               onNotificationArchive={archiveNotification}
+              onShowSyncDiagnostics={handleShowSyncDiagnostics}
+              syncDiagnosticsAvailable={syncDiagnosticsAvailable && actorAccess.isAdmin}
               preferences={normalizedPreferences}
             />
           )}
