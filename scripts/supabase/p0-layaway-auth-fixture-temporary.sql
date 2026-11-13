@@ -1,6 +1,18 @@
 -- Temporary FIN-01/restaurant support objects for the disposable PG17 test DB.
 -- Schemas and functions are from the repository's Production-derived snapshot;
 -- no Production rows are copied or written.
+
+-- Empty Ecommerce stock projection touched by layaway reservation release. The
+-- PR338 financial fixture omits Ecommerce tables; this narrow table reproduces
+-- the columns used by the real projection function without adding test rows.
+CREATE TABLE public.ecommerce_published_product_variants (
+  license_id uuid NOT NULL,
+  source_product_id text,
+  stock_snapshot numeric(12,3),
+  source_available boolean NOT NULL DEFAULT true,
+  deleted_at timestamptz
+);
+
 CREATE TABLE private.pos_fin01_qa_pilots_v2 (
   license_id uuid primary key references public.licenses(id) on delete cascade,
   creation_xid xid8 not null,
