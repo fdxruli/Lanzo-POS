@@ -1,0 +1,38 @@
+name: Apparel Stage 3B PostgreSQL Validation
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20261112213000_apparel_layaway_financial_deadline_guard.sql'
+      - 'supabase/migrations/20261112220000_apparel_layaway_completed_replay_cash_guard.sql'
+      - 'scripts/supabase/apparel_stage3b_pg_validation.py'
+      - '.github/workflows/apparel-stage3b-postgres.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apparel-stage3b-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exact SQL and rollback in isolated PostgreSQL
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '55432'
+          PGUSER: postgres
+          PGDATABASE: postgres
+          PGSSLMODE: disable
+        run: python3 scripts/supabase/apparel_stage3b_pg_validation.py
