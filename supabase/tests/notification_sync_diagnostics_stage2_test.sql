@@ -24,7 +24,7 @@ begin
     raise exception 'SYNC-DIAG: must be STABLE SECURITY DEFINER';
   end if;
 
-  if not ('search_path=' = any(v_settings)) then
+  if not ('search_path=""' = any(v_settings)) then
     raise exception 'SYNC-DIAG: unsafe function search_path';
   end if;
 
