@@ -11,6 +11,7 @@ import {
   uploadImageFile
 } from '../../services/storage/imageUploadService';
 import { normalizeBusinessTypes as normalizeCanonicalBusinessTypes } from '../../utils/businessType';
+import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import {
   PROFILE_LAST_LICENSE_KEY,
   PROFILE_LAST_LOAD_KEY,
@@ -34,7 +35,7 @@ import {
 
 const LEGACY_COMPANY_KEY = 'company';
 
-const captureProfileSettingsAction = (get) => {
+const captureProfileSettingsAction = (get, licenseKey) => {
   const runtimeSnapshot = actorRuntimeController.getState();
   const access = evaluateSettingsAccess({
     runtimeSnapshot,
@@ -56,6 +57,9 @@ const captureProfileSettingsAction = (get) => {
     : 'settings_data';
   const runtimeHandle = actorRuntimeController.capture(runtimePermission);
   const assertCurrent = (requiredPermission = 'settings_data') => {
+    if (get().licenseDetails?.license_key !== licenseKey) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+    }
     const currentRuntime = actorRuntimeController.getState();
     const currentAccess = evaluateSettingsAccess({
       runtimeSnapshot: currentRuntime,
@@ -174,11 +178,11 @@ const isAuthoritativeLicenseValidation = (validation) => (
   && !Array.isArray(validation.features)
 );
 
-const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) => {
+const refreshLicenseBeforeReady = async ({ licenseKey, assertCurrent, set, get }) => {
   Logger.log('[License] Revalidando capacidades autorizadas antes de finalizar onboarding.');
   const validation = await revalidateLicense(licenseKey);
 
-  actorHandle.assertCurrent('settings_data');
+  assertCurrent();
   if (!isAuthoritativeLicenseValidation(validation)) {
     const error = new Error(
       validation?.details
@@ -192,6 +196,7 @@ const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) 
   await assertLocalTenantSyncAccess(validation, {
     reason: 'onboarding_license_revalidation_response'
   });
+  assertCurrent();
 
   const currentLicense = get().licenseDetails || {};
   const authoritativeLicense = {
@@ -213,9 +218,8 @@ const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) 
       || 'admin'
   };
 
-  actorHandle.assertCurrent('settings_data');
   await saveLicenseToStorage(authoritativeLicense);
-  actorHandle.assertCurrent('settings_data');
+  assertCurrent();
   set({ licenseDetails: authoritativeLicense });
 
   return authoritativeLicense;
@@ -523,8 +527,18 @@ export const createProfileSlice = (set, get) => {
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
-    const actorHandle = captureProfileSettingsAction(get);
+    const timezone = typeof setupData.timezone === 'string' ? setupData.timezone.trim() : '';
+    if (!isValidBusinessTimezone(timezone)) {
+      throw new Error('Selecciona una zona horaria IANA válida para tu negocio.');
+    }
+    const actorHandle = captureProfileSettingsAction(get, licenseKey);
     const sessionGeneration = _profileSessionGeneration;
+    const assertSetupContext = () => {
+      actorHandle.assertCurrent('settings_data');
+      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) {
+        throw new Error('La licencia cambió durante el guardado.');
+      }
+    };
 
     try {
       const { logoUploadSource, ...setupPayload } = setupData;
@@ -539,16 +553,17 @@ export const createProfileSlice = (set, get) => {
         logoUrl = uploadResult.publicUrl;
       }
 
-      actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      assertSetupContext();
 
       const profileData = {
         ...setupPayload,
+        timezone,
         logo: logoUrl,
         business_type: normalizeBusinessTypes(setupData.business_type)
       };
 
       const saveResult = await saveBusinessProfile(licenseKey, profileData, { actorHandle });
+      assertSetupContext();
       if (!saveResult?.success) {
         throw new Error(
           saveResult?.message ||
@@ -556,28 +571,27 @@ export const createProfileSlice = (set, get) => {
           'No se pudo guardar el perfil del negocio.'
         );
       }
+      if (saveResult.timezone !== timezone) {
+        throw new Error('El servidor no confirmó la zona horaria del negocio.');
+      }
 
-      actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
-
+      _profileLoadGeneration += 1;
       const companyData = await saveProfileCache(
         licenseKey,
-        buildCompanyData(profileData, licenseKey),
-        { beforeWrite: () => actorHandle.assertCurrent('settings_data') }
+        buildCompanyData({ ...profileData, timezone: saveResult.timezone }, licenseKey),
+        { beforeWrite: assertSetupContext }
       );
 
-      actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      assertSetupContext();
 
       await refreshLicenseBeforeReady({
         licenseKey,
-        actorHandle,
+        assertCurrent: assertSetupContext,
         set,
         get
       });
 
-      actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      assertSetupContext();
 
       set({
         companyProfile: companyData,
@@ -593,8 +607,8 @@ export const createProfileSlice = (set, get) => {
 
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
-    if (!licenseKey) return null;
-    const actorHandle = captureProfileSettingsAction(get);
+    if (!licenseKey || (companyData.license_key && companyData.license_key !== licenseKey)) return null;
+    const actorHandle = captureProfileSettingsAction(get, licenseKey);
     const sessionGeneration = _profileSessionGeneration;
 
     try {
@@ -617,6 +631,8 @@ export const createProfileSlice = (set, get) => {
       nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
 
       const saveResult = await saveBusinessProfile(licenseKey, nextCompanyData, { actorHandle });
+      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) return null;
+      actorHandle.assertCurrent('settings_data');
       if (!saveResult?.success) {
         throw new Error(
           saveResult?.message ||
@@ -625,12 +641,11 @@ export const createProfileSlice = (set, get) => {
         );
       }
 
-      actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) return null;
       if (nextCompanyData.timezone && saveResult.timezone !== nextCompanyData.timezone) {
         throw new Error('El servidor no confirmó la zona horaria del negocio.');
       }
 
+      if (saveResult.timezone) _profileLoadGeneration += 1;
       const scopedCompanyData = await saveProfileCache(
         licenseKey,
         buildCompanyData(nextCompanyData, licenseKey),

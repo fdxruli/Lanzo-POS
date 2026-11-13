@@ -254,6 +254,23 @@ afterEach(() => {
 });
 
 describe('Layout report authorization', () => {
+  it('shows one timezone notice with a settings link until the active profile has a saved timezone', () => {
+    mocks.app.licenseDetails = { license_key: 'TEST-PROFILE' };
+    mocks.app.companyProfile = { license_key: 'TEST-PROFILE', timezone: null };
+    mocks.app.currentDeviceRole = 'admin';
+    mocks.app.currentAdminUser = { id: 'admin-1' };
+    renderLayout();
+
+    expect(screen.getByText('POS')).toBeVisible();
+    expect(screen.getAllByRole('complementary', { name: 'Zona horaria pendiente' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Ir a Configuración' })).toHaveAttribute('href', '/configuracion?tab=general');
+
+    cleanup();
+    mocks.app.companyProfile = { ...mocks.app.companyProfile, timezone: 'America/Merida' };
+    renderLayout();
+    expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+  });
+
   it('hides route chrome on 404 without unmounting operational runtimes, then restores it', async () => {
     const user = userEvent.setup();
     mocks.app.showTicker = true;

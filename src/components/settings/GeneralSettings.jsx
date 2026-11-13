@@ -19,6 +19,7 @@ import {
   Upload
 } from 'lucide-react';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../common/TermsAndConditionsModal';
+import BusinessTimezoneField from '../common/BusinessTimezoneField';
 import NoPermission from '../common/NoPermission';
 import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import {
@@ -138,9 +139,8 @@ function InputStatusIcon({ isLocked }) {
   );
 }
 
-function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onImageChange, onSubmit, dispatchProfile }) {
+function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, isSaving, onImageChange, onSubmit, dispatchProfile }) {
   const { name, phone, address, timezone, logoPreview, lockedFields } = profileState;
-  const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   const updateField = (fieldName) => (event) => dispatchProfile({ type: 'field', name: fieldName, value: event.target.value });
 
   return (
@@ -232,28 +232,11 @@ function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onI
           </div>
         </div>
 
-        <div className="form-group settings-field-relative">
-          <label className="form-label" htmlFor={`${fieldId}-timezone`}>Zona horaria del negocio</label>
-          <input id={`${fieldId}-timezone`} className="form-input" type="text" list={`${fieldId}-timezone-options`}
-            value={timezone} onChange={updateField('timezone')} placeholder="America/Merida"
-            autoComplete="off" aria-describedby={`${fieldId}-timezone-help`} />
-          <datalist id={`${fieldId}-timezone-options`}>
-            {['America/Merida', 'America/Mexico_City', 'America/Cancun', 'America/Monterrey',
-              'America/Chihuahua', 'America/Mazatlan', 'America/Hermosillo', 'America/Tijuana',
-              'America/Matamoros', 'America/New_York', 'America/Los_Angeles'].map((zone) =>
-              <option key={zone} value={zone} />)}
-          </datalist>
-          <small id={`${fieldId}-timezone-help`} className="form-help-text">
-            {timezone ? 'Zona IANA del negocio. La protección Cloud de vencimientos se activará por separado.'
-              : 'Sin configurar. Los apartados conservan temporalmente sus reglas anteriores.'}
-          </small>
-          {!timezone && detectedZone.includes('/') && (
-            <button type="button" className="btn btn-cancel" onClick={() =>
-              dispatchProfile({ type: 'field', name: 'timezone', value: detectedZone })}>
-              Usar zona detectada: {detectedZone}
-            </button>
-          )}
-        </div>
+        <BusinessTimezoneField
+          value={timezone}
+          onChange={(value) => dispatchProfile({ type: 'field', name: 'timezone', value })}
+          disabled={isSaving}
+        />
 
         <div className="form-group settings-field-relative settings-address-field">
           <label className="form-label settings-label-icon" htmlFor={`${fieldId}-address`}>
@@ -275,7 +258,7 @@ function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, onI
 
       <div className="settings-submit-row">
         {hasChanges ? (
-          <button type="submit" className="btn btn-save animate-fade-in settings-submit-button">
+          <button type="submit" className="btn btn-save animate-fade-in settings-submit-button" disabled={isSaving}>
             <Save size={16} />
             Actualizar datos
           </button>
@@ -371,6 +354,7 @@ function GeneralSettingsContent() {
   const fieldId = useId();
   const [profileState, dispatchProfile] = useReducer(profileReducer, initialProfileState);
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [activeTheme, setActiveTheme] = useState(getInitialTheme);
   const [showTerms, setShowTerms] = useState(false);
 
@@ -445,6 +429,7 @@ function GeneralSettingsContent() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (isSaving) return;
 
     let actorHandle;
     try {
@@ -470,6 +455,7 @@ function GeneralSettingsContent() {
         updates.logoUploadSource = profileState.pendingLogoUploadSource;
       }
 
+      setIsSaving(true);
       const savedProfile = await updateCompanyProfile({
         ...companyProfile,
         id: 'company',
@@ -482,7 +468,9 @@ function GeneralSettingsContent() {
         throw new Error('No se confirmó la zona horaria guardada.');
       }
       dispatchProfile({ type: 'saved' });
-      showMessageModal('Datos actualizados correctamente. Los campos nuevos se han bloqueado.');
+      showMessageModal(businessTimezone && businessTimezone !== companyProfile?.timezone
+        ? 'Zona horaria del negocio guardada.'
+        : 'Datos actualizados correctamente. Los campos nuevos se han bloqueado.');
     } catch (error) {
       if (!actorHandle) return;
       try {
@@ -498,6 +486,8 @@ function GeneralSettingsContent() {
         null,
         { type: 'error' }
       );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -509,6 +499,7 @@ function GeneralSettingsContent() {
           profileState={profileState}
           hasChanges={hasChanges}
           isProcessingLogo={isProcessingLogo}
+          isSaving={isSaving}
           onImageChange={handleImageChange}
           onSubmit={handleSubmit}
           dispatchProfile={dispatchProfile}

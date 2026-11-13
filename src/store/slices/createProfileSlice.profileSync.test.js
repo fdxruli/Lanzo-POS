@@ -258,7 +258,7 @@ describe('profile refresh during authenticated staff transition', () => {
   });
 
   it('refreshes effective license features before marking first-time setup ready', async () => {
-    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true, timezone: 'America/Merida' });
     const state = {
       licenseDetails: {
         license_key: 'LANZO-FREE',
@@ -274,6 +274,7 @@ describe('profile refresh during authenticated staff transition', () => {
 
     await state.handleSetup({
       name: 'Negocio nuevo',
+      timezone: 'America/Merida',
       business_type: ['hardware']
     });
 
@@ -291,10 +292,14 @@ describe('profile refresh during authenticated staff transition', () => {
       ecommerce_order_inbox: true
     });
     expect(state.appStatus).toBe('ready');
+    expect(state.companyProfile.timezone).toBe('America/Merida');
+    expect(mocks.saveData).toHaveBeenCalledWith('company', expect.objectContaining({
+      id: 'company:LANZO-FREE', timezone: 'America/Merida'
+    }));
   });
 
   it('does not enter ready when onboarding cannot obtain authoritative features', async () => {
-    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true, timezone: 'America/Merida' });
     mocks.revalidateLicense.mockResolvedValue({
       valid: true,
       reason: 'offline_grace',
@@ -314,6 +319,7 @@ describe('profile refresh during authenticated staff transition', () => {
 
     await expect(state.handleSetup({
       name: 'Negocio nuevo',
+      timezone: 'America/Merida',
       business_type: ['hardware']
     })).rejects.toMatchObject({ code: 'offline_grace' });
     expect(state.appStatus).toBe('setup_required');
@@ -345,7 +351,7 @@ describe('profile refresh during authenticated staff transition', () => {
 
   it.each([
     ['updateCompanyProfile', { name: 'Stale update', business_type: ['hardware'] }],
-    ['handleSetup', { name: 'Stale setup', business_type: ['abarrotes'] }]
+    ['handleSetup', { name: 'Stale setup', business_type: ['abarrotes'], timezone: 'America/Merida' }]
   ])('fences %s before local cache publication when the actor changes after the RPC', async (method, payload) => {
     const stale = Object.assign(new Error('ACTOR_CONTEXT_STALE'), {
       code: 'ACTOR_CONTEXT_STALE'
@@ -463,7 +469,8 @@ describe('profile refresh during authenticated staff transition', () => {
       const preview = Object.assign(new File(), { size: 100 });
       const original = Object.assign(new File(), { size: 900000 });
       mocks.uploadImageFile.mockResolvedValue({ publicUrl: 'https://storage.test/logo-new.webp' });
-      mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+      mocks.saveBusinessProfile.mockResolvedValue({ success: true, timezone: 'America/Merida' });
+      mocks.revalidateLicense.mockResolvedValue({ valid: true, license_key: 'LANZO-PRO', features: {} });
       const state = {
         currentDeviceRole: 'admin',
         currentAdminUser: { id: 'admin-id' },
@@ -480,6 +487,7 @@ describe('profile refresh during authenticated staff transition', () => {
         name: 'Mi negocio',
         logo: preview,
         logoUploadSource: original,
+        ...(method === 'handleSetup' ? { timezone: 'America/Merida' } : {}),
         business_type: ['hardware']
       });
 
@@ -546,15 +554,23 @@ describe('profile refresh during authenticated staff transition', () => {
     expect(state.companyProfile?.timezone).toBe('America/Merida');
   });
 
-  it('rejects successful RPC responses without a matching server timezone acknowledgement', async () => {
+  it.each(['updateCompanyProfile', 'handleSetup'])('rejects an unconfirmed timezone in %s', async (method) => {
     mocks.saveBusinessProfile.mockResolvedValue({ success: true });
     const state = { currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-id' },
       licenseDetails: { license_key: 'LANZO-PRO' }, companyProfile: null };
     Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
-    await expect(state.updateCompanyProfile({ name: 'Negocio', business_type: ['hardware'],
+    await expect(state[method]({ name: 'Negocio', business_type: ['hardware'],
       timezone: 'America/Merida' })).rejects.toThrow(/servidor no confirmó/);
     expect(mocks.saveData).not.toHaveBeenCalled();
     expect(state.companyProfile).toBeNull();
+  });
+
+  it.each([undefined, 'America/Inexistente'])('blocks setup before Cloud when the timezone is %s', async (timezone) => {
+    const state = { licenseDetails: { license_key: 'LANZO-PRO' }, appStatus: 'setup_required' };
+    Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
+    await expect(state.handleSetup({ name: 'Negocio', business_type: ['hardware'], timezone })).rejects.toThrow(/IANA válida/);
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(state.appStatus).toBe('setup_required');
   });
 
   it('discards a late save response after a license switch without caching or publishing it', async () => {
@@ -569,6 +585,21 @@ describe('profile refresh during authenticated staff transition', () => {
       timezone: 'America/Merida' })).resolves.toBeNull();
     expect(mocks.saveData).not.toHaveBeenCalled();
     expect(state.companyProfile).toBeNull();
+  });
+
+  it('does not finish setup when its Cloud acknowledgement belongs to the previous license', async () => {
+    const state = { currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-id' },
+      licenseDetails: { license_key: 'LANZO-FREE' }, appStatus: 'setup_required' };
+    Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
+    mocks.saveBusinessProfile.mockImplementation(async () => {
+      state.licenseDetails = { license_key: 'LANZO-OTHER' };
+      return { success: true, timezone: 'America/Merida' };
+    });
+    await expect(state.handleSetup({ name: 'Negocio', business_type: ['hardware'],
+      timezone: 'America/Merida' })).rejects.toMatchObject({ code: 'ACTOR_CONTEXT_STALE' });
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(state.companyProfile).toBeNull();
+    expect(state.appStatus).toBe('setup_required');
   });
 
 });

@@ -1673,7 +1673,9 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
                 message:
                     responseCode === 'DEVICE_TOKEN_INVALID'
                         ? 'El token de seguridad del dispositivo no es válido. Vuelve a iniciar sesión.'
-                        : data?.message || responseCode
+                        : responseCode === 'BUSINESS_TIMEZONE_INVALID'
+                            ? 'Ingresa una zona horaria IANA válida, como America/Merida.'
+                            : data?.message || responseCode
             };
         }
 

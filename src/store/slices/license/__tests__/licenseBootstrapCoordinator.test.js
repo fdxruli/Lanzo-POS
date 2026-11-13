@@ -867,7 +867,7 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
     runtimeMocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
     profileStorage.loadData.mockResolvedValue(null);
     supabaseMocks.getBusinessProfile.mockResolvedValue({ success: false, code: 'PROFILE_NOT_FOUND' });
-    supabaseMocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    supabaseMocks.saveBusinessProfile.mockResolvedValue({ success: true, timezone: 'America/Merida' });
     supabaseMocks.revalidateLicense.mockResolvedValue({ valid: true, ...license, features: {} });
     // A fresh store represents reopening the browser: only the allowed stored
     // license/session adapters survive; the enrollment navigation context does not.
@@ -899,7 +899,7 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
     expect(supabaseMocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
     expect(supabaseMocks.activateLicense).not.toHaveBeenCalled();
     expect(supabaseMocks.adminLoginOnDevice).not.toHaveBeenCalled();
-    await state.handleSetup({ name: 'Fixture business', business_type: ['abarrotes'] });
+    await state.handleSetup({ name: 'Fixture business', business_type: ['abarrotes'], timezone: 'America/Merida' });
     expect(state.appStatus).toBe('ready');
     expect(state.companyProfile.license_key).toBe(license.license_key);
     expect(supabaseMocks.saveBusinessProfile).toHaveBeenCalledTimes(1);

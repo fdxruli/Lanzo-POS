@@ -99,9 +99,13 @@ const continueIntegratedOwner = async () => {
   await screen.findByRole('button', { name: 'Crear negocio' });
 };
 
-const waitForLegalDocuments = async () => {
+const waitForLegalDocuments = async ({ selectTimezone = true } = {}) => {
   await waitFor(() => expect(mocks.fetchLegalTerms).toHaveBeenCalledWith('legal_notice'));
   await waitFor(() => expect(screen.queryByText('Verificando documentos legales...')).not.toBeInTheDocument());
+  const field = screen.getByLabelText('Zona horaria del negocio');
+  if (selectTimezone && !field.value) {
+    fireEvent.change(field, { target: { value: 'America/Merida' } });
+  }
 };
 
 const submitStandaloneOwnerEnrollment = () => {
@@ -152,10 +156,10 @@ beforeEach(() => {
     return { success: true, admin_user: { id: 'owner-1' }, details: { license_key: licenseKey } };
   });
   mocks.getBusinessProfile.mockResolvedValue({ code: 'PROFILE_NOT_FOUND' });
-  mocks.saveBusinessProfile.mockImplementation(async () => {
+  mocks.saveBusinessProfile.mockImplementation(async (_license, profile) => {
     expect(mocks.actorGranted).toBe(true);
     mocks.events.push('profile');
-    return { success: true };
+    return { success: true, timezone: profile.timezone };
   });
   mocks.fetchLegalTerms.mockImplementation(async (type) => ({ id: `${type}-current`, version: '2026.11', title: type }));
   const accepted = new Set();
@@ -251,14 +255,48 @@ describe('integrated owner onboarding', () => {
     const changeLicense = screen.getByRole('button', { name: 'Cambiar licencia' });
     expect(changeLicense.closest('.accordion-item')).toBeNull();
 
-    await waitForLegalDocuments();
+    await waitForLegalDocuments({ selectTimezone: false });
+    const timezoneField = screen.getByLabelText('Zona horaria del negocio');
+    expect(timezoneField).toBeRequired();
+    expect(timezoneField).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Selecciona la zona horaria');
+    expect(timezoneField).toHaveFocus();
+    fireEvent.change(timezoneField, { target: { value: 'America/Inexistente' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('IANA válida');
+    fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
+    fireEvent.change(timezoneField, { target: { value: 'America/Merida' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
     expect(mocks.events).toEqual(['owner', 'actor', ...Array(6).fill('terms'), 'profile']);
     expect(useAppStore.getState().companyProfile.name).toBe('Mi negocio');
+    expect(useAppStore.getState().companyProfile.timezone).toBe('America/Merida');
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ timezone: 'America/Merida' }), expect.any(Object)
+    );
     expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
     expect(mocks.configureBackup).not.toHaveBeenCalled();
+  });
+
+  it('leaves the detected zone empty until the owner chooses it and waits for explicit creation', async () => {
+    const resolvedOptions = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ timeZone: 'America/Tijuana' });
+    try {
+      await start(); business(); await continueIntegratedOwner();
+      await waitForLegalDocuments({ selectTimezone: false });
+      expect(screen.getByLabelText('Zona horaria del negocio')).toHaveValue('');
+      fireEvent.click(screen.getByRole('button', { name: 'Usar zona detectada (America/Tijuana)' }));
+      expect(screen.getByLabelText('Zona horaria del negocio')).toHaveValue('America/Tijuana');
+      expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
+      await screen.findByText('ready');
+      expect(useAppStore.getState().companyProfile.timezone).toBe('America/Tijuana');
+    } finally {
+      resolvedOptions.mockRestore();
+    }
   });
 
   it('recovers after closing before creation and accepts current legal versions only on the final action', async () => {
