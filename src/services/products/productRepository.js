@@ -3,6 +3,7 @@ import { generateID } from '../utils';
 import { useAppStore } from '../../store/useAppStore';
 import { generateIdempotencyKey } from '../sync/idempotency';
 import { syncOutboxService } from '../sync/syncOutboxService';
+import { syncMetaService } from '../sync/syncMetaService';
 import {
   getLicenseKeyFromDetails,
   isCloudProductsSyncEnabled,
@@ -19,7 +20,7 @@ import { productLocalRepository } from './productLocalRepository';
 import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
-import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
+import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS, PRODUCTS_LAST_SNAPSHOT_AT_META_KEY } from './productConstants';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { notifyProductsChanged } from './productEvents';
 import {
@@ -229,6 +230,21 @@ export const productRepository = {
 
   async getAssortmentCatalogSnapshot(options = {}) {
     return productLocalRepository.getAssortmentCatalogSnapshot(options);
+  },
+
+  async getCategoryProductCounts(categoryIds = []) {
+    const { licenseKey, cloudEnabled } = getMode();
+    if (cloudEnabled) {
+      const lastSnapshotAt = await syncMetaService.getMeta(
+        PRODUCTS_LAST_SNAPSHOT_AT_META_KEY,
+        null,
+        { licenseKey }
+      );
+      if (!lastSnapshotAt) return { complete: false, counts: {} };
+    }
+
+    const counts = await productLocalRepository.getCategoryProductCounts(categoryIds);
+    return { complete: true, counts };
   },
 
   async listCategories(options = {}) {

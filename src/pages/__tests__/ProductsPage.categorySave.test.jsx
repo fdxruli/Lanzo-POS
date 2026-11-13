@@ -8,9 +8,14 @@ const shared = vi.hoisted(() => ({
   app: null,
   catalog: null,
   stats: null,
-  repository: { saveCategory: vi.fn() },
+  repository: {
+    saveCategory: vi.fn(),
+    deleteCategory: vi.fn(),
+    getCategoryProductCounts: vi.fn()
+  },
   broadcastDBChange: vi.fn(),
-  showMessageModal: vi.fn()
+  showMessageModal: vi.fn(),
+  showConfirmModal: vi.fn()
 }));
 
 vi.mock('../../store/useAppStore', () => ({
@@ -38,7 +43,7 @@ vi.mock('../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: shared.broadcastDBChange
 }));
 vi.mock('../../services/utils', () => ({
-  showConfirmModal: vi.fn(),
+  showConfirmModal: shared.showConfirmModal,
   showMessageModal: shared.showMessageModal
 }));
 
@@ -65,7 +70,7 @@ const renderPage = () => render(
 );
 
 const beginCreate = async (name) => {
-  await screen.findByRole('heading', { name: 'Nueva categoria' });
+  await screen.findByRole('heading', { name: 'Nueva categoría' });
   fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: name } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 };
@@ -87,8 +92,11 @@ describe('ProductsPage category save flow', () => {
     };
     shared.stats = { adjustInventoryValue: vi.fn() };
     shared.repository.saveCategory.mockReset();
+    shared.repository.deleteCategory.mockReset().mockResolvedValue({ success: true });
+    shared.repository.getCategoryProductCounts.mockReset().mockResolvedValue({ complete: false, counts: {} });
     shared.broadcastDBChange.mockReset();
     shared.showMessageModal.mockReset();
+    shared.showConfirmModal.mockReset().mockResolvedValue(true);
   });
 
   afterEach(() => cleanup());
@@ -126,7 +134,7 @@ describe('ProductsPage category save flow', () => {
       }
     });
     renderPage();
-    await screen.findByRole('heading', { name: 'Nueva categoria' });
+    await screen.findByRole('heading', { name: 'Nueva categoría' });
     fireEvent.click(screen.getByRole('button', { name: 'Editar Bebidas' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Actualizar' })).toBeInTheDocument());
     shared.catalog.loadInitialProducts.mockClear();
@@ -186,7 +194,7 @@ describe('ProductsPage category save flow', () => {
     error.name = 'ConstraintError';
     shared.repository.saveCategory.mockRejectedValue(error);
     renderPage();
-    await screen.findByRole('heading', { name: 'Nueva categoria' });
+    await screen.findByRole('heading', { name: 'Nueva categoría' });
     shared.catalog.loadInitialProducts.mockClear();
 
     fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA local' } });
@@ -222,7 +230,7 @@ describe('ProductsPage category save flow', () => {
       name: 'QA sin confirmar'
     });
     renderPage();
-    await screen.findByRole('heading', { name: 'Nueva categoria' });
+    await screen.findByRole('heading', { name: 'Nueva categoría' });
     shared.catalog.loadInitialProducts.mockClear();
 
     fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA sin confirmar' } });
@@ -249,5 +257,37 @@ describe('ProductsPage category save flow', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('guardada en este dispositivo');
     expect(screen.getByRole('status')).toHaveTextContent('sincronización está pendiente');
     expect(shared.broadcastDBChange).toHaveBeenCalledWith(expect.objectContaining({ action: 'category-created' }));
+  });
+
+  it('explains the category and product impact before deletion when the count is reliable', async () => {
+    shared.repository.getCategoryProductCounts.mockResolvedValue({
+      complete: true,
+      counts: { 'category-1': 12 }
+    });
+    renderPage();
+
+    expect(await screen.findByText('12 productos')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar Bebidas' }));
+
+    await waitFor(() => expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      'Los 12 productos asociados quedarán sin categoría. Los productos no se eliminarán.',
+      expect.objectContaining({
+        title: '¿Eliminar «Bebidas»?',
+        confirmButtonText: 'Eliminar categoría',
+        cancelButtonText: 'Cancelar'
+      })
+    ));
+    await waitFor(() => expect(shared.repository.deleteCategory).toHaveBeenCalledWith('category-1'));
+  });
+
+  it('uses a generic deletion warning when the category count is not reliable', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Bebidas' }));
+
+    await waitFor(() => expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      'Los productos asociados quedarán sin categoría. Los productos no se eliminarán.',
+      expect.objectContaining({ title: '¿Eliminar «Bebidas»?' })
+    ));
+    expect(shared.showConfirmModal.mock.calls[0][0]).not.toContain('0 productos');
   });
 });

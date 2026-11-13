@@ -1,35 +1,37 @@
 import { useState } from 'react';
-import { Layers3, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
+import { Layers3, Pencil, Plus } from 'lucide-react';
 import CategoryForm from './CategoryForm';
+import CategoryList from './CategoryList';
 import './CategoryManager.css';
 
-export default function CategoryManager({ categories, onSave, onRefresh, onDelete }) {
+const EMPTY_CATEGORIES = [];
+
+export default function CategoryManager({ categories = EMPTY_CATEGORIES, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
-  const sortedCategories = categories.toSorted((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+  const categoryCount = Array.isArray(categories) ? categories.length : 0;
 
   const handleSaveSuccess = () => {
     setEditingCategory(null);
-    onRefresh();
+    onRefresh?.();
   };
 
   return (
-    <section className="category-manager-container" aria-label="Gestion de categorias">
-      <div className="category-manager-header">
+    <section className="category-manager-container" aria-label="Gestión de categorías">
+      <header className="category-manager-header">
         <div className="category-title-group">
           <span className="category-kicker">
-            <Layers3 size={15} />
-            Categorias
+            <Layers3 size={15} aria-hidden="true" />
+            Productos
           </span>
           <div>
-            <h2>Organizacion del catalogo</h2>
-            <p>Ordena la produccion y el punto de venta por grupos claros.</p>
+            <h2>Categorías</h2>
+            <p>Organiza tus productos para encontrarlos más rápido.</p>
           </div>
         </div>
-
-        <div className="category-status-pill">
-          {categories.length} categoria{categories.length === 1 ? '' : 's'}
+        <div className="category-status-pill" aria-label={`${categoryCount} ${categoryCount === 1 ? 'categoría' : 'categorías'}`}>
+          {categoryCount} {categoryCount === 1 ? 'categoría' : 'categorías'}
         </div>
-      </div>
+      </header>
 
       <div className="category-manager-layout">
         <aside className="category-form-section">
@@ -38,7 +40,7 @@ export default function CategoryManager({ categories, onSave, onRefresh, onDelet
               {editingCategory ? <Pencil size={17} /> : <Plus size={17} />}
             </span>
             <div>
-              <h3>{editingCategory ? 'Editar categoria' : 'Nueva categoria'}</h3>
+              <h3>{editingCategory ? 'Editar categoría' : 'Nueva categoría'}</h3>
               {editingCategory && <p>{editingCategory.name}</p>}
             </div>
           </div>
@@ -51,60 +53,21 @@ export default function CategoryManager({ categories, onSave, onRefresh, onDelet
           />
         </aside>
 
-        <div className="category-list-section">
+        <section className="category-list-section" aria-labelledby="category-list-heading">
           <div className="category-list-header">
             <div>
-              <h3>Categorias existentes</h3>
-              <p>{sortedCategories.length > 0 ? 'Ordenadas por prioridad visual.' : 'Crea la primera categoria para organizar tus productos.'}</p>
+              <h3 id="category-list-heading">Categorías existentes</h3>
             </div>
+            <span className="category-list-count" aria-hidden="true">{categoryCount}</span>
           </div>
-
-          {sortedCategories.length === 0 ? (
-            <div className="category-empty-state">
-              <Tag size={42} />
-              <strong>Sin categorias creadas</strong>
-              <span>Agrega una categoria para empezar a clasificar productos.</span>
-            </div>
-          ) : (
-            <div className="category-list-grid">
-              {sortedCategories.map((cat) => (
-                <article key={cat.id} className="category-card-item">
-                  <span
-                    className="category-color-swatch"
-                    style={{ backgroundColor: cat.color || 'var(--ui-color-primary)' }}
-                    aria-hidden="true"
-                  />
-
-                  <div className="category-card-copy">
-                    <h4 className="category-name">{cat.name}</h4>
-                    <span className="category-sort-order">Orden {Number(cat.sortOrder) || 0}</span>
-                  </div>
-
-                  <div className="category-actions">
-                    <button
-                      type="button"
-                      className="category-icon-button edit"
-                      onClick={() => setEditingCategory(cat)}
-                      title="Editar"
-                      aria-label={`Editar ${cat.name}`}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="category-icon-button delete"
-                      onClick={() => onDelete(cat.id)}
-                      title="Eliminar"
-                      aria-label={`Eliminar ${cat.name}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
+          <div className="category-list-body">
+            <CategoryList
+              categories={categories}
+              onEdit={setEditingCategory}
+              onDelete={onDelete}
+            />
+          </div>
+        </section>
       </div>
     </section>
   );

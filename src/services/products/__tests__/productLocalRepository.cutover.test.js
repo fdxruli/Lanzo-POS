@@ -20,6 +20,11 @@ const databaseMocks = vi.hoisted(() => ({
 
 const tableFor = (storeName) => ({
   toArray: vi.fn(async () => rows[storeName].map((row) => ({ ...row }))),
+  where: vi.fn((indexName) => ({
+    anyOf: vi.fn((ids) => ({
+      toArray: vi.fn(async () => rows[storeName].filter((row) => ids.includes(row[indexName])).map((row) => ({ ...row })))
+    }))
+  })),
   get: vi.fn(async (id) => rows[storeName].find((row) => row.id === id) || null),
   put: vi.fn(async (record) => {
     const index = rows[storeName].findIndex((row) => row.id === record.id);
@@ -123,6 +128,23 @@ describe('product local catalog cutover intent', () => {
       { tableName: 'menu', maximum: 3 },
       { tableName: 'categories', maximum: 2 }
     ]));
+  });
+
+  it('counts every non-deleted category association through the categoryId index', async () => {
+    rows.menu.push(
+      { id: 'active', categoryId: 'c1', isActive: true },
+      { id: 'inactive', categoryId: 'c1', isActive: false },
+      { id: 'ingredient', categoryId: 'c1', productType: 'ingredient' },
+      { id: 'deleted-camel', categoryId: 'c1', deletedAt: '2026-01-01' },
+      { id: 'deleted-snake', categoryId: 'c1', deleted_timestamp: '2026-01-01' },
+      { id: 'other-category', categoryId: 'c2' },
+      { id: 'uncategorized', categoryId: '' }
+    );
+
+    const counts = await productLocalRepository.getCategoryProductCounts(['c1', 'c2', 'c3']);
+
+    expect(counts).toEqual({ c1: 3, c2: 1, c3: 0 });
+    expect(tables.get('menu').where).toHaveBeenCalledWith('categoryId');
   });
 
   it('exposes active mutations and product/category/batch tombstones to cutover recovery', async () => {

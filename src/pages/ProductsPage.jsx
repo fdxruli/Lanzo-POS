@@ -389,10 +389,24 @@ export default function ProductsPage() {
         return { ...savedCategory, saveStatus };
     };
 
-    const handleDeleteCategory = async (categoryId) => {
-        if (!(await showConfirmModal('¿Eliminar esta categoría? Los productos asociados quedarán "Sin Categoría".', {
-            title: 'Eliminar categoría',
-            confirmButtonText: 'Si, eliminar',
+    const handleDeleteCategory = async (category, productCount = null) => {
+        const categoryRecord = typeof category === 'object'
+            ? category
+            : categories.find((item) => item.id === category);
+        const categoryId = categoryRecord?.id || category;
+        const categoryName = categoryRecord?.name || 'esta categoría';
+        const hasReliableCount = Number.isInteger(productCount) && productCount >= 0;
+        const confirmationMessage = hasReliableCount
+            ? productCount === 0
+                ? 'No hay productos asociados. Los productos no se eliminarán.'
+                : productCount === 1
+                    ? 'El producto asociado quedará sin categoría. El producto no se eliminará.'
+                    : `Los ${productCount} productos asociados quedarán sin categoría. Los productos no se eliminarán.`
+            : 'Los productos asociados quedarán sin categoría. Los productos no se eliminarán.';
+
+        if (!(await showConfirmModal(confirmationMessage, {
+            title: `¿Eliminar «${categoryName}»?`,
+            confirmButtonText: 'Eliminar categoría',
             cancelButtonText: 'Cancelar'
         }))) return;
 
