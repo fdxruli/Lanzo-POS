@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,6 +46,41 @@ vi.mock('../../services/utils', () => ({
   showConfirmModal: shared.showConfirmModal,
   showMessageModal: shared.showMessageModal
 }));
+vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
+  const React = await import('react');
+  return {
+    default: function MockProductFormV2({ productToEdit, onOpenCategoryManager }) {
+      const [categoryId, setCategoryId] = React.useState('');
+      const [productName, setProductName] = React.useState(productToEdit?.name || '');
+
+      return (
+        <div>
+          <label>
+            Nombre del producto
+            <input aria-label="Nombre del producto" value={productName} onChange={(event) => setProductName(event.target.value)} />
+          </label>
+          <label>
+            Categoría del producto
+            <select aria-label="Categoría del producto" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+              <option value="">Sin categoría</option>
+              <option value="category-a">QA Categoría A</option>
+              <option value="category-b">Categoría B</option>
+              <option value="category-b-created">QA Categoría B</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => onOpenCategoryManager((category) => setCategoryId(category.id))}>
+            Administrar categorías del producto
+          </button>
+        </div>
+      );
+    }
+  };
+});
+vi.mock('../../components/products/ProductList', () => ({
+  default: function MockProductList({ onEdit }) {
+    return <button type="button" onClick={() => onEdit({ id: 'product-b', name: 'Producto B' })}>Editar producto B</button>;
+  }
+}));
 
 import ProductsPage from '../ProductsPage';
 
@@ -63,11 +98,17 @@ const makeCategory = (overrides = {}) => ({
   ...overrides
 });
 
-const renderPage = () => render(
-  <MemoryRouter initialEntries={['/productos?tab=categories']}>
+const renderPage = (initialEntry = '/productos?tab=categories') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
     <ProductsPage />
   </MemoryRouter>
 );
+
+const createDeferred = () => {
+  let resolve;
+  const promise = new Promise((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+};
 
 const beginCreate = async (name) => {
   await screen.findByRole('heading', { name: 'Nueva categoría' });
@@ -100,6 +141,99 @@ describe('ProductsPage category save flow', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('does not assign a delayed category from product A to product B', async () => {
+    const pendingSave = createDeferred();
+    shared.repository.saveCategory.mockReturnValueOnce(pendingSave.promise);
+    renderPage('/productos?tab=add');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Administrar categorías del producto' }));
+    await screen.findByRole('heading', { name: 'Gestionar categorías' });
+    fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA Categoría A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.repository.saveCategory).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Productos (Venta)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar producto B' }));
+    const categorySelect = await screen.findByRole('combobox', { name: 'Categoría del producto' });
+    fireEvent.change(categorySelect, { target: { value: 'category-b' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Administrar categorías del producto' }));
+    await screen.findByRole('heading', { name: 'Gestionar categorías' });
+    pendingSave.resolve({ id: 'category-a', name: 'QA Categoría A' });
+    await waitFor(() => expect(shared.broadcastDBChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'category-created',
+      categoryId: 'category-a'
+    })));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(categorySelect).toHaveValue('category-b');
+    expect(screen.getByLabelText('Nombre del producto')).toHaveValue('Producto B');
+  });
+
+  it('does not apply an older save after closing and reopening the new-product form with the same React key', async () => {
+    const pendingSaveA = createDeferred();
+    const pendingSaveB = createDeferred();
+    shared.repository.saveCategory
+      .mockReturnValueOnce(pendingSaveA.promise)
+      .mockReturnValueOnce(pendingSaveB.promise);
+    renderPage('/productos?tab=add');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Administrar categorías del producto' }));
+    await screen.findByRole('heading', { name: 'Gestionar categorías' });
+    fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA Categoría A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.repository.saveCategory).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Productos (Venta)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Agregar Producto' }));
+    const categorySelect = await screen.findByRole('combobox', { name: 'Categoría del producto' });
+    expect(categorySelect).toHaveValue('');
+    fireEvent.change(categorySelect, { target: { value: 'category-b' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Administrar categorías del producto' }));
+    await screen.findByRole('heading', { name: 'Gestionar categorías' });
+    fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA Categoría B' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.repository.saveCategory).toHaveBeenCalledTimes(2));
+
+    pendingSaveB.resolve({ id: 'category-b-created', name: 'QA Categoría B' });
+    await waitFor(() => expect(shared.broadcastDBChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'category-created',
+      categoryId: 'category-b-created'
+    })));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(categorySelect).toHaveValue('category-b-created');
+
+    pendingSaveA.resolve({ id: 'category-a', name: 'QA Categoría A' });
+    await waitFor(() => expect(shared.broadcastDBChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'category-created',
+      categoryId: 'category-a'
+    })));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(categorySelect).toHaveValue('category-b-created');
+  });
+
+  it('selects a category created in the current form session and preserves other product fields', async () => {
+    const pendingSave = createDeferred();
+    shared.repository.saveCategory.mockReturnValueOnce(pendingSave.promise);
+    renderPage('/productos?tab=add');
+
+    const productName = await screen.findByLabelText('Nombre del producto');
+    fireEvent.change(productName, { target: { value: 'Producto sin cambios' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Administrar categorías del producto' }));
+    await screen.findByRole('heading', { name: 'Gestionar categorías' });
+    fireEvent.change(screen.getByLabelText('Nombre de la categoria'), { target: { value: 'QA Categoría normal' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(shared.repository.saveCategory).toHaveBeenCalledOnce());
+    pendingSave.resolve({ id: 'category-a', name: 'QA Categoría normal' });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Categoría del producto' })).toHaveValue('category-a'));
+    expect(productName).toHaveValue('Producto sin cambios');
+  });
 
   it('accepts a Free category object without success:true and broadcasts after persistence', async () => {
     shared.repository.saveCategory.mockResolvedValue({

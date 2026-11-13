@@ -1,6 +1,6 @@
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/ProductsPage.jsx
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -114,31 +114,39 @@ export default function ProductsPage() {
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [, setShowDataTransfer] = useState(false);
     const legacyImageMigrationRef = useRef({ licenseKey: null, running: false });
-    const productCategoryCreatedHandlerRef = useRef(null);
+    const productCategoryCreateRequestRef = useRef(null);
+    const [productCategoryCreateRequest, setProductCategoryCreateRequest] = useState(null);
+
+    const invalidateProductCategoryCreateRequest = useCallback(() => {
+        productCategoryCreateRequestRef.current = null;
+        setProductCategoryCreateRequest(null);
+        setSelectNewCategoryOnCreate(false);
+    }, []);
 
     const handleOpenCategoryManagerFromProduct = (onCategoryCreated) => {
-        productCategoryCreatedHandlerRef.current = onCategoryCreated;
+        const requestId = Symbol('product-category-create');
+        const request = {
+            onCategoryCreated: (category) => {
+                if (productCategoryCreateRequestRef.current !== requestId || !category?.id) return;
+                onCategoryCreated?.(category);
+            }
+        };
+        productCategoryCreateRequestRef.current = requestId;
+        setProductCategoryCreateRequest(request);
         setSelectNewCategoryOnCreate(true);
         setShowCategoryModal(true);
     };
 
     const handleCloseCategoryManager = () => {
-        productCategoryCreatedHandlerRef.current = null;
-        setSelectNewCategoryOnCreate(false);
+        invalidateProductCategoryCreateRequest();
         setShowCategoryModal(false);
-    };
-
-    const handleCategoryCreatedFromProduct = (category) => {
-        if (!category?.id) return;
-        productCategoryCreatedHandlerRef.current?.(category);
     };
 
     useEffect(() => {
         if (activeTab === 'add-product') return;
-        productCategoryCreatedHandlerRef.current = null;
-        setSelectNewCategoryOnCreate(false);
+        invalidateProductCategoryCreateRequest();
         setShowCategoryModal(false);
-    }, [activeTab]);
+    }, [activeTab, invalidateProductCategoryCreateRequest]);
 
     const isProductFormActive = activeTab === 'add-product';
     const { runWithoutBlocking } = useNavigationGuard({
@@ -148,6 +156,7 @@ export default function ProductsPage() {
         confirmButtonText: 'Sí, salir',
         cancelButtonText: 'Continuar editando',
         onDiscard: () => {
+            invalidateProductCategoryCreateRequest();
             setEditingProduct(null);
             setIsProductFormDirty(false);
         }
@@ -296,6 +305,9 @@ export default function ProductsPage() {
                 ? 'No tienes permiso para gestionar inventario.'
                 : 'No tienes permiso para gestionar productos.', null, { type: 'warning' });
             return;
+        }
+        if (tabKey !== 'add-product' && !isProductFormDirty) {
+            invalidateProductCategoryCreateRequest();
         }
 
         const urlMap = {
@@ -552,16 +564,19 @@ export default function ProductsPage() {
             confirmButtonText: 'Descartar cambios y editar',
             cancelButtonText: 'Seguir capturando'
         }))) return;
+        invalidateProductCategoryCreateRequest();
         setIsProductFormDirty(false);
         setEditingProduct(product);
     };
 
     const handleEditProduct = (product) => {
+        invalidateProductCategoryCreateRequest();
         setEditingProduct(product);
         handleTabChange('add-product');
     };
 
     const handleCreateIngredient = () => {
+        invalidateProductCategoryCreateRequest();
         setEditingProduct({ name: '', productType: 'ingredient' });
         handleTabChange('add-product');
     };
@@ -631,6 +646,7 @@ export default function ProductsPage() {
                         className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
                         onClick={() => {
                             if (activeTab === 'add-product') return;
+                            invalidateProductCategoryCreateRequest();
                             setEditingProduct(null);
                             handleTabChange('add-product');
                         }}
@@ -769,7 +785,7 @@ export default function ProductsPage() {
                 onRefresh={refreshCategories}
                 onDelete={handleDeleteCategory}
                 selectNewCategoryOnCreate={selectNewCategoryOnCreate}
-                onCategoryCreated={handleCategoryCreatedFromProduct}
+                onCategoryCreated={productCategoryCreateRequest?.onCategoryCreated}
             />
 
             <DailyPriceModal
