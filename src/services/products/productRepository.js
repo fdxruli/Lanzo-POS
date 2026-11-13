@@ -291,13 +291,23 @@ export const productRepository = {
         idempotencyKey
       });
 
-      if (response?.success === false) {
+      if (response?.success !== true) {
         await saveConflictIfNeeded({
           operation: { entityType: SYNC_ENTITY_TYPES.CATEGORY, entityId: category.id, payload: outboxPayload },
           response,
           localPayload: category
         });
-        return normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
+        const failure = normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
+        if (response?.code === 'VERSION_CONFLICT' && response.category) {
+          try {
+            assertProductInventoryMutationCurrent(actorHandle, { products: true });
+            await productLocalRepository.applyCloudCategory(response.category);
+          } catch (refreshError) {
+            Logger.warn('[Products] No se pudo actualizar la categoría después de un conflicto de versión:', refreshError);
+            failure.categoryRefreshFailed = true;
+          }
+        }
+        return failure;
       }
 
       assertProductInventoryMutationCurrent(actorHandle, { products: true });
@@ -305,7 +315,7 @@ export const productRepository = {
         operation: 'updated',
         source: 'productRepository.saveCategory'
       });
-      return response.category || category;
+      return { ...(response.category || category), success: true };
     } catch (error) {
       Logger.warn('[Products] Upsert category cloud fallo:', error);
       if (isRetryableCloudError(error)) {

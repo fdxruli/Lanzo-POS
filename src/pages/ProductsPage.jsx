@@ -33,6 +33,35 @@ import { useNavigationGuard } from '../hooks/useNavigationGuard';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
 const PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX = 'lanzo:product-image-migration:';
+const getCategorySaveError = (result) => {
+    const response = result?.response || result?.error?.details || result?.error?.response || {};
+    const code = result?.code || result?.error?.code || response?.code;
+    const rawMessage = result?.message || result?.error?.message || response?.message;
+    const isCodeOnlyMessage = typeof rawMessage === 'string' && /^[A-Z0-9_]+$/.test(rawMessage.trim());
+    const isAuthorizationError = /AUTH|PERMISSION|FORBIDDEN|NOT_AUTHORIZED|UNAUTHORIZED|permiso|autoriz/i.test(`${code || ''} ${rawMessage || ''}`)
+        || ['401', '403', '42501'].includes(String(code || ''));
+
+    let message = rawMessage;
+    if (code === 'DUPLICATE_CATEGORY_NAME' && (!message || isCodeOnlyMessage)) {
+        message = 'Ya existe una categoría activa con este nombre.';
+    } else if (code === 'VERSION_CONFLICT') {
+        message = 'La categoría cambió en otro dispositivo. Tus datos siguen en el formulario; cancela esta edición y vuelve a abrir la categoría para cargar y revisar los cambios actuales antes de guardarla de nuevo.';
+        if (result?.categoryRefreshFailed) {
+            message += ' No se pudo actualizar la lista local; sincroniza las categorías antes de reabrirla.';
+        }
+    } else if (isAuthorizationError && (!message || isCodeOnlyMessage || /AUTH|PERMISSION|FORBIDDEN|NOT_AUTHORIZED|UNAUTHORIZED/i.test(message))) {
+        message = 'No tienes autorización para guardar categorías en la nube. Verifica tu sesión y permisos.';
+    } else if (!message || isCodeOnlyMessage) {
+        message = 'No se pudo guardar la categoría. Intenta de nuevo.';
+    }
+
+    const error = result?.error instanceof Error ? result.error : new Error(message);
+    if (error.message !== message) error.message = message;
+    if (code) error.code = code;
+    error.field = result?.field || response?.field || error.field || null;
+    error.response = response;
+    return error;
+};
 const getProductImageMigrationSessionKey = (value) => {
     let hash = 2166136261;
     const input = String(value || '');
@@ -287,28 +316,77 @@ export default function ProductsPage() {
     };
 
     const handleSaveCategory = async (categoryData) => {
+        const isEditing = Boolean(categoryData.id);
+        let savedCategory;
+
         try {
-            const isEditing = Boolean(categoryData.id);
-            const savedCategory = await productRepository.saveCategory(categoryData);
-            await refreshCategories();
-            await refreshData();
-
-            broadcastDBChange({
-                action: isEditing ? 'category-updated' : 'category-created',
-                categoryId: savedCategory?.id || categoryData.id,
-                categoryName: savedCategory?.name || categoryData.name,
-                timestamp: Date.now()
-            });
-
-            return savedCategory;
-        } catch (error) {
-            if (error.name === 'DatabaseError') handleActionableError({ error });
+            savedCategory = await productRepository.saveCategory(categoryData);
+            if (savedCategory?.success === false) {
+                const error = getCategorySaveError(savedCategory);
+                if (error.code === 'VERSION_CONFLICT') {
+                    try {
+                        const refreshed = await refreshCategories();
+                        if (refreshed === false) {
+                            Logger.warn('La categoría cambió en Cloud, pero la lista local no pudo actualizarse.');
+                            if (!error.message.includes('lista local')) {
+                                error.message += ' La lista local no se actualizó; sincroniza las categorías antes de reabrirla.';
+                            }
+                        }
+                    } catch (refreshError) {
+                        Logger.warn('La categoría cambió en Cloud, pero la lista local no pudo actualizarse:', refreshError);
+                        if (!error.message.includes('lista local')) {
+                            error.message += ' La lista local no se actualizó; sincroniza las categorías antes de reabrirla.';
+                        }
+                    }
+                }
+                throw error;
+            }
+            if (!savedCategory || typeof savedCategory !== 'object') {
+                throw new Error('No se recibió confirmación del guardado de la categoría. Intenta de nuevo.');
+            }
+            if (cloudProductImagesEnabled && savedCategory.success !== true) {
+                throw new Error('La nube no confirmó el guardado de la categoría. Intenta de nuevo.');
+            }
+        } catch (caughtError) {
+            const error = caughtError instanceof Error
+                ? caughtError
+                : Object.assign(
+                    new Error(caughtError?.message || (typeof caughtError === 'string' ? caughtError : 'No se pudo guardar la categoría.')),
+                    caughtError && typeof caughtError === 'object' ? caughtError : {}
+                );
+            if (error.name === 'DatabaseError') {
+                handleActionableError({ error });
+                error.categorySaveHandledByModal = true;
+            }
             else {
                 Logger.error('Error guardando categoría:', error);
-                showMessageModal(`Error: ${error.message}`);
             }
             throw error;
         }
+
+        const saveStatus = savedCategory.pending
+            ? 'pending'
+            : (cloudProductImagesEnabled ? 'confirmed' : 'local');
+
+        try {
+            await refreshCategories();
+            await refreshData();
+        } catch (refreshError) {
+            Logger.warn('La categoría se guardó, pero no se pudo actualizar el catálogo en pantalla:', refreshError);
+        }
+
+        try {
+            broadcastDBChange({
+                action: isEditing ? 'category-updated' : 'category-created',
+                categoryId: savedCategory.id || categoryData.id,
+                categoryName: savedCategory.name || categoryData.name,
+                timestamp: Date.now()
+            });
+        } catch (notificationError) {
+            Logger.warn('La categoría se guardó, pero no se pudo notificar el cambio del catálogo:', notificationError);
+        }
+
+        return { ...savedCategory, saveStatus };
     };
 
     const handleDeleteCategory = async (categoryId) => {
