@@ -100,6 +100,27 @@ beforeEach(() => {
 });
 
 describe('POS catalog product reconciliation', () => {
+  it('refreshes category color metadata while keeping the selected category filter', async () => {
+    const updatedCategory = { id: 'drinks', name: 'Bebidas', color: '#ff8800' };
+    resetPos({
+      items: [product()],
+      categories: [{ id: 'drinks', name: 'Bebidas', color: '#123abc' }],
+      categoryId: 'drinks',
+      initialized: true
+    });
+    queryMocks.loadCatalogCategories.mockResolvedValue([updatedCategory]);
+    queryMocks.queryPosCatalogPage.mockResolvedValue({
+      data: [product()],
+      nextCursor: null,
+      hasMore: false
+    });
+
+    await usePosCatalogStore.getState().refreshCurrentPages();
+
+    expect(usePosCatalogStore.getState().categories).toEqual([updatedCategory]);
+    expect(usePosCatalogStore.getState().categoryId).toBe('drinks');
+  });
+
   it('updates a visible card name immediately from a directed catalog event', async () => {
     resetPos({ items: [product()], categoryId: 'drinks', initialized: true, isLoading: true });
     queryMocks.queryPosCatalogProductById.mockResolvedValue(product({ name: 'Electrolit Fresa' }));

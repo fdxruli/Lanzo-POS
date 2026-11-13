@@ -64,6 +64,7 @@ import {
   isInventoryCatalogEligible,
   isInventoryUncategorizedFilter,
   isPosCatalogEligible,
+  loadCatalogCategories,
   POS_CATALOG_PAGE_SIZE,
   queryInventoryCatalogPage,
   queryActiveIngredientsForConfiguration,
@@ -90,6 +91,23 @@ beforeEach(() => {
 });
 
 describe('product catalog IndexedDB queries', () => {
+  it('orders categories by sortOrder and keeps the source order when sortOrder ties', async () => {
+    const categories = [
+      { id: 'tie-first', sortOrder: 3 },
+      { id: 'last', sortOrder: 9 },
+      { id: 'tie-second', sortOrder: 3 },
+      { id: 'first', sortOrder: 1 }
+    ];
+    mocks.getActiveCategories.mockResolvedValue(categories);
+
+    await expect(loadCatalogCategories()).resolves.toEqual([
+      categories[3],
+      categories[0],
+      categories[2],
+      categories[1]
+    ]);
+  });
+
   it('keeps administrative status filters and product types in inventory', async () => {
     mocks.records = [
       product(1, { id: 'inactive-sellable', isActive: false }),

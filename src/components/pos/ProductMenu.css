@@ -172,8 +172,14 @@
 }
 
 .category-filter-btn {
+  display: inline-flex;
   flex: 0 0 auto;
+  min-width: 0;
+  max-width: min(78vw, 260px);
   min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 0 14px;
   color: var(--text-color);
   background: var(--card-background-color);
@@ -184,7 +190,28 @@
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.category-filter-btn__indicator {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border: 1px solid var(--card-background-color);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border-color);
+}
+
+.category-filter-btn.active .category-filter-btn__indicator {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.category-filter-btn__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .category-filter-btn.active {
