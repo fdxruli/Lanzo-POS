@@ -1,0 +1,219 @@
+.category-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.category-search-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.category-search-field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 0.55rem;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+  color: var(--ui-text-muted);
+}
+
+.category-search-field:focus-within {
+  border-color: var(--ui-color-secondary);
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+
+.category-search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-dark);
+  font: inherit;
+}
+
+.category-search-field input::placeholder {
+  color: var(--ui-text-muted);
+  opacity: 1;
+}
+
+.category-search-field input:focus-visible {
+  outline: 0;
+}
+
+.category-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.category-search-clear:hover {
+  border-color: var(--ui-color-secondary);
+  color: var(--ui-color-secondary);
+}
+
+.category-search-clear:focus-visible,
+.category-admin-action:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+
+.category-admin-rows {
+  overflow: auto;
+  min-width: 0;
+  max-height: min(54vh, 560px);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+}
+
+.category-admin-row {
+  display: grid;
+  grid-template-columns: 0.7rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+.category-admin-row:last-child {
+  border-bottom: 0;
+}
+
+.category-admin-row:hover {
+  background: color-mix(in srgb, var(--ui-bg-muted) 58%, transparent);
+}
+
+.category-admin-color {
+  display: block;
+  width: 0.7rem;
+  height: 2rem;
+  border-radius: var(--ui-radius-pill);
+}
+
+.category-admin-copy {
+  min-width: 0;
+}
+
+.category-admin-copy h4 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.category-admin-product-count {
+  display: block;
+  margin-top: 0.12rem;
+  color: var(--ui-text-muted);
+  font-size: 0.77rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.category-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.category-admin-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--text-dark);
+  cursor: pointer;
+  transition: border-color var(--ui-transition), color var(--ui-transition);
+}
+
+.category-admin-action--edit:hover {
+  border-color: var(--ui-color-secondary);
+  color: var(--ui-color-secondary);
+}
+
+.category-admin-action--delete {
+  color: var(--ui-text-danger);
+}
+
+.category-admin-action--delete:hover {
+  border-color: var(--ui-color-danger);
+  color: var(--ui-color-danger);
+}
+
+.category-list-empty,
+.category-list-no-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 112px;
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+
+.category-list-empty svg {
+  color: var(--ui-color-secondary);
+}
+
+.category-list-empty strong {
+  color: var(--text-dark);
+  font-size: 0.9rem;
+}
+
+.category-list-empty span,
+.category-list-no-results {
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 380px) {
+  .category-admin-row {
+    grid-template-columns: 0.7rem minmax(0, 1fr) auto;
+    gap: 0.4rem;
+    padding-inline: 0.4rem;
+  }
+
+  .category-admin-actions {
+    gap: 0.15rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .category-admin-action {
+    transition: none;
+  }
+}

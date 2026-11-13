@@ -162,6 +162,29 @@ export const productLocalRepository = {
     return categoriesRepository.getActiveCategories();
   },
 
+  async getCategoryProductCounts(categoryIds = []) {
+    await ensureOpen();
+    const requestedIds = Array.isArray(categoryIds) ? categoryIds : [];
+    const ids = [...new Set(requestedIds.filter((id) => typeof id === 'string' && id.trim()))];
+    const idSet = new Set(ids);
+    const counts = Object.fromEntries(ids.map((id) => [id, 0]));
+    if (ids.length === 0) return counts;
+
+    const products = await db.table(STORES.MENU)
+      .where('categoryId')
+      .anyOf(ids)
+      .toArray();
+
+    for (const product of products) {
+      const categoryId = product?.categoryId ?? product?.category_id;
+      if (!product?.id || !idSet.has(categoryId)) continue;
+      if (product.deletedAt || product.deletedTimestamp || product.deleted_at || product.deleted_timestamp) continue;
+      counts[categoryId] += 1;
+    }
+
+    return counts;
+  },
+
   async getCategoryById(categoryId) {
     if (!categoryId) return null;
     return loadData(STORES.CATEGORIES, categoryId);

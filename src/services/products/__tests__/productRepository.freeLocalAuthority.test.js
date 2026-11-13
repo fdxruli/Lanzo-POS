@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => {
     enqueue: vi.fn(),
     notify: vi.fn(),
     prepareProduct: vi.fn(),
+    getCategoryProductCounts: vi.fn(),
+    syncMetaGetMeta: vi.fn(),
     saveCategoryLocal: vi.fn(),
     deleteCategoryLocal: vi.fn(),
     savePreparedProductLocal: vi.fn(),
@@ -72,6 +74,10 @@ vi.mock('../../sync/syncOutboxService', () => ({
   syncOutboxService: { enqueueOperation: mocks.enqueue }
 }));
 
+vi.mock('../../sync/syncMetaService', () => ({
+  syncMetaService: { getMeta: mocks.syncMetaGetMeta }
+}));
+
 vi.mock('../productMapper', () => ({
   batchToCloudPayload: (value) => value,
   categoryToCloudPayload: (value) => value,
@@ -86,6 +92,7 @@ vi.mock('../productLocalRepository', () => ({
   productLocalRepository: {
     listProductsPage: vi.fn(),
     listCategories: vi.fn(),
+    getCategoryProductCounts: mocks.getCategoryProductCounts,
     saveCategoryLocal: mocks.saveCategoryLocal,
     deleteCategoryLocal: mocks.deleteCategoryLocal,
     getCategoryById: vi.fn(),
@@ -150,6 +157,8 @@ beforeEach(() => {
     throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED');
   });
   mocks.saveCategoryLocal.mockResolvedValue({ success: true });
+  mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-free': 2 });
+  mocks.syncMetaGetMeta.mockResolvedValue(null);
   mocks.deleteCategoryLocal.mockResolvedValue({ success: true });
   mocks.savePreparedProductLocal.mockResolvedValue({ success: true, productId: 'product-free' });
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
@@ -180,6 +189,49 @@ beforeEach(() => {
 });
 
 describe('productRepository FREE/local authority', () => {
+  it('returns local category counts for FREE without requiring a Cloud snapshot marker', async () => {
+    await expect(productRepository.getCategoryProductCounts(['cat-free'])).resolves.toEqual({
+      complete: true,
+      counts: { 'cat-free': 2 }
+    });
+
+    expect(mocks.syncMetaGetMeta).not.toHaveBeenCalled();
+    expect(mocks.getCategoryProductCounts).toHaveBeenCalledWith(['cat-free']);
+  });
+
+  it('omits category counts for PRO until a complete license snapshot exists', async () => {
+    mocks.state.licenseDetails = {
+      license_key: 'LANZO-PRO-REPOSITORY',
+      features: { cloud_pos_sync: true, cloud_products_sync: true }
+    };
+
+    await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
+      complete: false,
+      counts: {}
+    });
+    expect(mocks.syncMetaGetMeta).toHaveBeenCalledWith(
+      'products_last_snapshot_at',
+      null,
+      { licenseKey: 'LANZO-PRO-REPOSITORY' }
+    );
+    expect(mocks.getCategoryProductCounts).not.toHaveBeenCalled();
+  });
+
+  it('uses indexed local counts for PRO after the complete snapshot marker is present', async () => {
+    mocks.state.licenseDetails = {
+      license_key: 'LANZO-PRO-REPOSITORY',
+      features: { cloud_pos_sync: true, cloud_products_sync: true }
+    };
+    mocks.syncMetaGetMeta.mockResolvedValue('2026-11-13T00:00:00.000Z');
+    mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-pro': 7 });
+
+    await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
+      complete: true,
+      counts: { 'cat-pro': 7 }
+    });
+    expect(mocks.getCategoryProductCounts).toHaveBeenCalledWith(['cat-pro']);
+  });
+
   it('keeps category CRUD local with ActorRuntime LOCKED and never enqueues cloud work', async () => {
     await expect(productRepository.saveCategory({ name: 'Salsas' })).resolves.toMatchObject({ success: true });
     await expect(productRepository.deleteCategory('cat-free')).resolves.toMatchObject({ success: true });

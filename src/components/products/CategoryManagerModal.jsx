@@ -1,11 +1,13 @@
-// src/components/products/CategoryManagerModal.jsx
 import { useCallback, useState } from 'react';
-import { Layers3, Pencil, Trash2 } from 'lucide-react';
+import { Layers3 } from 'lucide-react';
 import CategoryForm from './CategoryForm';
+import CategoryList from './CategoryList';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import './CategoryManagerModal.css';
 
-export default function CategoryManagerModal({ show, onClose, categories, onSave, onRefresh, onDelete }) {
+const EMPTY_CATEGORIES = [];
+
+export default function CategoryManagerModal({ show, onClose, categories = EMPTY_CATEGORIES, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
 
   const handleDismiss = useCallback(() => {
@@ -23,23 +25,23 @@ export default function CategoryManagerModal({ show, onClose, categories, onSave
 
   const handleSaveSuccess = () => {
     setEditingCategory(null);
-    if (onRefresh) onRefresh();
+    onRefresh?.();
   };
 
-  const sortedCategories = categories.toSorted((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
+  const categoryCount = Array.isArray(categories) ? categories.length : 0;
 
   return (
-    <div id="category-modal" className="ui-modal category-modal" role="dialog" aria-modal="true" aria-label="Gestionar categorias">
+    <div id="category-modal" className="ui-modal category-modal" role="dialog" aria-modal="true" aria-labelledby="category-modal-title">
       <div className="ui-modal__content category-modal__content">
-        <div className="category-modal__header">
+        <header className="category-modal__header">
           <span className="category-modal__icon" aria-hidden="true">
             <Layers3 size={18} />
           </span>
           <div>
-            <h2 className="modal-title">Gestionar categorias</h2>
-            <p>{editingCategory ? `Editando ${editingCategory.name}` : 'Crea y ordena grupos del catalogo.'}</p>
+            <h2 id="category-modal-title" className="modal-title">Gestionar categorías</h2>
+            <p>{editingCategory ? `Editando ${editingCategory.name}` : 'Crea y edita categorías para tus productos.'}</p>
           </div>
-        </div>
+        </header>
 
         <div className="category-modal__form">
           <CategoryForm
@@ -50,38 +52,17 @@ export default function CategoryManagerModal({ show, onClose, categories, onSave
           />
         </div>
 
-        <div className="category-modal__list-header">
-          <h3>Categorias existentes</h3>
-          <span>{sortedCategories.length}</span>
-        </div>
-
-        <div className="category-list" id="category-list">
-          {sortedCategories.length === 0 ? (
-            <p className="category-modal__empty">No hay categorias creadas.</p>
-          ) : (
-            sortedCategories.map((cat) => (
-              <article key={cat.id} className="category-item-managed">
-                <span
-                  className="category-modal__swatch"
-                  style={{ backgroundColor: cat.color || 'var(--ui-color-primary)' }}
-                  aria-hidden="true"
-                />
-                <div className="category-modal__copy">
-                  <strong>{cat.name}</strong>
-                  <small>Orden {Number(cat.sortOrder) || 0}</small>
-                </div>
-                <div className="category-item-controls">
-                  <button type="button" className="edit-category-btn" onClick={() => setEditingCategory(cat)} title="Editar" aria-label={`Editar ${cat.name}`}>
-                    <Pencil size={15} />
-                  </button>
-                  <button type="button" className="delete-category-btn" onClick={() => onDelete(cat.id)} title="Eliminar" aria-label={`Eliminar ${cat.name}`}>
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </article>
-            ))
-          )}
-        </div>
+        <section className="category-modal__list-section" aria-labelledby="category-modal-list-heading">
+          <div className="category-modal__list-header">
+            <h3 id="category-modal-list-heading">Categorías existentes</h3>
+            <span aria-label={`${categoryCount} ${categoryCount === 1 ? 'categoría' : 'categorías'}`}>{categoryCount}</span>
+          </div>
+          <CategoryList
+            categories={categories}
+            onEdit={setEditingCategory}
+            onDelete={onDelete}
+          />
+        </section>
 
         <footer className="ui-modal__actions category-modal__actions">
           <button id="close-category-modal-btn" type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal}>
