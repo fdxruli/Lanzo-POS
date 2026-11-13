@@ -102,7 +102,7 @@ const continueIntegratedOwner = async () => {
 const waitForLegalDocuments = async ({ selectTimezone = true } = {}) => {
   await waitFor(() => expect(mocks.fetchLegalTerms).toHaveBeenCalledWith('legal_notice'));
   await waitFor(() => expect(screen.queryByText('Verificando documentos legales...')).not.toBeInTheDocument());
-  const field = screen.getByLabelText('Zona horaria del negocio');
+  const field = screen.getByRole('combobox', { name: 'Zona horaria del negocio' });
   if (selectTimezone && !field.value) {
     fireEvent.change(field, { target: { value: 'America/Merida' } });
   }
@@ -256,7 +256,7 @@ describe('integrated owner onboarding', () => {
     expect(changeLicense.closest('.accordion-item')).toBeNull();
 
     await waitForLegalDocuments({ selectTimezone: false });
-    const timezoneField = screen.getByLabelText('Zona horaria del negocio');
+    const timezoneField = screen.getByRole('combobox', { name: 'Zona horaria del negocio' });
     expect(timezoneField).toBeRequired();
     expect(timezoneField).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
@@ -287,9 +287,9 @@ describe('integrated owner onboarding', () => {
     try {
       await start(); business(); await continueIntegratedOwner();
       await waitForLegalDocuments({ selectTimezone: false });
-      expect(screen.getByLabelText('Zona horaria del negocio')).toHaveValue('');
+      expect(screen.getByRole('combobox', { name: 'Zona horaria del negocio' })).toHaveValue('');
       fireEvent.click(screen.getByRole('button', { name: 'Usar zona detectada (America/Tijuana)' }));
-      expect(screen.getByLabelText('Zona horaria del negocio')).toHaveValue('America/Tijuana');
+      expect(screen.getByRole('combobox', { name: 'Zona horaria del negocio' })).toHaveValue('America/Tijuana');
       expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
       await screen.findByText('ready');
