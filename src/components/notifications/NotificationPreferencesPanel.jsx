@@ -56,7 +56,11 @@ export default function NotificationPreferencesPanel({
   };
 
   return (
-    <section className="notification-preferences" aria-label="Preferencias de notificaciones">
+    <section
+      id="notification-center-preferences"
+      className="notification-preferences"
+      aria-label="Preferencias de notificaciones"
+    >
       <header className="notification-preferences__header">
         <span className="notification-preferences__icon" aria-hidden="true">
           <SlidersHorizontal size={16} />

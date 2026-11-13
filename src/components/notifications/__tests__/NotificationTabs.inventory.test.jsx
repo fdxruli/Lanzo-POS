@@ -46,6 +46,21 @@ describe('NotificationTabs inventory category', () => {
     expect(screen.getByRole('tab', { name: /Operaciones/ })).toBeInTheDocument();
   });
 
+  it('hides each category the current user cannot consult', () => {
+    render(
+      <NotificationTabs
+        activeTab="all"
+        onTabChange={vi.fn()}
+        categoryAccess={{ ecommerce: false, license: false, system: false }}
+        counts={{ ecommerce: 2, license: 1, system: 3 }}
+      />
+    );
+
+    expect(screen.queryByRole('tab', { name: /Pedidos online/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Licencia/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Sistema/ })).not.toBeInTheDocument();
+  });
+
   it('requests only the inventory key when Inventory is clicked', () => {
     const onTabChange = vi.fn();
     render(
@@ -60,5 +75,16 @@ describe('NotificationTabs inventory category', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /Inventario/ }));
     expect(onTabChange).toHaveBeenCalledWith('inventory');
+  });
+
+  it('moves between categories with the horizontal arrow keys', () => {
+    const onTabChange = vi.fn();
+    render(<NotificationTabs activeTab="all" onTabChange={onTabChange} />);
+
+    const allTab = screen.getByRole('tab', { name: /^Todas/ });
+    fireEvent.keyDown(allTab, { key: 'ArrowRight' });
+
+    expect(onTabChange).toHaveBeenCalledWith('unread');
+    expect(screen.getByRole('tab', { name: /No leídas/ })).toHaveFocus();
   });
 });

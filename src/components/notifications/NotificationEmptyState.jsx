@@ -3,7 +3,9 @@ import { Inbox } from 'lucide-react';
 const TAB_LABELS = {
   all: 'todas',
   unread: 'no leídas',
-  operation: 'operación',
+  ecommerce: 'pedidos online',
+  inventory: 'inventario',
+  operations: 'operaciones',
   system: 'sistema',
   support: 'soporte',
   license: 'licencia'
@@ -20,7 +22,7 @@ export default function NotificationEmptyState({ activeTab = 'all' }) {
       <h3>{activeTab === 'all' ? 'No tienes notificaciones por ahora.' : 'No hay notificaciones en esta categoría.'}</h3>
       {activeTab === 'all' && (
         <p>
-          Cuando haya avisos de soporte, licencia u operación cloud aparecerán aquí.
+          Cuando haya nuevos avisos disponibles, aparecerán aquí.
         </p>
       )}
       <span>Vista: {tabLabel}</span>

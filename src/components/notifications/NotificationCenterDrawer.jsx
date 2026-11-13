@@ -9,7 +9,6 @@ import {
   NOTIFICATION_ACCESS_MESSAGE
 } from '../../services/notifications/notificationAccess';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   canStaffAccessNotificationCategory,
@@ -140,6 +139,13 @@ export default function NotificationCenterDrawer({
     licenseDetails,
     staffSession,
     'inventory'
+  );
+  const notificationCategoryAccess = useMemo(
+    () => Object.fromEntries(NOTIFICATION_CATEGORY_TABS.map((category) => [
+      category,
+      canStaffAccessNotificationCategory(licenseDetails, staffSession, category)
+    ])),
+    [licenseDetails, staffSession]
   );
   const normalizedPreferences = useMemo(
     () => normalizeNotificationPreferences(notificationPreferences),
@@ -333,7 +339,9 @@ export default function NotificationCenterDrawer({
     const focusTimer = setTimeout(() => drawerRef.current?.querySelector('.notification-center-close')?.focus(), 0);
     const handleKeyDown = (event) => {
       if (event.key === 'Tab') {
-        const elements = [...(drawerRef.current?.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]') || [])];
+        const elements = [...(drawerRef.current?.querySelectorAll(
+          'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input:not(:disabled):not([tabindex="-1"]), textarea:not(:disabled):not([tabindex="-1"]), select:not(:disabled):not([tabindex="-1"]), [tabindex="0"]'
+        ) || [])];
         const first = elements[0];
         const last = elements.at(-1);
         if (first && ((!event.shiftKey && document.activeElement === last) || (event.shiftKey && document.activeElement === first) || !drawerRef.current?.contains(document.activeElement))) {
@@ -549,13 +557,18 @@ export default function NotificationCenterDrawer({
     const status = syncContextChanged ? 'changed' : syncDiagnosis.status;
     const summary = status === 'ready' || status === 'empty' ? syncDiagnosis.summary : null;
     return (
-      <section className="notification-sync-diagnostics" aria-label="Diagnóstico de sincronización">
+      <section
+        className="notification-sync-diagnostics"
+        aria-label="Diagnóstico de sincronización"
+        data-status={status}
+      >
         <div className="notification-sync-diagnostics__actions">
           <button type="button" onClick={() => setSyncDiagnosticsOpen(false)}>Volver a notificaciones</button>
           <button type="button" onClick={() => void refreshSyncDiagnostics()} disabled={status === 'loading' || status === 'changed'}>
             Actualizar diagnóstico
           </button>
         </div>
+        <p className="notification-sync-diagnostics__eyebrow">Diagnóstico Cloud</p>
         <h3>Conflictos de sincronización Cloud</h3>
         {status === 'loading' && <p role="status">Consultando conflictos pendientes...</p>}
         {status === 'changed' && <p role="alert">Cambió el negocio o la sesión. Vuelve a abrir el diagnóstico desde la notificación.</p>}
@@ -569,19 +582,27 @@ export default function NotificationCenterDrawer({
             {status === 'ready' && (
               <>
                 <p className="notification-sync-diagnostics__total">Conflictos pendientes: {summary.pendingCount}</p>
-                <ul>
-                  {summary.entities.map(({ type, count }) => (
-                    <li key={type}>{syncEntityName(type)}: {count}</li>
-                  ))}
-                </ul>
-                <p>Clasificación de los conflictos:</p>
-                <ul>
-                  {summary.conflictTypes.map(({ type, count }) => (
-                    <li key={type}>
-                      {type === 'VERSION_CONFLICT' ? 'Versión distinta entre dispositivo y Cloud' : type}: {count}
-                    </li>
-                  ))}
-                </ul>
+                <div className="notification-sync-diagnostics__breakdown">
+                  <section className="notification-sync-diagnostics__group" aria-label="Conflictos por entidad">
+                    <h4>Por entidad</h4>
+                    <ul>
+                      {summary.entities.map(({ type, count }) => (
+                        <li key={type}><span>{syncEntityName(type)}</span><strong>{count}</strong></li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section className="notification-sync-diagnostics__group" aria-label="Clasificación de los conflictos">
+                    <h4>Clasificación de los conflictos</h4>
+                    <ul>
+                      {summary.conflictTypes.map(({ type, count }) => (
+                        <li key={type}>
+                          <span>{type === 'VERSION_CONFLICT' ? 'Versión distinta entre dispositivo y Cloud' : type}</span>
+                          <strong>{count}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
                 <p>Algunos cambios registrados en Cloud no pudieron conciliarse automáticamente.</p>
               </>
             )}
@@ -656,7 +677,7 @@ export default function NotificationCenterDrawer({
         <aside
           ref={drawerRef}
           id="notification-center-drawer"
-          className="notification-center-drawer"
+          className="notification-center-drawer notification-center-drawer--cloud"
           role="dialog"
           aria-modal="true"
           aria-labelledby="notification-center-title"
@@ -687,45 +708,30 @@ export default function NotificationCenterDrawer({
         id="notification-center-drawer"
         className={[
           'notification-center-drawer',
+          'notification-center-drawer--cloud',
           normalizedPreferences.compactMode ? 'is-compact-mode' : ''
         ].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-labelledby="notification-center-title"
       >
-        <NotificationCenterHeader onClose={onClose} />
-
-        <div className="notification-center-actions">
-          <button
-            type="button"
-            className="notification-center-action notification-center-action--refresh"
-            onClick={handleRefresh}
-            disabled={
-              notificationsLoading ||
-              supportTicketsLoading ||
-              isRefreshingNotifications ||
-              isRefreshingSupport ||
-              isManualRefreshing
-            }
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-            {isManualRefreshing || isRefreshingNotifications || isRefreshingSupport
-              ? 'Actualizando...'
-              : 'Actualizar'}
-          </button>
-          <button
-            type="button"
-            className={`notification-center-action ${showPreferences ? 'is-active' : ''}`}
-            onClick={() => setShowPreferences((value) => !value)}
-            aria-expanded={showPreferences}
-          >
-            <SlidersHorizontal size={14} aria-hidden="true" />
-            Preferencias
-          </button>
-        </div>
+        <NotificationCenterHeader
+          onClose={onClose}
+          onRefresh={handleRefresh}
+          onTogglePreferences={() => setShowPreferences((value) => !value)}
+          refreshDisabled={
+            notificationsLoading ||
+            supportTicketsLoading ||
+            isRefreshingNotifications ||
+            isRefreshingSupport ||
+            isManualRefreshing
+          }
+          refreshing={isManualRefreshing || isRefreshingNotifications || isRefreshingSupport}
+          showPreferences={showPreferences}
+        />
 
         {unreadCount > 0 && (
-          <div className="notification-center-actions">
+          <div className="notification-center-actions notification-center-actions--mark-read">
             <button
               type="button"
               className="notification-center-action"
@@ -737,16 +743,6 @@ export default function NotificationCenterDrawer({
           </div>
         )}
 
-        {showPreferences && (
-          <NotificationPreferencesPanel
-            preferences={normalizedPreferences}
-            onUpdate={updateNotificationPreferences}
-            onMuteCategory={muteNotificationCategory}
-            onUnmuteCategory={unmuteNotificationCategory}
-            onReset={resetNotificationPreferences}
-          />
-        )}
-
         <NotificationTabs
           activeTab={activeTab}
           onTabChange={(tab) => {
@@ -755,10 +751,20 @@ export default function NotificationCenterDrawer({
           }}
           showSupport={supportCenterEnabled}
           showInventory={inventoryAccessEnabled}
+          categoryAccess={notificationCategoryAccess}
           counts={notificationCounts}
         />
 
         <div className="notification-center-body">
+          {showPreferences && (
+            <NotificationPreferencesPanel
+              preferences={normalizedPreferences}
+              onUpdate={updateNotificationPreferences}
+              onMuteCategory={muteNotificationCategory}
+              onUnmuteCategory={unmuteNotificationCategory}
+              onReset={resetNotificationPreferences}
+            />
+          )}
           {!syncDiagnosticsOpen && (
             <CashSessionAgeAttention
               attention={cashSessionAgeAttention}

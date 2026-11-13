@@ -53,7 +53,7 @@ const createState = (overrides = {}) => ({
   currentDeviceRole: 'admin',
   currentAdminUser: { id: 'admin-1' },
   currentStaffUser: null,
-  notifications: [inventory, { ...inventory, id: 'inventory-2', title: 'Producto vencido' }, cash],
+  notifications: [inventory, { ...inventory, id: 'inventory-2', title: 'Producto vencido', is_read: true }, cash],
   notificationsLoading: false,
   isRefreshingNotifications: false,
   notificationsError: null,
@@ -121,8 +121,9 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
   it('separates Inventory and Operations counts and filtering for Admin', () => {
     renderDrawer();
 
-    expect(screen.getByRole('tab', { name: /Inventario\s*2 pendientes/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Operaciones\s*1 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Inventario,?\s*2 notificaciones/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Operaciones,?\s*1 notificaciones/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /No leídas,?\s*2 notificaciones no leídas/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /Inventario/ }));
     expect(screen.getByText('Stock bajo')).toBeInTheDocument();
@@ -157,7 +158,7 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
 
     renderDrawer();
 
-    expect(screen.getByRole('tab', { name: /Inventario\s*2 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Inventario,?\s*2 notificaciones/i })).toBeInTheDocument();
   });
 
   it('hides Inventory rows, count and tab from denied Staff while keeping Operations', () => {
@@ -168,7 +169,10 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
         permissions: {
           notifications: true,
           notifications_inventory: false,
-          notifications_operations: true
+          notifications_operations: true,
+          notifications_ecommerce: false,
+          notifications_license: false,
+          notifications_system: false
         }
       }
     });
@@ -183,7 +187,10 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
     renderDrawer();
 
     expect(screen.queryByRole('tab', { name: /Inventario/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Operaciones\s*1 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Operaciones,?\s*1 notificaciones/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Pedidos online/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Licencia/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Sistema/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Stock bajo')).not.toBeInTheDocument();
     expect(screen.queryByText('Producto vencido')).not.toBeInTheDocument();
     expect(screen.getByText('Caja requiere atención')).toBeInTheDocument();

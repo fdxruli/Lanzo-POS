@@ -542,7 +542,7 @@ describe('NotificationBell', () => {
 
     renderBell();
 
-    expect(screen.getByRole('dialog', { name: 'Centro de notificaciones' }))
+    expect(screen.getByRole('dialog', { name: 'Notificaciones' }))
       .toBeInTheDocument();
     expect(screen.getByText('No tienes notificaciones por ahora.')).toBeInTheDocument();
     expect(screen.queryByText('Soporte Lanzo Nube')).not.toBeInTheDocument();
@@ -658,12 +658,15 @@ describe('Cloud notification authority and recovery UX', () => {
     const retry = screen.getByRole('button', { name: 'Reintentar' });
     fireEvent.click(retry);
     expect(store.state.loadNotifications).toHaveBeenCalledWith({ force: true });
-    const close = within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar centro de notificaciones' });
+    const dialog = within(screen.getByRole('dialog'));
+    const close = dialog.getByRole('button', { name: 'Cerrar centro de notificaciones' });
+    const refresh = dialog.getByRole('button', { name: 'Actualizar' });
     await waitFor(() => expect(close).toHaveFocus());
+    refresh.focus();
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     expect(retry).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Tab' });
-    expect(close).toHaveFocus();
+    expect(refresh).toHaveFocus();
   });
 
   it.each(['identity', 'business'])('never renders previous content on a %s change before effects reset the store', (change) => {
