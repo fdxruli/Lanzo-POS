@@ -19,6 +19,7 @@ export default function ProFeatureShowcase({
   ctaTo = '/acerca-de',
   secondaryText,
   children,
+  childrenPosition = 'after-features',
   className = ''
 }) {
   const id = useId();
@@ -29,6 +30,7 @@ export default function ProFeatureShowcase({
   const featuresId = `pro-feature-showcase-features-${id}`;
   const benefitsId = `pro-feature-showcase-benefits-${id}`;
   const offerId = `pro-feature-showcase-offer-${id}`;
+  const showChildrenBeforeFeatures = childrenPosition === 'before-features';
 
   return (
     <Surface
@@ -48,6 +50,10 @@ export default function ProFeatureShowcase({
           {description && <p className="pro-feature-showcase__description">{description}</p>}
         </div>
       </header>
+
+      {children && showChildrenBeforeFeatures && (
+        <div className="pro-feature-showcase__content">{children}</div>
+      )}
 
       {features.length > 0 && (
         <section className="pro-feature-showcase__section" aria-labelledby={featuresId}>
@@ -82,7 +88,9 @@ export default function ProFeatureShowcase({
         </section>
       )}
 
-      {children && <div className="pro-feature-showcase__content">{children}</div>}
+      {children && !showChildrenBeforeFeatures && (
+        <div className="pro-feature-showcase__content">{children}</div>
+      )}
 
       <section className="pro-feature-showcase__offer" aria-labelledby={offerId}>
         <div className="pro-feature-showcase__offer-copy">

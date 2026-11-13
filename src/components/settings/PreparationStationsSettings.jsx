@@ -1,8 +1,42 @@
 import { useState } from 'react';
-import { Info, Plus, RefreshCcw } from 'lucide-react';
+import { CheckCircle2, Info, LayoutGrid, Plus, RefreshCcw, Route, SlidersHorizontal } from 'lucide-react';
 import { usePreparationStations } from '../../hooks/restaurant/usePreparationStations';
+import { useAppStore } from '../../store/useAppStore';
+import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { showMessageModal } from '../../services/utils';
+import ProFeatureShowcase from '../plans/ProFeatureShowcase';
+import { canShowLocalPlanDiscovery } from './localPlanDiscovery';
 import './PreparationStationsSettings.css';
+
+const PREPARATION_STATION_FEATURES = [
+  {
+    title: 'Múltiples áreas de preparación',
+    description: 'Crea estaciones como Barra, Bebidas o Postres para organizar el trabajo.',
+    icon: <LayoutGrid size={18} />
+  },
+  {
+    title: 'Comandas dirigidas por producto',
+    description: 'Define a qué estación se envía la comanda de cada producto.',
+    icon: <Route size={18} />
+  },
+  {
+    title: 'Control de estaciones',
+    description: 'Administra los nombres y activa o desactiva áreas adicionales.',
+    icon: <SlidersHorizontal size={18} />
+  }
+];
+
+function CurrentKitchenStation() {
+  return (
+    <div className="preparation-stations-current" role="note">
+      <CheckCircle2 size={20} aria-hidden="true" />
+      <div>
+        <strong>Cocina</strong>
+        <span>Tu estación actual · Disponible</span>
+      </div>
+    </div>
+  );
+}
 
 function StationRow({ station, canManageStations, onRename, onToggle }) {
   const [draftName, setDraftName] = useState(station.name || '');
@@ -91,6 +125,13 @@ function StationRow({ station, canManageStations, onRename, onToggle }) {
 export default function PreparationStationsSettings() {
   const [newStationName, setNewStationName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const settingsAccess = useSettingsAccess();
+  const canDiscoverNubeStations = canShowLocalPlanDiscovery(
+    licenseDetails,
+    settingsAccess,
+    'license'
+  );
   const {
     stations,
     isLoading,
@@ -128,20 +169,32 @@ export default function PreparationStationsSettings() {
       <div className="company-form-container preparation-stations-settings">
         <div className="settings-panel-header">
           <div>
-            <h3 className="subtitle settings-title-inline">Areas de preparacion</h3>
-            <p className="settings-option-meta">Configuracion de comandas para restaurante.</p>
+            <h2 className="subtitle settings-title-inline">Áreas de preparación</h2>
+            <p className="settings-option-meta">Organiza la preparación de tus productos y comandas.</p>
           </div>
         </div>
 
-        <div className="settings-option-row preparation-stations-free-card">
-          <div className="settings-option-main">
-            <div className="settings-icon-bubble settings-icon-bubble--info"><Info size={22} /></div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">Tu plan actual usa una estacion fija: Cocina.</span>
-              <p>Actualiza a Lanzo Nube para crear areas como Bebidas, Barra o Postres.</p>
-            </div>
-          </div>
-        </div>
+        {canDiscoverNubeStations ? (
+          <ProFeatureShowcase
+            variant="card"
+            eyebrow="Restaurante · Lanzo Nube"
+            badge="PRO"
+            title="Organiza tus comandas por áreas"
+            description="Con tu plan actual, las comandas se dirigen a Cocina. Con Lanzo Nube puedes distribuirlas entre diferentes estaciones y organizar mejor la preparación."
+            features={PREPARATION_STATION_FEATURES}
+            offerTitle="Lleva la preparación al siguiente nivel"
+            offerDescription="Descubre las herramientas disponibles en Lanzo Nube según tu licencia."
+            ctaLabel="Conocer Lanzo Nube"
+            ctaTo="/acerca-de"
+            secondaryText="Consultar esta información no modifica tu plan ni tu licencia."
+            childrenPosition="before-features"
+            className="preparation-stations-showcase"
+          >
+            <CurrentKitchenStation />
+          </ProFeatureShowcase>
+        ) : (
+          <CurrentKitchenStation />
+        )}
       </div>
     );
   }
@@ -150,8 +203,8 @@ export default function PreparationStationsSettings() {
     <div className="company-form-container preparation-stations-settings">
       <div className="settings-panel-header">
         <div>
-          <h3 className="subtitle settings-title-inline">Areas de preparacion</h3>
-          <p className="settings-option-meta">Define a que area se enviara la comanda de cada producto.</p>
+          <h2 className="subtitle settings-title-inline">Áreas de preparación</h2>
+          <p className="settings-option-meta">Organiza la preparación de tus productos y comandas.</p>
         </div>
         <button
           type="button"
