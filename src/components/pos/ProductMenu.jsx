@@ -71,6 +71,22 @@ const PRODUCT_SYNC_BADGE_COLOR = {
   error: '#b91c1c'
 };
 
+const CATEGORY_INDICATOR_FALLBACK = 'var(--text-light)';
+const getCategoryIndicatorColor = (color) => {
+  if (typeof color !== 'string' || !color.trim()) return CATEGORY_INDICATOR_FALLBACK;
+
+  const normalizedColor = color.trim();
+  if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function') {
+    return CSS.supports('color', normalizedColor)
+      ? normalizedColor
+      : CATEGORY_INDICATOR_FALLBACK;
+  }
+
+  return /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(normalizedColor)
+    ? normalizedColor
+    : CATEGORY_INDICATOR_FALLBACK;
+};
+
 const buildProductSyncBadgeStyle = (status) => ({
   ...PRODUCT_SYNC_BADGE_BASE_STYLE,
   color: PRODUCT_SYNC_BADGE_COLOR[status] || PRODUCT_SYNC_BADGE_COLOR.unsynced
@@ -673,40 +689,49 @@ export default function ProductMenu({
             Esta mesa está en modo solo lectura. Cierra la revisión para agregar productos a otra orden.
           </p>
         )}
-        <div id="category-filters" className="category-filters" aria-label="Categorías de productos">
+        <div id="category-filters" className="category-filters" role="group" aria-label="Categorías de productos">
           <button
             type="button"
             className={`category-filter-btn ${selectedCategoryId === null ? 'active' : ''}`}
+            aria-pressed={selectedCategoryId === null}
             onClick={() => handleCategoryClick(null)}
           >
-            Todos
+            <span className="category-filter-btn__label">Todos</span>
           </button>
           {categories.map(cat => (
             <button
               type="button"
               key={cat.id}
               className={`category-filter-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
+              aria-pressed={selectedCategoryId === cat.id}
               onClick={() => handleCategoryClick(cat.id)}
             >
-              {cat.name}
+              <span
+                className="category-filter-btn__indicator"
+                aria-hidden="true"
+                style={{ backgroundColor: getCategoryIndicatorColor(cat.color) }}
+              />
+              <span className="category-filter-btn__label">{cat.name}</span>
             </button>
           ))}
           {showOutofStockCategory && (
             <button
               type="button"
               className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === CAT_DYNAMIC_OUT_OF_STOCK ? 'active' : ''}`}
+              aria-pressed={selectedCategoryId === CAT_DYNAMIC_OUT_OF_STOCK}
               onClick={() => handleCategoryClick(CAT_DYNAMIC_OUT_OF_STOCK)}
             >
-              Agotados
+              <span className="category-filter-btn__label">Agotados</span>
             </button>
           )}
           {showExpiredCategory && (
             <button
               type="button"
               className={`category-filter-btn category-filter-btn--danger ${selectedCategoryId === CAT_DYNAMIC_EXPIRED ? 'active' : ''}`}
+              aria-pressed={selectedCategoryId === CAT_DYNAMIC_EXPIRED}
               onClick={() => handleCategoryClick(CAT_DYNAMIC_EXPIRED)}
             >
-              Caducados
+              <span className="category-filter-btn__label">Caducados</span>
             </button>
           )}
         </div>

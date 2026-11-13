@@ -99,6 +99,44 @@ describe('ProductMenu stable real pagination', () => {
     await act(async () => mocks.observerCallback([{ isIntersecting }]));
   };
 
+  it('renders category color indicators with a neutral fallback and accessible selection state', () => {
+    const onSelectCategory = vi.fn();
+    render(
+      <ProductMenu
+        {...defaultProps}
+        categories={[
+          { id: 'drinks', name: 'Bebidas', color: '#123abc' },
+          { id: 'snacks', name: 'Botanas', color: 'not-a-color' },
+          { id: 'misc', name: 'Sin color', color: null }
+        ]}
+        selectedCategoryId="drinks"
+        onSelectCategory={onSelectCategory}
+        showOutofStockCategory
+        showExpiredCategory
+      />
+    );
+
+    const drinks = screen.getByRole('button', { name: 'Bebidas' });
+    const snacks = screen.getByRole('button', { name: 'Botanas' });
+    const withoutColor = screen.getByRole('button', { name: 'Sin color' });
+    const all = screen.getByRole('button', { name: 'Todos' });
+
+    expect(drinks).toHaveAttribute('aria-pressed', 'true');
+    expect(drinks.querySelector('.category-filter-btn__indicator').style.backgroundColor)
+      .toBe('rgb(18, 58, 188)');
+    expect(snacks.querySelector('.category-filter-btn__indicator').style.backgroundColor)
+      .toBe('var(--text-light)');
+    expect(withoutColor.querySelector('.category-filter-btn__indicator').style.backgroundColor)
+      .toBe('var(--text-light)');
+    expect(all).toHaveAttribute('aria-pressed', 'false');
+    expect(all.querySelector('.category-filter-btn__indicator')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Agotados' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Caducados' })).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(snacks);
+    expect(onSelectCategory).toHaveBeenCalledWith('snacks');
+  });
+
   it('renders every accumulated page instead of slicing back to the page size', () => {
     const accumulated = Array.from({ length: 15 }, (_, index) => ({
       id: `accumulated-${index}`, name: `Accumulated ${index}`, stock: 10
