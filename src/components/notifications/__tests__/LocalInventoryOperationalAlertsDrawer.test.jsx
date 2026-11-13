@@ -135,6 +135,15 @@ describe('LocalInventoryOperationalAlertsDrawer', () => {
     expect(screen.getByText('Producto caducidad 1')).toBeInTheDocument();
   });
 
+  it('shows the local timezone reminder without changing inventory counts and navigates to General Settings', () => {
+    renderDrawer({ showBusinessTimezoneReminder: true });
+
+    expect(screen.getByRole('heading', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    expect(screen.getByText('2 alertas activas')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Configuración' }));
+    expect(routerMocks.navigate).toHaveBeenCalledWith('/configuracion?tab=general');
+  });
+
   it('shows one grouped Caja y conciliación item and keeps it after it is read', async () => {
     const onCashAttentionRecordChange = vi.fn();
     renderDrawer({

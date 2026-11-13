@@ -93,12 +93,17 @@ const createState = (overrides = {}) => ({
   ...overrides
 });
 
-const renderDrawer = () => {
+const renderDrawer = ({ showBusinessTimezoneReminder = false, onClose = vi.fn() } = {}) => {
   const snapshot = grantTestActor({ actorType: runtime.value.actorType, actorId: runtime.value.actorId, permissions: runtime.value.permissions });
   store.state.notificationAuthorizationKey = getNotificationAuthorizationKey(store.state, evaluateActorAccess({ ...store.state, runtimeSnapshot: snapshot }));
   return render(
   <MemoryRouter>
-    <NotificationCenterDrawer isOpen onClose={vi.fn()} unreadCount={3} />
+    <NotificationCenterDrawer
+      isOpen
+      onClose={onClose}
+      unreadCount={3}
+      showBusinessTimezoneReminder={showBusinessTimezoneReminder}
+    />
   </MemoryRouter>
 );
 };
@@ -118,6 +123,20 @@ beforeEach(() => {
 });
 
 describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
+  it('shows the derived timezone reminder in All and System without adding Cloud notification records', () => {
+    const onClose = vi.fn();
+    renderDrawer({ showBusinessTimezoneReminder: true, onClose });
+
+    expect(screen.getByRole('heading', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    expect(store.state.notifications).toHaveLength(3);
+    expect(screen.getByRole('tab', { name: /Sistema/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Sistema/ }));
+    expect(screen.getByRole('heading', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Configuración' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('separates Inventory and Operations counts and filtering for Admin', () => {
     renderDrawer();
 

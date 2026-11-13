@@ -23,6 +23,7 @@ import {
 } from '../../services/notifications/notificationPreferencesService';
 import NotificationCenterHeader from './NotificationCenterHeader';
 import NotificationList from './NotificationList';
+import BusinessTimezoneReminder from './BusinessTimezoneReminder';
 import NotificationPreferencesPanel from './NotificationPreferencesPanel';
 import NotificationTabs from './NotificationTabs';
 import SupportTicketForm from './support/SupportTicketForm';
@@ -70,6 +71,7 @@ export default function NotificationCenterDrawer({
   isOpen,
   onClose,
   unreadCount = 0,
+  showBusinessTimezoneReminder = false,
   cashSessionAgeAttention = null,
   onReviewCashSessions
 }) {
@@ -770,6 +772,11 @@ export default function NotificationCenterDrawer({
               attention={cashSessionAgeAttention}
               onReview={onReviewCashSessions}
             />
+          )}
+          {showBusinessTimezoneReminder
+            && !syncDiagnosticsOpen
+            && (activeTab === 'all' || activeTab === 'system') && (
+              <BusinessTimezoneReminder onClose={onClose} />
           )}
           {syncDiagnosticsOpen ? renderSyncDiagnostics() : activeTab === 'support' && supportCenterEnabled ? (
             renderSupportContent()

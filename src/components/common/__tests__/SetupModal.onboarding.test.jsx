@@ -259,6 +259,7 @@ describe('integrated owner onboarding', () => {
     const timezoneField = screen.getByRole('combobox', { name: 'Zona horaria del negocio' });
     expect(timezoneField).toBeRequired();
     expect(timezoneField).toHaveValue('');
+    expect(screen.getByText('La zona horaria permite gestionar correctamente fechas y horarios de tu negocio y es necesaria para algunas funciones de LANZO POS')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Selecciona la zona horaria');
     expect(timezoneField).toHaveFocus();
