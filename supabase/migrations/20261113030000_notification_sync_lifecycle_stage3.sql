@@ -106,6 +106,6 @@ exception
   when others then
     return jsonb_build_object('success', false, 'code', 'GENERATE_SYNC_OPERATIONAL_NOTIFICATIONS_ERROR', 'generated', 0, 'events', '[]'::jsonb);
 end;
-$function$
+$function$;
 
 commit;
