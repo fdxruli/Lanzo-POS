@@ -51,7 +51,9 @@ vi.mock('../../services/db/tenantRuntimeRouter', () => ({
 }));
 
 vi.mock('../../services/auth/actorRuntimeController', () => ({
-  ACTOR_RUNTIME_ERROR_CODES: { PERMISSION_DENIED: 'ACTOR_PERMISSION_DENIED' },
+  ACTOR_RUNTIME_ERROR_CODES: {
+    PERMISSION_DENIED: 'ACTOR_PERMISSION_DENIED', CONTEXT_STALE: 'ACTOR_CONTEXT_STALE'
+  },
   ActorRuntimeError: class ActorRuntimeError extends Error {
     constructor(code, details = {}) {
       super(code);
