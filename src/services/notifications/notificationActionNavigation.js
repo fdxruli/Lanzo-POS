@@ -17,7 +17,8 @@ export const isPendingSyncConflictNotification = (notification) => (
 export function resolveNotificationAction(notification, {
   actorAccess,
   settingsAccess,
-  licenseDetails
+  licenseDetails,
+  syncDiagnosticsAvailable = false
 } = {}) {
   if (!actorAccess?.isAuthorizedActor) return null;
 
@@ -40,7 +41,11 @@ export function resolveNotificationAction(notification, {
 
   // The current Settings page has no conflict diagnosis tab. Never fall back
   // to its general/license section, even for legacy notifications.
-  if (type === 'sync') return null;
+  if (type === 'sync') {
+    return isPendingSyncConflictNotification(notification) && actorAccess.isAdmin && syncDiagnosticsAvailable
+      ? { kind: 'diagnose', route: null, label: 'Ver conflictos' }
+      : null;
+  }
 
   // "Equipo" is an internal state in LicenseSettings, not a deep-link route.
   if (event === 'staff_disabled') return null;
