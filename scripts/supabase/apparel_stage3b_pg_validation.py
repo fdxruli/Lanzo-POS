@@ -115,9 +115,12 @@ $function$;
 names = ("public.pos_execute_financial_operation_v1", "private.pos_execute_financial_operation_core_v2")
 run_sql(fixture + "".join(stub.replace("__NAME__", name) for name in names))
 hashes = run_sql("""
-select md5(replace(pg_get_functiondef('public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)'::regprocedure),chr(13),''))
-union all
-select md5(replace(pg_get_functiondef('private.pos_execute_financial_operation_core_v2(text,text,text,text,text,text,text,jsonb)'::regprocedure),chr(13),''));
+select md5(replace(pg_get_functiondef(to_regprocedure(identity)),chr(13),''))
+from (values
+  (1, 'public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)'),
+  (2, 'private.pos_execute_financial_operation_core_v2(text,text,text,text,text,text,text,jsonb)')
+) as sources(ordering, identity)
+order by ordering;
 """).splitlines()
 assert len(hashes) == 2
 # Only this disposable validation copy substitutes fixture precondition hashes.
