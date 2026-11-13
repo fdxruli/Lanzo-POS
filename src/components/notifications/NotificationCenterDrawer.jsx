@@ -3,7 +3,7 @@ import { readActorAccess } from '../../services/auth/actorAccessPolicy';
 import { isPendingSyncConflictNotification } from '../../services/notifications/notificationActionNavigation';
 import { fetchCloudSyncConflictDiagnostics } from '../../services/notifications/cloudSyncConflictDiagnostics';
 import { canAccessCloudNotificationCenter, getNotificationAuthorizationKey, NOTIFICATION_ACCESS_MESSAGE } from '../../services/notifications/notificationAccess';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -149,12 +149,12 @@ export default function NotificationCenterDrawer({
   );
 
   const hasSyncConflictAlert = visibleNotifications.some(isPendingSyncConflictNotification);
-  const isCurrentDiagnosticsContext = () => {
+  const isCurrentDiagnosticsContext = useCallback(() => {
     const state = useAppStore.getState();
     return Boolean(authorizationKey &&
       state.notificationAuthorizationKey === authorizationKey &&
       getNotificationAuthorizationKey(state, readActorAccess(state)) === authorizationKey);
-  };
+  }, [authorizationKey]);
   const syncContextChanged = syncDiagnosticsOpen && (
     syncDiagnosticsKey !== authorizationKey || !runtimeCurrent || !isCurrentDiagnosticsContext()
   );
@@ -174,7 +174,7 @@ export default function NotificationCenterDrawer({
     }
     return () => { cancelled = true; };
   }, [isOpen, cloudNotificationsEnabled, actorAccess.isAdmin,
-      hasSyncConflictAlert, authorizationKey, licenseDetails]);
+      hasSyncConflictAlert, authorizationKey, licenseDetails, isCurrentDiagnosticsContext]);
 
   useEffect(() => {
     syncDiagnosisRequest.current += 1;
@@ -518,9 +518,14 @@ export default function NotificationCenterDrawer({
                     <li key={type}>{syncEntityName(type)}: {count}</li>
                   ))}
                 </ul>
-                {summary.conflictTypes.some(({ type }) => type !== 'VERSION_CONFLICT') && (
-                  <p>Tipos técnicos: {summary.conflictTypes.map(({ type, count }) => `${type}: ${count}`).join(', ')}</p>
-                )}
+                <p>Clasificación de los conflictos:</p>
+                <ul>
+                  {summary.conflictTypes.map(({ type, count }) => (
+                    <li key={type}>
+                      {type === 'VERSION_CONFLICT' ? 'Versión distinta entre dispositivo y Cloud' : type}: {count}
+                    </li>
+                  ))}
+                </ul>
                 <p>Algunos cambios registrados en Cloud no pudieron conciliarse automáticamente.</p>
               </>
             )}
