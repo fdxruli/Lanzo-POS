@@ -92,6 +92,48 @@ describe('searchProductsInDB', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('aplica categoría y estado antes del límite de resultados de búsqueda', async () => {
+    const unrelatedCategory = Array.from({ length: 60 }, (_, index) => ({
+      id: `food-${index}`,
+      name: `agua sabor ${index}`,
+      categoryId: 'food',
+      isActive: true
+    }));
+    const selectedCategory = [
+      { id: 'drink-1', name: 'agua mineral', categoryId: 'drinks', isActive: true },
+      { id: 'drink-2', name: 'agua con gas', categoryId: 'drinks', isActive: true },
+      { id: 'inactive-drink', name: 'agua anterior', categoryId: 'drinks', isActive: false }
+    ];
+    const rows = withSearchFields([...unrelatedCategory, ...selectedCategory]);
+
+    const result = await searchProductsInTable(
+      createMockTable(rows),
+      'agua',
+      'active',
+      50,
+      'drinks'
+    );
+
+    expect(result.map((product) => product.id)).toEqual(['drink-1', 'drink-2']);
+  });
+
+  it('applies the uncategorized search filter without treating it as a category ID', async () => {
+    const rows = withSearchFields([
+      { id: 'drink', name: 'agua mineral', categoryId: 'drinks', isActive: true },
+      { id: 'uncategorized', name: 'agua natural', categoryId: '', isActive: true }
+    ]);
+
+    const result = await searchProductsInTable(
+      createMockTable(rows),
+      'agua',
+      'active',
+      50,
+      { type: 'uncategorized' }
+    );
+
+    expect(result.map((product) => product.id)).toEqual(['uncategorized']);
+  });
+
   it('aplica fallback contains cuando el indice no cubre la coincidencia', async () => {
     const rows = withSearchFields([
       { id: 'p1', name: 'tortilla de maiz', barcode: '7788', sku: 'tor-01', isActive: true },

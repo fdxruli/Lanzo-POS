@@ -106,7 +106,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       }
 
       try {
-        const results = await searchProductsInDB(term, statusFilter);
+        const results = await searchProductsInDB(term, statusFilter, categoryFilter);
         if (isActive) {
           setSearchResults(results.filter((product) => (
             isInventoryCatalogEligible(product, {

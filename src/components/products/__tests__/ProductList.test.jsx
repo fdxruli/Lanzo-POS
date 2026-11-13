@@ -101,7 +101,7 @@ describe('ProductList batch-backed grocery details', () => {
     fireEvent.change(screen.getByPlaceholderText(/Buscar: Nombre, Código/i), { target: { value: 'agua' } });
 
     expect(await screen.findByText('Agua mineral')).toBeInTheDocument();
-    await waitFor(() => expect(mocks.searchProductsInDB).toHaveBeenCalledWith('agua', 'active'));
+    await waitFor(() => expect(mocks.searchProductsInDB).toHaveBeenCalledWith('agua', 'active', 'drinks'));
     expect(screen.queryByText('Pan dulce')).not.toBeInTheDocument();
     expect(screen.queryByText('Agua antigua')).not.toBeInTheDocument();
   });

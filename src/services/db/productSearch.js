@@ -12,10 +12,23 @@ const matchesStatus = (product, status) => {
   return true;
 };
 
-const appendUnique = (target, products, takenIds, status, limit) => {
+const matchesCategory = (product, categoryFilter) => {
+  if (categoryFilter === null || categoryFilter === undefined) return true;
+
+  const productCategoryId = [product?.categoryId, product?.category_id]
+    .find((value) => value !== null && value !== undefined && value !== '') ?? null;
+  if (categoryFilter?.type === 'uncategorized') return productCategoryId === null;
+  return productCategoryId === categoryFilter;
+};
+
+const matchesSearchFilters = (product, status, categoryFilter) => (
+  matchesStatus(product, status) && matchesCategory(product, categoryFilter)
+);
+
+const appendUnique = (target, products, takenIds, status, limit, categoryFilter) => {
   for (const product of products) {
     if (target.length >= limit) break;
-    if (!product || takenIds.has(product.id) || !matchesStatus(product, status)) {
+    if (!product || takenIds.has(product.id) || !matchesSearchFilters(product, status, categoryFilter)) {
       continue;
     }
 
@@ -24,10 +37,11 @@ const appendUnique = (target, products, takenIds, status, limit) => {
   }
 };
 
-const queryPrefix = (productTable, indexName, term, limit) =>
+const queryPrefix = (productTable, indexName, term, limit, status, categoryFilter) =>
   productTable
     .where(indexName)
     .startsWith(term)
+    .filter((product) => matchesSearchFilters(product, status, categoryFilter))
     .limit(limit)
     .toArray();
 
@@ -74,7 +88,8 @@ export const searchProductsInTable = async (
   productTable,
   searchTerm,
   status = 'active',
-  limit = DEFAULT_SEARCH_LIMIT
+  limit = DEFAULT_SEARCH_LIMIT,
+  categoryFilter = null
 ) => {
   const normalizedTerm = normalizeProductSearchValue(searchTerm);
   if (!normalizedTerm) return [];
@@ -84,7 +99,7 @@ export const searchProductsInTable = async (
     .equals(normalizedTerm)
     .first();
 
-  if (exactBarcode && matchesStatus(exactBarcode, status)) {
+  if (exactBarcode && matchesSearchFilters(exactBarcode, status, categoryFilter)) {
     return [exactBarcode];
   }
 
@@ -93,21 +108,21 @@ export const searchProductsInTable = async (
     .equals(normalizedTerm)
     .first();
 
-  if (exactSku && matchesStatus(exactSku, status)) {
+  if (exactSku && matchesSearchFilters(exactSku, status, categoryFilter)) {
     return [exactSku];
   }
 
   const prefixGroups = await Promise.all([
-    queryPrefix(productTable, 'name_lower', normalizedTerm, limit),
-    queryPrefix(productTable, 'search_tokens', normalizedTerm, limit),
-    queryPrefix(productTable, 'barcode_normalized', normalizedTerm, limit),
-    queryPrefix(productTable, 'sku_normalized', normalizedTerm, limit)
+    queryPrefix(productTable, 'name_lower', normalizedTerm, limit, status, categoryFilter),
+    queryPrefix(productTable, 'search_tokens', normalizedTerm, limit, status, categoryFilter),
+    queryPrefix(productTable, 'barcode_normalized', normalizedTerm, limit, status, categoryFilter),
+    queryPrefix(productTable, 'sku_normalized', normalizedTerm, limit, status, categoryFilter)
   ]);
 
   const results = [];
   const takenIds = new Set();
   for (const products of prefixGroups) {
-    appendUnique(results, products, takenIds, status, limit);
+    appendUnique(results, products, takenIds, status, limit, categoryFilter);
   }
 
   if (results.length >= limit || normalizedTerm.length < 3) {
@@ -122,6 +137,6 @@ export const searchProductsInTable = async (
     containsNormalizedTerm(product, normalizedTerm)
   );
 
-  appendUnique(results, substringMatches, takenIds, status, limit);
+  appendUnique(results, substringMatches, takenIds, status, limit, categoryFilter);
   return results;
 };
