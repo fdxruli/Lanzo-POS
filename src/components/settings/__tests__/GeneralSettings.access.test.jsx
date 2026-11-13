@@ -59,7 +59,7 @@ describe('GeneralSettings business timezone and access', () => {
     mocks.allowAccess = true;
     mocks.updateCompanyProfile.mockResolvedValue({ ...mocks.state.companyProfile, timezone: 'America/Merida' });
     render(<GeneralSettings />);
-    expect(screen.getByText(/Sin configurar. Los apartados conservan/)).toBeInTheDocument();
+    expect(screen.getByText(/permite calcular correctamente las fechas y vencimientos/)).toBeInTheDocument();
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Zona horaria del negocio'), 'America/Merida');
     await user.click(screen.getByRole('button', { name: /Actualizar datos/i }));
@@ -69,7 +69,7 @@ describe('GeneralSettings business timezone and access', () => {
       timezone: 'America/Merida', business_type: ['hardware']
     }));
     await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalledWith(
-      expect.stringContaining('Datos actualizados correctamente')
+      'Zona horaria del negocio guardada.'
     ));
   });
 

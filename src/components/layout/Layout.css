@@ -21,6 +21,29 @@
     min-height: 0;
 }
 
+.business-timezone-notice {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 12px;
+    width: calc(100% - 24px);
+    max-width: 1040px;
+    margin: 8px auto 0;
+    padding: 6px 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--ui-border-warning);
+    border-radius: 10px;
+    background: var(--ui-bg-warning-soft);
+    color: var(--ui-text-warning);
+    font-size: 0.9rem;
+}
+
+.business-timezone-notice .ui-button {
+    min-height: 44px;
+}
+
 /* CORRECCIÓN IMPORTANTE: 
    Usamos .page-container porque es la clase que envuelve al <Outlet /> en tu Layout.jsx.
    Antes se intentaba aplicar a .main-content que no existía en el JSX.

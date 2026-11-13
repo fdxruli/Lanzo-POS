@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
-import { isAdminNotFoundPath } from '../../router/adminRoutePaths';
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { ADMIN_ROUTE_PATHS, isAdminNotFoundPath } from '../../router/adminRoutePaths';
 import GlobalToaster from './GlobalToaster';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
@@ -39,6 +39,7 @@ import {
 } from '../../services/auth/actorOperationalHandoff';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { evaluateActorAccess } from '../../services/auth/actorAccessPolicy';
 import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
 import { createOptionalAdminLazy } from '../../pwa/adminOptionalLazy';
 import { BotScreenProvider } from '../../hooks/useBotScreenContext';
@@ -70,7 +71,9 @@ function LayoutContent() {
   const licenseStatus = useAppStore((state) => state.licenseStatus);
   const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const companyProfile = useAppStore((state) => state.companyProfile);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentAdminUser = useAppStore((state) => state.currentAdminUser);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const actorRuntime = useActorRuntimeSnapshot();
   const canReadReports = canReadSalesReports(actorRuntime);
@@ -79,6 +82,9 @@ function LayoutContent() {
   const isPosPage = pathname === '/';
   const isNotFoundPage = isAdminNotFoundPath(pathname);
   const isAboutPage = pathname === '/acerca-de';
+  const needsBusinessTimezone = !isNotFoundPage && companyProfile
+    && companyProfile.license_key === licenseDetails?.license_key && !companyProfile.timezone
+    && evaluateActorAccess({ runtimeSnapshot: actorRuntime, currentDeviceRole, currentAdminUser }).isAdmin;
 
   const effectiveLicenseStatus = getLicenseStatusPresentation({
     ...licenseDetails,
@@ -164,6 +170,14 @@ function LayoutContent() {
         {shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}
         <PostDowngradeRecoveryBanner isSuppressed={isNotFoundPage} />
         <CloudProtocolUpdateNotice isSuppressed={isNotFoundPage} />
+        {needsBusinessTimezone && (
+          <aside className="business-timezone-notice" aria-label="Zona horaria pendiente">
+            <span>Configura la zona horaria de tu negocio para calcular los vencimientos de los apartados.</span>
+            <Link className="ui-button ui-button--ghost" to={`/${ADMIN_ROUTE_PATHS.settings}?tab=general`}>
+              Ir a Configuración
+            </Link>
+          </aside>
+        )}
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''} ${isNotFoundPage ? 'page-container--not-found' : ''}`.trim()}>
           {isNotFoundPage ? (
             <Outlet />

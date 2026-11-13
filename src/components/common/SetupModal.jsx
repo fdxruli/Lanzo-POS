@@ -3,7 +3,9 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
 import AdminEnrollmentModal from './AdminEnrollmentModal';
+import BusinessTimezoneField from './BusinessTimezoneField';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import LazyImage from './LazyImage';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from './TermsAndConditionsModal';
 import {
@@ -71,6 +73,8 @@ export default function SetupModal() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [timezone, setTimezone] = useState('');
+  const [showTimezoneError, setShowTimezoneError] = useState(false);
   const [logoPreview, setLogoPreview] = useState(logoPlaceholder);
   const [logoData, setLogoData] = useState(null);
   const [logoUploadSource, setLogoUploadSource] = useState(null);
@@ -101,6 +105,7 @@ export default function SetupModal() {
     return () => { cancelled = true; };
   }, [activeSection, legalLoadAttempt]);
   const nameInputRef = useRef(null);
+  const timezoneInputRef = useRef(null);
 
   const licenseFeatures = licenseDetails?.features || {};
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
@@ -207,6 +212,13 @@ export default function SetupModal() {
       return;
     }
 
+    const businessTimezone = timezone.trim();
+    if (!isValidBusinessTimezone(businessTimezone)) {
+      setShowTimezoneError(true);
+      timezoneInputRef.current?.focus();
+      return;
+    }
+
     if (legalLoading || legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length
       || legalDocuments.some(({ data }) => !data?.id || !data?.version)) {
       setError('Espera a que se verifiquen los documentos legales o reintenta su carga.');
@@ -278,6 +290,7 @@ export default function SetupModal() {
         name,
         phone,
         address,
+        timezone: businessTimezone,
         logo: logoData,
         logoUploadSource,
         business_type: selectedTypes
@@ -598,7 +611,7 @@ export default function SetupModal() {
 
                 {activeSection === 'complete' && (
                   <div className="accordion-body">
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit} noValidate>
                       <div className="setup-final-summary">
                         <div className="setup-final-summary__item">
                           <span className="setup-final-summary__label">Negocio</span>
@@ -613,6 +626,15 @@ export default function SetupModal() {
                           <strong>Propietario creado</strong>
                         </div>
                       </div>
+
+                      <BusinessTimezoneField
+                        value={timezone}
+                        onChange={setTimezone}
+                        required
+                        disabled={isBusy}
+                        showError={showTimezoneError}
+                        inputRef={timezoneInputRef}
+                      />
 
                       <p className="terms-agreement-text">
                         Al hacer clic en <strong>Crear negocio</strong>, aceptas los{' '}
