@@ -468,6 +468,15 @@ begin
     (v_v2_authorized_cancel_id, v_v2_license_id, 100, 25, 75, now() + interval '10 days', 'active',
      'staff:' || v_v2_authorized_id::text, 'P0 Authorized V2');
 
+  -- Successful cancellation releases a real reserved product, so seed only
+  -- the three synthetic source rows exercised by authorized Staff/Admin cases.
+  insert into public.pos_products (
+    id, license_id, name, name_key, price, cost, stock, committed_stock, track_stock
+  ) values
+    ('p0-product-authorized-' || v_suffix, v_v1_license_id, 'P0 Authorized V1 Product', 'p0-authorized-v1-' || v_suffix, 10, 5, 1, 1, true),
+    ('p0-product-admin-' || v_suffix, v_v1_license_id, 'P0 Administrator Product', 'p0-admin-v1-' || v_suffix, 10, 5, 1, 1, true),
+    ('p0-v2-product-authorized-' || v_suffix, v_v2_license_id, 'P0 Authorized V2 Product', 'p0-authorized-v2-' || v_suffix, 10, 5, 1, 1, true);
+
   insert into public.pos_layaway_inventory_reservations (
     id, license_id, layaway_id, item_index, product_id, quantity, status, actor_key, actor_name
   ) values
