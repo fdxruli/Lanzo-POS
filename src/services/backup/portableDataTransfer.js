@@ -672,8 +672,17 @@ const getPortableTables = (bundle) => {
   return Object.fromEntries(PORTABLE_TRANSFER_TABLES.map((name) => [name, Array.isArray(tables[name]) ? tables[name] : []]));
 };
 
+// Legacy categories without an activity flag remain usable; deletion markers always win.
+const isUsableTransferCategory = (category) => Boolean(category?.id)
+  && category.isActive !== false
+  && !category.deletedAt && !category.deleted_at
+  && !category.deletedTimestamp && !category.deleted_timestamp
+  && !category.deletionPending;
+
 const catalogDestinationReviewSnapshot = (existing) => ({
-  categories: existing.categories.map(({ id, name, color, sortOrder, isActive }) => ({ id, name, color, sortOrder, isActive }))
+  categories: existing.categories.map(({ id, name, color, sortOrder, isActive, deletedAt, deleted_at, deletedTimestamp, deleted_timestamp, deletionPending }) => ({
+    id, name, color, sortOrder, isActive, deletedAt, deleted_at, deletedTimestamp, deleted_timestamp, deletionPending
+  }))
     .sort((left, right) => String(left.id).localeCompare(String(right.id))),
   products: existing.products.map(({ id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey }) => ({
     id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey
@@ -700,6 +709,7 @@ async function buildCatalogTransferPlan(bundle, existing) {
   const existingCategories = existing.categories;
   const categoriesByName = new Map();
   for (const category of existingCategories) {
+    if (!isUsableTransferCategory(category)) continue;
     const normalized = normalizeCategoryName(category.name);
     if (!normalized) continue;
     if (!categoriesByName.has(normalized)) categoriesByName.set(normalized, []);
@@ -799,6 +809,13 @@ async function buildCatalogTransferPlan(bundle, existing) {
     if (product.categoryId) {
       if (!categorySourceById.has(product.categoryId)) {
         productConflicts.push(`Producto ${product.name}: no se encontró su categoría de origen.`);
+        continue;
+      }
+      const targetCategoryId = categoryIdMap.get(product.categoryId);
+      const targetCategory = categoryCreates.find((category) => category.id === targetCategoryId)
+        || existingCategories.find((category) => category.id === targetCategoryId);
+      if (targetCategory && !isUsableTransferCategory(targetCategory)) {
+        productConflicts.push(`Producto ${product.name}: su categoría no está activa o está eliminada.`);
         continue;
       }
       if (!categoryIdMap.has(product.categoryId)) {
