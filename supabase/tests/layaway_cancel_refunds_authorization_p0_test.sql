@@ -435,6 +435,16 @@ begin
      or v_v2_contract_authorized->>'server_status' is distinct from 'SUPPORTED' then
     raise exception 'P0_V2_CONTRACT_SETUP_FAILED';
   end if;
+  -- The negotiation RPC also returns server-only metadata; execution accepts
+  -- only the client contract fields checked by private.pos_fin01_validate_sync_contract_v2.
+  v_v2_contract_no_refunds := jsonb_build_object(
+    'contract_version', v_v2_contract_no_refunds->'contract_version',
+    'capabilities', v_v2_contract_no_refunds->'capabilities'
+  );
+  v_v2_contract_authorized := jsonb_build_object(
+    'contract_version', v_v2_contract_authorized->'contract_version',
+    'capabilities', v_v2_contract_authorized->'capabilities'
+  );
 
   insert into public.pos_layaways (
     id, license_id, total_amount, paid_amount, balance_due, deadline, status, actor_key, actor_name
