@@ -113,7 +113,7 @@ const normalizeMutationResponse = (data) => {
   };
 };
 
-const buildRpcAuthArgs = async (licenseDetails = {}) => {
+export const buildRpcAuthArgs = async (licenseDetails = {}) => {
   const licenseKey = getLicenseKey(licenseDetails);
 
   if (!licenseKey) {

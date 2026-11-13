@@ -9,6 +9,8 @@ export default function NotificationList({
   onRetry,
   onNotificationRead,
   onNotificationArchive,
+  onShowSyncDiagnostics,
+  syncDiagnosticsAvailable = false,
   preferences
 }) {
   if (loading) {
@@ -44,6 +46,8 @@ export default function NotificationList({
           notification={notification}
           onRead={onNotificationRead}
           onArchive={onNotificationArchive}
+          onDiagnose={onShowSyncDiagnostics}
+          syncDiagnosticsAvailable={syncDiagnosticsAvailable}
           preferences={preferences}
         />
       ))}

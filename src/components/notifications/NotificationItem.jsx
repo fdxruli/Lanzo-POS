@@ -67,6 +67,8 @@ export default function NotificationItem({
   notification,
   onRead,
   onArchive,
+  onDiagnose,
+  syncDiagnosticsAvailable = false,
   preferences
 }) {
   const navigate = useNavigate();
@@ -108,7 +110,7 @@ export default function NotificationItem({
   const displayBody = body || description;
   const displayDate = formatNotificationDate(createdAtRaw || createdAt);
   const action = hasCurrentContext
-    ? resolveNotificationAction(notification, { actorAccess, settingsAccess, licenseDetails })
+    ? resolveNotificationAction(notification, { actorAccess, settingsAccess, licenseDetails, syncDiagnosticsAvailable })
     : null;
 
   const isCurrentContext = () => {
@@ -170,6 +172,10 @@ export default function NotificationItem({
 
   const handleAction = (event) => {
     event.stopPropagation();
+    if (action?.kind === 'diagnose') {
+      if (hasCurrentContext && isCurrentContext() && !pending) onDiagnose?.();
+      return;
+    }
     void handleRead(true);
   };
 
@@ -211,7 +217,7 @@ export default function NotificationItem({
         </div>
         <h3>{title}</h3>
         {displayBody && <p>{displayBody}</p>}
-        {isPendingSyncConflictNotification(notification) && (
+        {isPendingSyncConflictNotification(notification) && !syncDiagnosticsAvailable && (
           <p>Hay conflictos pendientes. Su diagnóstico detallado todavía no está disponible aquí.</p>
         )}
         {readError && <p role="alert">{readError}</p>}

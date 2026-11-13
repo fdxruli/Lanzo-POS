@@ -78,6 +78,35 @@ describe('NotificationItem safe actions', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/');
   });
 
+  it('SYNC-DIAG-06: available diagnosis opens without marking the notification read', () => {
+    const onRead = vi.fn();
+    const onDiagnose = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <NotificationItem notification={base} onRead={onRead} onDiagnose={onDiagnose}
+          syncDiagnosticsAvailable preferences={{}} />
+        <LocationProbe />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('button', { name: 'Ver conflictos' })).toBeInTheDocument();
+    expect(screen.queryByText(/diagnóstico detallado todavía no está disponible/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver conflictos' }));
+    expect(onDiagnose).toHaveBeenCalledOnce();
+    expect(onRead).not.toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/');
+  });
+
+  it('SYNC-DIAG-03: staff never sees admin-only diagnosis', () => {
+    mocks.actor = makeActor('staff', { notifications: true });
+    mocks.state.notificationAuthorizationKey = getNotificationAuthorizationKey(mocks.state, mocks.actor);
+    render(
+      <MemoryRouter>
+        <NotificationItem notification={base} syncDiagnosticsAvailable preferences={{}} />
+      </MemoryRouter>
+    );
+    expect(screen.queryByRole('button', { name: 'Ver conflictos' })).not.toBeInTheDocument();
+  });
+
   it('NOTIF-ACTION-05: missing destination does not create an inert action', () => {
     show({ ...base, type: 'system', metadata: {}, action_route: null });
     expect(screen.queryByRole('button', { name: 'Revisar sincronización' })).not.toBeInTheDocument();
