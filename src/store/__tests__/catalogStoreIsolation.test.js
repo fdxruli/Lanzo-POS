@@ -2,19 +2,31 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const queryMocks = vi.hoisted(() => ({
-  INVENTORY_CATALOG_PAGE_SIZE: 50,
-  compareInventoryCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
-  POS_CATALOG_PAGE_SIZE: 50,
-  comparePosCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
-  loadCatalogCategories: vi.fn(),
-  queryInventoryCatalogPage: vi.fn(),
-  queryInventoryCatalogProductById: vi.fn(),
-  queryPosCatalogPage: vi.fn(),
-  queryPosCatalogProductById: vi.fn(),
-  checkPosOutOfStockProducts: vi.fn(),
-  checkPosExpiredProducts: vi.fn()
-}));
+const queryMocks = vi.hoisted(() => {
+  const uncategorizedFilter = Object.freeze({ type: 'uncategorized' });
+  const isUncategorizedFilter = (categoryId) => Boolean(
+    categoryId && typeof categoryId === 'object' && categoryId.type === 'uncategorized'
+  );
+
+  return {
+    INVENTORY_CATALOG_PAGE_SIZE: 50,
+    INVENTORY_UNCATEGORIZED_FILTER: uncategorizedFilter,
+    compareInventoryCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
+    isInventoryUncategorizedFilter: isUncategorizedFilter,
+    normalizeInventoryCategoryFilter: (categoryId) => (
+      isUncategorizedFilter(categoryId) ? uncategorizedFilter : (categoryId ?? null)
+    ),
+    POS_CATALOG_PAGE_SIZE: 50,
+    comparePosCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
+    loadCatalogCategories: vi.fn(),
+    queryInventoryCatalogPage: vi.fn(),
+    queryInventoryCatalogProductById: vi.fn(),
+    queryPosCatalogPage: vi.fn(),
+    queryPosCatalogProductById: vi.fn(),
+    checkPosOutOfStockProducts: vi.fn(),
+    checkPosExpiredProducts: vi.fn()
+  };
+});
 
 const eventMocks = vi.hoisted(() => ({ subscribers: new Set() }));
 
