@@ -15,7 +15,7 @@ vi.mock('../../../src/services/tenant/localTenantGuard',()=>({assertLocalTenantS
 vi.mock('../../../src/services/posRealtime',()=>({buildPosRealtimeTopic:()=>m.topic,startPosRealtimeListener:m.realtime,stopPosRealtimeListener:m.stopRealtime}));
 vi.mock('../../../src/services/sync/posSyncClient',()=>({posSyncClient:{pullSyncEvents:m.pull}}));
 vi.mock('../../../src/services/sync/syncMetaService',()=>({syncMetaService:{getLastChangeSeq:async()=>0,setLastChangeSeq:m.cursor,setLastPullAt:m.pullAt,setLastPullError:m.pullError,setRealtimeStatus:m.status,setSyncEnabled:m.enabled}}));
-vi.mock('../../../src/services/sync/syncOutboxService',()=>({syncOutboxService:{resetStuckProcessing:m.reset,getPendingOperations:m.pending,markProcessing:m.processing,markSynced:m.synced,markFailed:m.failed,markConflict:m.conflict}}));
+vi.mock('../../../src/services/sync/syncOutboxService',()=>({getCloudSyncProtocolFamilyForEntity:()=>null,syncOutboxService:{resetStuckProcessing:m.reset,getPendingOperations:m.pending,markProcessing:m.processing,markSynced:m.synced,markFailed:m.failed,markConflict:m.conflict}}));
 vi.mock('../../../src/services/products/productLocalRepository',()=>({productLocalRepository:{getLocalCatalogForMigration:m.cache}}));
 vi.mock('../../../src/services/products/productSyncHandler.js',()=>({productSyncHandler:{onStart:m.snapshot}}));
 vi.mock('../../../src/services/customers/customerSyncHandler',()=>({customerSyncHandler:{onStart:m.snapshot}}));
