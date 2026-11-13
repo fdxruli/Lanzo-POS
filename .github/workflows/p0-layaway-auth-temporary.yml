@@ -7,6 +7,7 @@ on:
       - 'supabase/migrations/20261113185604_p0_layaway_cancel_requires_refunds.sql'
       - 'supabase/tests/layaway_cancel_refunds_authorization_p0_test.sql'
       - 'scripts/supabase/p0-layaway-auth-*-temporary.sql'
+      - 'scripts/supabase/p0-layaway-auth-production-baseline-temporary.b64'
       - '.github/workflows/p0-layaway-auth-temporary.yml'
 
 permissions:
@@ -64,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
           import json
           import os
           from pathlib import Path
@@ -71,6 +73,8 @@ jobs:
           sources = json.loads(Path('supabase/tests/fixtures/pr338-real-financial/02-function-sources.json').read_text(encoding='utf-8'))
           generated = Path(os.environ['RUNNER_TEMP']) / 'p0-layaway-auth-fixture-functions.sql'
           generated.write_text('\\set ON_ERROR_STOP on\nSET check_function_bodies = off;\n' + '\n'.join(source.rstrip() + ';' for source in sources) + '\n', encoding='utf-8')
+          baseline = Path(os.environ['RUNNER_TEMP']) / 'p0-layaway-auth-production-baseline.sql'
+          baseline.write_bytes(base64.b64decode(Path('scripts/supabase/p0-layaway-auth-production-baseline-temporary.b64').read_bytes()))
           PY
           db_args=(-X -v ON_ERROR_STOP=1 -d p0_layaway_auth)
           for file in \
@@ -81,10 +85,19 @@ jobs:
             supabase/tests/fixtures/pr338-real-financial/05-policies.sql \
             supabase/tests/fixtures/pr338-real-financial/06-function-acl.sql \
             scripts/supabase/p0-layaway-auth-fixture-temporary.sql \
-            scripts/supabase/p0-layaway-auth-production-baseline-temporary.sql \
+            "${RUNNER_TEMP}/p0-layaway-auth-production-baseline.sql" \
             scripts/supabase/p0-layaway-auth-triggers-temporary.sql; do
             psql "${db_args[@]}" -f "${file}"
           done
+
+      - name: Verify exact pre-migration Production function hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(psql -X -d p0_layaway_auth -Atqc "SELECT string_agg(n.nspname || '.' || p.proname || '=' || md5(pg_get_functiondef(p.oid)), '|' ORDER BY n.nspname,p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE (n.nspname,p.proname) IN (('private','pos_execute_financial_operation_core_v2'),('public','pos_execute_financial_operation_v1'),('public','pos_get_financial_operation_receipt'),('public','pos_get_financial_operation_receipt_v2'))")"
+          expected='private.pos_execute_financial_operation_core_v2=bcaca2181fe248a1f6407380f33bc060|public.pos_execute_financial_operation_v1=503c7cbc2bbc71772649dbf6ff562a57|public.pos_get_financial_operation_receipt=0eb091ed1701ee15559eccc5ba6c3a7f|public.pos_get_financial_operation_receipt_v2=4a1334e1e7b68b35463c160198ae5232'
+          printf 'Pre-migration function hashes: %s\n' "${actual}"
+          [[ "${actual}" == "${expected}" ]]
 
       - name: Apply the requested migration on PostgreSQL 17
         run: psql -X -v ON_ERROR_STOP=1 -d p0_layaway_auth -f supabase/migrations/20261113185604_p0_layaway_cancel_requires_refunds.sql
