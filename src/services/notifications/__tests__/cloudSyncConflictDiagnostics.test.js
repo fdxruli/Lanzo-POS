@@ -37,7 +37,8 @@ describe('Cloud sync conflict diagnosis read-only client', () => {
   it('uses verified actor credentials and returns current safe aggregate only', async () => {
     mocks.rpc.mockResolvedValue({ data: summary, error: null });
     const data = await fetchCloudSyncConflictDiagnostics({ license_key: 'my-license' });
-    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('pos_get_sync_conflict_diagnostics_v1', authArgs);
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_get_sync_conflict_diagnostics_v1', authArgs);
     expect(data).toEqual({
       available: true,
       summary: {
