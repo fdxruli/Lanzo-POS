@@ -34,7 +34,13 @@ const omitField = (key) => {
     || normalized.endsWith('password');
 };
 const normalizeName = (value) => String(value || '').trim().toLocaleLowerCase();
+// Free's local category uniqueness check removes whitespace. Use that stricter
+// comparison only for portable category matching so PRO names that Free cannot
+// distinguish are blocked as ambiguous instead of being linked arbitrarily.
+const normalizeCategoryName = (value) => String(value || '').replace(/\s+/g, '').toLowerCase();
 const normalizeBarcode = (value) => String(value || '').trim().toUpperCase();
+const DEFAULT_PORTABLE_CATEGORY_COLOR = '#cccccc';
+const PORTABLE_CATEGORY_COLOR_PATTERN = /^#[\da-f]{6}$/i;
 const csvDate = () => new Date().toISOString().slice(0, 10);
 
 const assertCurrentContext = (context) => {
@@ -90,7 +96,7 @@ async function serializePortableValue(value, seen = new WeakSet()) {
 
 const portableTransferRow = (tableName, source) => {
   const fieldsByTable = {
-    categories: ['id', 'name', 'isActive', 'sortOrder', 'description'],
+    categories: ['id', 'name', 'color', 'isActive', 'sortOrder', 'description'],
     menu: [
       'id', 'name', 'barcode', 'sku', 'description', 'categoryId', 'price', 'saleType',
       'productType', 'minStock', 'maxStock', 'isActive', 'trackStock', 'batchManagement',
@@ -667,7 +673,7 @@ const getPortableTables = (bundle) => {
 };
 
 const catalogDestinationReviewSnapshot = (existing) => ({
-  categories: existing.categories.map(({ id, name, isActive }) => ({ id, name, isActive }))
+  categories: existing.categories.map(({ id, name, color, sortOrder, isActive }) => ({ id, name, color, sortOrder, isActive }))
     .sort((left, right) => String(left.id).localeCompare(String(right.id))),
   products: existing.products.map(({ id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey }) => ({
     id, name, barcode, categoryId, price, updatedAt, stock, committedStock, transferSourceKey
@@ -694,36 +700,67 @@ async function buildCatalogTransferPlan(bundle, existing) {
   const existingCategories = existing.categories;
   const categoriesByName = new Map();
   for (const category of existingCategories) {
-    const normalized = normalizeName(category.name);
+    const normalized = normalizeCategoryName(category.name);
     if (!normalized) continue;
     if (!categoriesByName.has(normalized)) categoriesByName.set(normalized, []);
     categoriesByName.get(normalized).push(category);
   }
 
+  const seenCategoryIds = new Set();
+  const seenCategoryNames = new Set();
   for (const category of source.categories) {
     if (!category?.id || !String(category.name || '').trim()) {
       errors.push('Se omitió una categoría sin identificador o nombre.');
       continue;
     }
-    const normalized = normalizeName(category.name);
-    if (categoryIdMap.has(category.id)) {
+    const normalized = normalizeCategoryName(category.name);
+    if (seenCategoryIds.has(category.id)) {
       conflicts.push(`Categoría “${category.name}”: el archivo repite su identificador.`);
       continue;
     }
+    seenCategoryIds.add(category.id);
+    if (seenCategoryNames.has(normalized)) {
+      conflicts.push(`Categoría “${category.name}”: el archivo incluye nombres ambiguos según las reglas de categorías de este negocio.`);
+      continue;
+    }
+    seenCategoryNames.add(normalized);
     const existingMatches = categoriesByName.get(normalized) || [];
     if (existingMatches.length === 1) {
       categoryIdMap.set(category.id, existingMatches[0].id);
     } else if (existingMatches.length > 1) {
       conflicts.push(`Categoría “${category.name}”: hay varias coincidencias en este negocio.`);
     } else {
-      const duplicateInFile = categoryCreates.find((row) => normalizeName(row.name) === normalized);
+      const hasColor = Object.prototype.hasOwnProperty.call(category, 'color');
+      const color = hasColor ? category.color : DEFAULT_PORTABLE_CATEGORY_COLOR;
+      const hasSortOrder = Object.prototype.hasOwnProperty.call(category, 'sortOrder');
+      const rawSortOrder = hasSortOrder ? category.sortOrder : 0;
+      let sortOrder = null;
+      if (typeof rawSortOrder === 'number' && Number.isFinite(rawSortOrder)) sortOrder = rawSortOrder;
+      else if (typeof rawSortOrder === 'string' && rawSortOrder.trim() && Number.isFinite(Number(rawSortOrder))) {
+        sortOrder = Number(rawSortOrder);
+      }
+      const normalizedColor = typeof color === 'string' ? color.trim() : '';
+      if (!PORTABLE_CATEGORY_COLOR_PATTERN.test(normalizedColor)) {
+        conflicts.push(`Categoría “${category.name}”: el color no es válido.`);
+        continue;
+      }
+      if (sortOrder === null) {
+        conflicts.push(`Categoría “${category.name}”: el orden no es válido.`);
+        continue;
+      }
       const id = `transfer-category-${await stableHash(`${datasetId}:category:${category.id}`)}`;
-      if (!duplicateInFile && existingCategories.some((candidate) => candidate.id === id)) {
+      if (existingCategories.some((candidate) => candidate.id === id)) {
         conflicts.push(`Categoría “${category.name}”: el identificador generado ya está ocupado en este negocio.`);
         continue;
       }
-      const target = duplicateInFile || { id, name: String(category.name).trim(), isActive: category.isActive !== false };
-      if (!duplicateInFile) categoryCreates.push(target);
+      const target = {
+        id,
+        name: String(category.name).trim(),
+        color: normalizedColor,
+        isActive: category.isActive !== false,
+        sortOrder
+      };
+      categoryCreates.push(target);
       categoryIdMap.set(category.id, target.id);
     }
   }
@@ -759,6 +796,16 @@ async function buildCatalogTransferPlan(bundle, existing) {
       continue;
     }
     seenSourceIds.add(product.id);
+    if (product.categoryId) {
+      if (!categorySourceById.has(product.categoryId)) {
+        productConflicts.push(`Producto ${product.name}: no se encontró su categoría de origen.`);
+        continue;
+      }
+      if (!categoryIdMap.has(product.categoryId)) {
+        productConflicts.push(`Producto ${product.name}: su categoría tiene un conflicto de nombre o atributos.`);
+        continue;
+      }
+    }
     const barcode = normalizeBarcode(product.barcode);
     if (barcode && seenSourceBarcodes.has(barcode)) {
       productConflicts.push(`Producto ${product.name}: el archivo repite el código de barras.`);
@@ -792,15 +839,6 @@ async function buildCatalogTransferPlan(bundle, existing) {
       } else {
         productConflicts.push(`Producto ${product.name}: el código de barras ya existe en otro producto.`);
       }
-      continue;
-    }
-    const sourceCategory = product.categoryId ? categorySourceById.get(product.categoryId) : null;
-    if (product.categoryId && !sourceCategory) {
-      productConflicts.push(`Producto ${product.name}: no se encontró su categoría de origen.`);
-      continue;
-    }
-    if (product.categoryId && !categoryIdMap.has(product.categoryId)) {
-      productConflicts.push(`Producto ${product.name}: su categoría tiene un conflicto de nombre.`);
       continue;
     }
     const sourceIngredientIds = new Set(source.ingredients.map((ingredient) => ingredient?.id).filter(Boolean));
