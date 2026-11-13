@@ -8,11 +8,17 @@ import {
   Package,
   ShoppingBag
 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
-import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
-import { getCloudInventoryNotificationNavigationRoute } from '../../services/notifications/inventoryNotificationNavigation';
+import { useActorAccess } from '../../services/auth/useActorAccess';
+import { readActorAccess } from '../../services/auth/actorAccessPolicy';
+import { evaluateSettingsAccess } from '../../services/auth/settingsAccessPolicy';
+import { getNotificationAuthorizationKey } from '../../services/notifications/notificationAccess';
+import {
+  isPendingSyncConflictNotification,
+  resolveNotificationAction
+} from '../../services/notifications/notificationActionNavigation';
 import {
   getNotificationCategory,
   isCategoryMuted,
@@ -65,17 +71,18 @@ export default function NotificationItem({
 }) {
   const navigate = useNavigate();
   const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
-  const canAccess = useAppStore((state) => state.canAccess);
-  const actorRuntime = useActorRuntimeSnapshot();
-  const canReadReports = canReadSalesReports(actorRuntime);
-  const canReadProducts = (
-    currentDeviceRole === 'staff'
-    && Boolean(currentStaffUser?.id)
-    && typeof canAccess === 'function'
-    && (canAccess('products') || canAccess('inventory'))
-  );
+  const actorAccess = useActorAccess();
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const storedAuthorizationKey = useAppStore((state) => state.notificationAuthorizationKey);
+  const authorizationKey = getNotificationAuthorizationKey({ licenseDetails }, actorAccess);
+  const hasCurrentContext = Boolean(authorizationKey && authorizationKey === storedAuthorizationKey);
+  const settingsAccess = evaluateSettingsAccess({
+    actorAccess,
+    runtimeSnapshot: actorAccess.runtimeSnapshot
+  });
+  const operationRef = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [readError, setReadError] = useState('');
   const {
     id,
     title = 'Notificación',
@@ -100,48 +107,75 @@ export default function NotificationItem({
   const isFeatured = shouldFeatureNotification(notification, preferences);
   const displayBody = body || description;
   const displayDate = formatNotificationDate(createdAtRaw || createdAt);
-  const rawActionRoute = notification?.action_route || notification?.actionRoute || '';
-  const actionRoute = type === 'inventory'
-    ? getCloudInventoryNotificationNavigationRoute(notification, {
-        canReadReports,
-        canReadProducts
-      })
-    : rawActionRoute;
-  const actionLabel = type === 'inventory'
-    ? (actionRoute
-        ? (notification?.action_label || notification?.actionLabel || 'Revisar')
-        : (!isRead ? 'Marcar como leída' : ''))
-    : (notification?.action_label || notification?.actionLabel || (!isRead ? 'Marcar como leída' : ''));
+  const action = hasCurrentContext
+    ? resolveNotificationAction(notification, { actorAccess, settingsAccess, licenseDetails })
+    : null;
 
-  const handleRead = async () => {
-    const result = id ? await onRead?.(id) : { success: true };
-    if (result?.success === false) return;
+  const isCurrentContext = () => {
+    const currentState = useAppStore.getState();
+    const currentAccess = readActorAccess(currentState);
+    return Boolean(
+      authorizationKey
+      && currentState.notificationAuthorizationKey === authorizationKey
+      && getNotificationAuthorizationKey(currentState, currentAccess) === authorizationKey
+    );
+  };
 
-    if (typeof actionRoute === 'string' && actionRoute.startsWith('/')) {
-      if (category === 'ecommerce' || type === 'inventory') {
-        closeNotificationCenter?.();
+  const handleRead = async (openAction = false) => {
+    if (!id || !hasCurrentContext || operationRef.current || !isCurrentContext()) return;
+    operationRef.current = true;
+    setPending(true);
+    setReadError('');
+
+    try {
+      const result = openAction && action?.kind === 'support'
+        ? await onRead?.(id, { openSupport: true })
+        : await onRead?.(id);
+      if (result?.success !== true) {
+        if (isCurrentContext()) setReadError('No se pudo marcar como leída. Intenta de nuevo.');
+        return;
       }
-      navigate(actionRoute);
+
+      if (!openAction || action?.kind !== 'navigate' || !isCurrentContext()) return;
+
+      const liveState = useAppStore.getState();
+      const liveAccess = readActorAccess(liveState);
+      const liveSettingsAccess = evaluateSettingsAccess({
+        actorAccess: liveAccess,
+        runtimeSnapshot: liveAccess.runtimeSnapshot
+      });
+      const liveAction = resolveNotificationAction(notification, {
+        actorAccess: liveAccess,
+        settingsAccess: liveSettingsAccess,
+        licenseDetails: liveState.licenseDetails
+      });
+      if (liveAction?.kind !== 'navigate' || liveAction.route !== action.route) return;
+
+      closeNotificationCenter?.();
+      navigate(action.route);
+    } catch {
+      if (isCurrentContext()) setReadError('No se pudo marcar como leída. Intenta de nuevo.');
+    } finally {
+      operationRef.current = false;
+      setPending(false);
     }
   };
 
   const handleArchive = (event) => {
     event.stopPropagation();
-    if (id) {
-      onArchive?.(id);
+    if (id && hasCurrentContext && !pending && isCurrentContext()) {
+      void onArchive?.(id);
     }
   };
 
   const handleAction = (event) => {
     event.stopPropagation();
-    handleRead();
+    void handleRead(true);
   };
 
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleRead();
-    }
+  const handleMarkRead = (event) => {
+    event.stopPropagation();
+    void handleRead(false);
   };
 
   return (
@@ -156,9 +190,7 @@ export default function NotificationItem({
         !isFeatured ? 'is-not-featured' : ''
       ].filter(Boolean).join(' ')}
       role="listitem"
-      onClick={handleRead}
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
+      aria-busy={pending}
     >
       <span className="notification-item__icon" aria-hidden="true">
         <Icon size={18} />
@@ -179,15 +211,30 @@ export default function NotificationItem({
         </div>
         <h3>{title}</h3>
         {displayBody && <p>{displayBody}</p>}
+        {isPendingSyncConflictNotification(notification) && (
+          <p>Hay conflictos pendientes. Su diagnóstico detallado todavía no está disponible aquí.</p>
+        )}
+        {readError && <p role="alert">{readError}</p>}
         <div className="notification-item__footer">
           {displayDate && <time dateTime={createdAtRaw || createdAt}>{displayDate}</time>}
-          {actionLabel && (
+          {action && (
             <button
               type="button"
               className="notification-item__action"
               onClick={handleAction}
+              disabled={pending}
             >
-              {actionLabel}
+              {action.label}
+            </button>
+          )}
+          {!isRead && (
+            <button
+              type="button"
+              className="notification-item__read"
+              onClick={handleMarkRead}
+              disabled={pending || !hasCurrentContext}
+            >
+              Marcar como leída
             </button>
           )}
         </div>
@@ -198,6 +245,7 @@ export default function NotificationItem({
           className="notification-item__archive"
           onClick={handleArchive}
           aria-label={`Archivar notificación ${title}`}
+          disabled={pending || !hasCurrentContext}
         >
           <Archive size={16} aria-hidden="true" />
         </button>

@@ -356,14 +356,27 @@ export default function NotificationCenterDrawer({
     openSupportTicket?.(ticketId, options);
   };
 
-  const handleNotificationRead = async (notificationId) => {
+  const handleNotificationRead = async (notificationId, { openSupport = false } = {}) => {
     const notification = visibleNotifications.find((item) => item.id === notificationId);
     const result = await markNotificationRead?.(notificationId);
+    const currentState = useAppStore.getState();
+    const currentAuthorizationKey = getNotificationAuthorizationKey(currentState);
 
     if (
+      result?.success !== true
+      || !currentAuthorizationKey
+      || currentAuthorizationKey !== authorizationKey
+      || currentState.notificationAuthorizationKey !== authorizationKey
+    ) {
+      return result?.success === true
+        ? { success: false, code: 'STALE_NOTIFICATION_CONTEXT' }
+        : result;
+    }
+
+    if (openSupport && (
       notification?.metadata?.ticket_id ||
       notification?.action_route === 'notifications:support'
-    ) {
+    )) {
       if (!supportCenterEnabled) {
         return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso a soporte Lanzo.' };
       }

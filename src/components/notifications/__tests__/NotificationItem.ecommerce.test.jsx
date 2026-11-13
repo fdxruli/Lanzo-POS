@@ -5,29 +5,18 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  closeNotificationCenter: vi.fn(),
-  actorRuntime: {
-    status: 'granted',
-    actorType: 'admin',
-    actorId: 'admin-1',
-    sessionId: 'admin-session-1',
-    permissions: ['*']
-  }
+  closeNotificationCenter: vi.fn(), app: {}, access: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({
-    closeNotificationCenter: mocks.closeNotificationCenter,
-    currentDeviceRole: 'admin',
-    currentStaffUser: null,
-    canAccess: vi.fn(() => true)
-  })
+  useAppStore: Object.assign((selector) => selector(mocks.app), { getState: () => mocks.app })
+}));
+vi.mock('../../../services/auth/useActorAccess', () => ({ useActorAccess: () => mocks.access }));
+vi.mock('../../../services/auth/actorAccessPolicy', async (importOriginal) => ({
+  ...await importOriginal(), readActorAccess: () => mocks.access
 }));
 
-vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
-  useActorRuntimeSnapshot: () => mocks.actorRuntime
-}));
-
+import { getNotificationAuthorizationKey } from '../../../services/notifications/notificationAccess';
 import NotificationItem from '../NotificationItem';
 
 function LocationProbe() {
@@ -54,6 +43,24 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.access = {
+    isAuthorizedActor: true, isAdmin: true, actorType: 'admin', actorId: 'admin-1',
+    runtimeSnapshot: {
+      status: 'granted', actorType: 'admin', actorId: 'admin-1',
+      sessionId: 'admin-session-1', generation: 1, tenant: 'license-test', permissions: ['*']
+    },
+    permissionSession: { currentDeviceRole: 'admin', currentStaffUser: { permissions: {} } },
+    ecommerceSession: { currentDeviceRole: 'admin', currentStaffUser: { permissions: {} } },
+    canAccessPermission: () => true
+  };
+  mocks.app = {
+    closeNotificationCenter: mocks.closeNotificationCenter,
+    licenseDetails: {
+      license_id: 'license-test',
+      features: { notification_center: true, cloud_notifications: true, ecommerce_order_inbox: true }
+    }
+  };
+  mocks.app.notificationAuthorizationKey = getNotificationAuthorizationKey(mocks.app, mocks.access);
 });
 
 describe('NotificationItem ecommerce', () => {
