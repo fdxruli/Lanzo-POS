@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db, STORES } from '../dexie';
 import { layawayRepository } from '../layaways';
+import { useAppStore } from '../../../store/useAppStore';
 import { salesRepository } from '../sales';
 import { getAvailableStock } from '../utils';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
@@ -31,6 +32,7 @@ const normalSale = (id, qty, batchId = null) => salesRepository.executeSaleTrans
 }, batchId ? [{ productId: 'shirt', batchId, quantity: qty }] : []);
 
 beforeEach(async () => {
+  useAppStore.setState({ companyProfile: { timezone: 'America/Merida' } });
   await openTestTenantRuntime();
   for (const table of [
     STORES.MENU, STORES.PRODUCT_BATCHES, STORES.LAYAWAYS, STORES.SALES,
@@ -38,7 +40,10 @@ beforeEach(async () => {
     STORES.INVENTORY_EVENTS, STORES.TRANSACTION_LOG, STORES.SEQUENCES
   ]) await db.table(table).clear();
 });
-afterEach(() => closeTestTenantRuntime());
+afterEach(async () => {
+  await closeTestTenantRuntime();
+  useAppStore.setState({ companyProfile: null });
+});
 
 describe('Apparel Free reserved_v1 / Dexie real', () => {
   it('reserves 2 of 10, sells the 8 free, rejects a ninth and delivers only once', async () => {

@@ -520,4 +520,55 @@ describe('profile refresh during authenticated staff transition', () => {
       expect.objectContaining({ file: preview, purpose: 'business-logo' })
     );
   });
+  it('confirms IANA via Cloud and recovers it on a remote profile reload without losing business fields', async () => {
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true, timezone: 'America/Merida' });
+    const state = {
+      currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-id' },
+      licenseDetails: { license_key: 'LANZO-PRO' }, appStatus: 'ready',
+      companyProfile: { license_key: 'LANZO-PRO', name: 'Negocio', phone: '1234',
+        address: 'Centro', logo: 'https://logo.test/logo.webp', business_type: ['hardware'], timezone: null }
+    };
+    const originalProfile = state.companyProfile;
+    Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
+    state.companyProfile = originalProfile;
+    const saved = await state.updateCompanyProfile({ ...originalProfile, timezone: 'America/Merida' });
+    expect(saved).toMatchObject({ license_key: 'LANZO-PRO', timezone: 'America/Merida',
+      name: 'Negocio', phone: '1234', address: 'Centro', logo: 'https://logo.test/logo.webp' });
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledWith('LANZO-PRO',
+      expect.objectContaining({ timezone: 'America/Merida', phone: '1234', address: 'Centro' }), expect.any(Object));
+    mocks.getBusinessProfile.mockResolvedValue({ success: true, data: {
+      license_key: 'LANZO-PRO', business_name: 'Negocio', phone_number: '1234',
+      address: 'Centro', logo_url: 'https://logo.test/logo.webp',
+      business_type: ['hardware'], timezone: 'America/Merida'
+    } });
+    const refreshed = await state._loadProfile('LANZO-PRO', { forceRemote: true, reason: 'timezone_qa' });
+    expect(refreshed?.timezone).toBe('America/Merida');
+    expect(state.companyProfile?.timezone).toBe('America/Merida');
+  });
+
+  it('rejects successful RPC responses without a matching server timezone acknowledgement', async () => {
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    const state = { currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-id' },
+      licenseDetails: { license_key: 'LANZO-PRO' }, companyProfile: null };
+    Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
+    await expect(state.updateCompanyProfile({ name: 'Negocio', business_type: ['hardware'],
+      timezone: 'America/Merida' })).rejects.toThrow(/servidor no confirmó/);
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(state.companyProfile).toBeNull();
+  });
+
+  it('discards a late save response after a license switch without caching or publishing it', async () => {
+    const state = { currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-id' },
+      licenseDetails: { license_key: 'LANZO-PRO' }, companyProfile: null };
+    Object.assign(state, createProfileSlice((partial) => Object.assign(state, partial), () => state));
+    mocks.saveBusinessProfile.mockImplementation(async () => {
+      state.licenseDetails = { license_key: 'LANZO-OTHER' };
+      return { success: true, timezone: 'America/Merida' };
+    });
+    await expect(state.updateCompanyProfile({ name: 'Negocio', business_type: ['hardware'],
+      timezone: 'America/Merida' })).resolves.toBeNull();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(state.companyProfile).toBeNull();
+  });
+
 });

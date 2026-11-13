@@ -4,6 +4,8 @@ import {
     AlertTriangle, ShoppingBag
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
+import { useAppStore } from '../../store/useAppStore';
+import { isLayawayOverdueForDisplay, assertLayawayPaymentAllowed, isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
 import { reportsRepository } from '../../services/reports/reportsRepository';
 import { useCaja } from '../../hooks/useCaja';
@@ -43,8 +45,6 @@ const getCalendarDateParts = (value) => {
         : null;
 };
 
-const calendarDateKey = (parts) => parts && (parts.year * 10000 + parts.month * 100 + parts.day);
-
 const formatCalendarDate = (value) => {
     const parts = getCalendarDateParts(value);
     if (!parts) return 'Fecha inválida';
@@ -72,6 +72,11 @@ export default function LayawayModal({
     const [activePaymentId, setActivePaymentId] = useState(null); // ID del apartado que se está abonando
 
     const { cajaActual } = useCaja();
+    const companyTimezone = useAppStore((state) => (
+        state.companyProfile?.license_key && state.licenseDetails?.license_key
+            && state.companyProfile.license_key !== state.licenseDetails.license_key
+            ? null : state.companyProfile?.timezone || null
+    ));
     const actorRuntime = useActorRuntimeSnapshot();
     const salesHistoryScope = getSalesFinalHistoryScope(actorRuntime);
     const loadVersionRef = useRef(0);
@@ -138,6 +143,15 @@ export default function LayawayModal({
         if (!isActionableLayaway(layaway)) {
             showMessageModal('Este apartado ya es histórico y no acepta más abonos.', null, { type: 'warning' });
             return;
+        }
+        // Cloud financial authority is unchanged until Stage 3B is installed.
+        if (isValidBusinessTimezone(companyTimezone)) {
+            try {
+                assertLayawayPaymentAllowed(layaway, companyTimezone);
+            } catch (error) {
+                showMessageModal(error.message, null, { type: 'warning' });
+                return;
+            }
         }
         if (!cajaActual || cajaActual.estado !== 'abierta') {
             showMessageModal('⚠️ Necesitas una caja abierta para recibir dinero.');
@@ -210,17 +224,7 @@ export default function LayawayModal({
 
     if (!show || !customer) return null;
 
-    const checkIsOverdue = (deadline) => {
-        const deadlineParts = getCalendarDateParts(deadline);
-        if (!deadlineParts) return false;
-        const today = new Date();
-        const todayParts = {
-            year: today.getFullYear(),
-            month: today.getMonth() + 1,
-            day: today.getDate()
-        };
-        return calendarDateKey(todayParts) > calendarDateKey(deadlineParts);
-    };
+    const checkIsOverdue = (deadline) => isLayawayOverdueForDisplay(deadline, companyTimezone);
 
     const handleCancel = async (layaway) => {
     if (!isActionableLayaway(layaway)) {
@@ -501,9 +505,9 @@ export default function LayawayModal({
             setActivePaymentId(layaway.id);
             setPaymentAmount('');
         }}
-        disabled={isOverdue} // <-- BLOQUEO
+        disabled={isOverdue}
     >
-        <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos Bloqueados (Vencido)' : 'Registrar Nuevo Abono'}
+        <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos bloqueados (vencido)' : 'Registrar nuevo abono'}
     </button>
 )}
 
@@ -534,7 +538,7 @@ export default function LayawayModal({
                                                             className="ui-button ui-button--primary customer-layaway-payment__action"
                                                             type="button"
                                                             onClick={() => handleAddPayment(layaway)}
-                                                            disabled={processingId === layaway.id}
+                                                            disabled={processingId === layaway.id || isOverdue}
                                                         >
                                                             <CheckCircle size={18} aria-hidden="true" /> Confirmar
                                                         </button>

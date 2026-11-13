@@ -1,5 +1,7 @@
 // components/pos/LayawayModal.jsx
 import React, { useState, useEffect } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { addBusinessCalendarDays, getBusinessCalendarDate, getLayawayCalendarDate } from '../../utils/layawayCalendar';
 import { loadData, STORES } from '../../services/database';
 import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
 import { useCaja } from '../../hooks/useCaja';
@@ -25,6 +27,7 @@ const formatLocalDateInputValue = (date) => [
     String(date.getDate()).padStart(2, '0')
 ].join('-');
 
+
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
     const [initialPayment, setInitialPayment] = useState('');
     const [deadline, setDeadline] = useState('');
@@ -36,14 +39,23 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
     const { cajaActual } = useCaja();
+    const businessTimezone = useAppStore((state) => (
+        state.companyProfile?.license_key && state.licenseDetails?.license_key
+            && state.companyProfile.license_key !== state.licenseDetails.license_key
+            ? null : state.companyProfile?.timezone || null
+    ));
 
     useEffect(() => {
         if (show) {
-            const date = new Date();
-            date.setDate(date.getDate() + 30);
-            // A date input is a calendar date, not an instant. Formatting it
-            // with toISOString() can move it one day around local midnight.
-            setDeadline(formatLocalDateInputValue(date));
+            const today = getBusinessCalendarDate(businessTimezone);
+            if (today) {
+                setDeadline(addBusinessCalendarDays(today, 30));
+            } else {
+                // Until a business timezone is confirmed, preserve the pre-Stage-3 form default.
+                const legacyDate = new Date();
+                legacyDate.setDate(legacyDate.getDate() + 30);
+                setDeadline(formatLocalDateInputValue(legacyDate));
+            }
             setInitialPayment('');
 
             const fetchCustomers = async () => {
@@ -60,7 +72,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             }
             setFilteredCustomers([]);
         }
-    }, [show, preSelectedCustomer, total]);
+    }, [show, preSelectedCustomer, total, businessTimezone]);
 
     const handleCustomerSearch = (e) => {
         const query = e.target.value;
@@ -96,6 +108,17 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
+        const today = getBusinessCalendarDate(businessTimezone);
+        const due = getLayawayCalendarDate(deadline);
+        if (today && !due) {
+            showMessageModal('Selecciona una fecha límite válida.', null, { type: 'warning' });
+            return;
+        }
+        if (today && due < today) {
+            showMessageModal('La fecha límite debe ser hoy o posterior, según el calendario del negocio.', null, { type: 'warning' });
+            return;
+        }
 
         if (!selectedCustomer) {
             showMessageModal("Es obligatorio asignar un cliente.", null, { type: 'warning' });

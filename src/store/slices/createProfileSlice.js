@@ -112,6 +112,7 @@ const buildCompanyData = (rawProfile, licenseKey, id = getProfileCacheKey(licens
   name: rawProfile?.business_name || rawProfile?.name || '',
   phone: rawProfile?.phone_number || rawProfile?.phone || '',
   address: rawProfile?.address || '',
+  timezone: rawProfile?.timezone || null,
   logo: rawProfile?.logo_url || rawProfile?.logo || '',
   business_type: normalizeBusinessTypes(rawProfile?.business_type)
 });
@@ -592,7 +593,7 @@ export const createProfileSlice = (set, get) => {
 
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
-    if (!licenseKey) return;
+    if (!licenseKey) return null;
     const actorHandle = captureProfileSettingsAction(get);
     const sessionGeneration = _profileSessionGeneration;
 
@@ -611,7 +612,7 @@ export const createProfileSlice = (set, get) => {
       }
 
       actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) return null;
 
       nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
 
@@ -625,18 +626,27 @@ export const createProfileSlice = (set, get) => {
       }
 
       actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) return null;
+      if (nextCompanyData.timezone && saveResult.timezone !== nextCompanyData.timezone) {
+        throw new Error('El servidor no confirmó la zona horaria del negocio.');
+      }
 
       const scopedCompanyData = await saveProfileCache(
         licenseKey,
         buildCompanyData(nextCompanyData, licenseKey),
-        { beforeWrite: () => actorHandle.assertCurrent('settings_data') }
+        { beforeWrite: () => {
+          actorHandle.assertCurrent('settings_data');
+          if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) {
+            throw new Error('La licencia cambió durante el guardado.');
+          }
+        } }
       );
 
       actorHandle.assertCurrent('settings_data');
-      if (sessionGeneration !== _profileSessionGeneration) return null;
+      if (sessionGeneration !== _profileSessionGeneration || get().licenseDetails?.license_key !== licenseKey) return null;
 
       set({ companyProfile: scopedCompanyData });
+      return scopedCompanyData;
     } catch (error) {
       Logger.error('Error actualizando perfil:', error);
       throw error;

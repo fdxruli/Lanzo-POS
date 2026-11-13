@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 
 const mocks = vi.hoisted(() => ({
   layaways: [],
@@ -12,7 +13,12 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   showMessageModal: vi.fn(),
   showConfirmModal: vi.fn(),
-  actorRuntime: null
+  actorRuntime: null,
+  timezone: null
+}));
+
+vi.mock('../../../store/useAppStore', () => ({
+  useAppStore: (selector) => selector({ companyProfile: { timezone: mocks.timezone } })
 }));
 
 vi.mock('../../../services/db/layaways', () => ({
@@ -80,6 +86,7 @@ const renderModal = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.timezone = null;
   mocks.actorRuntime = {
     status: 'granted', actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a', permissions: ['*']
   };
@@ -202,4 +209,29 @@ describe('LayawayModal completed history', () => {
     expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.complete).not.toHaveBeenCalled();
   });
+  it('keeps a Cloud installment available without a timezone when the old UI allowed it', async () => {
+    mocks.layaways = [layaway({ deadline: '2030-12-31' })];
+    mocks.addPayment.mockResolvedValue({ isFullyPaid: false });
+    renderModal();
+    const user = userEvent.setup();
+    const button = await screen.findByRole('button', { name: /Registrar nuevo abono/i });
+    expect(button).toBeEnabled();
+    await user.click(button);
+    await user.type(screen.getByRole('spinbutton'), '5');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(mocks.addPayment).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active', amount: 5, expectedCashSessionId: 'cash-a'
+    })));
+    expect(mocks.showMessageModal).not.toHaveBeenCalledWith(expect.stringContaining('zona horaria'),
+      null, expect.anything());
+  });
+
+  it('retains the old overdue UI block without a timezone rather than enabling a new payment', async () => {
+    mocks.layaways = [layaway({ deadline: '2020-01-01' })];
+    renderModal();
+    const button = await screen.findByRole('button', { name: /Abonos bloqueados/i });
+    expect(button).toBeDisabled();
+    expect(mocks.addPayment).not.toHaveBeenCalled();
+  });
+
 });
