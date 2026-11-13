@@ -266,7 +266,7 @@ begin
     'idempotency_key', p_idempotency_key
   );
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION private.execute_layaway_payment_financial_v1(p_context jsonb, p_request jsonb, p_idempotency_key text, p_request_hash text, p_cash_station_id text)
@@ -472,6 +472,6 @@ begin
     'idempotency_key', p_idempotency_key
   );
 end;
-$function$
+$function$;
 
 commit;
