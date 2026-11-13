@@ -5,7 +5,11 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { queryBatchesByProductIdsAndActive, searchProductsInDB } from '../../services/database';
-import { isInventoryCatalogEligible } from '../../services/products/productCatalogQueryService';
+import {
+  INVENTORY_UNCATEGORIZED_FILTER,
+  isInventoryCatalogEligible,
+  isInventoryUncategorizedFilter
+} from '../../services/products/productCatalogQueryService';
 import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
 import { extractCalendarDate } from '../../utils/dateUtils';
 import { formatShelfLife, getProductBatchSummaryMap, getProductCardExpiryState } from '../../services/products/productBatchSummary';
@@ -47,7 +51,10 @@ const formatDate = (value) => {
   return `${day}/${month}/${year}`;
 };
 
-export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true }) {
+const CATEGORY_OPTION_PREFIX = 'category:';
+const UNCATEGORIZED_OPTION_VALUE = 'inventory:uncategorized';
+
+export default function ProductList({ products, categories = [], isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true }) {
   const features = useFeatureConfig();
 
   // Acciones del Store (solo paginacion/cache)
@@ -67,11 +74,18 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
   const statusFilter = useInventoryCatalogStore((state) => state.filters.status || 'active');
+  const categoryFilter = useInventoryCatalogStore((state) => state.filters.categoryId ?? null);
   const setFilters = useInventoryCatalogStore((state) => state.setFilters);
 
   const categoryMap = useMemo(() => {
-    return new Map(categories.map(cat => [cat.id, cat.name]));
+    return new Map(categories.map(cat => [String(cat.id), cat.name]));
   }, [categories]);
+
+  const categoryFilterValue = categoryFilter === null
+    ? ''
+    : (isInventoryUncategorizedFilter(categoryFilter)
+      ? UNCATEGORIZED_OPTION_VALUE
+      : `${CATEGORY_OPTION_PREFIX}${categoryFilter}`);
 
   useEffect(() => {
     let isActive = true;
@@ -97,7 +111,8 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           setSearchResults(results.filter((product) => (
             isInventoryCatalogEligible(product, {
               status: statusFilter,
-              productType: 'sellable'
+              productType: 'sellable',
+              categoryId: categoryFilter
             })
           )));
         }
@@ -118,10 +133,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     return () => {
       isActive = false;
     };
-  }, [debouncedTerm, statusFilter]);
+  }, [categoryFilter, debouncedTerm, products, statusFilter]);
 
   const isSearchMode = debouncedTerm.trim().length > 0;
-  const displayProducts = isSearchMode ? searchResults : products;
+  const displayProducts = isSearchMode
+    ? searchResults.filter((product) => isInventoryCatalogEligible(product, {
+      status: statusFilter,
+      productType: 'sellable',
+      categoryId: categoryFilter
+    }))
+    : products;
   const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
 
   useEffect(() => {
@@ -184,11 +205,39 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
           <select
             value={statusFilter}
             onChange={(e) => setFilters({ status: e.target.value })}
+            aria-label="Filtrar por estado"
             className="product-status-filter"
           >
             <option value="all">Todos los estados</option>
             <option value="active">Solo Activos</option>
             <option value="inactive">Solo Inactivos</option>
+          </select>
+
+          <select
+            value={categoryFilterValue}
+            onChange={(event) => {
+              const { value } = event.target;
+              if (!value) {
+                setFilters({ categoryId: null });
+              } else if (value === UNCATEGORIZED_OPTION_VALUE) {
+                setFilters({ categoryId: INVENTORY_UNCATEGORIZED_FILTER });
+              } else if (value.startsWith(CATEGORY_OPTION_PREFIX)) {
+                const selectedCategory = categories.find((category) => (
+                  String(category.id) === value.slice(CATEGORY_OPTION_PREFIX.length)
+                ));
+                if (selectedCategory) setFilters({ categoryId: selectedCategory.id });
+              }
+            }}
+            aria-label="Filtrar por categoría"
+            className="product-category-filter"
+          >
+            <option value="">Todas las categorías</option>
+            <option value={UNCATEGORIZED_OPTION_VALUE}>Sin categoría</option>
+            {categories.map((category) => (
+              <option key={category.id} value={`${CATEGORY_OPTION_PREFIX}${category.id}`}>
+                {category.name}
+              </option>
+            ))}
           </select>
 
           {canManageProducts && features.hasDailyPricing && (
@@ -208,12 +257,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
         <div className="ui-empty-state empty-state">
           <div className="ui-empty-state__icon empty-icon"><Icons.Empty /></div>
           <h3>No se encontraron productos</h3>
-          <p>Intenta con otro término de búsqueda.</p>
+          <p>Prueba con otra categoría, estado o término de búsqueda.</p>
         </div>
       ) : (
         <div className="product-grid">
           {displayProducts.map(item => {
-            const categoryName = categoryMap.get(item.categoryId) || 'General';
+            const rawCategoryId = [item.categoryId, item.category_id]
+              .find((value) => value !== null && value !== undefined && value !== '') ?? null;
+            const categoryName = rawCategoryId === null
+              ? 'Sin categoría'
+              : (categoryMap.get(String(rawCategoryId)) || 'Categoría no disponible');
             const isActive = item.isActive !== false;
             const availableStock = getAvailableStock(item);
             const committedStock = getCommittedStock(item);

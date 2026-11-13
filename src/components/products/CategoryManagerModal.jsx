@@ -7,7 +7,16 @@ import './CategoryManagerModal.css';
 
 const EMPTY_CATEGORIES = [];
 
-export default function CategoryManagerModal({ show, onClose, categories = EMPTY_CATEGORIES, onSave, onRefresh, onDelete }) {
+export default function CategoryManagerModal({
+  show,
+  onClose,
+  categories = EMPTY_CATEGORIES,
+  onSave,
+  onRefresh,
+  onDelete,
+  selectNewCategoryOnCreate = false,
+  onCategoryCreated
+}) {
   const [editingCategory, setEditingCategory] = useState(null);
 
   const handleDismiss = useCallback(() => {
@@ -23,9 +32,18 @@ export default function CategoryManagerModal({ show, onClose, categories = EMPTY
 
   if (!show) return null;
 
-  const handleSaveSuccess = () => {
+  const handleSaveSuccess = (savedCategory) => {
+    const isNewCategory = !editingCategory;
     setEditingCategory(null);
     onRefresh?.();
+    if (
+      selectNewCategoryOnCreate
+      && isNewCategory
+      && savedCategory?.id
+      && savedCategory.success !== false
+    ) {
+      onCategoryCreated?.(savedCategory);
+    }
   };
 
   const categoryCount = Array.isArray(categories) ? categories.length : 0;

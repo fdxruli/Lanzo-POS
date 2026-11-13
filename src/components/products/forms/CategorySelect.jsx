@@ -1,54 +1,71 @@
 // src/components/products/forms/CategorySelect.jsx
-import React, { useState, useEffect } from 'react';
-import { db, STORES } from '../../../services/db/dexie'; // Ajusta la ruta si es necesario
+import { useState, useEffect } from 'react';
+import { db, STORES } from '../../../services/db/dexie';
 
-export default function CategorySelect({ value, onChange, activeCategories, className }) {
-    const [orphanedCategory, setOrphanedCategory] = useState(null);
+const EMPTY_ACTIVE_CATEGORIES = [];
+
+export default function CategorySelect({ id, value, onChange, activeCategories = EMPTY_ACTIVE_CATEGORIES, className }) {
+    const categoryId = value === '' || value === null || value === undefined ? null : value;
+    const selectedValue = categoryId === null ? '' : String(categoryId);
+    const hasActiveCategory = categoryId !== null && activeCategories.some((category) => (
+        String(category.id) === String(categoryId)
+    ));
+    const [unavailableCategory, setUnavailableCategory] = useState(null);
 
     useEffect(() => {
-        // Si el producto tiene un categoryId guardado, pero NO está en la lista de categorías activas
-        if (value && !activeCategories.some(cat => cat.id === value)) {
-            const fetchOrphanedCategory = async () => {
-                try {
-                    // Intenta buscar como string, si falla, intenta como número
-                    const category = await db.table(STORES.CATEGORIES).get(value) ||
-                        await db.table(STORES.CATEGORIES).get(Number(value));
-
-                    if (category && category.isActive === false) {
-                        setOrphanedCategory(category);
-                    } else if (!category) {
-                        onChange("");
-                    }
-                } catch (error) {
-                    console.error("Error recuperando categoría inactiva:", error);
-                }
-            };
-            fetchOrphanedCategory();
-        } else {
-            // Si el usuario selecciona una categoría activa, limpiamos la huérfana para que desaparezca
-            setOrphanedCategory(null);
+        if (categoryId === null || hasActiveCategory) {
+            setUnavailableCategory(null);
+            return undefined;
         }
-    }, [value, activeCategories, onChange]);
+
+        let cancelled = false;
+        const selectedCategoryId = categoryId;
+        setUnavailableCategory({ id: selectedCategoryId, category: null });
+
+        const loadCategory = async () => {
+            try {
+                const categoryTable = db.table(STORES.CATEGORIES);
+                const numericId = Number(selectedCategoryId);
+                const category = await categoryTable.get(selectedCategoryId)
+                    || (Number.isNaN(numericId) ? null : await categoryTable.get(numericId));
+                if (!cancelled) {
+                    setUnavailableCategory({ id: selectedCategoryId, category: category || null });
+                }
+            } catch (error) {
+                console.error('Error recuperando categoría local:', error);
+                if (!cancelled) setUnavailableCategory({ id: selectedCategoryId, category: null });
+            }
+        };
+
+        void loadCategory();
+        return () => { cancelled = true; };
+    }, [activeCategories, categoryId, hasActiveCategory]);
+
+    const fallbackCategory = unavailableCategory
+        && String(unavailableCategory.id) === String(categoryId)
+        ? unavailableCategory.category
+        : null;
 
     return (
         <select
+            id={id}
             className={className}
-            value={value || ""}
+            value={selectedValue}
             onChange={(e) => onChange(e.target.value)}
         >
             <option value="">Sin categoría</option>
 
-            {/* Inyectar la categoría inactiva solo si existe para este producto */}
-            {orphanedCategory && (
-                <option value={orphanedCategory.id} style={{ color: '#ef4444', fontWeight: 'bold' }}>
-                    {orphanedCategory.name} (Inactiva)
+            {categoryId !== null && !hasActiveCategory && (
+                <option value={selectedValue}>
+                    {fallbackCategory?.name
+                        ? `${fallbackCategory.name}${fallbackCategory.isActive === false ? ' (Inactiva)' : ''}`
+                        : 'Categoría no disponible'}
                 </option>
             )}
 
-            {/* Mapeo normal de las categorías activas */}
-            {activeCategories.map(cat => (
-                <option key={cat.id} value={cat.id}>
-                    {cat.name}
+            {activeCategories.map((category) => (
+                <option key={category.id} value={String(category.id)}>
+                    {category.name}
                 </option>
             ))}
         </select>

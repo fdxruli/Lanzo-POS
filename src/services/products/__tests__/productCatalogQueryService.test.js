@@ -60,7 +60,9 @@ vi.mock('../productMenuEligibility', () => ({
 
 import {
   INVENTORY_CATALOG_PAGE_SIZE,
+  INVENTORY_UNCATEGORIZED_FILTER,
   isInventoryCatalogEligible,
+  isInventoryUncategorizedFilter,
   isPosCatalogEligible,
   POS_CATALOG_PAGE_SIZE,
   queryInventoryCatalogPage,
@@ -148,6 +150,53 @@ describe('product catalog IndexedDB queries', () => {
     expect(result.data).toHaveLength(50);
     expect(result.hasMore).toBe(true);
     expect(result.data.every((item) => item.categoryId === 'selected' && !item.deletedAt)).toBe(true);
+  });
+
+  it('filters uncategorized records across every inventory page without treating the filter as an ID', async () => {
+    const uncategorized = Array.from({ length: 55 }, (_, index) => product(index, {
+      id: `uncategorized-${index}`,
+      categoryId: index % 2 === 0 ? '' : null,
+      ...(index % 3 === 0 ? { category_id: null } : {})
+    }));
+    const categorized = Array.from({ length: 8 }, (_, index) => product(100 + index, {
+      id: `categorized-${index}`,
+      categoryId: 'drinks'
+    }));
+    const inactiveUncategorized = product(200, {
+      id: 'inactive-uncategorized',
+      categoryId: null,
+      isActive: false
+    });
+    mocks.records = [...categorized, inactiveUncategorized, ...uncategorized];
+
+    expect(isInventoryUncategorizedFilter(INVENTORY_UNCATEGORIZED_FILTER)).toBe(true);
+    const first = await queryInventoryCatalogPage({
+      categoryId: INVENTORY_UNCATEGORIZED_FILTER,
+      status: 'active',
+      productType: 'sellable'
+    });
+    const second = await queryInventoryCatalogPage({
+      categoryId: INVENTORY_UNCATEGORIZED_FILTER,
+      status: 'active',
+      productType: 'sellable',
+      cursor: first.nextCursor
+    });
+
+    expect(first.data).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    expect(second.data).toHaveLength(5);
+    expect(second.hasMore).toBe(false);
+    expect([...first.data, ...second.data].every((item) => (
+      item.categoryId === null || item.categoryId === ''
+    ))).toBe(true);
+    expect(isInventoryCatalogEligible({ ...product(3), categoryId: null, category_id: null }, {
+      categoryId: INVENTORY_UNCATEGORIZED_FILTER,
+      productType: 'sellable'
+    })).toBe(true);
+    expect(isInventoryCatalogEligible(product(4, { categoryId: 'drinks' }), {
+      categoryId: INVENTORY_UNCATEGORIZED_FILTER,
+      productType: 'sellable'
+    })).toBe(false);
   });
 
   it('paginates inventory deterministically when all createdAt values are equal', async () => {
