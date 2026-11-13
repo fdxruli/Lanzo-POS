@@ -412,7 +412,7 @@ begin
   perform private.complete_financial_operation_v1(v_license_id, p_idempotency_key, v_response);
   return v_response;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION private.pos_execute_financial_operation_core_v2(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text, p_request_hash text DEFAULT NULL::text, p_operation_type text DEFAULT NULL::text, p_request jsonb DEFAULT '{}'::jsonb)
@@ -795,7 +795,7 @@ begin
   perform private.complete_financial_operation_v1(v_license_id, p_idempotency_key, v_response);
   return v_response;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.pos_get_financial_operation_receipt(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text, p_request_hash text DEFAULT NULL::text)
@@ -846,7 +846,7 @@ begin
       v_operation.legacy_idempotency_key
     ));
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.pos_get_financial_operation_receipt_v2(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text, p_request_hash text DEFAULT NULL::text, p_sync_contract jsonb DEFAULT NULL::jsonb)
@@ -920,7 +920,7 @@ begin
   return private.pos_fin01_sync_envelope_v2(v_license_id, 'pos_get_financial_operation_receipt_v2', 'financial_operations', v_context,
     v_payload, null, null, v_operation_identity);
 end;
-$function$
+$function$;
 
 
 COMMIT;
