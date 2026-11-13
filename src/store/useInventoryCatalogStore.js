@@ -7,8 +7,10 @@ import {
 } from '../services/db/databaseRecoveryState';
 import {
   compareInventoryCatalogProducts,
+  isInventoryUncategorizedFilter,
   INVENTORY_CATALOG_PAGE_SIZE,
   loadCatalogCategories,
+  normalizeInventoryCategoryFilter,
   queryInventoryCatalogPage,
   queryInventoryCatalogProductById
 } from '../services/products/productCatalogQueryService';
@@ -35,6 +37,13 @@ const initialFilters = {
 };
 
 const currentView = (state) => ({ ...state.filters });
+
+const isSelectedCategoryMissing = (categoryId, categories = []) => (
+  categoryId !== null
+  && categoryId !== undefined
+  && !isInventoryUncategorizedFilter(categoryId)
+  && !categories.some((category) => String(category.id) === String(categoryId))
+);
 
 const isSameView = (state, view) => (
   Object.keys(initialFilters).every((key) => state.filters[key] === view[key])
@@ -201,6 +210,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
     const { searchTerm, ...safeFilters } = newFilters;
     void searchTerm;
     if (Object.keys(safeFilters).length === 0) return false;
+    if (Object.prototype.hasOwnProperty.call(safeFilters, 'categoryId')) {
+      safeFilters.categoryId = normalizeInventoryCategoryFilter(safeFilters.categoryId);
+    }
 
     const state = get();
     const filters = { ...state.filters, ...safeFilters };
@@ -328,8 +340,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
   refreshCategories: async () => {
     if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const categories = await loadCatalogCategories();
-    const selectedCategoryMissing = get().filters.categoryId
-      && !categories.some((category) => category.id === get().filters.categoryId);
+    const selectedCategoryMissing = isSelectedCategoryMissing(get().filters.categoryId, categories);
     set((state) => ({
       categories,
       ...(selectedCategoryMissing ? {
@@ -367,9 +378,8 @@ export const useInventoryCatalogStore = create((set, get) => ({
         return get().refreshCurrentPages({ includeCategories });
       }
 
-      const selectedCategoryMissing = view.categoryId
-        && categories
-        && !categories.some((category) => category.id === view.categoryId);
+      const selectedCategoryMissing = categories
+        && isSelectedCategoryMissing(view.categoryId, categories);
       if (selectedCategoryMissing) {
         set({ isRefreshing: false, isInvalidating: false, isLoading: false });
         get().setFilters({ categoryId: null });

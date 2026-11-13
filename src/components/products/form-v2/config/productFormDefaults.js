@@ -36,7 +36,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
   return {
     ...source,
     id: source.id,
-    name: source.name || '', barcode: source.barcode || '', categoryId: source.categoryId || '', description: source.description || '',
+    name: source.name || '', barcode: source.barcode || '', categoryId: source.categoryId || source.category_id || '', description: source.description || '',
     image: source.image || null, imagePreview: source.imageUrl || source.image || null, imageUploadSource: null, imageRemoved: false,
     cost: source.cost ?? '', price: source.price ?? '', margin: '',
     trackStock: source.trackStock ?? defaultTrackStock,

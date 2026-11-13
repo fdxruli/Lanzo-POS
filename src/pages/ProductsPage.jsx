@@ -110,9 +110,35 @@ export default function ProductsPage() {
     const [isProductFormDirty, setIsProductFormDirty] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [selectNewCategoryOnCreate, setSelectNewCategoryOnCreate] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [, setShowDataTransfer] = useState(false);
     const legacyImageMigrationRef = useRef({ licenseKey: null, running: false });
+    const productCategoryCreatedHandlerRef = useRef(null);
+
+    const handleOpenCategoryManagerFromProduct = (onCategoryCreated) => {
+        productCategoryCreatedHandlerRef.current = onCategoryCreated;
+        setSelectNewCategoryOnCreate(true);
+        setShowCategoryModal(true);
+    };
+
+    const handleCloseCategoryManager = () => {
+        productCategoryCreatedHandlerRef.current = null;
+        setSelectNewCategoryOnCreate(false);
+        setShowCategoryModal(false);
+    };
+
+    const handleCategoryCreatedFromProduct = (category) => {
+        if (!category?.id) return;
+        productCategoryCreatedHandlerRef.current?.(category);
+    };
+
+    useEffect(() => {
+        if (activeTab === 'add-product') return;
+        productCategoryCreatedHandlerRef.current = null;
+        setSelectNewCategoryOnCreate(false);
+        setShowCategoryModal(false);
+    }, [activeTab]);
 
     const isProductFormActive = activeTab === 'add-product';
     const { runWithoutBlocking } = useNavigationGuard({
@@ -677,7 +703,7 @@ export default function ProductsPage() {
                     onOpenExisting={handleOpenExistingFromBarcode}
                     productToEdit={editingProduct}
                     categories={categories}
-                    onOpenCategoryManager={() => setShowCategoryModal(true)}
+                    onOpenCategoryManager={handleOpenCategoryManagerFromProduct}
                     onOpenBatches={(product) => handleManageBatches(product.id)}
                 />
             )}
@@ -737,11 +763,13 @@ export default function ProductsPage() {
 
             <CategoryManagerModal
                 show={showCategoryModal && canManageProducts}
-                onClose={() => setShowCategoryModal(false)}
+                onClose={handleCloseCategoryManager}
                 categories={categories}
                 onSave={handleSaveCategory}
                 onRefresh={refreshCategories}
                 onDelete={handleDeleteCategory}
+                selectNewCategoryOnCreate={selectNewCategoryOnCreate}
+                onCategoryCreated={handleCategoryCreatedFromProduct}
             />
 
             <DailyPriceModal

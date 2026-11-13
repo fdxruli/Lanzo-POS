@@ -10,6 +10,16 @@ import {
 export const POS_CATALOG_PAGE_SIZE = 50;
 export const INVENTORY_CATALOG_PAGE_SIZE = 50;
 
+export const INVENTORY_UNCATEGORIZED_FILTER = Object.freeze({ type: 'uncategorized' });
+
+export const isInventoryUncategorizedFilter = (categoryId) => (
+  Boolean(categoryId && typeof categoryId === 'object' && categoryId.type === 'uncategorized')
+);
+
+export const normalizeInventoryCategoryFilter = (categoryId) => (
+  isInventoryUncategorizedFilter(categoryId) ? INVENTORY_UNCATEGORIZED_FILTER : (categoryId ?? null)
+);
+
 const getPosCatalogSortValue = (product) => String(product?.createdAt || '');
 const getPosCatalogId = (product) => String(product?.id || '');
 
@@ -84,6 +94,15 @@ const matchesInventoryStatus = (product, status) => {
   return isActive;
 };
 
+const matchesInventoryCategory = (product, categoryFilter) => {
+  if (categoryFilter === null || categoryFilter === undefined) return true;
+
+  const productCategoryId = [product?.categoryId, product?.category_id]
+    .find((value) => value !== null && value !== undefined && value !== '') ?? null;
+  if (isInventoryUncategorizedFilter(categoryFilter)) return productCategoryId === null;
+  return productCategoryId === categoryFilter;
+};
+
 export const isInventoryCatalogEligible = (product, options = {}) => {
   if (!product?.id || product.deletedAt || product.deletedTimestamp) return false;
   if (!matchesInventoryStatus(product, options.status || 'active')) return false;
@@ -97,9 +116,7 @@ export const isInventoryCatalogEligible = (product, options = {}) => {
     return false;
   }
 
-  const categoryId = options.categoryId ?? null;
-  const productCategoryId = product.categoryId ?? product.category_id ?? null;
-  if (categoryId !== null && productCategoryId !== categoryId) return false;
+  if (!matchesInventoryCategory(product, options.categoryId ?? null)) return false;
 
   if (options.outOfStockOnly && !isOutOfStockForPosMenu(product)) return false;
   return true;

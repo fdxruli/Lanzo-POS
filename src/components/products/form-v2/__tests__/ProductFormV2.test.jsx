@@ -57,6 +57,36 @@ describe('ProductFormV2', () => {
     expect(screen.getByLabelText(/Nombre del producto/i)).toBeInTheDocument();
   });
 
+  it('selects a newly saved category from the category manager without resetting product values', () => {
+    const onOpenCategoryManager = vi.fn((onCategoryCreated) => {
+      onCategoryCreated({ id: 'qa-drinks', name: 'QA Bebidas', success: true });
+    });
+    renderForm({
+      onOpenCategoryManager,
+      categories: [{ id: 'qa-drinks', name: 'QA Bebidas', isActive: true }]
+    });
+
+    const name = screen.getByLabelText(/Nombre del producto/i);
+    const price = screen.getByLabelText(/Precio de venta/i);
+    fireEvent.change(name, { target: { value: 'Agua mineral' } });
+    fireEvent.change(price, { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: /Administrar categorías/i }));
+
+    expect(onOpenCategoryManager).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('combobox', { name: 'Categoría' })).toHaveValue('qa-drinks');
+    expect(name).toHaveValue('Agua mineral');
+    expect(price).toHaveValue(25);
+  });
+
+  it('hydrates a legacy category_id reference when editing a product', () => {
+    renderForm({
+      productToEdit: { id: 'legacy-product', name: 'Producto histórico', category_id: 'legacy-category' },
+      categories: [{ id: 'legacy-category', name: 'Histórica', isActive: true }]
+    });
+
+    expect(screen.getByRole('combobox', { name: 'Categoría' })).toHaveValue('legacy-category');
+  });
+
   it('does not toggle inventory tracking when interacting with inventory fields or helper copy', () => {
     renderForm();
     const trackStock = screen.getByRole('checkbox', { name: /Controlar inventario/i });

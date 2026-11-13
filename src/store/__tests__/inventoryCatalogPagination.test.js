@@ -4,7 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryMocks = vi.hoisted(() => ({
   INVENTORY_CATALOG_PAGE_SIZE: 50,
+  INVENTORY_UNCATEGORIZED_FILTER: Object.freeze({ type: 'uncategorized' }),
   compareInventoryCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
+  isInventoryUncategorizedFilter: (categoryId) => categoryId?.type === 'uncategorized',
+  normalizeInventoryCategoryFilter: (categoryId) => (
+    categoryId?.type === 'uncategorized'
+      ? queryMocks.INVENTORY_UNCATEGORIZED_FILTER
+      : (categoryId ?? null)
+  ),
   loadCatalogCategories: vi.fn(),
   queryInventoryCatalogPage: vi.fn(),
   queryInventoryCatalogProductById: vi.fn()
@@ -141,6 +148,41 @@ describe('Inventory catalog accumulation and concurrency', () => {
     await Promise.resolve();
     expect(useInventoryCatalogStore.getState().items.map(({ id }) => id))
       .toEqual(['new-category-product']);
+  });
+
+  it('resets pagination for the uncategorized view and keeps that view through category refresh', async () => {
+    useInventoryCatalogStore.setState({
+      items: makeProducts(0, 50),
+      menu: makeProducts(0, 50),
+      nextCursor: { createdAt: '2026-08-01T12:00:00.000Z', id: 'product-000' },
+      loadedPageCount: 3,
+      currentPageIndex: 2,
+      initialized: true
+    });
+    queryMocks.queryInventoryCatalogPage.mockResolvedValue({
+      data: [{ id: 'uncategorized-product', categoryId: '' }],
+      nextCursor: null,
+      hasMore: false
+    });
+
+    useInventoryCatalogStore.getState().setFilters({
+      categoryId: queryMocks.INVENTORY_UNCATEGORIZED_FILTER
+    });
+    await vi.waitFor(() => expect(queryMocks.queryInventoryCatalogPage).toHaveBeenCalledTimes(1));
+
+    expect(queryMocks.queryInventoryCatalogPage.mock.calls[0][0].categoryId)
+      .toBe(queryMocks.INVENTORY_UNCATEGORIZED_FILTER);
+    expect(useInventoryCatalogStore.getState()).toMatchObject({
+      filters: { categoryId: queryMocks.INVENTORY_UNCATEGORIZED_FILTER },
+      currentPageIndex: 0,
+      loadedPageCount: 1,
+      items: [{ id: 'uncategorized-product', categoryId: '' }]
+    });
+
+    queryMocks.loadCatalogCategories.mockResolvedValue([{ id: 'drinks', name: 'Bebidas' }]);
+    await useInventoryCatalogStore.getState().refreshCategories();
+    expect(useInventoryCatalogStore.getState().filters.categoryId)
+      .toBe(queryMocks.INVENTORY_UNCATEGORIZED_FILTER);
   });
 
   it('reconciles edits, category changes, deletion and productType changes by id', async () => {
