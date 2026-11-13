@@ -87,7 +87,7 @@ describe('PreparationStationsSettings', () => {
     vi.clearAllMocks();
   });
 
-  it('shows the Nube information card and current Kitchen station for an authorized Local admin', () => {
+  it('shows Cocina before the Nube capabilities for an authorized Local admin', () => {
     setScenario();
 
     renderSettings();
@@ -101,7 +101,20 @@ describe('PreparationStationsSettings', () => {
     expect(screen.getByRole('heading', { name: 'Control de estaciones' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Lleva la preparación al siguiente nivel' })).toBeInTheDocument();
 
+    const sectionHeading = screen.getByRole('heading', { level: 2, name: 'Áreas de preparación' });
+    const showcaseHeading = screen.getByRole('heading', { name: 'Organiza tus comandas por áreas' });
+    const intro = screen.getByText(/Con tu plan actual, las comandas se dirigen a Cocina/);
+    const kitchen = screen.getByText('Tu estación actual · Disponible');
+    const features = screen.getByRole('heading', { name: 'Lo que puedes explorar' });
+    const offer = screen.getByRole('heading', { name: 'Lleva la preparación al siguiente nivel' });
     const link = screen.getByRole('link', { name: /Conocer Lanzo Nube/ });
+
+    expect(sectionHeading.compareDocumentPosition(showcaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(showcaseHeading.compareDocumentPosition(intro) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(intro.compareDocumentPosition(kitchen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(kitchen.compareDocumentPosition(features) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(features.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(offer.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(link).toHaveAttribute('href', '/acerca-de');
     expect(screen.getByText('Consultar esta información no modifica tu plan ni tu licencia.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();

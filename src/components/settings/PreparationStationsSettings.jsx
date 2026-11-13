@@ -187,6 +187,7 @@ export default function PreparationStationsSettings() {
             ctaLabel="Conocer Lanzo Nube"
             ctaTo="/acerca-de"
             secondaryText="Consultar esta información no modifica tu plan ni tu licencia."
+            childrenPosition="before-features"
             className="preparation-stations-showcase"
           >
             <CurrentKitchenStation />
