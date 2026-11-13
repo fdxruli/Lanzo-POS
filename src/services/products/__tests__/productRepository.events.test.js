@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   enqueue: vi.fn(),
   prepareProduct: vi.fn(),
+  saveCategoryLocal: vi.fn(),
   savePreparedProductLocal: vi.fn(),
   deleteProductLocal: vi.fn(),
   toggleProductStatusLocal: vi.fn(),
   applyCloudCatalog: vi.fn(),
   getProductById: vi.fn(),
+  upsertCategory: vi.fn(),
   upsertProduct: vi.fn(),
   deleteProduct: vi.fn(),
   toggleProductStatus: vi.fn()
@@ -69,6 +71,7 @@ vi.mock('../productMapper', () => ({
 }));
 vi.mock('../productCloudRepository', () => ({
   productCloudRepository: {
+    upsertCategory: mocks.upsertCategory,
     upsertProduct: mocks.upsertProduct,
     deleteProduct: mocks.deleteProduct,
     toggleProductStatus: mocks.toggleProductStatus
@@ -76,6 +79,7 @@ vi.mock('../productCloudRepository', () => ({
 }));
 vi.mock('../productLocalRepository', () => ({
   productLocalRepository: {
+    saveCategoryLocal: mocks.saveCategoryLocal,
     prepareProduct: mocks.prepareProduct,
     savePreparedProductLocal: mocks.savePreparedProductLocal,
     deleteProductLocal: mocks.deleteProductLocal,
@@ -87,7 +91,12 @@ vi.mock('../productLocalRepository', () => ({
 vi.mock('../productConflictService', () => ({
   productConflictService: {
     isConflictResponse: () => false,
-    normalizeFailure: (value) => value,
+    normalizeFailure: (value, fallback = 'PRODUCT_CLOUD_ERROR') => ({
+      ...value,
+      success: false,
+      code: value?.code || fallback,
+      message: value?.message || value?.code || fallback
+    }),
     saveConflict: vi.fn()
   }
 }));
@@ -122,10 +131,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.cloudEnabled = false;
   mocks.prepareProduct.mockResolvedValue(preparedProduct(false));
+  mocks.saveCategoryLocal.mockResolvedValue({ success: true, id: 'category-local', name: 'Local' });
   mocks.savePreparedProductLocal.mockResolvedValue({ success: true, productId: 'product-1' });
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
   mocks.toggleProductStatusLocal.mockResolvedValue({ success: true });
   mocks.applyCloudCatalog.mockResolvedValue({ products: 1, categories: 0, batches: 0 });
+  mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'category-1', name: 'Category' } });
   mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1' } });
   vi.stubGlobal('navigator', { onLine: true });
 });
@@ -174,6 +185,23 @@ describe('productRepository directed catalog events', () => {
       operation: 'created',
       source: 'productRepository.saveProduct'
     }));
+  });
+
+  it('keeps the RPC confirmation in PRO category results and rejects an unconfirmed response', async () => {
+    mocks.cloudEnabled = true;
+    mocks.upsertCategory.mockResolvedValueOnce({
+      success: true,
+      category: { id: 'category-cloud', name: 'Nube' }
+    });
+
+    await expect(productRepository.saveCategory({ id: 'category-cloud', name: 'Nube' }))
+      .resolves.toMatchObject({ success: true, id: 'category-cloud', name: 'Nube' });
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledTimes(1);
+
+    mocks.upsertCategory.mockResolvedValueOnce({ category: { id: 'category-unconfirmed', name: 'Sin confirmar' } });
+    await expect(productRepository.saveCategory({ id: 'category-unconfirmed', name: 'Sin confirmar' }))
+      .resolves.toMatchObject({ success: false, code: 'CATEGORY_SYNC_FAILED' });
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('updates only the apparel batch delta and never sends existing batches as initial batches', async () => {

@@ -291,7 +291,7 @@ export const productRepository = {
         idempotencyKey
       });
 
-      if (response?.success === false) {
+      if (response?.success !== true) {
         await saveConflictIfNeeded({
           operation: { entityType: SYNC_ENTITY_TYPES.CATEGORY, entityId: category.id, payload: outboxPayload },
           response,
@@ -305,7 +305,7 @@ export const productRepository = {
         operation: 'updated',
         source: 'productRepository.saveCategory'
       });
-      return response.category || category;
+      return { ...(response.category || category), success: true };
     } catch (error) {
       Logger.warn('[Products] Upsert category cloud fallo:', error);
       if (isRetryableCloudError(error)) {
