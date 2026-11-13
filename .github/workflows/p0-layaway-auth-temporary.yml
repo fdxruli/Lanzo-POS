@@ -7,7 +7,6 @@ on:
       - 'supabase/migrations/20261113185604_p0_layaway_cancel_requires_refunds.sql'
       - 'supabase/tests/layaway_cancel_refunds_authorization_p0_test.sql'
       - 'scripts/supabase/p0-layaway-auth-*-temporary.sql'
-      - 'scripts/supabase/p0-layaway-auth-production-baseline-temporary.b64'
       - '.github/workflows/p0-layaway-auth-temporary.yml'
 
 permissions:
@@ -65,7 +64,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64
           import json
           import os
           from pathlib import Path
@@ -73,8 +71,6 @@ jobs:
           sources = json.loads(Path('supabase/tests/fixtures/pr338-real-financial/02-function-sources.json').read_text(encoding='utf-8'))
           generated = Path(os.environ['RUNNER_TEMP']) / 'p0-layaway-auth-fixture-functions.sql'
           generated.write_text('\\set ON_ERROR_STOP on\nSET check_function_bodies = off;\n' + '\n'.join(source.rstrip() + ';' for source in sources) + '\n', encoding='utf-8')
-          baseline = Path(os.environ['RUNNER_TEMP']) / 'p0-layaway-auth-production-baseline.sql'
-          baseline.write_bytes(base64.b64decode(Path('scripts/supabase/p0-layaway-auth-production-baseline-temporary.b64').read_bytes()))
           PY
           db_args=(-X -v ON_ERROR_STOP=1 -d p0_layaway_auth)
           for file in \
@@ -85,7 +81,7 @@ jobs:
             supabase/tests/fixtures/pr338-real-financial/05-policies.sql \
             supabase/tests/fixtures/pr338-real-financial/06-function-acl.sql \
             scripts/supabase/p0-layaway-auth-fixture-temporary.sql \
-            "${RUNNER_TEMP}/p0-layaway-auth-production-baseline.sql" \
+            scripts/supabase/p0-layaway-auth-production-baseline-temporary.sql \
             scripts/supabase/p0-layaway-auth-triggers-temporary.sql; do
             psql "${db_args[@]}" -f "${file}"
           done
