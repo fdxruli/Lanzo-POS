@@ -1654,3 +1654,52 @@
   outline: 2px solid var(--ui-text-brand);
   outline-offset: 3px;
 }
+
+/* Cloud sync diagnosis: compact, scrollable inside the existing notification drawer. */
+.notification-sync-diagnostics {
+  padding: 14px 0 22px;
+  color: var(--ui-text-strong);
+}
+.notification-sync-diagnostics h3 {
+  font-size: 1rem;
+  line-height: 1.35;
+  margin: 12px 0;
+}
+.notification-sync-diagnostics p {
+  line-height: 1.5;
+  margin: 10px 0;
+}
+.notification-sync-diagnostics ul {
+  padding-left: 20px;
+  margin: 10px 0;
+}
+.notification-sync-diagnostics__total {
+  font-weight: 800;
+}
+.notification-sync-diagnostics__date {
+  color: var(--ui-text-muted);
+  font-size: 0.78rem;
+}
+.notification-sync-diagnostics__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.notification-sync-diagnostics__actions button,
+.notification-sync-diagnostics__support {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border-color);
+  border-radius: 9px;
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.notification-sync-diagnostics__actions button:focus-visible,
+.notification-sync-diagnostics__support:focus-visible {
+  box-shadow: var(--ui-shadow-focus-brand);
+}
+.notification-sync-diagnostics__support {
+  margin-top: 6px;
+}
