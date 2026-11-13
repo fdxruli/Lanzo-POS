@@ -10,6 +10,7 @@ import {
   markCurrentLocalInventoryOperationalAlertsSeen,
   refreshLocalInventoryOperationalAlertsSnapshot
 } from '../../services/localInventoryOperationalAlerts';
+import BusinessTimezoneReminder from './BusinessTimezoneReminder';
 import { markPostDowngradeCashAttentionRead } from '../../services/cash/postDowngradeCashAttention';
 import LocalBackupAttentionSection from './LocalBackupAttentionSection';
 import CashSessionAgeAttention from './CashSessionAgeAttention';
@@ -84,7 +85,8 @@ export default function LocalInventoryOperationalAlertsDrawer({
   cashSessionAgeAttention,
   onReviewCashSessions,
   backupAttention,
-  inventoryEnabled = true
+  inventoryEnabled = true,
+  showBusinessTimezoneReminder = false
 }) {
   const navigate = useNavigate();
   const actorRuntime = useActorRuntimeSnapshot();
@@ -234,6 +236,8 @@ export default function LocalInventoryOperationalAlertsDrawer({
             <X size={20} aria-hidden="true" />
           </button>
         </header>
+
+        {showBusinessTimezoneReminder && <BusinessTimezoneReminder onClose={onClose} />}
 
         <LocalBackupAttentionSection attention={backupAttention} onClose={onClose} />
 

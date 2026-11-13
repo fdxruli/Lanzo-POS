@@ -10,6 +10,7 @@ import { useInventoryOperationalAlertsSnapshot } from '../../hooks/useInventoryO
 import useCashSessionAgeAttention from '../../hooks/useCashSessionAgeAttention';
 import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import { useLocalBackupAttention } from '../../hooks/useLocalBackupAttention';
+import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import {
   getLicenseKeyFromDetails,
   isCloudCashSyncEnabled
@@ -44,6 +45,7 @@ export default function NotificationBell({
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentAdminUser = useAppStore((state) => state.currentAdminUser);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const companyProfile = useAppStore((state) => state.companyProfile);
   const syncNotificationRuntime = useAppStore((state) => state.syncNotificationRuntime);
   const notificationAuthorizationKey = getNotificationAuthorizationKey({ licenseDetails }, actorAccess);
   const storedAuthorizationKey = useAppStore((state) => state.notificationAuthorizationKey);
@@ -62,6 +64,14 @@ export default function NotificationBell({
 
   const cloudEnabled = canAccessCloudNotificationCenter(licenseDetails, actorAccess);
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+  const businessTimezoneReminderNeeded = Boolean(
+    actorAccess.isAdmin
+    && companyProfile?.license_key
+    && companyProfile.license_key === licenseDetails?.license_key
+    && !isValidBusinessTimezone(companyProfile.timezone)
+  );
+  const localTimezoneReminder = businessTimezoneReminderNeeded && !cloudEnabled;
+  const cloudTimezoneReminder = businessTimezoneReminderNeeded && cloudEnabled && !notificationsAccessDenied;
   const isCloudCash = Boolean(licenseKey && isCloudCashSyncEnabled(licenseDetails));
   const cashActorKey = currentAdminUser?.id ? 'admin:' + currentAdminUser.id : null;
   const isCurrentOwner = Boolean(
@@ -109,7 +119,7 @@ export default function NotificationBell({
     cashSessionAgeAttention.pendingCount > 0
   );
   const backupAttention = useLocalBackupAttention();
-  const localEnabled = localInventoryEnabled || backupAttention.enabled || hasLocalAgedCashSessions;
+  const localEnabled = localInventoryEnabled || backupAttention.enabled || hasLocalAgedCashSessions || localTimezoneReminder;
   const hasBackupAttention = Boolean(backupAttention.ready && backupAttention.condition?.active);
   const hasConfirmedCashAttention = Boolean(
     postDowngradeCashPending.eligible
@@ -206,11 +216,12 @@ export default function NotificationBell({
     const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0)
       + (hasLocalAgedCashSessions ? 1 : 0) + (hasBackupAttention ? 1 : 0);
     const badge = localIncidentCount > 99 ? '99+' : localIncidentCount;
-    const localOpenLabel = backupAttention.enabled || !localInventoryEnabled
+    const localOpenLabelBase = backupAttention.enabled || !localInventoryEnabled
       ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}${hasBackupAttention ? '; respaldos necesitan atención' : ''}`
       : hasConfirmedCashAttention
       ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}; una agrupa ${cashPendingCount} cajas para conciliación`
       : `Abrir alertas operativas de inventario, ${safeActiveCount} activas`;
+    const localOpenLabel = `${localOpenLabelBase}${localTimezoneReminder ? '; zona horaria pendiente' : ''}`;
     const localButtonClassName = [
       'notification-bell',
       'notification-bell--local-inventory',
@@ -227,6 +238,7 @@ export default function NotificationBell({
         onCashAttentionRecordChange={handleCashAttentionRead}
         backupAttention={backupAttention}
         inventoryEnabled={localInventoryEnabled}
+        showBusinessTimezoneReminder={localTimezoneReminder}
         cashSessionAgeAttention={canLoadCashSessionAgeAttention && !isCloudCash
           ? cashSessionAgeAttention
           : null}
@@ -255,6 +267,7 @@ export default function NotificationBell({
                   + (localIncidentCount === 1 ? ' incidencia activa' : ' incidencias activas')
                   + '; una agrupa '
                   + cashSessionAgeAttention.pendingCount + ' cajas abiertas antiguas'
+                  + (localTimezoneReminder ? '; zona horaria pendiente' : '')
                 : localOpenLabel
           }
           aria-haspopup="dialog"
@@ -274,6 +287,9 @@ export default function NotificationBell({
             >
               {badge}
             </span>
+          )}
+          {localTimezoneReminder && !isLocalOpen && (
+            <span className="notification-bell__warning-dot" aria-hidden="true" />
           )}
         </button>
 
@@ -303,6 +319,7 @@ export default function NotificationBell({
         isOpen={isOpen}
         onClose={closeNotificationCenter}
         unreadCount={safeUnreadCount}
+        showBusinessTimezoneReminder={cloudTimezoneReminder}
         cashSessionAgeAttention={canLoadCashSessionAgeAttention && isCloudCash
           ? cashSessionAgeAttention
           : null}
@@ -322,7 +339,8 @@ export default function NotificationBell({
   const openLabel = [
     hasCloudAgedCashSessions ? 'una incidencia de Caja abierta requiere revisión' : '',
     `Abrir centro de notificaciones, ${safeUnseenCount} nuevas`,
-    hasLocalOperationalWarning ? 'alerta operacional de ecommerce activa' : ''
+    hasLocalOperationalWarning ? 'alerta operacional de ecommerce activa' : '',
+    cloudTimezoneReminder ? 'zona horaria pendiente' : ''
   ].filter(Boolean).join(', ');
 
   return (
@@ -360,12 +378,14 @@ export default function NotificationBell({
               : safeUnseenCount + (hasCloudAgedCashSessions ? 1 : 0)}
           </span>
         )}
-        {(hasLocalOperationalWarning || hasCloudAgedCashSessions) && !isOpen && (
+        {(hasLocalOperationalWarning || hasCloudAgedCashSessions || cloudTimezoneReminder) && !isOpen && (
           <span
             className="notification-bell__warning-dot"
             aria-label={hasCloudAgedCashSessions
               ? 'Alerta de Caja: sesiones abiertas que requieren revisión'
-              : 'Alerta operacional: productos publicados sin stock'}
+              : cloudTimezoneReminder
+                ? 'Recordatorio: zona horaria pendiente'
+                : 'Alerta operacional: productos publicados sin stock'}
           />
         )}
       </button>

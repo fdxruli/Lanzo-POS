@@ -300,6 +300,56 @@ describe('NotificationBell', () => {
     })).not.toBeInTheDocument();
   });
 
+  it('opens the Free/Local alert surface for an admin reminder without counting it as an inventory alert', () => {
+    store.state.licenseDetails = {
+      license_key: 'license-a',
+      features: {
+        local_inventory_alerts: false,
+        local_backup_alerts: false,
+        notification_center: false,
+        cloud_notifications: false
+      }
+    };
+    store.state.companyProfile = { license_key: 'license-a', timezone: null };
+    renderBell();
+
+    const bell = screen.getByRole('button', { name: /Abrir alertas locales.*zona horaria pendiente/i });
+    expect(bell.querySelector('.notification-bell__badge')).not.toBeInTheDocument();
+    expect(bell.querySelector('.notification-bell__warning-dot')).toBeInTheDocument();
+    fireEvent.click(bell);
+
+    expect(screen.getByRole('heading', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ir a Configuración' })).toBeInTheDocument();
+    expect(screen.queryByText('1 alertas activas')).not.toBeInTheDocument();
+  });
+
+  it('keeps a PRO timezone reminder in the Cloud center and outside the server counters', () => {
+    store.state.licenseDetails = cloudLicense();
+    store.state.companyProfile = { license_key: 'license-a', timezone: null };
+    store.state.isNotificationCenterOpen = false;
+    renderBell();
+
+    const bell = screen.getByRole('button', { name: /zona horaria pendiente/i });
+    expect(bell.querySelector('.notification-bell__badge')).not.toBeInTheDocument();
+    expect(bell.querySelector('.notification-bell__warning-dot')).toBeInTheDocument();
+  });
+
+  it('does not expose the timezone reminder to Staff without settings access', () => {
+    store.state.licenseDetails.license_key = 'license-a';
+    store.state.companyProfile = { license_key: 'license-a', timezone: null };
+    store.state.currentDeviceRole = 'staff';
+    store.state.currentAdminUser = null;
+    store.state.currentStaffUser = {
+      id: 'staff-1',
+      permissions: { products: true, notifications: true, settings: false }
+    };
+    renderBell();
+
+    fireEvent.click(screen.getByRole('button', { name: /Abrir alertas/i }));
+    expect(screen.getByRole('dialog', { name: 'Alertas locales' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+  });
+
   it('uses active local incidents for the badge and opening does not clear it', async () => {
     local.snapshot = {
       ...emptyLocalSnapshot(),

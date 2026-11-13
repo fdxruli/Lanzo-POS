@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { X } from 'lucide-react';
 import { ADMIN_ROUTE_PATHS, isAdminNotFoundPath } from '../../router/adminRoutePaths';
 import GlobalToaster from './GlobalToaster';
 import Navbar from './Navbar';
@@ -41,6 +42,7 @@ import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { evaluateActorAccess } from '../../services/auth/actorAccessPolicy';
 import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
+import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import { createOptionalAdminLazy } from '../../pwa/adminOptionalLazy';
 import { BotScreenProvider } from '../../hooks/useBotScreenContext';
 import './Layout.css';
@@ -79,12 +81,19 @@ function LayoutContent() {
   const canReadReports = canReadSalesReports(actorRuntime);
   const { pathname } = useLocation();
   const [noticeRevision, setNoticeRevision] = useState(0);
+  const [dismissedTimezoneNoticeKey, setDismissedTimezoneNoticeKey] = useState(null);
   const isPosPage = pathname === '/';
   const isNotFoundPage = isAdminNotFoundPath(pathname);
   const isAboutPage = pathname === '/acerca-de';
-  const needsBusinessTimezone = !isNotFoundPage && companyProfile
-    && companyProfile.license_key === licenseDetails?.license_key && !companyProfile.timezone
+  const needsBusinessTimezone = !isNotFoundPage && companyProfile?.license_key
+    && companyProfile.license_key === licenseDetails?.license_key
+    && !isValidBusinessTimezone(companyProfile.timezone)
     && evaluateActorAccess({ runtimeSnapshot: actorRuntime, currentDeviceRole, currentAdminUser }).isAdmin;
+  const timezoneNoticeScopeKey = needsBusinessTimezone
+    ? JSON.stringify([companyProfile.license_key, actorRuntime.sessionId])
+    : null;
+  const showBusinessTimezoneNotice = needsBusinessTimezone
+    && dismissedTimezoneNoticeKey !== timezoneNoticeScopeKey;
 
   const effectiveLicenseStatus = getLicenseStatusPresentation({
     ...licenseDetails,
@@ -170,12 +179,25 @@ function LayoutContent() {
         {shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}
         <PostDowngradeRecoveryBanner isSuppressed={isNotFoundPage} />
         <CloudProtocolUpdateNotice isSuppressed={isNotFoundPage} />
-        {needsBusinessTimezone && (
-          <aside className="business-timezone-notice" aria-label="Zona horaria pendiente">
-            <span>Configura la zona horaria de tu negocio para calcular los vencimientos de los apartados.</span>
-            <Link className="ui-button ui-button--ghost" to={`/${ADMIN_ROUTE_PATHS.settings}?tab=general`}>
-              Ir a Configuración
-            </Link>
+        {showBusinessTimezoneNotice && (
+          <aside className="business-timezone-notice" aria-labelledby="business-timezone-notice-title">
+            <div className="business-timezone-notice__copy">
+              <h2 id="business-timezone-notice-title">Zona horaria pendiente</h2>
+              <p>Configura la zona horaria de tu negocio. Es necesaria para algunas funciones que utilizan fechas y horarios</p>
+            </div>
+            <div className="business-timezone-notice__actions">
+              <Link className="ui-button ui-button--ghost" to={`/${ADMIN_ROUTE_PATHS.settings}?tab=general`}>
+                Ir a Configuración
+              </Link>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost business-timezone-notice__dismiss"
+                aria-label="Cerrar aviso"
+                onClick={() => setDismissedTimezoneNoticeKey(timezoneNoticeScopeKey)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
           </aside>
         )}
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''} ${isNotFoundPage ? 'page-container--not-found' : ''}`.trim()}>

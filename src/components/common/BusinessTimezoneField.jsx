@@ -46,7 +46,7 @@ export default function BusinessTimezoneField({ value, onChange, required = fals
         {COMMON_TIMEZONES.map((zone) => <option key={zone} value={zone} />)}
       </datalist>
       <small id={`${id}-help`} className="form-help-text">
-        La zona horaria de tu negocio permite calcular correctamente las fechas y vencimientos de los apartados.
+        La zona horaria permite gestionar correctamente fechas y horarios de tu negocio y es necesaria para algunas funciones de LANZO POS
       </small>
       {error && <small id={`${id}-error`} className="form-help-text validation-message error" role="alert">{error}</small>}
       {!timezone && isValidBusinessTimezone(detectedZone) && (

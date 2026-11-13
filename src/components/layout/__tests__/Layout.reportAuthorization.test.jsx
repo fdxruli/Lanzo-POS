@@ -186,6 +186,7 @@ const LayoutNavigationControls = () => {
   return (
     <>
       <main data-testid="valid-route-content">POS</main>
+      <button type="button" onClick={() => navigate('/productos')}>Abrir productos</button>
       <button type="button" onClick={() => navigate('/ruta-que-no-existe')}>Abrir 404</button>
     </>
   );
@@ -221,15 +222,17 @@ const staffRuntime = (permissions, generation = 1) => ({
   generation,
 });
 
-const renderLayout = () => render(
+const renderLayoutTree = () => (
   <MemoryRouter initialEntries={['/']}>
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<main>POS</main>} />
+        <Route index element={<LayoutNavigationControls />} />
+        <Route path="productos" element={<main>Productos</main>} />
       </Route>
     </Routes>
   </MemoryRouter>
 );
+const renderLayout = () => render(renderLayoutTree());
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -254,20 +257,66 @@ afterEach(() => {
 });
 
 describe('Layout report authorization', () => {
-  it('shows one timezone notice with a settings link until the active profile has a saved timezone', () => {
+  it.each(['restaurante', 'apparel'])('shows the general timezone notice for %s businesses', async (businessType) => {
+    const user = userEvent.setup();
     mocks.app.licenseDetails = { license_key: 'TEST-PROFILE' };
-    mocks.app.companyProfile = { license_key: 'TEST-PROFILE', timezone: null };
+    mocks.app.companyProfile = { license_key: 'TEST-PROFILE', timezone: null, business_type: businessType };
     mocks.app.currentDeviceRole = 'admin';
     mocks.app.currentAdminUser = { id: 'admin-1' };
     renderLayout();
 
     expect(screen.getByText('POS')).toBeVisible();
     expect(screen.getAllByRole('complementary', { name: 'Zona horaria pendiente' })).toHaveLength(1);
+    expect(screen.getByText('Configura la zona horaria de tu negocio. Es necesaria para algunas funciones que utilizan fechas y horarios')).toBeInTheDocument();
+    expect(screen.queryByText(/apartados|apparel/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ir a Configuración' })).toHaveAttribute('href', '/configuracion?tab=general');
 
-    cleanup();
+    await user.click(screen.getByRole('button', { name: 'Cerrar aviso' }));
+    expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+    expect(mocks.app.companyProfile.timezone).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Abrir productos' }));
+    expect(screen.getByText('Productos')).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+  });
+
+  it('shows the banner again for a new session or business and hides it after a valid timezone is confirmed', async () => {
+    const user = userEvent.setup();
+    mocks.app.licenseDetails = { license_key: 'TEST-PROFILE' };
+    mocks.app.companyProfile = { license_key: 'TEST-PROFILE', timezone: 'America/Inexistente' };
+    mocks.app.currentDeviceRole = 'admin';
+    mocks.app.currentAdminUser = { id: 'admin-1' };
+    const view = renderLayout();
+
+    expect(screen.getByRole('complementary', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cerrar aviso' }));
+    expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+
+    mocks.runtime = { ...mocks.runtime, sessionId: 'admin-session-2' };
+    view.rerender(renderLayoutTree());
+    expect(screen.getByRole('complementary', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cerrar aviso' }));
+
+    mocks.app.licenseDetails = { license_key: 'OTHER-PROFILE' };
+    mocks.app.companyProfile = { license_key: 'OTHER-PROFILE', timezone: null };
+    view.rerender(renderLayoutTree());
+    expect(screen.getByRole('complementary', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
+
     mocks.app.companyProfile = { ...mocks.app.companyProfile, timezone: 'America/Merida' };
+    view.rerender(renderLayoutTree());
+    expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
+  });
+
+  it('does not show the configuration reminder to Staff', () => {
+    mocks.runtime = staffRuntime(['products', 'notifications']);
+    mocks.app.licenseDetails = { license_key: 'TEST-PROFILE' };
+    mocks.app.companyProfile = { license_key: 'TEST-PROFILE', timezone: null };
+    mocks.app.currentDeviceRole = 'staff';
+    mocks.app.currentAdminUser = null;
+    mocks.app.currentStaffUser = { id: 'staff-1', permissions: ['products', 'notifications'] };
+
     renderLayout();
+
     expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
   });
 
