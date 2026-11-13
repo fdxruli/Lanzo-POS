@@ -12,6 +12,7 @@ import { useCaja } from '../../hooks/useCaja';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { getSalesFinalHistoryScope } from '../../services/auth/salesPermissionPolicy';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { showMessage } from '../../store/useMessageStore';
 import Logger from '../../services/Logger';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import {
@@ -248,18 +249,29 @@ export default function LayawayModal({
 
     let retenerDinero = false;
     if (layaway.paidAmount > 0) {
-        // Obligamos al usuario a decidir qué pasa con los fondos
-        retenerDinero = await showConfirmModal(
-            `💰 FONDOS RETENIDOS: $${layaway.paidAmount.toFixed(2)}\n\n` +
-            `¿Deseas COBRAR este dinero como penalización?\n` +
-            `[Aceptar] = La tienda se queda el dinero.\n` +
-            `[Cancelar] = Reembolsar al cliente (registrará salida de caja).`,
-            {
-                title: 'Fondos del apartado',
-                confirmButtonText: 'Cobrar penalizacion',
-                cancelButtonText: 'Reembolsar'
-            }
-        );
+        const fundsDecision = await new Promise((resolve) => {
+            showMessage(
+                `El apartado tiene $${layaway.paidAmount.toFixed(2)} pagados. Elige qué hacer con ese dinero.\n\n` +
+                'Reembolsar al cliente registrará una salida de Caja. Retener el dinero no generará una salida.',
+                () => resolve('refund'),
+                {
+                    type: 'warning',
+                    title: 'Fondos del apartado',
+                    confirmButtonText: 'Reembolsar al cliente',
+                    cancelButtonText: 'Volver sin cancelar',
+                    showCancel: true,
+                    isDismissible: false,
+                    onCancel: () => resolve('cancel'),
+                    extraButton: {
+                        text: 'Retener el dinero',
+                        action: () => resolve('retain')
+                    }
+                }
+            );
+        });
+
+        if (fundsDecision === 'cancel') return;
+        retenerDinero = fundsDecision === 'retain';
 
         if (!retenerDinero && (!cajaActual || cajaActual.estado !== 'abierta')) {
             showMessageModal('⚠️ Necesitas una caja abierta para registrar el reembolso.');
