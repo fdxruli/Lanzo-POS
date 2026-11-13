@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   showMessageModal: vi.fn(),
   showConfirmModal: vi.fn(),
+  showMessage: vi.fn(),
   actorRuntime: null,
   timezone: null
 }));
@@ -52,6 +53,10 @@ vi.mock('../../../services/auth/refundsActorAuthorization', () => ({
 vi.mock('../../../services/utils', () => ({
   showMessageModal: mocks.showMessageModal,
   showConfirmModal: mocks.showConfirmModal
+}));
+
+vi.mock('../../../store/useMessageStore', () => ({
+  showMessage: mocks.showMessage
 }));
 
 vi.mock('../../../services/Logger', () => ({
@@ -96,7 +101,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('LayawayModal completed history', () => {
+describe('LayawayModal history and cancellation', () => {
   it('renders a completed layaway in read-only history with its linked operational folio', async () => {
     mocks.layaways = [
       layaway(),
@@ -209,6 +214,65 @@ describe('LayawayModal completed history', () => {
     expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.complete).not.toHaveBeenCalled();
   });
+
+  it('does not cancel or refund when the paid-funds decision is dismissed', async () => {
+    mocks.layaways = [layaway()];
+    mocks.showConfirmModal.mockResolvedValueOnce(true);
+    let fundsDecisionOptions;
+    mocks.showMessage.mockImplementationOnce((_message, _onConfirm, options) => {
+      fundsDecisionOptions = options;
+    });
+
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Cancelar Apartado/i }));
+    await waitFor(() => expect(fundsDecisionOptions).toBeDefined());
+
+    expect(fundsDecisionOptions.confirmButtonText).toBe('Reembolsar al cliente');
+    expect(fundsDecisionOptions.extraButton.text).toBe('Retener el dinero');
+    expect(fundsDecisionOptions.cancelButtonText).toBe('Volver sin cancelar');
+    fundsDecisionOptions.onCancel();
+
+    await waitFor(() => {
+      expect(mocks.cancel).not.toHaveBeenCalled();
+      expect(mocks.showMessageModal).not.toHaveBeenCalled();
+    });
+  });
+
+  it('requires the explicit Retener action to retain paid funds', async () => {
+    mocks.layaways = [layaway()];
+    mocks.showConfirmModal.mockResolvedValueOnce(true);
+    mocks.showMessage.mockImplementationOnce((_message, _onConfirm, options) => {
+      options.extraButton.action();
+    });
+
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Cancelar Apartado/i }));
+
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active',
+      retainMoney: true,
+      expectedCashSessionId: 'cash-a'
+    })));
+  });
+
+  it('registers a refund only when the explicit Reembolsar action is chosen', async () => {
+    mocks.layaways = [layaway()];
+    mocks.showConfirmModal.mockResolvedValueOnce(true);
+    mocks.showMessage.mockImplementationOnce((_message, onConfirm) => onConfirm());
+
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Cancelar Apartado/i }));
+
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active',
+      retainMoney: false,
+      expectedCashSessionId: 'cash-a'
+    })));
+  });
+
   it('keeps a Cloud installment available without a timezone when the old UI allowed it', async () => {
     mocks.layaways = [layaway({ deadline: '2030-12-31' })];
     mocks.addPayment.mockResolvedValue({ isFullyPaid: false });
