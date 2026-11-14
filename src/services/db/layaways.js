@@ -699,7 +699,7 @@ export const layawayRepository = {
     // Cloud layaways are already committed by the server. This projection
     // stores the server snapshot for UI/recovery only; it never reserves,
     // releases, consumes stock, or creates a local cash movement.
-    async upsertCloudSnapshot(response = {}) {
+    async upsertCloudSnapshot(response = {}, { preserveNewer = false } = {}) {
         const cloudLayaway = response?.layaway || response;
         const id = cloudLayaway?.id || cloudLayaway?.layaway_id || null;
         if (!id) throw new Error('CLOUD_LAYAWAY_SNAPSHOT_INVALID');
@@ -784,8 +784,17 @@ export const layawayRepository = {
             deliveredAt: cloudLayaway.completed_at || cloudLayaway.completedAt || existing?.deliveredAt || null
         };
 
-        await table.put(projected);
-        return projected;
+        if (!preserveNewer) {
+            await table.put(projected);
+            return projected;
+        }
+        return db.transaction('rw', table, async () => {
+            const current = await table.get(id);
+            const currentVersion = current?.cloudServerVersion ?? -1;
+            if (Number(currentVersion) >= Number(projected.cloudServerVersion)) return current;
+            await table.put(projected);
+            return projected;
+        });
     },
 
     async getByCustomer(customerId, onlyActive = true) {

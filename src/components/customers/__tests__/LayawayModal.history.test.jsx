@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   getByCustomer: vi.fn(),
   getSalesFinalHistory: vi.fn(),
   addPayment: vi.fn(),
+  getPaymentReviews: vi.fn(),
+  verifyPayment: vi.fn(),
+  acknowledgePayment: vi.fn(),
   cancel: vi.fn(),
   complete: vi.fn(),
   showMessageModal: vi.fn(),
@@ -33,6 +36,9 @@ vi.mock('../../../services/reports/reportsRepository', () => ({
 vi.mock('../../../services/layawayFinancialService', () => ({
   layawayFinancialService: {
     addPayment: mocks.addPayment,
+    getPaymentReviews: mocks.getPaymentReviews,
+    verifyPayment: mocks.verifyPayment,
+    acknowledgePayment: mocks.acknowledgePayment,
     cancel: mocks.cancel,
     complete: mocks.complete
   }
@@ -96,7 +102,22 @@ beforeEach(() => {
     status: 'granted', actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a', permissions: ['*']
   };
   mocks.getByCustomer.mockImplementation(async () => mocks.layaways);
+  mocks.getPaymentReviews.mockResolvedValue([]);
   mocks.getSalesFinalHistory.mockResolvedValue({ sales: [] });
+});
+
+it('offers verification for a reloaded pending payment and blocks a fresh confirmation', async () => {
+  mocks.layaways = [layaway({ deadline: '2099-12-31' })];
+  mocks.getPaymentReviews.mockResolvedValueOnce([{ id: 'intent-a', layawayId: 'layaway-active', amount: 10 }]);
+  mocks.verifyPayment.mockResolvedValueOnce({ status: 'confirmed' });
+  mocks.acknowledgePayment.mockResolvedValueOnce(true);
+  renderModal();
+  const verify = await screen.findByRole('button', { name: 'Verificar abono' });
+  expect(screen.getByRole('button', { name: 'Registrar nuevo abono' })).toBeDisabled();
+  await userEvent.click(verify);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar nuevo abono' })).toBeEnabled());
+  expect(mocks.showMessageModal).toHaveBeenCalledWith('Abono confirmado en Caja.');
+  expect(mocks.addPayment).not.toHaveBeenCalled();
 });
 
 afterEach(cleanup);

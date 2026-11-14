@@ -12,6 +12,9 @@ const runtime = vi.hoisted(() => ({
   receiptResult: { status: 'NOT_FOUND' },
   projectionFailure: false,
   partialContractEnabled: false,
+  layawayPayments: [],
+  loseLayawayResponse: false,
+  cashOpen: true,
   actorHandle: {
     actorKey: 'admin:actor-a',
     actorType: 'admin',
@@ -31,7 +34,8 @@ vi.mock('../../db/dexie', () => ({
     PRODUCT_BATCHES: 'product_batches',
     TRANSACTION_LOG: 'transaction_log',
     SYNC_CACHE: 'sync_cache',
-    FINANCIAL_INTENTS: 'financial_intents'
+    FINANCIAL_INTENTS: 'financial_intents',
+    LAYAWAYS: 'layaways'
   },
   db: {
     table: (name) => runtime.database.table(name),
@@ -49,7 +53,10 @@ vi.mock('../../supabase', () => ({
         contract_version: 2, tenant_id: 'tenant-a', endpoint: name,
         family: 'financial_operations', customer_projection_scope: 'OPERATION_RESULT',
         payload, customer_projections: [],
-        operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+        operation: {
+          idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash,
+          operation_type: args.p_operation_type || payload.operation_type
+        }
       });
       if (name === 'pos_fin01_sync_contract_v1') return { data: {
         contract_version: 2, tenant_id: 'tenant-a', server_status: 'SUPPORTED',
@@ -66,7 +73,7 @@ vi.mock('../../supabase', () => ({
         return {
           data: {
             cash_station: { id: 'station-a' },
-            station_open_cash_session: { id: 'session-a' }
+            station_open_cash_session: runtime.cashOpen ? { id: 'session-a' } : null
           },
           error: null
         };
@@ -86,6 +93,27 @@ vi.mock('../../supabase', () => ({
               isDeterministicServerResponse: true
             })
           };
+        }
+        if (args.p_operation_type === 'layaway.payment') {
+          const { layaway_id: layawayId, payment } = args.p_request;
+          const movement = {
+            id: `movement-${payment.id}`, amount: payment.amount, type: 'ingreso',
+            reference_type: 'layaway', reference_id: layawayId, created_at: stableCreatedAt
+          };
+          const paid = { id: payment.id, amount: payment.amount, cash_movement_id: movement.id };
+          runtime.layawayPayments.push({ paid, movement, args });
+          const total = runtime.layawayPayments.reduce((sum, entry) => sum + entry.paid.amount, 0);
+          const result = {
+            success: true,
+            layaway: { id: layawayId, total_amount: 100, paid_amount: total, balance_due: 100 - total,
+              customer_id: payment.customerId, server_version: runtime.layawayPayments.length },
+            payment: paid,
+            payments: runtime.layawayPayments.map((entry) => entry.paid),
+            cash_movement: movement,
+            cash_movements: runtime.layawayPayments.map((entry) => entry.movement)
+          };
+          if (runtime.loseLayawayResponse) return { data: null, error: new Error('Failed to fetch') };
+          return { data: envelope(result), error: null };
         }
         if (args.p_operation_type === 'sale.split') {
           return { data: envelope({ success: true, children: args.p_request.children.map((child, index) => ({
@@ -230,9 +258,9 @@ vi.mock('../salesCloudLocalRepository', async (importOriginal) => {
 });
 
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
-import { getFinancialIntent } from '../../financial/financialIntentLedger';
+import { acknowledgeLayawayPayment, getFinancialIntent, listLayawayPaymentIntents } from '../../financial/financialIntentLedger';
 import { salesCloudCashierService } from '../salesCloudCashierService';
-import { isCloudSalesInventoryEnabled } from '../../sync/syncConstants';
+import { isCloudLayawaysEnabled, isCloudSalesInventoryEnabled } from '../../sync/syncConstants';
 
 const orderId = 'order-X';
 const stableCreatedAt = '2026-08-30T10:00:00.000Z';
@@ -272,7 +300,8 @@ beforeEach(async () => {
     product_batches: 'id,productId',
     transaction_log: 'id',
     sync_cache: 'key',
-    financial_intents: 'id, &idempotencyKey'
+    financial_intents: 'id, &idempotencyKey, operationType',
+    layaways: 'id'
   });
   await database.open();
   runtime.database = database;
@@ -284,6 +313,9 @@ beforeEach(async () => {
   runtime.receiptResult = { status: 'NOT_FOUND' };
   runtime.projectionFailure = false;
   runtime.partialContractEnabled = false;
+  runtime.layawayPayments = [];
+  runtime.loseLayawayResponse = false;
+  runtime.cashOpen = true;
   vi.mocked(isCloudSalesInventoryEnabled).mockReturnValue(false);
   runtime.actorHandle.assertCurrent.mockClear();
   useActiveOrders.setState({
@@ -296,6 +328,108 @@ beforeEach(async () => {
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
     value: { onLine: true }
+  });
+});
+
+describe('Cloud layaway payment recovery', () => {
+  const list = (actorHandle = runtime.actorHandle) => listLayawayPaymentIntents({
+    actorHandle, customerId: 'customer-a', layawayIds: ['layaway-a']
+  });
+  const submit = (id) => salesCloudCashierService.processCloudLayawayPayment({
+    layawayId: 'layaway-a', cashSessionId: 'session-a',
+    payment: { id, customerId: 'customer-a', amount: 30, type: 'installment', date: stableCreatedAt }
+  });
+  const verify = (intent, actorHandle = runtime.actorHandle) =>
+    salesCloudCashierService.verifyCloudLayawayPayment({ intent, actorHandle, licenseKey: 'fixture-license' });
+  const acknowledge = (intentId) => acknowledgeLayawayPayment({ intentId, actorHandle: runtime.actorHandle });
+
+  beforeEach(() => {
+    runtime.failNextExecute = false;
+    vi.stubEnv('VITE_ENABLE_CLOUD_LAYAWAYS', 'true');
+    vi.mocked(isCloudLayawaysEnabled).mockReturnValue(true);
+  });
+
+  it('recovers a committed payment after reopening Dexie and closing Caja, then allows a second $30 payment', async () => {
+    runtime.loseLayawayResponse = true;
+    await expect(submit('original')).rejects.toThrow();
+    const [first] = await list();
+    expect(first).toMatchObject({ status: 'PENDING_RECEIPT', idempotencyKey: 'layaway.payment:layaway-a:original',
+      cashSessionId: 'session-a', requestPayload: { payment: { id: 'original', date: stableCreatedAt } } });
+    await expect(verify(first)).resolves.toEqual({ status: 'pending' });
+    runtime.receiptResult = { status: 'PROCESSING' };
+    await expect(verify(first)).resolves.toEqual({ status: 'pending' });
+    await expect(submit('accidental-duplicate')).rejects.toThrow();
+    expect(runtime.executeCalls).toBe(1);
+    runtime.database.close();
+    await runtime.database.open();
+    runtime.cashOpen = false;
+    const { paid, movement, args } = runtime.layawayPayments[0];
+    expect(first.requestHash).toBe(args.p_request_hash);
+    runtime.receiptResult = { status: 'COMPLETED', operation_type: 'layaway.payment', result: {
+      success: true, layaway: { id: 'layaway-a', total_amount: 100, paid_amount: 30, balance_due: 70, server_version: 1 },
+      payment: paid, payments: [paid], cash_movement: movement, cash_movements: [movement]
+    } };
+    const [reloaded] = await list();
+    expect(reloaded.id).toBe(first.id);
+    const otherActor = { ...runtime.actorHandle, actorKey: 'staff:b', actorId: 'b', actorType: 'staff' };
+    const otherTenant = { ...runtime.actorHandle, tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b' } };
+    expect(await list(otherActor)).toEqual([{ requestPayload: { layaway_id: 'layaway-a' } }]);
+    expect(await list(otherTenant)).toEqual([]);
+    await expect(verify(reloaded, otherActor)).rejects.toThrow('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
+    await expect(verify(reloaded)).resolves.toEqual({ status: 'confirmed' });
+    await expect(runtime.database.table('layaways').get('layaway-a')).resolves.toMatchObject({
+      paidAmount: 30, balanceDue: 70, payments: [{ id: 'original', cashMovementId: movement.id }],
+      cloudCashMovements: [movement]
+    });
+    expect(runtime.executeCalls).toBe(1);
+    await acknowledge(reloaded.id);
+    expect(await list()).toEqual([]);
+    runtime.cashOpen = true;
+    runtime.loseLayawayResponse = false;
+    await expect(submit('legitimate-second')).resolves.toMatchObject({
+      layaway: { balanceDue: 40, payments: [{ id: 'original' }, { id: 'legitimate-second' }] }
+    });
+    expect(runtime.layawayPayments.map((entry) => entry.movement.id)).toEqual(['movement-original', 'movement-legitimate-second']);
+  });
+
+  it('allocates one durable intent for two concurrent confirmations', async () => {
+    const results = await Promise.allSettled([submit('one'), submit('two')]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(runtime.layawayPayments).toHaveLength(1);
+    expect(await list()).toHaveLength(1);
+  });
+
+  it('keeps a confirmed payment recoverable when only the local projection fails', async () => {
+    const { layawayRepository } = await import('../../db/layaways');
+    const projection = vi.spyOn(layawayRepository, 'upsertCloudSnapshot').mockRejectedValueOnce(new Error('IndexedDB write failed'));
+    try {
+      const result = await submit('projection-failure');
+      expect(result.projection.outcome).toBe('projection_failed');
+      const [intent] = await list();
+      expect(intent.status).toBe('COMPLETED');
+      await acknowledge(intent.id);
+      expect(await list()).toHaveLength(1);
+      await expect(verify(intent)).resolves.toEqual({ status: 'confirmed' });
+      await expect(runtime.database.table('layaways').get('layaway-a')).resolves.toMatchObject({ balanceDue: 70 });
+      expect(runtime.executeCalls).toBe(1);
+      expect(runtime.receiptCalls).toBe(0);
+    } finally {
+      projection.mockRestore();
+    }
+  });
+
+  it('allows a corrected attempt after an explicit rejection and does not send offline', async () => {
+    navigator.onLine = false;
+    await expect(submit('offline')).rejects.toThrow();
+    expect(runtime.executeCalls).toBe(0);
+    expect(await list()).toEqual([]);
+    navigator.onLine = true;
+    runtime.failNextExecute = true;
+    await expect(submit('rejected')).rejects.toThrow();
+    expect(runtime.layawayPayments).toHaveLength(0);
+    expect(await list()).toEqual([]);
+    await expect(submit('corrected')).resolves.toMatchObject({ layaway: { balanceDue: 70 } });
+    expect(runtime.layawayPayments).toHaveLength(1);
   });
 });
 

@@ -67,6 +67,8 @@ export default function LayawayModal({
     const [historicalFolios, setHistoricalFolios] = useState({});
     const [loading, setLoading] = useState(false);
     const [processingId, setProcessingId] = useState(null);
+    const [paymentReviews, setPaymentReviews] = useState(null);
+    const paymentInFlight = useRef(false);
 
     // Estado para abonos
     const [paymentAmount, setPaymentAmount] = useState('');
@@ -81,6 +83,21 @@ export default function LayawayModal({
     const actorRuntime = useActorRuntimeSnapshot();
     const salesHistoryScope = getSalesFinalHistoryScope(actorRuntime);
     const loadVersionRef = useRef(0);
+    const actorGeneration = actorRuntime?.generation;
+    const loadPaymentReviews = useCallback(async (rows, loadVersion) => {
+        try {
+            const reviews = await layawayFinancialService.getPaymentReviews({
+                customerId: customer.id,
+                layawayIds: rows.map((row) => row.id)
+            });
+            if (loadVersionRef.current === loadVersion) setPaymentReviews(reviews);
+            return reviews;
+        } catch (error) {
+            if (loadVersionRef.current === loadVersion) setPaymentReviews(null);
+            Logger.warn('No se pudo consultar el estado de los abonos', error);
+            return null;
+        }
+    }, [customer]);
 
     const loadLayaways = useCallback(async (loadVersion = loadVersionRef.current) => {
         setLoading(true);
@@ -115,6 +132,7 @@ export default function LayawayModal({
             if (loadVersionRef.current !== loadVersion) return;
             setLayaways(allLayaways);
             setHistoricalFolios(folios);
+            await loadPaymentReviews(allLayaways, loadVersion);
         } catch (error) {
             if (loadVersionRef.current !== loadVersion) return;
             Logger.error("Error cargando apartados", error);
@@ -122,10 +140,11 @@ export default function LayawayModal({
         } finally {
             if (loadVersionRef.current === loadVersion) setLoading(false);
         }
-    }, [customer, salesHistoryScope]);
+    }, [customer, salesHistoryScope, loadPaymentReviews]);
 
     useEffect(() => {
         const loadVersion = ++loadVersionRef.current;
+        setPaymentReviews(null);
         if (show && customer) {
             loadLayaways(loadVersion);
         } else {
@@ -137,10 +156,11 @@ export default function LayawayModal({
         return () => {
             if (loadVersionRef.current === loadVersion) loadVersionRef.current += 1;
         };
-    }, [show, customer, loadLayaways]);
+    }, [show, customer, loadLayaways, actorGeneration]);
 
     const handleAddPayment = async (layaway) => {
-        if (processingId) return;
+        if (processingId || paymentInFlight.current || !paymentReviews
+            || paymentReviews.some((review) => review.layawayId === layaway.id)) return;
         if (!isActionableLayaway(layaway)) {
             showMessageModal('Este apartado ya es histórico y no acepta más abonos.', null, { type: 'warning' });
             return;
@@ -166,6 +186,8 @@ export default function LayawayModal({
         // Permitimos un pequeño margen de error por decimales (0.01)
         if (amount > deudaPendiente + 0.1) return showMessageModal('El monto excede la deuda pendiente.', null, { type: 'warning' });
 
+        const loadVersion = loadVersionRef.current;
+        paymentInFlight.current = true;
         setProcessingId(layaway.id);
         try {
             const result = await layawayFinancialService.addPayment({
@@ -175,18 +197,71 @@ export default function LayawayModal({
                 expectedCashSessionId: cajaActual?.id || null
             });
 
-            showMessageModal(result?.isFullyPaid
-                ? '✅ Apartado liquidado. El dinero ya fue registrado en Caja. Confirma la entrega para reconocer la venta y calcular su ganancia bruta.'
-                : '✅ Abono registrado correctamente.');
+            if (loadVersionRef.current !== loadVersion) return;
+            const projectionPending = ['projection_failed', 'projection_deferred'].includes(result?.projection?.outcome);
+            const fullyPaid = result?.isFullyPaid || (result?.cloudCommitted && Number(result.layaway?.balance_due ?? result.layaway?.balanceDue) <= 0.01);
+            if (projectionPending) {
+                showMessageModal('Abono confirmado en Caja. El saldo de este dispositivo todavía está pendiente de actualizar.');
+            } else {
+                showMessageModal(fullyPaid
+                    ? '✅ Apartado liquidado. El dinero ya fue registrado en Caja. Confirma la entrega para reconocer la venta y calcular su ganancia bruta.'
+                    : '✅ Abono registrado correctamente.');
+            }
             setPaymentAmount('');
             setActivePaymentId(null);
-            loadLayaways();
-            if (onUpdate) onUpdate();
+            if (result?.financialIntentId) await layawayFinancialService.acknowledgePayment(result.financialIntentId);
+            await loadLayaways(loadVersion);
+            if (loadVersionRef.current === loadVersion) onUpdate?.();
 
         } catch (error) {
             Logger.error("Error en abono apartado", error);
-            showMessageModal(`Error: ${error.message}`);
+            if (loadVersionRef.current !== loadVersion) return;
+            const reviews = await loadPaymentReviews(layaways, loadVersion);
+            if (loadVersionRef.current !== loadVersion) return;
+            const review = reviews?.find((item) => item.layawayId === layaway.id);
+            if (review || !reviews) {
+                setActivePaymentId(null);
+            } else {
+                showMessageModal(`No se registró el abono. ${error.message}`);
+            }
         } finally {
+            paymentInFlight.current = false;
+            setProcessingId(null);
+        }
+    };
+
+    const handleVerifyPayment = async (review) => {
+        if (processingId || paymentInFlight.current) return;
+        const loadVersion = loadVersionRef.current;
+        paymentInFlight.current = true;
+        setProcessingId(review.layawayId);
+        try {
+            const result = await layawayFinancialService.verifyPayment({
+                intentId: review.id, customerId: customer.id, layawayId: review.layawayId
+            });
+            if (loadVersionRef.current !== loadVersion) return;
+            if (result.status === 'confirmed') {
+                const acknowledged = await layawayFinancialService.acknowledgePayment(review.id);
+                if (loadVersionRef.current !== loadVersion) return;
+                showMessageModal(acknowledged
+                    ? 'Abono confirmado en Caja.'
+                    : 'Abono confirmado en Caja. El saldo de este dispositivo todavía está pendiente de actualizar.');
+            } else if (result.status === 'rejected') {
+                showMessageModal(`No se registró el abono. ${result.code || 'Cloud rechazó la operación.'}`);
+            } else if (result.status === 'conflict') {
+                showMessageModal('Hay un conflicto en los datos del abono. Revisa el comprobante con un administrador.');
+            } else {
+                showMessageModal('El abono sigue pendiente de verificación.');
+            }
+            await loadLayaways(loadVersion);
+            if (loadVersionRef.current === loadVersion && result.status === 'confirmed') onUpdate?.();
+        } catch (error) {
+            if (loadVersionRef.current === loadVersion) {
+                showMessageModal(`No se pudo verificar el abono. ${error.message}`);
+                await loadPaymentReviews(layaways, loadVersion);
+            }
+        } finally {
+            paymentInFlight.current = false;
             setProcessingId(null);
         }
     };
@@ -353,6 +428,32 @@ export default function LayawayModal({
 
                 {/* Body */}
                 <div className="ui-modal__body customer-layaway-modal__body">
+                    {!loading && !paymentReviews && (
+                        <button type="button" className="ui-button ui-button--secondary" onClick={() => loadLayaways()}>
+                            Volver a consultar el estado de los abonos
+                        </button>
+                    )}
+                    {paymentReviews?.map((review) => {
+                        const layaway = layaways.find((row) => row.id === review.layawayId);
+                        return (
+                            <div className="customer-layaway-payment" key={review.id || review.layawayId}>
+                                <p role="status">
+                                    Apartado {layaway ? formatCalendarDate(layaway.createdAt) : review.layawayId}{' · '}
+                                    {!review.id ? 'Hay un abono pendiente de revisión en otra sesión de operador.' :
+                                        review.conflict ? 'Hay un conflicto en los datos del abono. Revisa el comprobante con un administrador.' :
+                                            review.confirmed ? `Abono de $${review.amount} confirmado en Caja.` :
+                                                review.prepared ? `Abono de $${review.amount} listo para enviar.` :
+                                                    `Abono de $${review.amount} pendiente de verificación.`}
+                                </p>
+                                {review.id && !review.conflict && (
+                                    <button type="button" className="ui-button ui-button--secondary"
+                                        disabled={Boolean(processingId)} onClick={() => handleVerifyPayment(review)}>
+                                        {review.prepared ? 'Continuar abono' : 'Verificar abono'}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                     {loading ? (
                         <div className="customer-layaway-empty-state customer-layaway-empty-state--loading" role="status" aria-live="polite">
                             <span className="customer-layaway-modal__spinner" aria-hidden="true"></span>
@@ -389,7 +490,8 @@ export default function LayawayModal({
                                 // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
                                 const isReady = !isHistorical && (pending <= 0.01 || status === 'ready');
                                 const isOverdue = !isHistorical && checkIsOverdue(layaway.deadline);
-                                const isPayingThis = activePaymentId === layaway.id;
+                                const paymentBlocked = !paymentReviews || paymentReviews.some((review) => review.layawayId === layaway.id);
+                                const isPayingThis = !paymentBlocked && activePaymentId === layaway.id;
                                 const paymentInputId = `customer-layaway-payment-${layaway.id}`;
                                 const completionFolio = historicalFolios[layaway.id] || null;
 
@@ -517,7 +619,7 @@ export default function LayawayModal({
             setActivePaymentId(layaway.id);
             setPaymentAmount('');
         }}
-        disabled={isOverdue}
+        disabled={isOverdue || paymentBlocked || Boolean(processingId)}
     >
         <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos bloqueados (vencido)' : 'Registrar nuevo abono'}
     </button>

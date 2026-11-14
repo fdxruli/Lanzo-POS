@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    actorRuntimeController: { ...actual.actorRuntimeController, capture: () => ({ assertCurrent: vi.fn() }) }
+  };
+});
+
+vi.mock('../financial/financialIntentLedger', () => ({
+  acknowledgeLayawayPayment: vi.fn(),
+  listLayawayPaymentIntents: vi.fn()
+}));
+
 const mocks = vi.hoisted(() => ({
   getMode: vi.fn(),
   getCurrentCashSession: vi.fn(),

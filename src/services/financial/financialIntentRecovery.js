@@ -55,6 +55,7 @@ export const recoverFinancialIntent = async ({
   project = applyFinancialProjection,
   leaseMs,
   explicitRetry = false,
+  allowLayawayPaymentDispatch = false,
   candidateIntent = null,
   executionScope = null
 } = {}) => {
@@ -136,6 +137,9 @@ export const recoverFinancialIntent = async ({
         return { intentId, outcome: 'receipt_conflict' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.NOT_FOUND:
         if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) === 0) {
+          if (intent.operationType === 'layaway.payment' && !allowLayawayPaymentDispatch) {
+            return { intentId, outcome: 'awaiting_payment_confirmation' };
+          }
           const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle, recoveryLeaseId: claim.recoveryLeaseId, executionScope });
           const completed = await getFinancialIntent(intentId);
           const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
