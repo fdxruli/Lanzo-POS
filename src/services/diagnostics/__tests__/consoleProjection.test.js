@@ -56,4 +56,58 @@ describe('safe diagnostic console projection', () => {
     expect(JSON.stringify(event)).not.toMatch(/private|12345|token|payload/);
     expect(projectDiagnosticEvent('info', [{ diagnosticOperation: '__proto__', diagnosticState: 'private' }]).operation).toBe('');
   });
+  it('preserves an unknown TypeError, actual stack and an absent stack', () => {
+    const error = new TypeError('exact technical message');
+    Object.defineProperty(error, 'stack', { value: 'TypeError: exact technical message\\n    at test.js:1:2' });
+    const entry = projectDiagnosticEvent('error', [error]);
+    expect(entry).toMatchObject({ category: 'unknown', code: 'INCIDENT_UNKNOWN', errorType: 'TypeError' });
+    expect(entry.technical).toMatchObject({ name: 'TypeError', message: 'exact technical message', stack: error.stack });
+    const withoutStack = new RangeError('no stack supplied');
+    Object.defineProperty(withoutStack, 'stack', { value: undefined });
+    expect(projectDiagnosticEvent('error', [withoutStack]).technical.stack).toBe('');
+  });
+
+  it('retains an uncatalogued PostgREST SQLSTATE, original message, hint and status', () => {
+    const entry = projectDiagnosticEvent('error', [{
+      code: '42703', message: 'column does not exist', details: null,
+      hint: 'Check the field name', status: 400
+    }]);
+    expect(entry.code).toBe('INCIDENT_SUPABASE_RPC');
+    expect(entry.technical).toMatchObject({
+      code: '42703', message: 'column does not exist', hint: 'Check the field name', status: 400
+    });
+    expect(entry.text).not.toContain('column does not exist');
+  });
+
+  it('ignores hostile getters and application payloads', () => {
+    const error = new Error('trusted message');
+    Object.defineProperties(error, {
+      stack: { get() { throw new Error('stack getter executed'); } },
+      code: { get() { throw new Error('code getter executed'); } },
+      cause: { value: { customer: 'PRIVATE_CUSTOMER' } }
+    });
+    const entry = projectDiagnosticEvent('error', [error, { amount: 123456, customer: 'PRIVATE_CUSTOMER' }]);
+    expect(entry.technical.message).toBe('trusted message');
+    expect(entry.technical.stack).toBe('');
+    expect(JSON.stringify(entry)).not.toContain('PRIVATE_CUSTOMER');
+    expect(JSON.stringify(entry)).not.toContain('123456');
+  });
+
+  it('preserves native DOMException fields without invoking application getters', () => {
+    const entry = projectDiagnosticEvent('error', [new DOMException('native exception details', 'NotAllowedError')]);
+    expect(entry.technical).toMatchObject({ name: 'NotAllowedError', message: 'native exception details' });
+  });
+
+  it('keeps global locations and rejection strings without exposing log strings', () => {
+    expect(projectDiagnosticEvent('error', ['rejection reason'], 'unhandledrejection').technical.message)
+      .toBe('rejection reason');
+    const event = projectDiagnosticEvent('error', ['script problem'], 'window.error', {
+      filename: 'https://host.invalid/app.js?token=SECRET', line: 22, column: 9
+    });
+    expect(event.technical).toMatchObject({
+      message: 'script problem', filename: 'https://host.invalid/app.js', line: 22, column: 9
+    });
+    expect(JSON.stringify(event)).not.toContain('SECRET');
+    expect(projectDiagnosticEvent('error', ['customer-only log'], 'console').technical).toBeNull();
+  });
 });

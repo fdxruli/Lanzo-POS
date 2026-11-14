@@ -12,6 +12,7 @@ import {
 import DevConsole from '../../components/debug/DevConsole';
 import OperationalSettings from '../../components/settings/OperationalSettings';
 import { clearDevConsoleEntries, getDevConsoleEntries, installDevConsoleCapture } from '../devConsoleCapture';
+import { emitDiagnosticConsoleEvent } from '../diagnostics/consoleEventBus';
 
 const mocks = vi.hoisted(() => ({
   tenant: { opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', databaseName: 'LanzoDB_t_test', generation: 1 },
@@ -86,12 +87,15 @@ describe('diagnostic preference with real actor storage and authority', () => {
 
   it('isolates preference and clears the sanitized buffer on actor and tenant transitions', async () => {
     installDevConsoleCapture();
-    const consoleState = window.__LANZO_DEV_CONSOLE_STATE__;
     try {
       setDevConsoleVisible(true);
-      consoleState.originals.info = vi.fn();
-      console.info({ diagnosticOperation: 'sync.status', diagnosticState: 'online' });
+      emitDiagnosticConsoleEvent('info', [{ diagnosticOperation: 'sync.status', diagnosticState: 'online' }]);
       expect(getDevConsoleEntries()).toHaveLength(1);
+      setDevConsoleVisible(false);
+      expect(getDevConsoleEntries()).toEqual([]);
+      setDevConsoleVisible(true);
+      emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, new TypeError('actor-private')]);
+      expect(getDevConsoleEntries().at(-1).technical.message).toBe('actor-private');
       await mountActor('b');
       expect(getDevConsolePreference().enabled).toBe(false);
       expect(getDevConsoleEntries()).toEqual([]);
