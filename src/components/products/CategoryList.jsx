@@ -103,9 +103,13 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
           <span>Crea una categoría para organizar tus productos.</span>
         </div>
       ) : filteredCategories.length === 0 ? (
-        <p className="category-list-no-results" role="status">
-          No hay resultados para «{searchQuery.trim()}».
-        </p>
+        <div className="category-list-no-results" role="status">
+          <span>No hay resultados para «{searchQuery.trim()}».</span>
+          <button type="button" className="category-reset-search" onClick={() => {
+            setSearchQuery('');
+            document.getElementById(searchId)?.focus();
+          }}>Limpiar búsqueda</button>
+        </div>
       ) : (
         <div className="category-admin-rows" role="list" aria-label="Categorías">
           {filteredCategories.map((category) => {

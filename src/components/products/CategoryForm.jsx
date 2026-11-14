@@ -141,7 +141,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
         <div className="form-group">
           <label htmlFor={`${fieldId}-color`}>
             <Palette size={14} />
-            Color P.V.
+            Color en punto de venta
           </label>
           <input
             id={`${fieldId}-color`}
@@ -160,7 +160,7 @@ export default function CategoryForm({ initialData, onSave, onSaveSuccess, onCan
         <div className="form-group">
           <label htmlFor={`${fieldId}-sort-order`}>
             <ListOrdered size={14} />
-            Orden
+            Orden de visualización
           </label>
           <input
             id={`${fieldId}-sort-order`}
