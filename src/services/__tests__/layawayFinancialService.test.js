@@ -8,6 +8,11 @@ vi.mock('../auth/actorRuntimeController', async (importOriginal) => {
   };
 });
 
+vi.mock('../financial/financialIntentLedger', () => ({
+  acknowledgeLayawayPayment: vi.fn(),
+  listLayawayPaymentIntents: vi.fn()
+}));
+
 const mocks = vi.hoisted(() => ({
   getMode: vi.fn(),
   getCurrentCashSession: vi.fn(),

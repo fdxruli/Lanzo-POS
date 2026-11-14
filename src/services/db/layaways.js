@@ -790,8 +790,8 @@ export const layawayRepository = {
         }
         return db.transaction('rw', table, async () => {
             const current = await table.get(id);
-            if (current?.cloudServerVersion != null
-                && Number(current.cloudServerVersion) >= Number(projected.cloudServerVersion)) return current;
+            const currentVersion = current?.cloudServerVersion ?? -1;
+            if (Number(currentVersion) >= Number(projected.cloudServerVersion)) return current;
             await table.put(projected);
             return projected;
         });
