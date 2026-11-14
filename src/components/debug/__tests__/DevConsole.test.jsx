@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DevConsolePanel } from '../DevConsole';
 import { emitDiagnosticConsoleEvent } from '../../../services/diagnostics/consoleEventBus';
-import { clearDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
+import { clearDevConsoleEntries, getDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
 
 vi.mock('../../../services/diagnostics/incidentEventCenter', () => ({ captureAsyncIncidentNotice: vi.fn() }));
 beforeEach(() => { setDevConsoleRecording(true); });
@@ -139,8 +139,15 @@ it('cancels without copying and respects only the visible level filter', () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   installDevConsoleCapture();
-  emitDiagnosticConsoleEvent('warn', [{ code: 'NETWORK_TIMEOUT' }]);
-  emitDiagnosticConsoleEvent('error', [new TypeError('LANZO_QA_STAGE2_EXPORT')]);
+  emitDiagnosticConsoleEvent('warn', [{ code: 'NETWORK_TIMEOUT' }, { diagnosticOperation: 'sync.pull' }]);
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, new TypeError('LANZO_QA_STAGE2_EXPORT')]);
+  // Verify both events actually passed the registered console bus, before filtering.
+  const captured = getDevConsoleEntries();
+  expect(captured).toHaveLength(2);
+  expect(captured.map(({ level }) => level)).toEqual(['warn', 'error']);
+  expect(captured[0].code).toBe('NETWORK_TIMEOUT');
+  expect(captured[1].technical.message).toBe('LANZO_QA_STAGE2_EXPORT');
+  expect(captured[1].technical.stack).toContain('LANZO_QA_STAGE2_EXPORT');
   render(<DevConsolePanel canCopy={() => true} />);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
   fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'error' } });
@@ -158,13 +165,20 @@ it('revalidates authorization before copy and discards the stale draft', () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   installDevConsoleCapture();
-  emitDiagnosticConsoleEvent('error', [new TypeError('actor-private')]);
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, new TypeError('actor-private')]);
+  expect(getDevConsoleEntries()).toHaveLength(1);
+  expect(getDevConsoleEntries()[0].technical.message).toBe('actor-private');
   render(<DevConsolePanel canCopy={() => authorized} />);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
   fireEvent.click(screen.getByTitle('Copiar logs visibles'));
   expect(screen.getByRole('dialog')).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' }).value).toContain('actor-private');
+  const confirm = screen.getByRole('button', { name: 'Copiar diagnóstico revisado' });
+  expect(confirm).toBeEnabled();
+  // Revocation between rendering the enabled button and its click: handler must
+  // revalidate authority, not rely on the button's disabled state.
   authorized = false;
-  fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico revisado' }));
+  fireEvent.click(confirm);
   expect(writeText).not.toHaveBeenCalled();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByText(/La autorización cambió/)).toBeVisible();
