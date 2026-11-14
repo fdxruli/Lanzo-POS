@@ -6,7 +6,6 @@ import { setDiagnosticConsoleSink } from './diagnostics/consoleEventBus';
 const MAX_ENTRIES = 300;
 const MAX_TEXT_LENGTH = 5000;
 const METHODS = ['log', 'info', 'warn', 'error', 'debug', 'trace', 'table'];
-const STATE_KEY = '__LANZO_DEV_CONSOLE_STATE__';
 
 const createState = () => ({
   entries: [],
@@ -16,14 +15,10 @@ const createState = () => ({
   sequence: 0,
   notifying: false,
   timer: null,
-  recording: true,
+  recording: false,
 });
 
-const state = (() => {
-  if (typeof window === 'undefined') return createState();
-  window[STATE_KEY] = window[STATE_KEY] || createState();
-  return window[STATE_KEY];
-})();
+const state = createState();
 
 const truncate = (text) => {
   if (text.length <= MAX_TEXT_LENGTH) return text;
@@ -40,14 +35,15 @@ const notify = () => {
   state.notifying = false;
 };
 
-const addEntry = (level, args, source = 'console') => {
+const addEntry = (level, args, source = 'console', location = null) => {
   if (!state.recording || state.notifying) return;
   const now = new Date();
-  const diagnostic = projectDiagnosticEvent(level, args, source);
+  const diagnostic = projectDiagnosticEvent(level, args, source, location);
   const previous = state.entries.at(-1);
   const repeated = diagnostic.groupable && previous?.level === level
     && previous.source === source && previous.text === diagnostic.text
     && previous.severity === diagnostic.severity
+    && !diagnostic.technical && !previous.technical
     && now.getTime() - Date.parse(previous.timestamp) <= 30_000;
   const entry = Object.freeze({
     ...diagnostic,
@@ -103,7 +99,12 @@ export const installDevConsoleCapture = () => {
   });
 
   window.addEventListener('error', (event) => {
-    try { addEntry('error', [event.message, event.error], 'window.error'); } catch { /* best effort */ }
+    try {
+      addEntry('error', [event.message, event.error], 'window.error', {
+        filename: event.filename, line: event.lineno, column: event.colno,
+        resourceError: typeof ErrorEvent === 'undefined' || !(event instanceof ErrorEvent)
+      });
+    } catch { /* best effort */ }
     try { captureAsyncIncidentNotice(event.error || {
       name: 'Error',
       message: event.message || ''
@@ -123,14 +124,9 @@ export const installDevConsoleCapture = () => {
     }); } catch { /* Recovery and visual recording are independent. */ }
   });
 
-  window.__LANZO_DEV_CONSOLE__ = {
-    clear: clearDevConsoleEntries,
-    getEntries: getDevConsoleEntries,
-  };
-
 };
 
-export const getDevConsoleEntries = () => [...state.entries];
+export const getDevConsoleEntries = () => state.recording ? [...state.entries] : [];
 
 export const subscribeDevConsole = (listener) => {
   state.listeners.add(listener);
@@ -146,8 +142,8 @@ export const clearDevConsoleEntries = () => {
   notify();
 };
 
-// The authority boundary may suspend the visual buffer. Global operational
-// notices above always remain installed, regardless of panel visibility.
+// The actor authority boundary suspends the module-private visual buffer.
+// Global operational notices remain installed, regardless of panel visibility.
 export const setDevConsoleRecording = enabled => {
   state.recording = enabled === true;
   clearDevConsoleEntries();

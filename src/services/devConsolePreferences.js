@@ -48,11 +48,12 @@ const refresh = () => {
     if (changed) {
       currentScope = scope;
       sessionPreference = null;
-      setDevConsoleRecording(Boolean(scope));
     }
+    const enabled = Boolean(storage) && (sessionPreference ?? (storage.getItem(KEY) === 'true'));
+    if (changed || enabled !== snapshot.enabled) setDevConsoleRecording(enabled);
     publish({
       authorized: Boolean(storage),
-      enabled: Boolean(storage) && (sessionPreference ?? (storage.getItem(KEY) === 'true')),
+      enabled,
       persistenceError: changed ? false : snapshot.persistenceError,
       revision: snapshot.revision + (changed ? 1 : 0)
     });
@@ -90,10 +91,14 @@ export const setDevConsoleVisible = value => {
     // Writes validate both authority and the existing cross-tab context fence.
     storage.setItem(KEY, value === true ? 'true' : 'false');
     sessionPreference = value === true;
+    setDevConsoleRecording(sessionPreference);
     publish({ ...snapshot, enabled: sessionPreference, persistenceError: false });
   } catch {
     // Turning OFF always closes the panel, even if local storage is unavailable.
-    if (value === false) sessionPreference = false;
+    if (value === false) {
+      sessionPreference = false;
+      setDevConsoleRecording(false);
+    }
     refresh();
     publish({ ...snapshot, enabled: value === false ? false : snapshot.enabled, persistenceError: true });
   }
