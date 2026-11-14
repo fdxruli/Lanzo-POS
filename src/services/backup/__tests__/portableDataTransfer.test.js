@@ -249,6 +249,128 @@ describe('portableDataTransfer', () => {
     expect(uncategorized.newProducts[0].source.categoryId).toBe('');
   });
 
+  it('F-02: never reuses the sole deleted destination category', async () => {
+    const database = await activateTestBusiness();
+    const tombstone = {
+      id: 'deleted-beverages', name: 'QA Bebidas', color: '#112233', sortOrder: 3,
+      isActive: false, deletedAt: '2026-11-12T10:00:00.000Z'
+    };
+    await database.table(STORES.CATEGORIES).put(tombstone);
+    const bundle = catalogBundleWith({
+      categories: [{ id: 'source-beverages', name: 'QA Bebidas', color: '#2563eb', sortOrder: 7, isActive: true }],
+      menu: [{ id: 'source-drink', name: 'QA Refresco', price: 15, categoryId: 'source-beverages' }]
+    });
+    await importCatalogTransfer(bundle, await previewCatalogTransfer(bundle));
+    const product = (await database.table(STORES.MENU).toArray())[0];
+    expect(product.categoryId).not.toBe(tombstone.id);
+    expect(await database.table(STORES.CATEGORIES).get(product.categoryId)).toMatchObject({
+      name: 'QA Bebidas', color: '#2563eb', sortOrder: 7, isActive: true
+    });
+    expect(await database.table(STORES.CATEGORIES).get(tombstone.id)).toEqual(tombstone);
+    await importCatalogTransfer(bundle, await previewCatalogTransfer(bundle));
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(2);
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+    expect((await database.table(STORES.MENU).get(product.id)).categoryId).toBe(product.categoryId);
+  });
+
+  it.each([
+    { isActive: false },
+    { deletedAt: '2026-11-12' },
+    { deleted_at: '2026-11-12' },
+    { deletedTimestamp: 123 },
+    { deleted_timestamp: 123 },
+    { deletionPending: true }
+  ])('F-02: excludes unavailable destination categories (%j)', async (state) => {
+    const bundle = catalogBundle();
+    const unavailable = { id: 'unavailable', name: 'Ropa', ...state };
+    const destination = { ...emptyDestination(), categories: [unavailable] };
+    const plan = await buildCatalogTransferPlan(bundle, destination);
+    expect(plan.categoryCreates).toHaveLength(1);
+    expect(plan.categoryIdMap.get('category-source')).not.toBe('unavailable');
+    destination.categories.push({ id: 'active', name: ' ropa ', isActive: true });
+    const matched = await buildCatalogTransferPlan(bundle, destination);
+    expect(matched.conflicts).toEqual([]);
+    expect(matched.categoryIdMap.get('category-source')).toBe('active');
+    expect(matched.categoryCreates).toEqual([]);
+  });
+
+  it('F-02: remaps updated and new products to the sole usable category', async () => {
+    const database = await activateTestBusiness();
+    const tombstone = { id: 'deleted', name: 'Ropa', isActive: false, deletedAt: '2026-11-12' };
+    const active = { id: 'active', name: ' ropa ', isActive: true, color: '#112233', sortOrder: 9 };
+    await database.table(STORES.CATEGORIES).bulkPut([tombstone, active]);
+    await database.table(STORES.MENU).put({
+      id: 'existing', name: 'Camisa', categoryId: tombstone.id, stock: 8, cost: 4,
+      transferSourceKey: 'dataset-1:menu:product-source'
+    });
+    const bundle = catalogBundle();
+    bundle.data.tables.menu.push({ id: 'new', name: 'Nueva', price: 1, categoryId: 'category-source' });
+    bundle.tableCounts.menu++;
+    const preview = await previewCatalogTransfer(bundle);
+    expect(preview.summary.products).toMatchObject({ create: 1, update: 1 });
+    await importCatalogTransfer(bundle, preview);
+    expect((await database.table(STORES.MENU).toArray()).every((row) => row.categoryId === active.id)).toBe(true);
+    expect(await database.table(STORES.MENU).get('existing')).toMatchObject({ stock: 8, cost: 4 });
+    expect(await database.table(STORES.CATEGORIES).get(tombstone.id)).toEqual(tombstone);
+    expect(await database.table(STORES.CATEGORIES).get(active.id)).toEqual(active);
+  });
+
+  it('F-02: reimport after deletion reports the occupied deterministic ID without writes', async () => {
+    const database = await activateTestBusiness();
+    const bundle = catalogBundle();
+    await importCatalogTransfer(bundle, await previewCatalogTransfer(bundle));
+    const category = (await database.table(STORES.CATEGORIES).toArray())[0];
+    const tombstone = { ...category, isActive: false, deletedAt: '2026-11-12' };
+    await database.table(STORES.CATEGORIES).put(tombstone);
+    await database.table(STORES.MENU).toCollection().modify({ categoryId: '' });
+    const before = await Promise.all(PORTABLE_TRANSFER_TABLES.map((name) => database.table(name).toArray()));
+    const preview = await previewCatalogTransfer(bundle);
+    expect(preview.conflicts.join(' ')).toMatch(/identificador generado ya está ocupado/);
+    await expect(importCatalogTransfer(bundle, preview)).rejects.toThrow('DATA_TRANSFER_CONFLICTS_REVIEW');
+    expect(await Promise.all(PORTABLE_TRANSFER_TABLES.map((name) => database.table(name).toArray()))).toEqual(before);
+  });
+
+  it.each(['deletedAt', 'deleted_at', 'deletedTimestamp', 'deleted_timestamp', 'deletionPending', 'isActive'])(
+    'F-02: requires review when category availability changes after preview (%s)', async (field) => {
+      const database = await activateTestBusiness();
+      await database.table(STORES.CATEGORIES).put({ id: 'active', name: 'Ropa', isActive: true });
+      const bundle = catalogBundle();
+      const preview = await previewCatalogTransfer(bundle);
+      await database.table(STORES.CATEGORIES).update('active', { [field]: field === 'isActive' ? false : true });
+      await expect(importCatalogTransfer(bundle, preview)).rejects.toThrow('DATA_TRANSFER_DESTINATION_CHANGED_REVIEW_AGAIN');
+      expect(await database.table(STORES.MENU).count()).toBe(0);
+      expect(await database.table(STORES.CATEGORIES).count()).toBe(1);
+    }
+  );
+
+  it('F-02: blocks two usable matches in preview without writing', async () => {
+    const database = await activateTestBusiness();
+    await database.table(STORES.CATEGORIES).bulkPut([
+      { id: 'one', name: 'Ropa', isActive: true },
+      { id: 'two', name: ' ropa ', isActive: true }
+    ]);
+    const bundle = catalogBundle();
+    const preview = await previewCatalogTransfer(bundle);
+    expect(preview.conflicts.join(' ')).toMatch(/varias coincidencias/);
+    await expect(importCatalogTransfer(bundle, preview)).rejects.toThrow('DATA_TRANSFER_CONFLICTS_REVIEW');
+    expect(await database.table(STORES.MENU).count()).toBe(0);
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(2);
+  });
+
+  it('F-02: preserves uncategorized products and refuses assignments to newly imported inactive categories', async () => {
+    const database = await activateTestBusiness();
+    const bundle = catalogBundleWith({ categories: [], menu: [{ id: 'none', name: 'Sin categoría', price: 1 }] });
+    await importCatalogTransfer(bundle, await previewCatalogTransfer(bundle));
+    expect((await database.table(STORES.MENU).toArray())[0].categoryId).toBe('');
+    const inactive = catalogBundle();
+    inactive.data.tables.categories[0].isActive = false;
+    const preview = await previewCatalogTransfer(inactive);
+    expect(preview.conflicts.join(' ')).toMatch(/no está activa/);
+    await expect(importCatalogTransfer(inactive, preview)).rejects.toThrow('DATA_TRANSFER_CONFLICTS_REVIEW');
+    expect(await database.table(STORES.CATEGORIES).count()).toBe(0);
+    expect(await database.table(STORES.MENU).count()).toBe(1);
+  });
+
   it('reuses destination category preferences and maps products to the destination ID', async () => {
     const database = await activateTestBusiness();
     await database.table(STORES.CATEGORIES).put({
