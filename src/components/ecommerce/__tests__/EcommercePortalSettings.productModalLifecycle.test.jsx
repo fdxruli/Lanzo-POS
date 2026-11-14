@@ -472,6 +472,72 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(savePublishedProduct).not.toHaveBeenCalled();
   });
 
+  it('opens the published product with its local source and performs no writes', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockResolvedValue(productOne);
+    await renderCatalog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
+
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    await waitFor(() => expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName));
+    expect(productRepository.getProductById).toHaveBeenCalledWith(productOne.id);
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName);
+    expect(savePublishedProduct).not.toHaveBeenCalled();
+    expect(setProductPublished).not.toHaveBeenCalled();
+  });
+
+  it('keeps published fields editable when the original local product no longer exists', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.listProductsPage.mockResolvedValue({ data: [], nextCursor: null });
+    productRepository.getProductById.mockResolvedValue(null);
+    await renderCatalog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
+
+    await screen.findByRole('dialog', { name: 'Editar producto' });
+    await waitFor(() => expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName));
+    expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName);
+    expect(screen.getByLabelText('Descripción pública').value).toBe(publishedProduct.publicDescription);
+    expect(screen.queryByRole('option', { name: /Producto Uno/ })).toBeNull();
+    expect(savePublishedProduct).not.toHaveBeenCalled();
+  });
+
+  it('shows a read error and does not open an incomplete editor', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    productRepository.getProductById.mockRejectedValue(new Error('IndexedDB read failed'));
+    const notifyError = vi.spyOn(toast, 'error');
+    await renderCatalog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
+
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(
+      'No se pudo leer el producto original. El editor no se abrió. Intenta nuevamente.'
+    ));
+    expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull();
+    expect(savePublishedProduct).not.toHaveBeenCalled();
+  });
+
+  it('ignores a local product read that finishes after leaving the catalog section', async () => {
+    listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
+    const sourceRead = deferred();
+    productRepository.getProductById.mockReturnValue(sourceRead.promise);
+    await renderCatalog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
+    await waitFor(() => expect(productRepository.getProductById).toHaveBeenCalledWith(productOne.id));
+    fireEvent.click(screen.getByRole('tab', { name: 'Información' }));
+
+    await act(async () => {
+      sourceRead.resolve(productOne);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Información' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('guards a modified catalog product during React Router navigation, preserving the rejected draft', async () => {
     listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
     productRepository.getProductById.mockResolvedValue(productOne);

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     enqueue: vi.fn(),
     notify: vi.fn(),
     prepareProduct: vi.fn(),
+    getProductById: vi.fn(),
     getCategoryProductCounts: vi.fn(),
     syncMetaGetMeta: vi.fn(),
     saveCategoryLocal: vi.fn(),
@@ -99,7 +100,7 @@ vi.mock('../productLocalRepository', () => ({
     prepareProduct: mocks.prepareProduct,
     savePreparedProductLocal: mocks.savePreparedProductLocal,
     deleteProductLocal: mocks.deleteProductLocal,
-    getProductById: vi.fn(),
+    getProductById: mocks.getProductById,
     toggleProductStatusLocal: mocks.toggleProductStatusLocal,
     markProductPending: vi.fn(),
     saveBatchLocal: mocks.saveBatchLocal,
@@ -189,6 +190,15 @@ beforeEach(() => {
 });
 
 describe('productRepository FREE/local authority', () => {
+  it('exposes getProductById through the public repository contract', async () => {
+    const product = { id: 'product-from-active-catalog' };
+    mocks.getProductById.mockResolvedValue(product);
+
+    expect(typeof productRepository.getProductById).toBe('function');
+    await expect(productRepository.getProductById(product.id)).resolves.toBe(product);
+    expect(mocks.getProductById).toHaveBeenCalledWith(product.id);
+  });
+
   it('returns local category counts for FREE without requiring a Cloud snapshot marker', async () => {
     await expect(productRepository.getCategoryProductCounts(['cat-free'])).resolves.toEqual({
       source: 'local',

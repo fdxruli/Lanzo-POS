@@ -227,6 +227,10 @@ export const productRepository = {
     return productLocalRepository.listProductsPage(options);
   },
 
+  async getProductById(productId) {
+    return productLocalRepository.getProductById(productId);
+  },
+
   async getAssortmentCatalogSnapshot(options = {}) {
     return productLocalRepository.getAssortmentCatalogSnapshot(options);
   },
