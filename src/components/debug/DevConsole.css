@@ -134,6 +134,9 @@
 
 .dev-console-toolbar select,
 .dev-console-toolbar input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   height: 36px;
   padding: 0 9px;
   border: 1px solid rgba(148, 163, 184, 0.28);
@@ -281,11 +284,21 @@
   }
 
   .dev-console-toolbar {
-    grid-template-columns: 104px minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .dev-console-toolbar input {
     grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .dev-console-toolbar select {
+    grid-row: 2;
+  }
+
+  .dev-console-toolbar select,
+  .dev-console-toolbar input {
+    height: 44px;
   }
 
   .dev-console-refresh {

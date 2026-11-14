@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DevConsolePanel } from '../DevConsole';
+import { buildDevConsoleSearchText, matchesDevConsoleFilter } from '../devConsoleSearch';
 import { emitDiagnosticConsoleEvent } from '../../../services/diagnostics/consoleEventBus';
 import { clearDevConsoleEntries, getDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
 
@@ -182,4 +183,134 @@ it('revalidates authorization before copy and discards the stale draft', () => {
   expect(writeText).not.toHaveBeenCalled();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByText(/La autorización cambió/)).toBeVisible();
+});
+
+it('finds original unknown messages, inspects the original stack, and previews only the filtered export', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  ['ALPHA', 'BETA', 'GAMMA'].forEach((suffix) => {
+    emitDiagnosticConsoleEvent('error', [
+      { diagnosticOperation: 'db.operation' }, new TypeError(`LANZO_QA_SEARCH_${suffix}`),
+    ]);
+  });
+
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar en logs' }), {
+    target: { value: 'search_beta' },
+  });
+  fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'error' } });
+  fireEvent.change(screen.getByLabelText('Filtrar por categoría'), { target: { value: 'unknown' } });
+
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Examinar registro' }));
+  expect(screen.getByText(/Mensaje original: LANZO_QA_SEARCH_BETA/)).toBeVisible();
+  expect(screen.getByText(/Stack original:/)).toBeVisible();
+
+  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  const preview = screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' });
+  expect(preview.value).toContain('LANZO_QA_SEARCH_BETA');
+  expect(preview.value).not.toContain('LANZO_QA_SEARCH_ALPHA');
+  expect(preview.value).not.toContain('LANZO_QA_SEARCH_GAMMA');
+  expect(writeText).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico revisado' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  expect(writeText.mock.calls[0][0]).toContain('LANZO_QA_SEARCH_BETA');
+  expect(writeText.mock.calls[0][0]).not.toContain('LANZO_QA_SEARCH_ALPHA');
+  expect(writeText.mock.calls[0][0]).not.toContain('LANZO_QA_SEARCH_GAMMA');
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar en logs' }), { target: { value: '' } });
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(3);
+});
+
+it('finds a reference present only in the original stack', () => {
+  function LANZO_QA_SEARCH_STACK_BETA() {
+    throw new TypeError('STACK_MESSAGE_WITHOUT_SEARCH_REFERENCE');
+  }
+
+  let error;
+  try { LANZO_QA_SEARCH_STACK_BETA(); } catch (caught) { error = caught; }
+  expect(error.stack).toContain('LANZO_QA_SEARCH_STACK_BETA');
+  expect(error.message).not.toContain('LANZO_QA_SEARCH_STACK_BETA');
+
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, error]);
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar en logs' }), {
+    target: { value: 'LANZO_QA_SEARCH_STACK_BETA' },
+  });
+
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(1);
+});
+
+it('combines technical search with level and category filters', () => {
+  const codedError = Object.assign(new TypeError('LANZO_QA_FILTER_COMBINED'), { code: 'NETWORK_TIMEOUT' });
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, codedError]);
+  emitDiagnosticConsoleEvent('error', [
+    { diagnosticOperation: 'db.operation' }, new TypeError('LANZO_QA_FILTER_COMBINED'),
+  ]);
+  emitDiagnosticConsoleEvent('warn', [
+    { diagnosticOperation: 'db.operation' }, new TypeError('LANZO_QA_FILTER_COMBINED'),
+  ]);
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar en logs' }), {
+    target: { value: 'LANZO_QA_FILTER_COMBINED' },
+  });
+
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(3);
+  fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'error' } });
+  fireEvent.change(screen.getByLabelText('Filtrar por categoría'), { target: { value: 'unknown' } });
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(1);
+  fireEvent.change(screen.getByLabelText('Filtrar por categoría'), { target: { value: 'connectivity' } });
+  expect(screen.getAllByRole('button', { name: 'Examinar registro' })).toHaveLength(1);
+  expect(screen.getByText(/NETWORK_TIMEOUT/)).toBeVisible();
+});
+
+it('does not execute getters or inspect arbitrary payloads while building searchable text', () => {
+  let getterCalls = 0;
+  const technical = Object.defineProperties({}, {
+    message: { get() { getterCalls += 1; throw new Error('hostile message getter'); } },
+    arbitrary: { get() { getterCalls += 1; throw new Error('arbitrary getter'); } },
+  });
+  const payload = Object.defineProperty({}, 'secret', {
+    get() { getterCalls += 1; throw new Error('payload getter'); },
+  });
+  const entry = Object.defineProperties({ text: 'Safe diagnostic summary', technical, payload }, {
+    evidence: { get() { getterCalls += 1; throw new Error('hostile evidence getter'); } },
+    level: { get() { getterCalls += 1; throw new Error('hostile level getter'); } },
+    category: { get() { getterCalls += 1; throw new Error('hostile category getter'); } },
+  });
+
+  const searchText = buildDevConsoleSearchText(entry);
+
+  expect(searchText).toContain('safe diagnostic summary');
+  expect(searchText).not.toContain('hostile');
+  expect(searchText).not.toContain('secret');
+  expect(matchesDevConsoleFilter(entry, 'level', 'error')).toBe(false);
+  expect(matchesDevConsoleFilter(entry, 'category', 'unknown')).toBe(false);
+  expect(getterCalls).toBe(0);
+});
+
+it('includes classification and original technical references in searchable text', () => {
+  const searchText = buildDevConsoleSearchText({
+    code: 'INCIDENT_UNKNOWN',
+    technical: {
+      name: 'TypeError',
+      code: 'ORIGINAL_ERROR_CODE',
+      message: 'original message',
+      stack: 'original stack',
+      filename: 'src/debug/worker.js',
+      functionName: 'refreshDiagnostics',
+    },
+  });
+
+  [
+    'incident_unknown', 'typeerror', 'original_error_code', 'original message',
+    'original stack', 'src/debug/worker.js', 'refreshdiagnostics',
+  ].forEach((value) => expect(searchText).toContain(value));
 });
