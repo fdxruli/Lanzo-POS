@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
@@ -74,8 +74,25 @@ describe('diagnostic preference with real actor storage and authority', () => {
     expect(toggle).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
     expect(screen.getByRole('region', { name: 'Consola de diagnóstico' })).toBeVisible();
+    installDevConsoleCapture();
+    emitDiagnosticConsoleEvent('error', [
+      { diagnosticOperation: 'db.operation' }, new TypeError('STAGE2_REVOKE_TEST')
+    ]);
+    expect(getDevConsoleEntries()).toHaveLength(1);
+    expect(getDevConsoleEntries()[0].technical.message).toBe('STAGE2_REVOKE_TEST');
+    // Visual entries are notified in a 100 ms batch; wait for the rendered snapshot.
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Consola de diagnóstico' }))
+        .toHaveTextContent('1 registros | 1 errores');
+    });
+    fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+    expect(screen.getByRole('dialog', { name: 'Revisar diagnóstico técnico' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' }).value)
+      .toContain('STAGE2_REVOKE_TEST');
     fireEvent.click(toggle);
     expect(screen.queryByRole('region', { name: 'Consola de diagnóstico' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Revisar diagnóstico técnico' })).toBeNull();
+    expect(getDevConsoleEntries()).toEqual([]);
     await act(async () => { await mountActor(); });
     expect(getDevConsolePreference().enabled).toBe(false);
     fireEvent.click(toggle);

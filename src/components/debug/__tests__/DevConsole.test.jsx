@@ -4,13 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DevConsolePanel } from '../DevConsole';
 import { emitDiagnosticConsoleEvent } from '../../../services/diagnostics/consoleEventBus';
-import { clearDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
+import { clearDevConsoleEntries, getDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
 
 vi.mock('../../../services/diagnostics/incidentEventCenter', () => ({ captureAsyncIncidentNotice: vi.fn() }));
 beforeEach(() => { setDevConsoleRecording(true); });
 afterEach(() => { cleanup(); clearDevConsoleEntries(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-it('renders and copies the same useful sanitized diagnosis on mobile', async () => {
+it('previews and copies only the reviewed diagnosis on mobile', async () => {
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
     matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()
   }));
@@ -34,9 +34,14 @@ it('renders and copies the same useful sanitized diagnosis on mobile', async () 
   expect(screen.getByText(/Conectividad · Diagnóstico técnico · FREE_LICENSE_TRANSPORT_ERROR/)).toBeVisible();
   expect(screen.getByText(/Módulo: Licencias · Operación: Crear licencia FREE/)).toBeVisible();
   fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  expect(writeText).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog', { name: 'Revisar diagnóstico técnico' })).toBeVisible();
+  const preview = screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' });
+  expect(preview.value).toContain('FREE_LICENSE_TRANSPORT_ERROR');
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico revisado' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
   const copied = writeText.mock.calls[0][0];
-  expect(copied).toMatch(/^\[\d{4}-\d\d-\d\dT[^\]]+Z\] ERROR console:/);
+  expect(copied).toContain('LANZO POS — DIAGNÓSTICO TÉCNICO');
   expect(copied).toContain('FREE_LICENSE_TRANSPORT_ERROR');
   expect(copied).toContain('Resultado: No confirmado');
   expect(document.body.textContent + copied).not.toMatch(/PRIVATE|private|Ana|5551234567|9876|access_token/);
@@ -82,7 +87,9 @@ it('keeps the panel usable when clipboard and launcher persistence fail', async 
   render(<DevConsolePanel canCopy={() => true} />);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
   fireEvent.click(screen.getByTitle('Copiar logs visibles'));
-  expect(await screen.findByText('No se pudo copiar. Puedes seleccionar el texto.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico revisado' }));
+  expect(await screen.findByText(/No se pudo acceder al portapapeles/)).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' })).toBeVisible();
   expect(screen.getByRole('region', { name: 'Consola de diagnóstico' })).toBeVisible();
 });
 
@@ -100,7 +107,7 @@ it('batches a large stream without freezing the view and shows repetitions', asy
   expect(document.querySelectorAll('.dev-console-entry')).toHaveLength(1);
 });
 
-it('shows a TypeError original and stack only when inspected, never in clipboard', async () => {
+it('exports original TypeError and stack after explicit review without replacing evidence with classification', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   installDevConsoleCapture();
@@ -115,7 +122,64 @@ it('shows a TypeError original and stack only when inspected, never in clipboard
   expect(screen.getByText(/Mensaje original: TECHNICAL_ORIGINAL_ONLY/)).toBeVisible();
   expect(screen.getByText(/Stack original:/)).toBeVisible();
   fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  expect(writeText).not.toHaveBeenCalled();
+  const textarea = screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' });
+  expect(textarea.value).toContain('TECHNICAL_ORIGINAL_ONLY');
+  expect(textarea.value).toContain('Stack original');
+  expect(textarea.value).toContain('INCIDENT_UNKNOWN');
+  fireEvent.change(textarea, { target: { value: textarea.value + '\\nREVISADO' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico revisado' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-  expect(writeText.mock.calls[0][0]).toContain('INCIDENT_UNKNOWN');
-  expect(writeText.mock.calls[0][0]).not.toContain('TECHNICAL_ORIGINAL_ONLY');
+  expect(writeText.mock.calls[0][0]).toContain('TECHNICAL_ORIGINAL_ONLY');
+  expect(writeText.mock.calls[0][0]).toContain('REVISADO');
+});
+
+
+it('cancels without copying and respects only the visible level filter', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('warn', [{ code: 'NETWORK_TIMEOUT' }, { diagnosticOperation: 'sync.pull' }]);
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, new TypeError('LANZO_QA_STAGE2_EXPORT')]);
+  // Verify both events actually passed the registered console bus, before filtering.
+  const captured = getDevConsoleEntries();
+  expect(captured).toHaveLength(2);
+  expect(captured.map(({ level }) => level)).toEqual(['warn', 'error']);
+  expect(captured[0].code).toBe('NETWORK_TIMEOUT');
+  expect(captured[1].technical.message).toBe('LANZO_QA_STAGE2_EXPORT');
+  expect(captured[1].technical.stack).toContain('LANZO_QA_STAGE2_EXPORT');
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'error' } });
+  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  const text = screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' }).value;
+  expect(text).toContain('LANZO_QA_STAGE2_EXPORT');
+  expect(text).not.toContain('NETWORK_TIMEOUT');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(writeText).not.toHaveBeenCalled();
+});
+
+it('revalidates authorization before copy and discards the stale draft', () => {
+  let authorized = true;
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, new TypeError('actor-private')]);
+  expect(getDevConsoleEntries()).toHaveLength(1);
+  expect(getDevConsoleEntries()[0].technical.message).toBe('actor-private');
+  render(<DevConsolePanel canCopy={() => authorized} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' }).value).toContain('actor-private');
+  const confirm = screen.getByRole('button', { name: 'Copiar diagnóstico revisado' });
+  expect(confirm).toBeEnabled();
+  // Revocation between rendering the enabled button and its click: handler must
+  // revalidate authority, not rely on the button's disabled state.
+  authorized = false;
+  fireEvent.click(confirm);
+  expect(writeText).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByText(/La autorización cambió/)).toBeVisible();
 });

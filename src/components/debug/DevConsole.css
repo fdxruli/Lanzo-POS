@@ -300,3 +300,90 @@
 }
 
 .dev-console-inspect { width: fit-content; background: transparent; color: inherit; border: 0; text-decoration: underline; text-align: left; }
+
+/* Reviewed copy: one focused, temporary in-memory overlay. */
+.dev-console-export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal, 1000) + 5);
+  display: grid;
+  place-items: center;
+  padding: max(12px, var(--safe-area-top, 0px)) max(12px, var(--safe-area-right, 0px))
+    max(12px, var(--safe-area-bottom, 0px)) max(12px, var(--safe-area-left, 0px));
+  background: rgba(2, 6, 23, .78);
+  box-sizing: border-box;
+}
+.dev-console-export-dialog {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  width: min(940px, 100%);
+  height: min(720px, 100%);
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+  font: 400 .85rem/1.45 system-ui, sans-serif;
+}
+.dev-console-export-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dev-console-export-header strong { font-size: 1rem; }
+.dev-console-export-header p { margin: 3px 0 0; color: #cbd5e1; font-size: .8rem; }
+.dev-console-export-notice { margin: 0; color: #cbd5e1; font-size: .8rem; }
+.dev-console-export-header button,
+.dev-console-export-footer button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  background: #1e293b;
+  color: #f8fafc;
+  cursor: pointer;
+}
+.dev-console-export-header button { width: 44px; flex-shrink: 0; }
+.dev-console-export-dialog textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  resize: none;
+  overflow: auto;
+  white-space: pre;
+  font: 400 .78rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: #020617;
+  color: #f8fafc;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  tab-size: 4;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.dev-console-export-dialog :is(button, textarea):focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
+.dev-console-export-footer { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dev-console-export-footer .dev-console-export-confirm { background: #0f766e; border-color: #14b8a6; font-weight: 600; }
+.dev-console-export-footer button:disabled,
+.dev-console-export-header button:disabled { opacity: .55; cursor: not-allowed; }
+.dev-console-export-error { flex-basis: 100%; color: #fecaca; font-size: .8rem; }
+
+@media (max-width: 640px) {
+  .dev-console-export-backdrop {
+    padding: max(8px, var(--safe-area-top, 0px)) max(8px, var(--safe-area-right, 0px))
+      max(8px, var(--safe-area-bottom, 0px)) max(8px, var(--safe-area-left, 0px));
+  }
+  .dev-console-export-dialog { width: 100%; height: 100%; padding: 10px; gap: 8px; border-radius: 8px; }
+  .dev-console-export-footer { display: grid; grid-template-columns: 1fr 1fr; }
+  .dev-console-export-footer button { width: 100%; padding: 0 6px; }
+  .dev-console-export-footer .dev-console-export-confirm { line-height: 1.2; }
+  .dev-console-export-error { grid-column: 1 / -1; }
+}
