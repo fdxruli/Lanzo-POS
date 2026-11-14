@@ -393,6 +393,43 @@ describe('ProductsPage category save flow', () => {
     expect(shared.broadcastDBChange).toHaveBeenCalledWith(expect.objectContaining({ action: 'category-created' }));
   });
 
+  it.each([0, 1, 4])('preserves the Free deletion warning for %s local products', async (count) => {
+    shared.repository.getCategoryProductCounts.mockResolvedValue({ source: 'local', complete: true, counts: { 'category-1': count } });
+    renderPage();
+    await screen.findByText(count === 0 ? 'Sin productos' : `${count} ${count === 1 ? 'producto' : 'productos'}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar Bebidas' }));
+    const message = count === 0 ? 'No hay productos asociados. Los productos no se eliminarán.'
+      : count === 1 ? 'El producto asociado quedará sin categoría. El producto no se eliminará.'
+        : `Los ${count} productos asociados quedarán sin categoría. Los productos no se eliminarán.`;
+    expect(shared.showConfirmModal).toHaveBeenCalledWith(message, expect.any(Object));
+  });
+
+  it.each([0, 1, 7])('uses a generic PRO warning for %s device products', async (count) => {
+    shared.app.licenseDetails = PRO_LICENSE;
+    shared.repository.getCategoryProductCounts.mockResolvedValue({ source: 'local', complete: false, counts: { 'category-1': count } });
+    renderPage();
+    await screen.findByText(count === 0 ? 'Sin productos registrados aquí' : `${count} ${count === 1 ? 'producto' : 'productos'} en este dispositivo`);
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar Bebidas' }));
+    expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      'Los productos asociados quedarán sin categoría. Los productos no se eliminarán.', expect.any(Object)
+    );
+    await waitFor(() => expect(shared.repository.deleteCategory).toHaveBeenCalledWith('category-1'));
+  });
+
+  it('does not infer Cloud zero from a historical PRO snapshot and local zero', async () => {
+    shared.app.licenseDetails = PRO_LICENSE;
+    // Legacy snapshot result: another device's associations are absent locally.
+    shared.repository.getCategoryProductCounts.mockResolvedValue({ complete: true, counts: { 'category-1': 0 } });
+    renderPage();
+    await screen.findByText('Sin productos');
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar Bebidas' }));
+    expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      'Los productos asociados quedarán sin categoría. Los productos no se eliminarán.',
+      expect.any(Object)
+    );
+    await waitFor(() => expect(shared.repository.deleteCategory).toHaveBeenCalledWith('category-1'));
+  });
+
   it('explains the category and product impact before deletion when the count is reliable', async () => {
     shared.repository.getCategoryProductCounts.mockResolvedValue({
       complete: true,
