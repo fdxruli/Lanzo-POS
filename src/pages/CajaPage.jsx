@@ -713,18 +713,30 @@ export default function CajaPage() {
 
           if (hasValidDriveSession) {
             try {
-              await googleDriveService.uploadBackup(
+              const driveResult = await googleDriveService.uploadBackup(
                 driveAuthValue,
                 backupResult.blob,
                 backupResult.fileName
               );
-              backupSummary = 'Respaldo guardado localmente y en Google Drive.';
+              if (driveResult?.uploadStatus !== 'confirmed') {
+                throw new Error('DRIVE_UPLOAD_UNCONFIRMED');
+              }
+              if (driveResult.cleanupStatus === 'pending') {
+                backupWarning = true;
+                backupSummary = driveResult.cleanupReason === 'reauth_required'
+                  ? 'El respaldo local y la subida a Google Drive quedaron confirmados. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'
+                  : 'El respaldo local y la subida a Google Drive quedaron confirmados, pero la limpieza de copias anteriores está pendiente; se conservaron.';
+              } else {
+                backupSummary = 'Respaldo guardado localmente y en Google Drive.';
+              }
             } catch (driveError) {
               Logger.error('Fallo respaldo automatico en Google Drive', driveError);
               backupWarning = true;
-              backupSummary = driveError.status === 401
-                ? 'El respaldo local quedó guardado, pero la sesión de Google expiró.'
-                : 'El respaldo local quedó guardado, pero falló la subida a Google Drive.';
+              backupSummary = driveError.status === 401 || driveError.code === 'AUTH_REQUIRED'
+                ? 'El respaldo local quedó guardado, pero la sesión de Google expiró y no se confirmó la subida.'
+                : driveError.code === 'BACKUP_PERMISSION_REQUIRED'
+                  ? 'El respaldo local quedó guardado, pero el usuario actual no tiene permiso para subir copias a Google Drive.'
+                  : 'El respaldo local quedó guardado, pero no se confirmó la subida a Google Drive.';
             }
           } else {
             const reauthMessage = needsDriveReauth || isDriveConnected
