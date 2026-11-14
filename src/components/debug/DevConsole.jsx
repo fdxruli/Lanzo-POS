@@ -20,6 +20,7 @@ import {
 import { getDevConsolePreference, subscribeDevConsolePreference, isDevConsoleVisibleNow } from '../../services/devConsolePreferences';
 import { copyTextToClipboard } from '../../services/support/supportContact';
 import { prepareDevConsoleExport } from '../../services/diagnostics/devConsoleExport';
+import { buildDevConsoleSearchText, matchesDevConsoleFilter } from './devConsoleSearch';
 import './DevConsole.css';
 
 const LEVELS = ['all', 'error', 'warn', 'info', 'log', 'debug', 'trace', 'table'];
@@ -170,16 +171,24 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
     };
   }, []);
 
+  const searchableEntries = useMemo(() => entries.map((entry) => ({
+    entry,
+    searchText: buildDevConsoleSearchText(entry),
+  })), [entries]);
+
   const visibleEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return entries.filter((entry) => {
-      const matchesLevel = selectedLevel === 'all' || entry.level === selectedLevel;
-      const matchesQuery = !normalizedQuery
-        || `${entry.text} ${entry.evidence || ''} ${entry.severity}`.toLowerCase().includes(normalizedQuery);
-      const matchesCategory = selectedCategory === 'all' || entry.category === selectedCategory;
-      return matchesLevel && matchesQuery && matchesCategory;
-    });
-  }, [entries, query, selectedLevel, selectedCategory]);
+    return searchableEntries
+      .filter(({ entry, searchText }) => {
+        const matchesLevel = selectedLevel === 'all'
+          || matchesDevConsoleFilter(entry, 'level', selectedLevel);
+        const matchesQuery = !normalizedQuery || searchText.includes(normalizedQuery);
+        const matchesCategory = selectedCategory === 'all'
+          || matchesDevConsoleFilter(entry, 'category', selectedCategory);
+        return matchesLevel && matchesQuery && matchesCategory;
+      })
+      .map(({ entry }) => entry);
+  }, [searchableEntries, query, selectedLevel, selectedCategory]);
 
   const errorsCount = countByLevel(entries, 'error');
   const warningsCount = countByLevel(entries, 'warn');
