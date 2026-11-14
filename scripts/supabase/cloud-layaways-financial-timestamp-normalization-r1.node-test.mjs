@@ -136,9 +136,10 @@ test('invalid deadline validation precedes every financial side effect and R2 pr
   assert.doesNotMatch(migration, /\brow_to_json\s*\(/u);
 });
 
-test('date-picker default is formatted in the local calendar instead of UTC', () => {
+test('date-picker defaults use the business calendar and preserve the Cloud-only legacy fallback', () => {
   assert.match(posLayawayModal, /const formatLocalDateInputValue = \(date\) =>/u);
-  assert.match(posLayawayModal, /setDeadline\(formatLocalDateInputValue\(date\)\)/u);
+  assert.match(posLayawayModal, /setDeadline\(addBusinessCalendarDays\(today, 30\)\)/u);
+  assert.match(posLayawayModal, /else if \(cloudEnabled\) \{\s+const legacyDate = new Date\(\);\s+legacyDate\.setDate\(legacyDate\.getDate\(\) \+ 30\);\s+setDeadline\(formatLocalDateInputValue\(legacyDate\)\);/u);
   assert.doesNotMatch(posLayawayModal, /date\.toISOString\(\)\.split\('T'\)\[0\]/u);
   assert.match(customerLayawayModal, /const getCalendarDateParts = \(value\) =>/u);
   assert.match(customerLayawayModal, /formatCalendarDate\(layaway\.deadline\)/u);

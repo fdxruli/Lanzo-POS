@@ -164,7 +164,7 @@ test('auth, signatures, and client RPC parameters remain compatible', () => {
     'public.pos_get_layaway(\n  p_license_key text,\n  p_device_fingerprint text,\n  p_security_token text,\n  p_staff_session_token text default null,\n  p_layaway_id text default null',
     'public.pos_pull_layaway_changes(\n  p_license_key text,\n  p_device_fingerprint text,\n  p_security_token text,\n  p_staff_session_token text default null,\n  p_since_change_seq bigint default 0,\n  p_limit integer default 500'
   ]) {
-    assert.ok(migration.includes(signature), 'RPC signature changed: ' + signature.split('\n')[0]);
+    assert.ok(migration.replaceAll('\r\n', '\n').includes(signature), 'RPC signature changed: ' + signature.split('\n')[0]);
   }
 
   assert.match(migration, /grant execute on function public\.pos_get_layaway\(text, text, text, text, text\)\s+to anon, authenticated;/u);

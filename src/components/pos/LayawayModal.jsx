@@ -1,12 +1,13 @@
 // components/pos/LayawayModal.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { addBusinessCalendarDays, getBusinessCalendarDate, getLayawayCalendarDate } from '../../utils/layawayCalendar';
+import { addBusinessCalendarDays, getBusinessCalendarDate, getLayawayCalendarDate, LAYAWAY_TIMEZONE_MESSAGE } from '../../utils/layawayCalendar';
+import { getLicenseKeyFromDetails, isCloudCashSyncEnabled } from '../../services/sync/syncConstants';
+import LayawayTimezoneNotice from '../common/LayawayTimezoneNotice';
 import { loadData, STORES } from '../../services/database';
 import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
 import { useCaja } from '../../hooks/useCaja';
 import { showMessageModal } from '../../services/utils';
-import Logger from '../../services/Logger';
 // ✅ Importaciones de Lucide React
 import {
     Package,
@@ -39,22 +40,24 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
     const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
     const { cajaActual } = useCaja();
+    const cloudEnabled = useAppStore((state) => Boolean(getLicenseKeyFromDetails(state.licenseDetails) && isCloudCashSyncEnabled(state.licenseDetails)));
     const businessTimezone = useAppStore((state) => (
-        state.companyProfile?.license_key && state.licenseDetails?.license_key
-            && state.companyProfile.license_key !== state.licenseDetails.license_key
-            ? null : state.companyProfile?.timezone || null
+        state.licenseDetails?.license_key && state.companyProfile?.license_key === state.licenseDetails.license_key
+            ? state.companyProfile.timezone : null
     ));
+    const timezoneRequired = !cloudEnabled && !getBusinessCalendarDate(businessTimezone);
 
     useEffect(() => {
         if (show) {
             const today = getBusinessCalendarDate(businessTimezone);
             if (today) {
                 setDeadline(addBusinessCalendarDays(today, 30));
-            } else {
-                // Until a business timezone is confirmed, preserve the pre-Stage-3 form default.
+            } else if (cloudEnabled) {
                 const legacyDate = new Date();
                 legacyDate.setDate(legacyDate.getDate() + 30);
                 setDeadline(formatLocalDateInputValue(legacyDate));
+            } else {
+                setDeadline('');
             }
             setInitialPayment('');
 
@@ -72,7 +75,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             }
             setFilteredCustomers([]);
         }
-    }, [show, preSelectedCustomer, total, businessTimezone]);
+    }, [show, preSelectedCustomer, total, businessTimezone, cloudEnabled]);
 
     const handleCustomerSearch = (e) => {
         const query = e.target.value;
@@ -110,6 +113,10 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
         e.preventDefault();
 
         const today = getBusinessCalendarDate(businessTimezone);
+        if (!cloudEnabled && !today) {
+            showMessageModal(LAYAWAY_TIMEZONE_MESSAGE, null, { type: 'warning' });
+            return;
+        }
         const due = getLayawayCalendarDate(deadline);
         if (today && !due) {
             showMessageModal('Selecciona una fecha límite válida.', null, { type: 'warning' });
@@ -183,6 +190,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
                         </button>
                     </div>
 
+                    {timezoneRequired && <LayawayTimezoneNotice onClose={onClose} />}
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div className="layaway-body">
 
@@ -263,7 +271,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
 
                                 <div className="financial-grid">
                                     <div className="input-group">
-                                        <label>Abono Inicial</label>
+                                        <label>Abono inicial en efectivo</label>
                                         <div className="input-currency-wrapper">
                                             <span className="currency-symbol">$</span>
                                             <input
@@ -341,6 +349,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
                                 className="btn-confirm-layaway"
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                                 disabled={
+                                    timezoneRequired ||
                                     !selectedCustomer ||
                                     remaining < 0 ||
                                     initialAmount < 0 ||

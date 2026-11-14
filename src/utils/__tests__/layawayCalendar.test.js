@@ -26,10 +26,16 @@ describe('Apartados: calendario del negocio, sin UTC ni teléfono', () => {
     expect(addBusinessCalendarDays('2026-11-12', 30)).toBe('2026-12-12');
   });
 
+  it('calcula días distintos para Tijuana y Ciudad de México en el mismo instante', () => {
+    const instant = new Date('2026-11-16T06:30:00Z');
+    expect(isLayawayDeadlineOverdue(sample.deadline, 'America/Tijuana', instant)).toBe(false);
+    expect(isLayawayDeadlineOverdue(sample.deadline, 'America/Mexico_City', instant)).toBe(true);
+  });
+
   it('permite el último día y bloquea vencido o terminal con zona confirmada', () => {
     expect(() => assertLayawayPaymentAllowed(sample, 'America/Merida', new Date('2026-11-16T05:59:00Z'))).not.toThrow();
     expect(() => assertLayawayPaymentAllowed(sample, 'America/Merida', new Date('2026-11-16T06:01:00Z'))).toThrow(/vencido/);
-    expect(() => assertLayawayPaymentAllowed(sample, null)).not.toThrow();
+    expect(() => assertLayawayPaymentAllowed(sample, null)).toThrow(/zona horaria/);
     expect(() => assertLayawayPaymentAllowed({ ...sample, deadline: '2026-02-30' }, 'America/Merida'))
       .toThrow(/fecha límite/);
     expect(() => assertLayawayPaymentAllowed({ ...sample, status: 'cancelled' }, 'America/Merida')).toThrow(/no admite/);

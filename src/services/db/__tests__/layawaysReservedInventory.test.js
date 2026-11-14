@@ -11,7 +11,7 @@ const layaway = (id, quantity = 2, item = {}) => ({
   id, customerId: 'customer-1', customerName: 'Cliente',
   items: [{ productId: 'shirt', quantity, price: 100, ...item }],
   totalAmount: quantity * 100,
-  deadline: '2026-12-15'
+  deadline: '2099-12-15'
 });
 
 const product = (extra = {}) => ({
@@ -32,8 +32,9 @@ const normalSale = (id, qty, batchId = null) => salesRepository.executeSaleTrans
 }, batchId ? [{ productId: 'shirt', batchId, quantity: qty }] : []);
 
 beforeEach(async () => {
-  useAppStore.setState({ companyProfile: { timezone: 'America/Merida' } });
+  useAppStore.setState({ licenseDetails: { license_key: 'FREE-A' } });
   await openTestTenantRuntime();
+  await db.table(STORES.COMPANY).put({ id: 'company:FREE-A', license_key: 'FREE-A', timezone: 'America/Merida' });
   for (const table of [
     STORES.MENU, STORES.PRODUCT_BATCHES, STORES.LAYAWAYS, STORES.SALES,
     STORES.DAILY_STATS, STORES.CAJAS, STORES.MOVIMIENTOS_CAJA,
@@ -42,7 +43,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await closeTestTenantRuntime();
-  useAppStore.setState({ companyProfile: null });
+  useAppStore.setState({ licenseDetails: null });
 });
 
 describe('Apparel Free reserved_v1 / Dexie real', () => {
@@ -94,6 +95,7 @@ describe('Apparel Free reserved_v1 / Dexie real', () => {
     await db.table(STORES.MENU).put(product());
     await layawayRepository.create(layaway('cancel-2'));
     expect((await normalSale('normal-8', 8)).success).toBe(true);
+    await db.table(STORES.COMPANY).delete('company:FREE-A');
     await layawayRepository.cancel('cancel-2', 'Cliente', true, null, { assertActorCurrent: () => {} });
     expect(await physical()).toEqual({ stock: 2, committed: 0, available: 2 });
     expect((await db.table(STORES.LAYAWAYS).get('cancel-2')).status).toBe('cancelled');

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../dexie';
 import { layawayRepository } from '../layaways';
 import { useAppStore } from '../../../store/useAppStore';
@@ -15,8 +15,9 @@ const baseLayaway = (id = 'layaway-1') => ({
 });
 
 beforeEach(async () => {
-  useAppStore.setState({ companyProfile: { timezone: 'America/Merida' } });
+  useAppStore.setState({ licenseDetails: { license_key: 'FREE-A' } });
   await openTestTenantRuntime();
+  await db.table(STORES.COMPANY).put({ id: 'company:FREE-A', license_key: 'FREE-A', timezone: 'America/Merida' });
   await db.table(STORES.LAYAWAYS).clear();
   await db.table(STORES.MENU).clear();
   await db.table(STORES.MENU).put({ id: 'product-1', name: 'Servicio sin inventario', trackStock: false, isActive: true });
@@ -27,7 +28,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await closeTestTenantRuntime();
-  useAppStore.setState({ companyProfile: null });
+  useAppStore.setState({ licenseDetails: null });
 });
 
 describe('layaway cash consistency in Free', () => {
@@ -159,6 +160,7 @@ describe('layaway cash consistency in Free', () => {
       cashMovement: { idempotencyKey: 'layaway:layaway-1:payment:payment-1' }
     });
 
+    await db.table(STORES.COMPANY).delete('company:FREE-A');
     await layawayRepository.cancel('layaway-1', 'Cliente', false, 'cash-1', {
       assertActorCurrent: () => {},
       cashMovement: {
@@ -185,20 +187,71 @@ describe('layaway cash consistency in Free', () => {
     expect((await db.table(STORES.LAYAWAYS).get('late')).paidAmount).toBe(0);
   });
 
-  it('allows legacy Free creation and a valid Cash installment with timezone unset', async () => {
-    useAppStore.setState({ companyProfile: { timezone: null } });
-    await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
-    const created = await layawayRepository.create({ ...baseLayaway('without-zone'), deadline: '2020-01-01' });
-    expect(created.success).toBe(true);
-    const payment = await layawayRepository.addPaymentWithCash('without-zone',
-      { id: 'legacy-pay', amount: 25 }, 'cash-1', { idempotencyKey: 'layaway:without-zone:payment:legacy-pay' });
-    expect(payment.success).toBe(true);
-    expect((await db.table(STORES.LAYAWAYS).get('without-zone')).paidAmount).toBe(25);
-    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(1);
-    const duplicate = await layawayRepository.addPaymentWithCash('without-zone',
-      { id: 'legacy-pay', amount: 25 }, 'cash-1', { idempotencyKey: 'layaway:without-zone:payment:legacy-pay' });
-    expect(duplicate.duplicate).toBe(true);
-    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(1);
+  it.each([null, 'America/Inexistente', 'foreign license'])('rejects creation with a deposit and all new payment paths with %s', async (timezone) => {
+    if (timezone === 'foreign license') {
+      useAppStore.setState({ licenseDetails: { license_key: 'FREE-B' }, companyProfile: {
+        license_key: 'FREE-B', timezone: 'America/Merida'
+      } });
+    } else {
+      await db.table(STORES.COMPANY).update('company:FREE-A', { timezone });
+    }
+    const product = { id: 'product-1', trackStock: true, stock: 10, committedStock: 0, isActive: true };
+    const cash = { id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' };
+    const customer = { id: 'customer-1', name: 'Cliente', debt: 20 };
+    await db.table(STORES.MENU).put(product);
+    await db.table(STORES.CAJAS).put(cash);
+    await db.table(STORES.CUSTOMERS).put(customer);
+    const guard = { code: 'LAYAWAY_TIMEZONE_REQUIRED' };
+    const movement = { idempotencyKey: 'layaway:new:payment:deposit' };
+    await expect(layawayRepository.create(baseLayaway('new'), 25, cash.id, {
+      payment: { id: 'deposit' }, cashMovement: movement
+    })).rejects.toMatchObject(guard);
+    expect(await db.table(STORES.LAYAWAYS).count()).toBe(0);
+    expect(await db.table(STORES.MENU).get(product.id)).toEqual(product);
+    expect(await db.table(STORES.CUSTOMERS).get(customer.id)).toMatchObject(customer);
+
+    const historical = { ...baseLayaway('legacy'), paidAmount: 0, status: 'active',
+      payments: [{ id: 'pending', amount: 25, status: 'pending' }] };
+    await db.table(STORES.LAYAWAYS).put(historical);
+    const payment = { id: 'new-pay', amount: 25, status: 'confirmed' };
+    await expect(layawayRepository.addPayment(historical.id, payment)).rejects.toMatchObject(guard);
+    await expect(layawayRepository.addPaymentWithCash(historical.id, payment, cash.id, movement)).rejects.toMatchObject(guard);
+    await expect(layawayRepository.confirmPayment(historical.id, 'pending', 'movement', cash.id)).rejects.toMatchObject(guard);
+    expect(await layawayRepository.getById(historical.id)).toEqual(historical);
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+    expect(await db.table(STORES.CAJAS).get(cash.id)).toEqual(cash);
+  });
+
+  it('uses the current business day for creation and payment across midnight and timezone changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-16T05:59:59Z'));
+      const deadline = '2026-11-15';
+      await expect(layawayRepository.create({ ...baseLayaway('past'), deadline: '2026-11-14' }))
+        .rejects.toMatchObject({ code: 'LAYAWAY_DEADLINE_IN_PAST' });
+      await expect(layawayRepository.create({ ...baseLayaway('invalid'), deadline: '2026-02-30' }))
+        .rejects.toMatchObject({ code: 'LAYAWAY_DEADLINE_INVALID' });
+      await layawayRepository.create({ ...baseLayaway(), deadline });
+      await db.table(STORES.CAJAS).put({ id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0' });
+      const pay = (id) => layawayRepository.addPaymentWithCash('layaway-1', { id, amount: 25 }, 'cash-1',
+        { idempotencyKey: `layaway:layaway-1:payment:${id}` });
+      await expect(pay('before-midnight')).resolves.toMatchObject({ newPaidAmount: 25 });
+      vi.setSystemTime(new Date('2026-11-16T06:00:00Z'));
+      await expect(pay('after-midnight')).rejects.toMatchObject({ code: 'LAYAWAY_OVERDUE' });
+      await expect(pay('before-midnight')).resolves.toMatchObject({ duplicate: true, newPaidAmount: 25 });
+
+      await db.table(STORES.COMPANY).update('company:FREE-A', { timezone: 'America/Tijuana' });
+      await expect(pay('after-settings-change')).resolves.toMatchObject({ newPaidAmount: 50 });
+      expect(await layawayRepository.getById('layaway-1')).toMatchObject({ deadline, paidAmount: 50 });
+      expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(2);
+
+      await db.table(STORES.CAJAS).update('cash-1', { estado: 'cerrada' });
+      await expect(pay('cash-closed')).rejects.toThrow();
+      expect(await layawayRepository.getById('layaway-1')).toMatchObject({ paidAmount: 50 });
+      expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects an installment on a cancelled layaway even if an old form remained open', async () => {
