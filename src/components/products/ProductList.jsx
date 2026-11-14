@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -53,6 +53,7 @@ const formatDate = (value) => {
 
 const CATEGORY_OPTION_PREFIX = 'category:';
 const UNCATEGORIZED_OPTION_VALUE = 'inventory:uncategorized';
+const PRODUCT_SEARCH_TIMEOUT_MS = 15000;
 
 export default function ProductList({ products, categories = [], isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true }) {
   const features = useFeatureConfig();
@@ -65,8 +66,15 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedTerm = useDebounce(searchTerm, 300);
+  const normalizedSearchTerm = searchTerm.trim();
+  const normalizedDebouncedTerm = debouncedTerm.trim();
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearchError, setHasSearchError] = useState(false);
+  const [searchRetry, setSearchRetry] = useState(0);
+  const searchRequestId = useRef(0);
+  const searchTimeout = useRef(null);
+  const searchInput = useRef(null);
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
   const [productForInventoryEntry, setProductForInventoryEntry] = useState(null);
@@ -89,27 +97,43 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
   useEffect(() => {
     let isActive = true;
+    const requestId = ++searchRequestId.current;
+    const term = normalizedDebouncedTerm;
+    let timeoutId = null;
+
+    if (searchTimeout.current !== null) {
+      window.clearTimeout(searchTimeout.current);
+      searchTimeout.current = null;
+    }
+
+    if (normalizedSearchTerm !== term) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    if (!term) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setHasSearchError(false);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    setIsSearching(true);
+    setHasSearchError(false);
+    timeoutId = window.setTimeout(() => {
+      if (isActive && requestId === searchRequestId.current) {
+        isActive = false;
+        searchTimeout.current = null;
+        setIsSearching(false);
+        setHasSearchError(true);
+      }
+    }, PRODUCT_SEARCH_TIMEOUT_MS);
+    searchTimeout.current = timeoutId;
 
     const fetchSearchResults = async () => {
-      const term = debouncedTerm.trim();
-      if (searchTerm.trim() !== term) {
-        setSearchResults([]);
-        setIsSearching(true);
-        return;
-      }
-
-      if (!term) {
-        if (isActive) {
-          setSearchResults([]);
-          setIsSearching(false);
-        }
-        return;
-      }
-
-      if (isActive) {
-        setIsSearching(true);
-      }
-
       try {
         const results = await searchProductsInDB(term, statusFilter, categoryFilter, {
           eligible: (product) => isInventoryCatalogEligible(product, {
@@ -118,7 +142,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
             categoryId: categoryFilter
           })
         });
-        if (isActive) {
+        if (isActive && requestId === searchRequestId.current) {
           setSearchResults(results.filter((product) => (
             isInventoryCatalogEligible(product, {
               status: statusFilter,
@@ -126,14 +150,19 @@ export default function ProductList({ products, categories = [], isLoading, onEd
               categoryId: categoryFilter
             })
           )));
+          setHasSearchError(false);
         }
       } catch (error) {
         console.error('Error buscando productos en ProductList:', error);
-        if (isActive) {
-          setSearchResults([]);
+        if (isActive && requestId === searchRequestId.current) {
+          setHasSearchError(true);
         }
       } finally {
-        if (isActive) {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+          if (searchTimeout.current === timeoutId) searchTimeout.current = null;
+        }
+        if (isActive && requestId === searchRequestId.current) {
           setIsSearching(false);
         }
       }
@@ -143,10 +172,18 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
     return () => {
       isActive = false;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        if (searchTimeout.current === timeoutId) searchTimeout.current = null;
+      }
     };
-  }, [categoryFilter, debouncedTerm, products, statusFilter, searchTerm]);
+  }, [categoryFilter, normalizedDebouncedTerm, normalizedSearchTerm, searchRetry, statusFilter]);
 
-  const isSearchMode = debouncedTerm.trim().length > 0;
+  const isSearchMode = normalizedSearchTerm.length > 0;
+  const isSearchDebouncing = isSearchMode && normalizedSearchTerm !== normalizedDebouncedTerm;
+  const isSearchPending = isSearchMode && (isSearchDebouncing || isSearching);
+  const showSearchError = isSearchMode && !isSearchDebouncing && hasSearchError;
+  const isInitialCatalogLoading = !isSearchMode && (isLoading || isGlobalLoading) && products.length === 0;
   const displayProducts = isSearchMode
     ? searchResults.filter((product) => isInventoryCatalogEligible(product, {
       status: statusFilter,
@@ -184,14 +221,33 @@ export default function ProductList({ products, categories = [], isLoading, onEd
     return margin.toFixed(1);
   };
 
-  if (((isLoading || isGlobalLoading) && products.length === 0) || (isSearchMode && isSearching && displayProducts.length === 0)) {
-    return (
-      <div className="ui-loading-state loader-container">
-        <div className="ui-spinner spinner"></div>
-        <p>{isSearchMode ? 'Buscando productos...' : 'Cargando inventario...'}</p>
-      </div>
-    );
-  }
+  const handleSearchChange = (event) => {
+    const nextTerm = event.target.value;
+    if (nextTerm.trim() !== normalizedSearchTerm) {
+      searchRequestId.current += 1;
+      if (searchTimeout.current !== null) {
+        window.clearTimeout(searchTimeout.current);
+        searchTimeout.current = null;
+      }
+      setSearchResults([]);
+      setIsSearching(false);
+      setHasSearchError(false);
+    }
+    setSearchTerm(nextTerm);
+  };
+
+  const handleClearSearch = () => {
+    searchRequestId.current += 1;
+    if (searchTimeout.current !== null) {
+      window.clearTimeout(searchTimeout.current);
+      searchTimeout.current = null;
+    }
+    setSearchTerm('');
+    setSearchResults([]);
+    setIsSearching(false);
+    setHasSearchError(false);
+    searchInput.current?.focus();
+  };
 
   return (
     <div className="product-list-container">
@@ -206,11 +262,24 @@ export default function ProductList({ products, categories = [], isLoading, onEd
           <div className="search-box product-list-search">
             <span className="search-icon"><Icons.Search /></span>
             <input
+              ref={searchInput}
               type="text"
               placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
+              aria-label="Buscar productos"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearchChange}
             />
+            {searchTerm.length > 0 && (
+              <button
+                type="button"
+                className="product-search-clear"
+                aria-label="Limpiar búsqueda"
+                title="Limpiar búsqueda"
+                onClick={handleClearSearch}
+              >
+                Limpiar
+              </button>
+            )}
           </div>
 
           <select
@@ -264,7 +333,32 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       </div>
 
-      {displayProducts.length === 0 ? (
+      {isSearchPending && (
+        <div className="product-search-feedback" role="status" aria-live="polite">
+          <span className="ui-spinner ui-spinner--sm product-search-spinner" aria-hidden="true" />
+          <span>Buscando productos...</span>
+        </div>
+      )}
+
+      {showSearchError && (
+        <div className="product-search-error" role="alert">
+          <span>No se pudieron buscar los productos. Intenta nuevamente.</span>
+          <button
+            type="button"
+            className="ui-button ui-button--secondary ui-button--sm"
+            onClick={() => setSearchRetry((attempt) => attempt + 1)}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {isInitialCatalogLoading ? (
+        <div className="ui-loading-state loader-container" role="status">
+          <div className="ui-spinner spinner" aria-hidden="true" />
+          <p>Cargando inventario...</p>
+        </div>
+      ) : (isSearchPending || showSearchError) && displayProducts.length === 0 ? null : displayProducts.length === 0 ? (
         <div className="ui-empty-state empty-state">
           <div className="ui-empty-state__icon empty-icon"><Icons.Empty /></div>
           <h3>No se encontraron productos</h3>
