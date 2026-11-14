@@ -79,10 +79,32 @@ function StationEditor({ editor, currentStation, refreshNeeded, busy, onSave, on
   useEffect(() => {
     const dialog = dialogRef.current;
     const fallback = fallbackFocus.current;
+    const viewport = window.visualViewport;
+
+    // Native dialogs are centered in the layout viewport, which can place them
+    // above the visible screen when Android opens the software keyboard.
+    const positionInVisibleViewport = () => {
+      if (!viewport) return;
+      const visibleHeight = Math.max(0, viewport.height);
+      dialog.style.setProperty(
+        '--preparation-dialog-center-y',
+        `${Math.round(viewport.offsetTop + visibleHeight / 2)}px`
+      );
+      dialog.style.setProperty(
+        '--preparation-dialog-visible-height',
+        `${Math.max(0, Math.floor(visibleHeight - 24))}px`
+      );
+    };
+
     dialog.showModal();
-    inputRef.current.focus();
+    positionInVisibleViewport();
+    viewport?.addEventListener('resize', positionInVisibleViewport);
+    viewport?.addEventListener('scroll', positionInVisibleViewport);
+    inputRef.current.focus({ preventScroll: true });
 
     return () => {
+      viewport?.removeEventListener('resize', positionInVisibleViewport);
+      viewport?.removeEventListener('scroll', positionInVisibleViewport);
       dialog.close();
       if (editor.trigger.isConnected) editor.trigger.focus();
       else fallback?.focus();
