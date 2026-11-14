@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   Bug,
@@ -18,6 +19,7 @@ import {
 } from '../../services/devConsoleCapture';
 import { getDevConsolePreference, subscribeDevConsolePreference, isDevConsoleVisibleNow } from '../../services/devConsolePreferences';
 import { copyTextToClipboard } from '../../services/support/supportContact';
+import { prepareDevConsoleExport } from '../../services/diagnostics/devConsoleExport';
 import './DevConsole.css';
 
 const LEVELS = ['all', 'error', 'warn', 'info', 'log', 'debug', 'trace', 'table'];
@@ -89,6 +91,11 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
   const [isPaused, setIsPaused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [copyStatus, setCopyStatus] = useState('');
+  const [exportDraft, setExportDraft] = useState(null);
+  const [exportMeta, setExportMeta] = useState(null);
+  const [exportError, setExportError] = useState('');
+  const [isCopyingExport, setIsCopyingExport] = useState(false);
+  const exportCopyPendingRef = useRef(false);
   const [inspectedId, setInspectedId] = useState(null);
   const followTailRef = useRef(true);
   const wasOpenRef = useRef(false);
@@ -124,12 +131,22 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight });
   }, [entries, isOpen, isPaused]);
 
+  const closeExport = () => {
+    setExportDraft(null);
+    setExportMeta(null);
+    setExportError('');
+  };
+
   useEffect(() => {
     if (!isOpen) return undefined;
-    const handleEscape = event => { if (event.key === 'Escape') setIsOpen(false); };
+    const handleEscape = event => {
+      if (event.key !== 'Escape') return;
+      if (exportDraft !== null) closeExport();
+      else setIsOpen(false);
+    };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
+  }, [isOpen, exportDraft]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -167,14 +184,48 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
   const errorsCount = countByLevel(entries, 'error');
   const warningsCount = countByLevel(entries, 'warn');
 
-  const handleCopy = async () => {
+  const handleCopy = () => {
     if (!canCopy()) return;
-    const text = formatDevConsoleEntries(visibleEntries);
-    if (!text) { setCopyStatus('No hay registros para copiar.'); return; }
     try {
-      const copied = await copyTextToClipboard(text);
-      setCopyStatus(copied ? 'Diagnóstico copiado.' : 'No se pudo copiar. Puedes seleccionar el texto.');
-    } catch { setCopyStatus('No se pudo copiar. Puedes seleccionar el texto.'); }
+      const report = prepareDevConsoleExport(visibleEntries);
+      if (!report.text) { setCopyStatus('No hay registros para copiar.'); return; }
+      setExportMeta({ included: report.included, omitted: report.omitted, revision: getDevConsolePreference().revision });
+      setExportDraft(report.text);
+      setExportError('');
+      setCopyStatus('');
+    } catch {
+      // Fail closed: never copy unredacted originals if preparation fails.
+      setCopyStatus('No se pudo preparar una copia protegida. No se copió nada.');
+    }
+  };
+
+  const handleConfirmCopy = async () => {
+    if (!exportDraft?.trim() || exportCopyPendingRef.current) return;
+    // Recheck current authority and actor/tenant revision immediately before copying.
+    if (!canCopy() || exportMeta?.revision !== getDevConsolePreference().revision) {
+      closeExport();
+      setCopyStatus('La autorización cambió. Vuelve a preparar el diagnóstico.');
+      return;
+    }
+    exportCopyPendingRef.current = true;
+    setIsCopyingExport(true);
+    try {
+      const copied = await copyTextToClipboard(exportDraft);
+      if (!canCopy() || exportMeta?.revision !== getDevConsolePreference().revision) {
+        closeExport();
+        setCopyStatus('La autorización cambió. Se descartó la vista previa.');
+      } else if (copied) {
+        closeExport();
+        setCopyStatus('Diagnóstico revisado copiado.');
+      } else {
+        setExportError('No se pudo acceder al portapapeles. El texto sigue disponible para revisarlo.');
+      }
+    } catch {
+      setExportError('No se pudo acceder al portapapeles. El texto sigue disponible para revisarlo.');
+    } finally {
+      exportCopyPendingRef.current = false;
+      setIsCopyingExport(false);
+    }
   };
 
   const handleRefreshWhilePaused = () => {
@@ -276,6 +327,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
       return;
     }
 
+    closeExport();
     setIsOpen(true);
   };
 
@@ -312,6 +364,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
   }
 
   return (
+    <>
     <section className={`dev-console ${isExpanded ? 'dev-console--expanded' : ''}`} aria-label="Consola de diagnóstico">
       <header className="dev-console-header">
         <div className="dev-console-title">
@@ -335,7 +388,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
           <button type="button" onClick={() => setIsExpanded((value) => !value)} title={isExpanded ? 'Reducir panel' : 'Expandir panel'}>
             {isExpanded ? <Minimize2 size={16} /> : <ChevronDown size={16} />}
           </button>
-          <button type="button" autoFocus onClick={() => setIsOpen(false)} title="Cerrar consola">
+          <button type="button" autoFocus onClick={() => { closeExport(); setIsOpen(false); }} title="Cerrar consola">
             <X size={16} />
           </button>
         </div>
@@ -374,7 +427,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
       </div>
 
       <div className="dev-console-status" role="status">
-        {copyStatus || (isPaused ? 'Vista pausada; la captura y los avisos operativos continúan.' : 'Hasta 300 registros locales. Los mensajes originales son solo para inspección; la copia sigue restringida.')}
+        {copyStatus || (isPaused ? 'Vista pausada; la captura y los avisos operativos continúan.' : 'Hasta 300 registros locales. La copia técnica requiere revisión y confirmación.')}
       </div>
       <div className="dev-console-list" ref={scrollRef} onScroll={event => {
         const list = event.currentTarget;
@@ -426,6 +479,38 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
         )}
       </div>
     </section>
+    {exportDraft !== null && createPortal(
+      <div className="dev-console-export-backdrop">
+        <section className="dev-console-export-dialog" role="dialog" aria-modal="true" aria-labelledby="dev-console-export-title">
+          <header className="dev-console-export-header">
+            <div>
+              <strong id="dev-console-export-title">Revisar diagnóstico técnico</strong>
+              <p>{exportMeta?.included} registros visibles incluidos{exportMeta?.omitted ? ` · ${exportMeta.omitted} omitidos por tamaño` : ''}</p>
+            </div>
+            <button type="button" onClick={closeExport} disabled={isCopyingExport} aria-label="Cancelar exportación"><X size={18} /></button>
+          </header>
+          <p className="dev-console-export-notice">Se ocultaron patrones de datos privados, pero la protección no es absoluta. Revisa y edita el texto antes de compartirlo.</p>
+          <textarea
+            autoFocus
+            aria-label="Texto del diagnóstico revisable"
+            spellCheck="false"
+            wrap="off"
+            value={exportDraft}
+            onChange={event => { setExportDraft(event.target.value); setExportError(''); }}
+          />
+          <footer className="dev-console-export-footer">
+            {exportError && <div className="dev-console-export-error" role="alert">{exportError}</div>}
+            <button type="button" onClick={closeExport} disabled={isCopyingExport}>Cancelar</button>
+            <button type="button" className="dev-console-export-confirm" onClick={handleConfirmCopy}
+              disabled={!exportDraft.trim() || isCopyingExport || !canCopy()}>
+              {isCopyingExport ? 'Copiando…' : 'Copiar diagnóstico revisado'}
+            </button>
+          </footer>
+        </section>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 
