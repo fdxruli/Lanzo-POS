@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -131,11 +131,11 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight });
   }, [entries, isOpen, isPaused]);
 
-  const closeExport = () => {
+  const closeExport = useCallback(() => {
     setExportDraft(null);
     setExportMeta(null);
     setExportError('');
-  };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -146,7 +146,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, exportDraft]);
+  }, [isOpen, exportDraft, closeExport]);
 
   useEffect(() => {
     const handleResize = () => {
