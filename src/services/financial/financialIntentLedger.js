@@ -760,8 +760,61 @@ const initialIntent = ({ operationType, request, idempotencyKey, requestHash, ca
   cashSessionId: cashSessionId || null, cashStationId: cashStationId || null,
   status: FINANCIAL_INTENT_STATUS.PREPARED, dispatchAttemptCount: 0, firstDispatchAt: null, lastDispatchAt: null,
   lastReceiptStatus: null, lastProtocolCode: null, responsePayload: null,
-  projectionStatus, projectionErrorCode: null, createdAt: now(), updatedAt: now(), completedAt: null
+  projectionStatus, projectionErrorCode: null, createdAt: now(), updatedAt: now(), completedAt: null,
+  ...(operationType === 'layaway.payment' ? { layawayPaymentAcknowledgedAt: null } : {})
 });
+
+const needsLayawayPaymentReview = (row) => {
+  if (row.status === FINANCIAL_INTENT_STATUS.BLOCKED) return false;
+  if (row.status !== FINANCIAL_INTENT_STATUS.COMPLETED) return true;
+  return row.layawayPaymentAcknowledgedAt === null || projectionStatusNeedsWork(row);
+};
+
+const isLayawayPaymentUncertain = (error) => {
+  const evidence = extractDispatchErrorEvidence(error);
+  if (protocolCode(evidence) === 'IDEMPOTENCY_CONFLICT') return false;
+  return evidence.texts.some((value) => /IDEMPOTENCY_PROCESSING|LAYAWAY_PAYMENT_ALREADY_EXISTS/i.test(value))
+    || hasTransportEvidence(evidence)
+    || (!evidence.deterministicServerResponse && !evidence.codes.some(isDeterministicDatabaseCode));
+};
+
+const layawayPaymentIntents = (table) => table.where('operationType').equals('layaway.payment')
+  .filter(needsLayawayPaymentReview);
+
+export const listLayawayPaymentIntents = async ({ actorHandle, customerId, layawayIds }) => {
+  actorHandle.assertCurrent();
+  const rows = await layawayPaymentIntents(db.table(STORES.FINANCIAL_INTENTS)).filter((row) => (
+    row.originTenantOpaqueId === actorHandle.tenant.opaqueId
+    && row.originTenantDatabaseName === actorHandle.tenant.databaseName
+    && ((customerId && row.requestPayload.payment?.customerId === customerId)
+      || layawayIds.includes(row.requestPayload.layaway_id))
+  )).toArray();
+  actorHandle.assertCurrent();
+  return rows.map((row) => {
+    try {
+      assertFinancialIntentRecoveryAuthority(row, actorHandle);
+      return row;
+    } catch (error) {
+      actorHandle.assertCurrent();
+      if (!String(error?.message).startsWith('FINANCIAL_RECOVERY_')) throw error;
+      return { requestPayload: { layaway_id: row.requestPayload.layaway_id } };
+    }
+  });
+};
+
+export const acknowledgeLayawayPayment = async ({ intentId, actorHandle }) => {
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  return db.transaction('rw', table, async () => {
+    const row = await table.get(intentId);
+    assertFinancialIntentRecoveryAuthority(row, actorHandle);
+    if (row.operationType !== 'layaway.payment' || row.status !== FINANCIAL_INTENT_STATUS.COMPLETED) {
+      throw new Error('FINANCIAL_LAYAWAY_PAYMENT_NOT_CONFIRMED');
+    }
+    if (projectionStatusNeedsWork(row)) return false;
+    await table.update(intentId, { layawayPaymentAcknowledgedAt: now() });
+    return true;
+  });
+};
 
 const prepareFinancialIntent = async ({
   operationType,
@@ -802,6 +855,12 @@ const persistPreparedFinancialIntent = async (intent) => {
   const table = db.table(STORES.FINANCIAL_INTENTS);
   try {
     await db.transaction('rw', table, async () => {
+      if (intent.operationType === 'layaway.payment') {
+        const unresolved = await layawayPaymentIntents(table).filter((row) => (
+          row.requestPayload.layaway_id === intent.requestPayload.layaway_id
+        )).first();
+        if (unresolved) throw new Error('FINANCIAL_LAYAWAY_PAYMENT_REVIEW_REQUIRED');
+      }
       await table.add(intent);
     });
   } catch (error) {
@@ -1017,6 +1076,7 @@ const executeDurableFinancialIntentForRecovery = async ({
   }
 
   const checkoutSale = CLOUD_CHECKOUT_SALE_TYPES.has(durableIntent.operationType);
+  const layawayPayment = durableIntent.operationType === 'layaway.payment';
   if (checkoutSale) {
     handle.assertCurrent('pos');
     assertFinancialIntentExecutionAuthority(durableIntent, handle);
@@ -1054,6 +1114,8 @@ const executeDurableFinancialIntentForRecovery = async ({
           ...(checkoutSale ? {
             beforeFinancialDispatch: () => { handle.assertCurrent('pos'); sent = true; },
             onValidatedFinancialResponse: response => { if (response?.success === true) validatedResponse = response; }
+          } : layawayPayment ? {
+            beforeFinancialDispatch: () => { handle.assertCurrent(); sent = true; }
           } : {})
         });
       },
@@ -1076,7 +1138,8 @@ const executeDurableFinancialIntentForRecovery = async ({
     const surfacedError = error && (typeof error === 'object' || typeof error === 'function')
       ? error
       : new Error(String(error));
-    const { code, status } = error?.isFinancialOperationAmbiguous === true
+    const uncertainLayawayPayment = layawayPayment && sent && isLayawayPaymentUncertain(error);
+    const { code, status } = error?.isFinancialOperationAmbiguous === true || uncertainLayawayPayment
       ? { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT }
       : classifyDispatchFailure(error);
     try {
@@ -1086,7 +1149,7 @@ const executeDurableFinancialIntentForRecovery = async ({
         lastProtocolCode: code
       }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
     } catch (persistenceError) {
-      if (!checkoutSale || !sent) throw persistenceError;
+      if ((!checkoutSale && !layawayPayment) || !sent) throw persistenceError;
       // The old context cannot persist into a replacement session/tenant.
       // DISPATCHING remains durable and receipt-required, never redispatched.
       throw Object.assign(surfacedError, { isFinancialOperationAmbiguous: true,

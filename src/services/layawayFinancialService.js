@@ -12,10 +12,12 @@ import {
 } from './cash/cashFinancialGate';
 import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
 import { Money } from '../utils/moneyMath';
-import { salesCloudCashierService } from './salesCloud/salesCloudCashierService';
+import { isExactLayawayPaymentResult, salesCloudCashierService } from './salesCloud/salesCloudCashierService';
 import { salesCloudRepository } from './salesCloud/salesCloudRepository';
 import { getLicenseKeyFromDetails, isCloudLayawaysEnabled } from './sync/syncConstants';
 import { getCartProductId } from '../utils/cartLineIdentity';
+import { actorRuntimeController } from './auth/actorRuntimeController';
+import { acknowledgeLayawayPayment, listLayawayPaymentIntents } from './financial/financialIntentLedger';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
 const CLOUD_LAYAWAYS_DISABLED_MESSAGE =
@@ -361,6 +363,49 @@ const stablePayment = ({ layawayId, amount, paymentId, paymentType, customerId }
 };
 
 export const layawayFinancialService = {
+    async getPaymentReviews({ customerId, layawayIds }) {
+        if (!cashRepository.getMode().cloudEnabled) return [];
+        const actorHandle = actorRuntimeController.capture();
+        const rows = await listLayawayPaymentIntents({ actorHandle, customerId, layawayIds });
+        return rows.map((row) => ({
+            id: row.id,
+            layawayId: row.requestPayload.layaway_id,
+            amount: row.requestPayload.payment?.amount,
+            prepared: row.status === 'PREPARED' && row.dispatchAttemptCount === 0,
+            confirmed: row.status === 'COMPLETED' && isExactLayawayPaymentResult(
+                row.responsePayload, row.requestPayload.layaway_id, row.requestPayload.payment?.id
+            ),
+            conflict: row.status === 'CONFLICT'
+        }));
+    },
+
+    async verifyPayment({ intentId, customerId, layawayId }) {
+        const mode = cashRepository.getMode();
+        if (!mode.cloudEnabled) throw new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+        const actorHandle = actorRuntimeController.capture();
+        const rows = await listLayawayPaymentIntents({ actorHandle, customerId, layawayIds: [layawayId] });
+        const intent = rows.find((row) => row.id === intentId && row.requestPayload.layaway_id === layawayId);
+        if (!intent) return { status: 'pending' };
+        let allowDispatch = false;
+        if (intent.status === 'PREPARED' && intent.dispatchAttemptCount === 0 && mode.online) {
+            const { session } = await resolveLayawayCashSession({
+                expectedCashSessionId: intent.cashSessionId,
+                operation: 'layaway.add_payment'
+            });
+            actorHandle.assertCurrent();
+            allowDispatch = session.id === intent.cashSessionId;
+        }
+        return salesCloudCashierService.verifyCloudLayawayPayment({
+            intent, actorHandle, licenseKey: mode.licenseKey, allowDispatch
+        });
+    },
+
+    async acknowledgePayment(intentId) {
+        if (!intentId) return;
+        const actorHandle = actorRuntimeController.capture();
+        return acknowledgeLayawayPayment({ intentId, actorHandle });
+    },
+
     async create({
         layawayData,
         initialPayment = 0,
@@ -456,10 +501,12 @@ export const layawayFinancialService = {
         const mode = cashRepository.getMode();
         if (mode.cloudEnabled) {
             assertCloudLayawaysEnabled(mode);
+            const actorHandle = actorRuntimeController.capture();
             const resolvedCash = await resolveLayawayCashSession({
                 expectedCashSessionId,
                 operation: 'layaway.add_payment'
             });
+            actorHandle.assertCurrent();
             assertCloudLayawaysEnabled(resolvedCash.mode);
             if (!resolvedCash.mode.cloudEnabled) {
                 const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
@@ -477,7 +524,8 @@ export const layawayFinancialService = {
                 layawayId,
                 payment,
                 cashSessionId: resolvedCash.session.id,
-                licenseDetails: mode.licenseDetails
+                licenseDetails: mode.licenseDetails,
+                actorHandle
             });
         }
 
@@ -499,15 +547,7 @@ export const layawayFinancialService = {
             customerId: customerId || layaway.customerId
         });
 
-        if (currentMode.cloudEnabled) {
-            assertCloudLayawaysEnabled(currentMode);
-            return salesCloudCashierService.processCloudLayawayPayment({
-                layawayId,
-                payment,
-                cashSessionId: session.id,
-                licenseDetails: currentMode.licenseDetails
-            });
-        }
+        if (currentMode.cloudEnabled) throw new Error(CASH_SESSION_CHANGED_MESSAGE);
 
         const cashContext = await getLocalCashMutationContext(currentMode);
         return layawayRepository.addPaymentWithCash(layawayId, payment, session.id, {

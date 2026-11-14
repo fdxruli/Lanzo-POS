@@ -35,7 +35,7 @@ const requireValidMoney = (value, code, { allowNegative = false } = {}) => {
   return cents;
 };
 
-const validatePayloadCollections = (payload) => {
+const validatePayloadCollections = (payload, { layawayPayment = false } = {}) => {
   for (const key of ['customers', 'ledger_entries', 'cash_movements', 'movements', 'cash_sessions']) {
     if (payload[key] !== undefined && !Array.isArray(payload[key])) {
       throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_PAYLOAD_COLLECTION');
@@ -87,6 +87,15 @@ const validatePayloadCollections = (payload) => {
   const movements = payload.cash_movements || payload.movements || [];
   assertUniqueIds(movements, 'CLOUD_SYNC_PROTOCOL_INVALID_CASH_MOVEMENT');
   for (const movement of movements) {
+    // Layaway receipts deliberately redact actor, station and session fields.
+    if (layawayPayment) {
+      if (!hasText(movement.type) || movement.reference_type !== 'layaway'
+        || movement.reference_id !== payload.layaway?.id || !hasText(movement.created_at)) {
+        throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_CASH_MOVEMENT');
+      }
+      requireValidMoney(movement.amount, 'CLOUD_SYNC_PROTOCOL_INVALID_CASH_MOVEMENT');
+      continue;
+    }
     const stationId = movement.cash_station_id || movement.cashStationId
       || movement.metadata?.cash_station_id || movement.metadata?.cashStationId;
     if (!hasText(movement.cash_session_id || movement.cashSessionId)
@@ -358,8 +367,13 @@ export const validateCloudSyncV2Envelope = (rawEnvelope, {
     throw new Error('CLOUD_SYNC_PROTOCOL_PROJECTION_MISSING');
   }
 
-  validatePayloadCollections(envelope.payload);
   const operationResult = expectedFamily === 'financial_operations';
+  const layawayPayment = operationResult && envelope.operation?.operation_type === 'layaway.payment';
+  validatePayloadCollections(envelope.payload, { layawayPayment });
+  if (layawayPayment && envelope.payload.status === 'COMPLETED') {
+    if (!isRecord(envelope.payload.result)) throw new Error('CLOUD_SYNC_PROTOCOL_PAYLOAD_MISSING');
+    validatePayloadCollections(envelope.payload.result, { layawayPayment });
+  }
   if (operationResult && envelope.customer_projection_scope !== 'OPERATION_RESULT') {
     throw makeUpdateRequiredError(expectedFamily);
   }
