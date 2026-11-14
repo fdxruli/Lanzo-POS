@@ -92,6 +92,11 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
     const fetchSearchResults = async () => {
       const term = debouncedTerm.trim();
+      if (searchTerm.trim() !== term) {
+        setSearchResults([]);
+        setIsSearching(true);
+        return;
+      }
 
       if (!term) {
         if (isActive) {
@@ -106,7 +111,13 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       }
 
       try {
-        const results = await searchProductsInDB(term, statusFilter, categoryFilter);
+        const results = await searchProductsInDB(term, statusFilter, categoryFilter, {
+          eligible: (product) => isInventoryCatalogEligible(product, {
+            status: statusFilter,
+            productType: 'sellable',
+            categoryId: categoryFilter
+          })
+        });
         if (isActive) {
           setSearchResults(results.filter((product) => (
             isInventoryCatalogEligible(product, {
@@ -133,7 +144,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
     return () => {
       isActive = false;
     };
-  }, [categoryFilter, debouncedTerm, products, statusFilter]);
+  }, [categoryFilter, debouncedTerm, products, statusFilter, searchTerm]);
 
   const isSearchMode = debouncedTerm.trim().length > 0;
   const displayProducts = isSearchMode
