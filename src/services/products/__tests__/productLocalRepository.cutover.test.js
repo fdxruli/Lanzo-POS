@@ -48,6 +48,7 @@ vi.mock('../../db/dexie', () => ({
   db: {
     isOpen: () => true,
     open: vi.fn(),
+    transaction: vi.fn(async (_mode, _table, callback) => callback()),
     table: vi.fn((name) => {
       if (!tables.has(name)) tables.set(name, tableFor(name));
       return tables.get(name);
