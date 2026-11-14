@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import toast from 'react-hot-toast';
 import EcommerceProductPublishModal from '../EcommerceProductPublishModal';
 import { getEcommercePortal } from '../../../services/ecommerce/ecommerceAdminService';
 import { useAppStore } from '../../../store/useAppStore';
@@ -91,6 +92,8 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
 
   it('does not save when the selected local product cannot be resolved', async () => {
     const onSave = vi.fn().mockResolvedValue(true);
+    const onClose = vi.fn();
+    const notifyError = vi.spyOn(toast, 'error');
     render(
       <EcommerceProductPublishModal
         open
@@ -108,12 +111,20 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
         canSyncCatalog={false}
         canUseStockVisibility={false}
         limitReached={false}
-        onClose={vi.fn()}
+        onClose={onClose}
         onSave={onSave}
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
-    await waitFor(() => expect(onSave).not.toHaveBeenCalled());
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Guardar producto' })).toBeDisabled();
+
+    // Bypass the disabled button to verify the submit handler itself protects writes.
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form'));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(notifyError).toHaveBeenCalledWith(
+      'No encontramos el producto original en el catálogo local. Puedes consultar esta ficha, pero para modificarla primero debes recuperar el producto original.'
+    );
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

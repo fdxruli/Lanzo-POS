@@ -488,11 +488,12 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(setProductPublished).not.toHaveBeenCalled();
   });
 
-  it('saves published fields without fabricating a local product when the original is missing', async () => {
+  it('allows viewing but blocks edits when the original local product is missing', async () => {
     listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
     productRepository.listProductsPage.mockResolvedValue({ data: [], nextCursor: null });
     productRepository.getProductById.mockResolvedValue(null);
-    savePublishedProduct.mockResolvedValue({ success: true });
+    const notifyError = vi.spyOn(toast, 'error');
+    const notifySuccess = vi.spyOn(toast, 'success');
     await renderCatalog();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
@@ -502,29 +503,25 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName);
     expect(screen.getByLabelText('Descripción pública').value).toBe(publishedProduct.publicDescription);
     expect(screen.queryByRole('option', { name: /Producto Uno/ })).toBeNull();
-    expect(screen.getByText(/No se creará un producto local/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'No encontramos el producto original en el catálogo local. Puedes consultar esta ficha, pero para modificarla primero debes recuperar el producto original.'
+    );
+    const saveButton = screen.getByRole('button', { name: 'Guardar producto' });
+    expect(saveButton).toBeDisabled();
 
-    listPublishedProducts.mockResolvedValueOnce({
-      success: true,
-      products: [{ ...publishedProduct, publicDescription: 'Descripción actualizada' }]
-    });
-    fireEvent.change(screen.getByLabelText('Descripción pública'), {
-      target: { value: 'Descripción actualizada' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    // Submit the form directly to prove the handler also blocks writes if a submit
+    // event is dispatched without going through the disabled button.
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form'));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(
+      'No encontramos el producto original en el catálogo local. Puedes consultar esta ficha, pero para modificarla primero debes recuperar el producto original.'
+    ));
+    expect(savePublishedProduct).not.toHaveBeenCalled();
+    expect(setProductPublished).not.toHaveBeenCalled();
+    expect(notifySuccess).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Editar producto' })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
-    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
-    const [payload] = savePublishedProduct.mock.calls[0];
-    expect(payload).toMatchObject({
-      id: publishedProduct.id,
-      localProductRef: productOne.id,
-      publicDescription: 'Descripción actualizada'
-    });
-    expect(payload).not.toHaveProperty('localProduct');
-    expect(payload).not.toHaveProperty('syncConfig');
-    expect(payload).not.toHaveProperty('publicConfigurationMode');
-    expect(payload).not.toHaveProperty('wholesaleEnabled');
   });
 
   it('shows a read error and does not open an incomplete editor', async () => {

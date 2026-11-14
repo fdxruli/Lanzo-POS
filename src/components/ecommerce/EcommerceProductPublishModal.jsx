@@ -412,7 +412,11 @@ export default function EcommerceProductPublishModal({
     const price = Number(form.price);
     const localProduct = selectedLocalProduct;
     if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
-    if (!localProduct && !editingProduct) return toast.error('No se pudo leer el producto local seleccionado.');
+    if (sourceMissing || !localProduct) {
+      return toast.error(
+        'No encontramos el producto original en el catálogo local. Puedes consultar esta ficha, pero para modificarla primero debes recuperar el producto original.'
+      );
+    }
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
     if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
     if (!editingProduct && limitReached && form.isPublished) {
@@ -421,7 +425,7 @@ export default function EcommerceProductPublishModal({
     if (canUseStockVisibility && stockFeatureError) {
       return toast.error('No se pudo validar la política de inventario público. Intenta nuevamente.');
     }
-    if (!sourceMissing && form.isPublished && [
+    if (form.isPublished && [
       BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW,
       'hidden_incompatible'
     ].includes(businessPolicy.status)) {
@@ -431,7 +435,7 @@ export default function EcommerceProductPublishModal({
           : 'El producto requiere revisión. Publícalo sin extras o déjalo despublicado.'
       );
     }
-    if (!sourceMissing && form.wholesaleEnabled && !wholesalePreview.valid) {
+    if (form.wholesaleEnabled && !wholesalePreview.valid) {
       return toast.error('No hay niveles de mayoreo públicos válidos.');
     }
 
@@ -663,11 +667,11 @@ export default function EcommerceProductPublishModal({
             </details>
           )}
           {sourceMissing && (
-            <div className="ecom-admin-alert ecom-admin-span-2" role="status">
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
               <strong>Producto original no encontrado</strong>
               <span>
-                Puedes guardar la ficha publicada con su referencia existente. No se creará
-                un producto local; la sincronización y la configuración comercial se conservarán.
+                No encontramos el producto original en el catálogo local. Puedes consultar esta
+                ficha, pero para modificarla primero debes recuperar el producto original.
               </span>
             </div>
           )}
@@ -832,7 +836,17 @@ export default function EcommerceProductPublishModal({
 
           <footer className="ecom-admin-span-2 ecom-catalog-editor-footer">
             <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={saving}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading || stockFeatureError}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={(
+                saving
+                || stockFeatureLoading
+                || stockFeatureError
+                || sourceMissing
+                || Boolean(editingProduct && !selectedLocalProduct)
+              )}
+            >
               {saving ? <LoaderCircle className="ecom-admin-spin" size={17} /> : <Save size={17} />}
               Guardar producto
             </button>
