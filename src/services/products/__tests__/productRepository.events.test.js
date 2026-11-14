@@ -145,6 +145,32 @@ beforeEach(() => {
 });
 
 describe('productRepository directed catalog events', () => {
+  it.each([false, true])('propagates a rejected local category save without enqueue or success events (PRO=%s)', async (cloudEnabled) => {
+    mocks.cloudEnabled = cloudEnabled;
+    vi.stubGlobal('navigator', { onLine: false });
+    const error = new Error('Ya existe una categoria activa con este nombre.');
+    mocks.saveCategoryLocal.mockRejectedValueOnce(error);
+
+    await expect(productRepository.saveCategory({ id: 'duplicate', name: ' bebidas ' })).rejects.toBe(error);
+    expect(mocks.saveCategoryLocal).toHaveBeenCalledOnce();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(mocks.upsertCategory).not.toHaveBeenCalled();
+  });
+
+  it('preserves offline PRO category success after the local write and enqueue', async () => {
+    mocks.cloudEnabled = true;
+    vi.stubGlobal('navigator', { onLine: false });
+    await expect(productRepository.saveCategory({ id: 'pending', name: 'Bebidas' }))
+      .resolves.toMatchObject({ success: true, pending: true });
+    expect(mocks.saveCategoryLocal).toHaveBeenCalledWith(expect.objectContaining({ id: 'pending' }), expect.objectContaining({
+      syncStatus: 'pending', pendingOperationId: 'operation-id'
+    }));
+    expect(mocks.enqueue).toHaveBeenCalledOnce();
+    expect(mocks.upsertCategory).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledOnce();
+  });
+
   it('emits created and updated IDs for Free local writes', async () => {
     await productRepository.saveProduct({ name: 'Created' });
     expect(mocks.notify).toHaveBeenLastCalledWith(expect.objectContaining({

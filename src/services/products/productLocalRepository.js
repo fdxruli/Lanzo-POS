@@ -227,8 +227,11 @@ export const productLocalRepository = {
       updatedAt: nowIso()
     };
 
-    await validateCategoryNameUnique(payload);
-    await db.table(STORES.CATEGORIES).put(payload);
+    // Serialize the name check and write across connections sharing this database.
+    await db.transaction('rw', db.table(STORES.CATEGORIES), async () => {
+      await validateCategoryNameUnique(payload);
+      await db.table(STORES.CATEGORIES).put(payload);
+    });
     return payload;
   },
 
