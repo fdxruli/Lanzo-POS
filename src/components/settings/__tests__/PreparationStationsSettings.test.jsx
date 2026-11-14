@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 
 const state = vi.hoisted(() => ({
@@ -21,9 +22,13 @@ vi.mock('../../../hooks/restaurant/usePreparationStations', () => ({
   usePreparationStations: () => state.stationSettings
 }));
 
+vi.mock('../../../services/restaurant/preparationStationsRepository', () => ({
+  get FALLBACK_PREPARATION_STATIONS() { return [kitchen]; }
+}));
+
 import PreparationStationsSettings from '../PreparationStationsSettings';
 
-const freeLicense = () => ({
+const freeLicense = {
   valid: true,
   is_entitled: true,
   is_lifetime: true,
@@ -37,122 +42,252 @@ const freeLicense = () => ({
     realtime_license_sync: false,
     cloud_pos_sync: false
   }
-});
+};
 
-const kitchenStation = {
+const kitchen = {
   id: 'station_kitchen',
   code: 'kitchen',
   name: 'Cocina',
   isDefault: true,
-  isActive: true
+  isActive: true,
+  serverVersion: 1
+};
+
+const bar = {
+  id: 'station_bar',
+  code: 'bar',
+  name: 'Barra',
+  isActive: false,
+  serverVersion: 3
 };
 
 function setScenario({ dynamic = false, canManage = true, isAdmin = true } = {}) {
   state.licenseDetails = dynamic
-    ? {
-      ...freeLicense(),
-      plan_code: 'pro',
-      features: { ...freeLicense().features, preparation_stations: true }
-    }
-    : freeLicense();
+    ? { ...freeLicense, plan_code: 'pro', features: { ...freeLicense.features, preparation_stations: true } }
+    : freeLicense;
   state.settingsAccess = {
+    actorKey: 'actor-1',
+    generation: 1,
     isAuthorizedActor: true,
     isAdmin,
     canAccessSection: () => isAdmin
   };
   state.stationSettings = {
-    stations: [kitchenStation],
+    stations: dynamic ? [kitchen, bar] : [kitchen],
     isLoading: false,
     error: null,
+    source: dynamic ? 'cloud' : 'fallback',
     canManageStations: dynamic && canManage,
     isDynamicStationsEnabled: dynamic,
-    refreshStations: vi.fn(),
-    createStation: vi.fn(),
-    updateStation: vi.fn(),
-    toggleStation: vi.fn()
+    refreshStations: vi.fn().mockResolvedValue({ success: true }),
+    createStation: vi.fn().mockResolvedValue({ success: true }),
+    updateStation: vi.fn().mockResolvedValue({ success: true }),
+    toggleStation: vi.fn().mockResolvedValue({ success: true })
   };
 }
 
 function renderSettings() {
-  return render(
-    <MemoryRouter>
-      <PreparationStationsSettings />
-    </MemoryRouter>
-  );
+  const view = () => <MemoryRouter><PreparationStationsSettings /></MemoryRouter>;
+  const { rerender } = render(view());
+  return () => rerender(view());
 }
 
+const nameInput = () => screen.getByRole('textbox', { name: 'Nombre del área' });
+
 describe('PreparationStationsSettings', () => {
+  beforeEach(() => {
+    // jsdom exposes the element but does not implement its modal methods.
+    HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+    HTMLDialogElement.prototype.close = function () { this.open = false; };
+  });
+
   afterEach(() => {
     cleanup();
-    vi.clearAllMocks();
+    delete HTMLDialogElement.prototype.showModal;
+    delete HTMLDialogElement.prototype.close;
   });
 
-  it('shows Cocina before the Nube capabilities for an authorized Local admin', () => {
+  it('shows only the default row and the compact discovery link for a Local admin', () => {
     setScenario();
-
+    // A capability transition can leave Cloud data in the hook until the next read.
+    state.stationSettings.stations = [kitchen, bar];
     renderSettings();
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Áreas de preparación' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Organiza tus comandas por áreas' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Áreas de preparación' })).toBeInTheDocument();
     expect(screen.getByText('Cocina')).toBeInTheDocument();
-    expect(screen.getByText('Tu estación actual · Disponible')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Múltiples áreas de preparación' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Comandas dirigidas por producto' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Control de estaciones' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Lleva la preparación al siguiente nivel' })).toBeInTheDocument();
+    expect(screen.getByText('Predeterminada · Siempre activa')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Más áreas con Lanzo Nube' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
 
-    const sectionHeading = screen.getByRole('heading', { level: 2, name: 'Áreas de preparación' });
-    const showcaseHeading = screen.getByRole('heading', { name: 'Organiza tus comandas por áreas' });
-    const intro = screen.getByText(/Con tu plan actual, las comandas se dirigen a Cocina/);
-    const kitchen = screen.getByText('Tu estación actual · Disponible');
-    const features = screen.getByRole('heading', { name: 'Lo que puedes explorar' });
-    const offer = screen.getByRole('heading', { name: 'Lleva la preparación al siguiente nivel' });
-    const link = screen.getByRole('link', { name: /Conocer Lanzo Nube/ });
+  it('hides Local discovery from Staff', () => {
+    setScenario({ isAdmin: false });
+    renderSettings();
 
-    expect(sectionHeading.compareDocumentPosition(showcaseHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(showcaseHeading.compareDocumentPosition(intro) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(intro.compareDocumentPosition(kitchen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(kitchen.compareDocumentPosition(features) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(features.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(offer.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(link).toHaveAttribute('href', '/acerca-de');
-    expect(screen.getByText('Consultar esta información no modifica tu plan ni tu licencia.')).toBeInTheDocument();
+    expect(screen.getByText('Cocina')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Conocer Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
+  it('shows counts, refreshes on demand and marks cached and fallback data', async () => {
+    setScenario({ dynamic: true });
+    const rerender = renderSettings();
+    const user = userEvent.setup();
+
+    expect(screen.getByText('2 áreas · 1 activa')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actualizar áreas de preparación' }));
+    expect(state.stationSettings.refreshStations).toHaveBeenCalledWith({ force: true });
+
+    Object.assign(state.stationSettings, { source: 'cache', error: 'Sin conexión.' });
+    rerender();
+    expect(screen.getByText('2 áreas · 1 activa · Copia local')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Sin conexión.');
+
+    Object.assign(state.stationSettings, { source: 'fallback', stations: [kitchen] });
+    rerender();
+    expect(screen.getByText('Mostrando el área predeterminada')).toBeInTheDocument();
+    expect(screen.queryByText('1 área · 1 activa')).not.toBeInTheDocument();
   });
 
-  it('keeps the dynamic station manager for an Admin with the capability', () => {
-    setScenario({ dynamic: true, canManage: true });
-
+  it('creates an area once while pending and restores focus after confirmed success', async () => {
+    setScenario({ dynamic: true });
+    let resolveSave;
+    state.stationSettings.createStation.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
     renderSettings();
+    const user = userEvent.setup();
+    const opener = screen.getByRole('button', { name: 'Nueva área' });
 
-    expect(screen.getByRole('button', { name: /Actualizar/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Agregar area/ })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Nombre de Cocina' })).toBeEnabled();
-    expect(screen.queryByRole('link', { name: /Conocer Lanzo Nube/ })).not.toBeInTheDocument();
+    await user.click(opener);
+    expect(nameInput()).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Crear área' })).toBeDisabled();
+    await user.type(nameInput(), '  Bebidas  ');
+    await user.click(screen.getByRole('button', { name: 'Crear área' }));
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form'));
+    expect(state.stationSettings.createStation).toHaveBeenCalledExactlyOnceWith({ name: 'Bebidas' });
+    expect(screen.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
+
+    await act(async () => resolveSave({ success: true }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Área creada.')).toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 
-  it('keeps a Staff actor in the dynamic read-only view and hides plan discovery', () => {
-    setScenario({ dynamic: true, canManage: false, isAdmin: false });
-
+  it('does not expose a switch for Cocina and allows its existing rename operation', async () => {
+    setScenario({ dynamic: true });
     renderSettings();
+    const user = userEvent.setup();
 
-    expect(screen.getByText('Solo lectura')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Nombre de Cocina' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Guardar' })).toBeDisabled();
-    expect(screen.getByRole('checkbox')).toBeDisabled();
-    expect(screen.queryByRole('link', { name: /Conocer Lanzo Nube/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /Cocina/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Editar Cocina' }));
+    expect(nameInput()).toHaveValue('Cocina');
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+    await user.clear(nameInput());
+    await user.type(nameInput(), 'Cocina principal');
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(state.stationSettings.updateStation).toHaveBeenCalledExactlyOnceWith(kitchen, { name: 'Cocina principal' });
   });
 
-  it('does not show plan discovery to Staff when the dynamic station capability is unavailable', () => {
-    setScenario({ dynamic: false, isAdmin: false });
-
+  it('restores focus when the native dialog is cancelled', async () => {
+    setScenario({ dynamic: true });
     renderSettings();
+    const opener = screen.getByRole('button', { name: 'Editar Barra' });
 
-    expect(screen.getByText('Cocina')).toBeInTheDocument();
-    expect(screen.getByText('Tu estación actual · Disponible')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Conocer Lanzo Nube/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    await userEvent.setup().click(opener);
+    expect(nameInput()).toHaveFocus();
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it('uses confirmed hook data for switches and prevents duplicate activation', async () => {
+    setScenario({ dynamic: true });
+    let resolveToggle;
+    state.stationSettings.toggleStation.mockImplementation(() => new Promise((resolve) => { resolveToggle = resolve; }));
+    const rerender = renderSettings();
+    const toggle = screen.getByRole('switch', { name: 'Activación de Barra' });
+
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(state.stationSettings.toggleStation).toHaveBeenCalledExactlyOnceWith(bar, true);
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toHaveAttribute('aria-busy', 'true');
+    await act(async () => {
+      state.stationSettings.stations = [kitchen, { ...bar, isActive: true }];
+      resolveToggle({ success: true });
+    });
+    rerender();
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('Área activada.')).toBeInTheDocument();
+  });
+
+  it('keeps the draft after rejected responses and exceptions', async () => {
+    setScenario({ dynamic: true });
+    state.stationSettings.createStation
+      .mockResolvedValueOnce({ success: false, code: 'DUPLICATE_PREPARATION_STATION', message: 'El área ya existe.' })
+      .mockRejectedValueOnce(new Error('Sin conexión.'));
+    renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Nueva área' }));
+    await user.type(nameInput(), 'Bebidas');
+    await user.click(screen.getByRole('button', { name: 'Crear área' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('El área ya existe.');
+    expect(nameInput()).toHaveValue('Bebidas');
+
+    await user.click(screen.getByRole('button', { name: 'Crear área' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Sin conexión.');
+    expect(nameInput()).toHaveValue('Bebidas');
+    expect(screen.queryByText('Área creada.')).not.toBeInTheDocument();
+  });
+
+  it('requires reviewing the refreshed version before retrying a VERSION_CONFLICT', async () => {
+    setScenario({ dynamic: true });
+    const currentBar = { ...bar, name: 'Barra central', serverVersion: 4 };
+    state.stationSettings.updateStation.mockResolvedValueOnce({
+      success: false,
+      code: 'VERSION_CONFLICT',
+      station: currentBar
+    });
+    const rerender = renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Editar Barra' }));
+    state.stationSettings.stations = [kitchen, currentBar];
+    rerender();
+    await user.clear(nameInput());
+    await user.type(nameInput(), 'Bebidas');
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(state.stationSettings.updateStation).toHaveBeenNthCalledWith(1, bar, { name: 'Bebidas' });
+    expect(screen.getByRole('alert')).toHaveTextContent('El área cambió en otro dispositivo.');
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+    expect(nameInput()).toHaveValue('Bebidas');
+
+    await user.click(screen.getByRole('button', { name: 'Usar versión actual' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(state.stationSettings.updateStation).toHaveBeenNthCalledWith(2, currentBar, { name: 'Bebidas' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('discards the editor on revocation and hides write actions from read-only Staff', async () => {
+    setScenario({ dynamic: true, isAdmin: false });
+    const rerender = renderSettings();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Editar Barra' }));
+    state.stationSettings.canManageStations = false;
+    rerender();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Áreas de preparación' })).toHaveFocus();
+    expect(screen.getByText(/Solo lectura/)).toBeInTheDocument();
+    expect(screen.getByText('Barra')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nueva área' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Editar/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(state.stationSettings.updateStation).not.toHaveBeenCalled();
   });
 });

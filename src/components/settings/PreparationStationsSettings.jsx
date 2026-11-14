@@ -1,266 +1,324 @@
-import { useState } from 'react';
-import { CheckCircle2, Info, LayoutGrid, Plus, RefreshCcw, Route, SlidersHorizontal } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Check, LoaderCircle, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { usePreparationStations } from '../../hooks/restaurant/usePreparationStations';
 import { useAppStore } from '../../store/useAppStore';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
-import { showMessageModal } from '../../services/utils';
-import ProFeatureShowcase from '../plans/ProFeatureShowcase';
+import { FALLBACK_PREPARATION_STATIONS } from '../../services/restaurant/preparationStationsRepository';
 import { canShowLocalPlanDiscovery } from './localPlanDiscovery';
 import './PreparationStationsSettings.css';
 
-const PREPARATION_STATION_FEATURES = [
-  {
-    title: 'Múltiples áreas de preparación',
-    description: 'Crea estaciones como Barra, Bebidas o Postres para organizar el trabajo.',
-    icon: <LayoutGrid size={18} />
-  },
-  {
-    title: 'Comandas dirigidas por producto',
-    description: 'Define a qué estación se envía la comanda de cada producto.',
-    icon: <Route size={18} />
-  },
-  {
-    title: 'Control de estaciones',
-    description: 'Administra los nombres y activa o desactiva áreas adicionales.',
-    icon: <SlidersHorizontal size={18} />
-  }
-];
+const isActive = (station) => station.isActive !== false;
 
-function CurrentKitchenStation() {
+function requireSuccess(response, fallbackMessage, conflictMessage) {
+  if (response?.success === true) return;
+  if (response?.code === 'VERSION_CONFLICT') {
+    throw Object.assign(new Error(conflictMessage), { code: response.code });
+  }
+  throw new Error(response?.message || fallbackMessage);
+}
+
+function StationRow({ station, canManage, busy, toggling, onEdit, onToggle }) {
+  const isDefault = station.isDefault || station.code === 'kitchen';
+  const active = isActive(station);
+
   return (
-    <div className="preparation-stations-current" role="note">
-      <CheckCircle2 size={20} aria-hidden="true" />
-      <div>
-        <strong>Cocina</strong>
-        <span>Tu estación actual · Disponible</span>
+    <li className="preparation-station-row">
+      <div className="preparation-station-main">
+        <strong>{station.name}</strong>
+        <span className="preparation-stations-meta">
+          {isDefault ? 'Predeterminada · Siempre activa' : active ? 'Activa' : 'Inactiva'}
+        </span>
       </div>
-    </div>
+      <div className="preparation-station-actions">
+        {isDefault && <Check size={19} className="preparation-station-default" aria-hidden="true" />}
+        {canManage && !isDefault && (
+          <button
+            type="button"
+            role="switch"
+            className="preparation-station-switch"
+            aria-label={`Activación de ${station.name}`}
+            aria-checked={active}
+            aria-busy={toggling}
+            aria-disabled={busy}
+            onClick={() => onToggle(station, !active)}
+          >
+            {toggling
+              ? <LoaderCircle size={18} className="icon-spin" aria-hidden="true" />
+              : <span className="preparation-station-switch-track" aria-hidden="true" />}
+          </button>
+        )}
+        {canManage && (
+          <button
+            type="button"
+            className="ui-button ui-button--ghost preparation-stations-icon"
+            aria-label={`Editar ${station.name}`}
+            aria-haspopup="dialog"
+            aria-disabled={busy}
+            onClick={(event) => onEdit(event.currentTarget, station)}
+          >
+            <Pencil size={17} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 
-function StationRow({ station, canManageStations, onRename, onToggle }) {
-  const [draftName, setDraftName] = useState(station.name || '');
-  const [isSaving, setIsSaving] = useState(false);
-  const isDefault = station.isDefault || station.code === 'kitchen';
-  const hasChanges = draftName.trim() && draftName.trim() !== station.name;
+function StationEditor({ editor, currentStation, refreshNeeded, busy, onSave, onClose, fallbackFocus }) {
+  const [original, setOriginal] = useState(editor.station);
+  const [name, setName] = useState(original?.name || '');
+  const [error, setError] = useState('');
+  const [hasConflict, setHasConflict] = useState(false);
+  const dialogRef = useRef(null);
+  const inputRef = useRef(null);
+  const id = useId();
+  const trimmedName = name.trim();
+  const canSubmit = !busy && !hasConflict && trimmedName && trimmedName !== original?.name;
 
-  const handleRename = async () => {
-    if (!hasChanges) return;
-    setIsSaving(true);
-    try {
-      const response = await onRename(station, draftName.trim());
-      if (response?.success === false) {
-        showMessageModal(response.message || 'No se pudo actualizar el area.', null, { type: 'error' });
-        return;
-      }
-      showMessageModal('Area actualizada correctamente.');
-    } catch (error) {
-      showMessageModal(error?.message || 'No se pudo actualizar el area.', null, { type: 'error' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const fallback = fallbackFocus.current;
+    dialog.showModal();
+    inputRef.current.focus();
 
-  const handleToggle = async (event) => {
-    const nextValue = event.target.checked;
-    setIsSaving(true);
+    return () => {
+      dialog.close();
+      if (editor.trigger.isConnected) editor.trigger.focus();
+      else fallback?.focus();
+    };
+  }, [editor, fallbackFocus]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    setError('');
     try {
-      const response = await onToggle(station, nextValue);
-      if (response?.success === false) {
-        showMessageModal(response.message || 'No se pudo cambiar el estado del area.', null, { type: 'error' });
-        return;
-      }
-      showMessageModal(nextValue ? 'Area activada.' : 'Area desactivada.');
-    } catch (error) {
-      showMessageModal(error?.message || 'No se pudo cambiar el estado del area.', null, { type: 'error' });
-    } finally {
-      setIsSaving(false);
+      await onSave(original, trimmedName);
+    } catch (saveError) {
+      setError(saveError?.message || 'No se pudo guardar el área.');
+      setHasConflict(saveError?.code === 'VERSION_CONFLICT');
     }
   };
 
   return (
-    <div className={`preparation-station-row ${station.isActive === false ? 'is-inactive' : ''}`}>
-      <div className="preparation-station-main">
-        <div className="preparation-station-title-row">
-          <strong>{station.name}</strong>
-          {isDefault && <span className="preparation-station-badge preparation-station-badge--default">Predeterminada</span>}
-          {station.isActive === false && <span className="preparation-station-badge">Inactiva</span>}
-        </div>
-        <span className="settings-option-meta">Codigo interno: {station.code}</span>
-      </div>
-
-      <div className="preparation-station-actions">
+    <dialog
+      ref={dialogRef}
+      className="preparation-station-dialog"
+      aria-labelledby={`${id}-title`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <form onSubmit={submit} aria-busy={busy}>
+        <h3 id={`${id}-title`}>{original ? 'Editar área' : 'Nueva área de preparación'}</h3>
+        <label className="form-label" htmlFor={`${id}-name`}>Nombre del área</label>
         <input
-          className="form-input preparation-station-name-input"
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
-          disabled={!canManageStations || isSaving}
-          aria-label={`Nombre de ${station.name}`}
+          ref={inputRef}
+          id={`${id}-name`}
+          className="form-input"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder={original ? undefined : 'Ej. Barra, Bebidas o Postres'}
+          required
+          readOnly={busy}
+          aria-describedby={error ? `${id}-error` : undefined}
         />
-        <button
-          type="button"
-          className="btn btn-secondary preparation-station-save-button"
-          onClick={handleRename}
-          disabled={!canManageStations || !hasChanges || isSaving}
-        >
-          Guardar
-        </button>
+        {error && <p id={`${id}-error`} className="ui-inline-error" role="alert">{error}</p>}
+        {hasConflict && (
+          refreshNeeded || !currentStation || currentStation.serverVersion === original.serverVersion ? (
+            <p className="preparation-stations-meta">Cancela y actualiza el listado para volver a editar.</p>
+          ) : (
+            <div className="preparation-station-conflict">
+              <p className="preparation-stations-meta">Nombre vigente: <strong>{currentStation.name}</strong></p>
+              <button type="button" className="ui-button ui-button--secondary" onClick={() => {
+                setOriginal(currentStation);
+                setHasConflict(false);
+                setError('');
+                inputRef.current.focus();
+              }}>
+                Usar versión actual
+              </button>
+            </div>
+          )
+        )}
+        <div className="preparation-station-dialog-actions">
+          <button type="button" className="ui-button ui-button--ghost" aria-disabled={busy} onClick={onClose}>
+            Cancelar
+          </button>
+          <button type="submit" className="ui-button ui-button--primary" disabled={!canSubmit}>
+            {busy ? 'Guardando…' : original ? 'Guardar cambios' : 'Crear área'}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
 
-        <label className={`settings-switch ${(!canManageStations || isDefault || isSaving) ? 'is-disabled' : ''}`} title={isDefault ? 'Cocina siempre permanece activa' : ''}>
-          <input
-            className="settings-switch__input"
-            type="checkbox"
-            checked={station.isActive !== false}
-            onChange={handleToggle}
-            disabled={!canManageStations || isDefault || isSaving}
+function PreparationStationsPanel({ canDiscover }) {
+  const [editor, setEditor] = useState(null);
+  const [operation, setOperation] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+  const pending = useRef(false);
+  const heading = useRef(null);
+  const titleId = useId();
+  const {
+    stations, isLoading, error, source, canManageStations, isDynamicStationsEnabled,
+    refreshStations, createStation, updateStation, toggleStation
+  } = usePreparationStations({ includeInactive: true });
+
+  if (editor && !canManageStations) setEditor(null);
+
+  const busy = isLoading || Boolean(operation);
+  const listedStations = isDynamicStationsEnabled ? stations : FALLBACK_PREPARATION_STATIONS;
+  const activeCount = listedStations.filter(isActive).length;
+  const count = `${listedStations.length} ${listedStations.length === 1 ? 'área' : 'áreas'} · ${activeCount} ${activeCount === 1 ? 'activa' : 'activas'}`;
+  let summary = count;
+  if (source === 'cache') summary = `${count} · Copia local`;
+  else if (source === 'fallback') summary = isLoading ? 'Cargando áreas…' : 'Mostrando el área predeterminada';
+  else if (error) summary = `${count} · Actualización sin confirmar`;
+  const currentStation = editor?.station && stations.find((station) => station.id === editor.station.id);
+
+  const openEditor = (trigger, station = null) => {
+    if (!canManageStations || busy || pending.current) return;
+    setFeedback(null);
+    setEditor({ trigger, station });
+  };
+
+  const runOperation = async (key, action, fallbackMessage) => {
+    if (busy || pending.current) return;
+    pending.current = true;
+    setOperation(key);
+    setFeedback(null);
+    try {
+      await action();
+    } catch (operationError) {
+      if (key === 'save') throw operationError;
+      setFeedback({ error: true, message: operationError?.message || fallbackMessage });
+    } finally {
+      pending.current = false;
+      setOperation(null);
+    }
+  };
+
+  const save = (station, name) => {
+    if (!canManageStations) return;
+    return runOperation('save', async () => {
+      const response = station ? await updateStation(station, { name }) : await createStation({ name });
+      requireSuccess(
+        response,
+        station ? 'No se pudo actualizar el área.' : 'No se pudo crear el área.',
+        'El área cambió en otro dispositivo. Revisa el nombre vigente antes de guardar.'
+      );
+      setEditor(null);
+      setFeedback({ message: station ? 'Área actualizada.' : 'Área creada.' });
+    });
+  };
+
+  const toggle = (station, nextActive) => {
+    if (!canManageStations || station.isDefault || station.code === 'kitchen') return;
+    const failure = 'No se pudo cambiar el estado del área.';
+    return runOperation(station.id, async () => {
+      const response = await toggleStation(station, nextActive);
+      requireSuccess(response, failure, 'El área cambió en otro dispositivo. Revisa su estado actualizado.');
+      setFeedback({ message: nextActive ? 'Área activada.' : 'Área desactivada.' });
+    }, failure);
+  };
+
+  return (
+    <section className="preparation-stations-settings" aria-labelledby={titleId}>
+      <header className="preparation-stations-header">
+        <div>
+          <h2 id={titleId} ref={heading} tabIndex={-1}>Áreas de preparación</h2>
+          <p className="preparation-stations-meta">Organiza el destino de tus comandas.</p>
+        </div>
+        {isDynamicStationsEnabled && (
+          <button
+            type="button"
+            className="ui-button ui-button--ghost preparation-stations-icon"
+            aria-label="Actualizar áreas de preparación"
+            aria-disabled={busy}
+            aria-busy={isLoading || operation === 'refresh'}
+            onClick={() => runOperation('refresh', () => refreshStations({ force: true }), 'No se pudieron actualizar las áreas.')}
+          >
+            <RefreshCw size={18} className={isLoading || operation === 'refresh' ? 'icon-spin' : ''} aria-hidden="true" />
+          </button>
+        )}
+      </header>
+
+      {isDynamicStationsEnabled && (
+        <>
+          <div className="preparation-stations-toolbar">
+            <p className="preparation-stations-meta" role="status">{summary}</p>
+            {canManageStations && (
+              <button
+                type="button"
+                className="ui-button ui-button--primary preparation-stations-add"
+                aria-haspopup="dialog"
+                aria-disabled={busy}
+                onClick={(event) => openEditor(event.currentTarget)}
+              >
+                <Plus size={17} aria-hidden="true" /> Nueva área
+              </button>
+            )}
+          </div>
+          {!canManageStations && <p className="preparation-stations-meta">Solo lectura. Tu usuario no puede modificar áreas.</p>}
+          {error && <p className="ui-inline-error" role="alert">{error}</p>}
+          {feedback && (
+            <p className={feedback.error ? 'ui-inline-error' : 'preparation-stations-meta'} role={feedback.error ? 'alert' : 'status'}>
+              {feedback.message}
+            </p>
+          )}
+        </>
+      )}
+
+      <ul className="preparation-station-list" aria-label="Áreas de preparación">
+        {listedStations.map((station) => (
+          <StationRow
+            key={station.id}
+            station={station}
+            canManage={canManageStations}
+            busy={busy}
+            toggling={operation === station.id}
+            onEdit={openEditor}
+            onToggle={toggle}
           />
-          <span className={`settings-switch__track ${station.isActive !== false ? 'is-on' : ''} ${(!canManageStations || isDefault || isSaving) ? 'is-disabled' : ''}`}></span>
-          <span className={`settings-switch__thumb ${station.isActive !== false ? 'is-on' : ''}`}></span>
-        </label>
-      </div>
-    </div>
+        ))}
+      </ul>
+
+      {!isDynamicStationsEnabled && canDiscover && (
+        <div className="preparation-stations-discovery">
+          <h3>Más áreas con Lanzo Nube</h3>
+          <p className="preparation-stations-meta">Administra áreas como Barra o Postres y dirige las comandas según el producto.</p>
+          <Link className="ui-button ui-button--secondary" to="/acerca-de">Conocer Lanzo Nube</Link>
+        </div>
+      )}
+
+      {editor && canManageStations && (
+        <StationEditor
+          editor={editor}
+          currentStation={currentStation}
+          refreshNeeded={Boolean(error) || source !== 'cloud'}
+          busy={operation === 'save'}
+          onSave={save}
+          onClose={() => {
+            if (!pending.current) setEditor(null);
+          }}
+          fallbackFocus={heading}
+        />
+      )}
+    </section>
   );
 }
 
 export default function PreparationStationsSettings() {
-  const [newStationName, setNewStationName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const settingsAccess = useSettingsAccess();
-  const canDiscoverNubeStations = canShowLocalPlanDiscovery(
-    licenseDetails,
-    settingsAccess,
-    'license'
-  );
-  const {
-    stations,
-    isLoading,
-    error,
-    canManageStations,
-    isDynamicStationsEnabled,
-    refreshStations,
-    createStation,
-    updateStation,
-    toggleStation
-  } = usePreparationStations({ includeInactive: true });
-
-  const handleCreate = async () => {
-    const name = newStationName.trim();
-    if (!name) return;
-
-    setIsCreating(true);
-    try {
-      const response = await createStation({ name });
-      if (response?.success === false) {
-        showMessageModal(response.message || 'No se pudo crear el area.', null, { type: 'error' });
-        return;
-      }
-      setNewStationName('');
-      showMessageModal('Area creada correctamente.');
-    } catch (createError) {
-      showMessageModal(createError?.message || 'No se pudo crear el area.', null, { type: 'error' });
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  if (!isDynamicStationsEnabled) {
-    return (
-      <div className="company-form-container preparation-stations-settings">
-        <div className="settings-panel-header">
-          <div>
-            <h2 className="subtitle settings-title-inline">Áreas de preparación</h2>
-            <p className="settings-option-meta">Organiza la preparación de tus productos y comandas.</p>
-          </div>
-        </div>
-
-        {canDiscoverNubeStations ? (
-          <ProFeatureShowcase
-            variant="card"
-            eyebrow="Restaurante · Lanzo Nube"
-            badge="PRO"
-            title="Organiza tus comandas por áreas"
-            description="Con tu plan actual, las comandas se dirigen a Cocina. Con Lanzo Nube puedes distribuirlas entre diferentes estaciones y organizar mejor la preparación."
-            features={PREPARATION_STATION_FEATURES}
-            offerTitle="Lleva la preparación al siguiente nivel"
-            offerDescription="Descubre las herramientas disponibles en Lanzo Nube según tu licencia."
-            ctaLabel="Conocer Lanzo Nube"
-            ctaTo="/acerca-de"
-            secondaryText="Consultar esta información no modifica tu plan ni tu licencia."
-            childrenPosition="before-features"
-            className="preparation-stations-showcase"
-          >
-            <CurrentKitchenStation />
-          </ProFeatureShowcase>
-        ) : (
-          <CurrentKitchenStation />
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="company-form-container preparation-stations-settings">
-      <div className="settings-panel-header">
-        <div>
-          <h2 className="subtitle settings-title-inline">Áreas de preparación</h2>
-          <p className="settings-option-meta">Organiza la preparación de tus productos y comandas.</p>
-        </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => refreshStations({ force: true })}
-          disabled={isLoading}
-        >
-          <RefreshCcw size={16} /> Actualizar
-        </button>
-      </div>
-
-      {error && <p className="preparation-stations-error">{error}</p>}
-
-      {canManageStations && (
-        <div className="preparation-station-editor">
-          <input
-            className="form-input"
-            value={newStationName}
-            onChange={(event) => setNewStationName(event.target.value)}
-            placeholder="Ej. Bebidas, Barra, Postres"
-            disabled={isCreating}
-          />
-          <button
-            type="button"
-            className="btn btn-save preparation-station-add-button"
-            onClick={handleCreate}
-            disabled={!newStationName.trim() || isCreating}
-          >
-            <Plus size={16} /> Agregar area
-          </button>
-        </div>
-      )}
-
-      {!canManageStations && (
-        <div className="settings-option-row settings-option-row--disabled">
-          <div className="settings-option-main">
-            <div className="settings-icon-bubble settings-icon-bubble--muted"><Info size={22} /></div>
-            <div className="settings-option-copy">
-              <span className="settings-option-title">Solo lectura</span>
-              <p>Tu usuario no tiene permisos suficientes para modificar areas.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="preparation-station-list">
-        {stations.map((station) => (
-          <StationRow
-            key={station.id || station.code}
-            station={station}
-            canManageStations={canManageStations}
-            onRename={(current, name) => updateStation(current, { name })}
-            onToggle={toggleStation}
-          />
-        ))}
-      </div>
-    </div>
+    <PreparationStationsPanel
+      key={`${settingsAccess.actorKey}:${settingsAccess.generation}`}
+      canDiscover={canShowLocalPlanDiscovery(licenseDetails, settingsAccess, 'license')}
+    />
   );
 }
