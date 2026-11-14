@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Disposable PG17 reproduction; never connects to Production.
 Uses real financial SQL from the existing PR338 snapshot plus exact Pharmacy
-Stages 1-3. This is NOT a full snapshot of current Production financial code.
+Stages 1-3. Use --current-financial to overlay the narrowly compared live dependency slice.
+This does not certify unrelated operations or the full Production schema.
 Run: python scripts/supabase/pharmacy_stage3_deferred_pg_regression.py --isolated-fixture
-Evidence: work/pharmacy-stage3-results.json. Docker container removed on exit.
+Evidence: work/pharmacy-stage3[-current]-results.json. Container removed on exit.
 """
 import subprocess, json, datetime, sys, time, uuid
 from pathlib import Path
-if sys.argv[1:] != ['--isolated-fixture']:
+CURRENT_FINANCIAL = sys.argv[1:] == ['--isolated-fixture', '--current-financial']
+if sys.argv[1:] != ['--isolated-fixture'] and not CURRENT_FINANCIAL:
     raise SystemExit('Explicit --isolated-fixture required')
 C = 'lanzo-pharmacy-p0-' + uuid.uuid4().hex[:10]
 IMAGE = 'postgres:17@sha256:846a7ddaa67a4b354ae1d21087b683901aa6113a4ed626d3787cfbf6c85e3e07'
@@ -31,6 +33,33 @@ try:
         bootstrap_sql((fixture/file).read_text())
     for file in ['20261111190000_pharmacy_stage1_catalog_and_sale_guard.sql','20261111230000_pharmacy_stage2_inventory_authority.sql','20261112040000_pharmacy_stage3_atomic_dispensations.sql']:
         bootstrap_sql(Path('supabase/migrations',file).read_text())
+    if CURRENT_FINANCIAL:
+        current_fixture = Path('supabase/tests/fixtures/pharmacy-stage3-current-financial')
+        bootstrap_sql((current_fixture/'tables.sql').read_text())
+        for row in json.loads((current_fixture/'overlay.json').read_text()):
+            # Verbatim pg_get_functiondef from Production, only in this disposable DB.
+            signature = row['nspname']+'.'+row['proname']+'('+row['args']+')'
+            bootstrap_sql('SET check_function_bodies=off; '+row['definition']+';')
+            bootstrap_sql('REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;')
+            if row['proacl'] is None:
+                bootstrap_sql('GRANT EXECUTE ON FUNCTION '+signature+' TO PUBLIC;')
+            else:
+                for role in ['anon','authenticated','service_role']:
+                    if role+'=X/' in row['proacl']:
+                        bootstrap_sql('GRANT EXECUTE ON FUNCTION '+signature+' TO '+role+';')
+        bootstrap_sql((current_fixture/'triggers.sql').read_text())
+        # Historical ACL has redundant named grants in addition to PUBLIC.
+        # Match the live default ACL exactly, ONLY in the fixture.
+        bootstrap_sql('REVOKE ALL ON FUNCTION private.resolve_pos_actor_type(jsonb) FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION private.resolve_pos_actor_type(jsonb) TO PUBLIC;')
+        # Pin exact current definitions and their execution context, not mocks.
+        for row in json.loads((current_fixture/'catalog.json').read_text()):
+            signature = row['nspname']+'.'+row['proname']+'('+row['args']+')'
+            expected = json.dumps({'owner':row['owner'],'definer':row['prosecdef'],
+                'config':row['proconfig'],'md5':row['definition_md5']}).replace("'","''")
+            bootstrap_sql("DO $verify$ BEGIN IF (SELECT jsonb_build_object('owner',pg_get_userbyid(proowner),'definer',prosecdef,'config',proconfig,'md5',md5(replace(pg_get_functiondef(oid),chr(13),''))) FROM pg_proc WHERE pronamespace='"+row['nspname']+"'::regnamespace AND proname='"+row['proname']+"' AND pg_get_function_identity_arguments(oid)='"+row['args']+"') IS DISTINCT FROM '"+expected+"'::jsonb THEN RAISE EXCEPTION 'CURRENT_FINANCIAL_DEFINITION_DRIFT: "+row['proname']+"'; END IF; END $verify$;")
+            expected_acl = "acldefault('f',proowner)" if row['proacl'] is None else "'"+row['proacl']+"'::aclitem[]"
+            bootstrap_sql("DO $acl$ BEGIN IF NOT (SELECT coalesce(proacl,acldefault('f',proowner)) @> "+expected_acl+" AND "+expected_acl+" @> coalesce(proacl,acldefault('f',proowner)) FROM pg_proc WHERE pronamespace='"+row['nspname']+"'::regnamespace AND proname='"+row['proname']+"' AND pg_get_function_identity_arguments(oid)='"+row['args']+"') THEN RAISE EXCEPTION 'CURRENT_FINANCIAL_ACL_DRIFT: "+row['proname']+"'; END IF; END $acl$;")
+        print('CURRENT_FINANCIAL: 50 live function definitions/owners/modes/search_paths/ACLs verified')
     bootstrap_sql('CREATE ROLE authenticator LOGIN NOINHERIT; GRANT anon,authenticated TO authenticator; REVOKE ALL ON SCHEMA private FROM PUBLIC,anon,authenticated,service_role;')
     bootstrap_sql('GRANT anon,authenticated TO postgres WITH SET TRUE;', 'lab_bootstrap')
     bootstrap_sql("INSERT INTO public.business_profiles(license_id,business_name,business_type) VALUES ('00000000-0000-0000-0000-000000000001','Synthetic shop',ARRAY['abarrotes'::public.business_category]);")
@@ -49,7 +78,10 @@ try:
      typ='antibiotic' if antibiotic else ('controlled' if fraction in ['I','II','III'] else (None if required else 'otc'))
      sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,requires_prescription,prescription_type,is_active,batch_management) VALUES ("+','.join([lit(pid),lit(L),lit(pid),lit(pid),'10','4','20','true',lit(json.dumps(meta)),str(required).lower(),'NULL' if typ is None else lit(typ),str(fraction not in ['I','II','III']).lower(),lit(json.dumps({'enabled':batch}))])+') ON CONFLICT DO NOTHING;')
      if batch:sql("INSERT INTO public.pos_product_batches(id,license_id,product_id,stock,cost,price,manufacturer_batch_id,expiry_date) VALUES ("+','.join([lit(pid+'-batch'),lit(L),lit(pid),'20','4','10',lit('SYNTHETIC'),"'2099-01-01'"])+') ON CONFLICT DO NOTHING;')
-    for args in [('null_flags',),('common',),('batch',None,False,True),('other',),('otc','VI'),('ab','IV',True,True),('iv','IV',False,True),('I','I',False,True),('II','II',False,True),('III','III',False,True)]:seed(*args)
+    for args in [('service',),('unbatched_iv','IV'),('null_flags',),('common',),('batch',None,False,True),('other',),('otc','VI'),('ab','IV',True,True),('iv','IV',False,True),('I','I',False,True),('II','II',False,True),('III','III',False,True)]:seed(*args)
+
+    if CURRENT_FINANCIAL:
+     sql("UPDATE public.pos_products SET track_stock=false WHERE id IN ('service','unbatched_iv');")
 
     def request(name,pid,rx=None,batch=None,qty=2):
      i={'id':name+'-line','product_id':pid,'product_name':pid,'quantity':qty,'unit_price':10,'line_subtotal':10*qty,'line_total':10*qty}
@@ -71,6 +103,9 @@ try:
     sql("INSERT INTO public.pos_customers(id,license_id,name,credit_limit) VALUES ('lab-p0-customer','00000000-0000-0000-0000-000000000001','Synthetic customer',200);")
     cases=[('ordinary_6b','common',False,None,None,None),('ordinary_credit','common',False,None,None,None),('pharmacy_null_flags','null_flags',True,None,None,None),('common','common',False,None,None,None),('common_batch','batch',False,None,'batch-batch',None),('pharmacy_other','other',True,None,None,None),('otc','otc',True,None,None,None),('antibiotic','ab',True,'valid','ab-batch',None),('fraction_iv','iv',True,'valid','iv-batch',None),('missing_rx','ab',True,None,'ab-batch','PHARMACY_PRESCRIPTION_REQUIRED'),('missing_batch','ab',True,'valid',None,'PHARMACY_DISPENSATION_BATCH_REQUIRED'),('wrong_batch','ab',True,'valid','iv-batch','CLOUD_BATCH_NOT_AVAILABLE'),('excess','ab',True,'excess','ab-batch','PHARMACY_PRESCRIPTION_BALANCE_EXCEEDED'),('I','I',True,'valid','I-batch','CLOUD_PRODUCT_NOT_AVAILABLE'),('II','II',True,'valid','II-batch','CLOUD_PRODUCT_NOT_AVAILABLE'),('III','III',True,'valid','III-batch','CLOUD_PRODUCT_NOT_AVAILABLE'),('no_stamp','ab',True,'no_stamp','ab-batch','PHARMACY_PRESCRIPTION_STAMP_REQUIRED'),('no_retention','ab',True,'no_retention','ab-batch','PHARMACY_PRESCRIPTION_RETENTION_REQUIRED'),('expired','ab',True,'expired','ab-batch','PHARMACY_PRESCRIPTION_EXPIRED_OR_QUANTITY_INVALID'),('doctor_missing','ab',True,'doctor_missing','ab-batch','PHARMACY_PRESCRIPTION_FIELDS_INVALID')]
     sql("UPDATE public.pos_products SET prescription_type=NULL, requires_prescription=NULL WHERE id='null_flags';")
+    if CURRENT_FINANCIAL:
+     cases=[(label,'service' if label=='ordinary_6b' else ('unbatched_iv' if label=='missing_batch' else pid),pharmacy,kind,batch,error) for label,pid,pharmacy,kind,batch,error in cases]
+     cases += [('legacy_stock_guard','common',False,None,None,'CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED'),('pharmacy_credit','iv',True,'valid','iv-batch',None)]
     results=[]
 
     for phase in ['before','after']:
@@ -86,8 +121,8 @@ try:
       if kind=='doctor_missing':data['prescriberName']=''
       sql("UPDATE public.business_profiles SET business_type=ARRAY["+lit('farmacia' if pharmacy else 'abarrotes')+"::public.business_category] WHERE license_id="+lit(L))
       req=request(name,pid,data,batch)
-      op='sale.cashier' if label in ['missing_batch','ordinary_6b'] else 'sale.cashier_inventory'
-      if label=='ordinary_credit':
+      op='sale.cashier' if label in ['missing_batch','ordinary_6b','legacy_stock_guard'] else 'sale.cashier_inventory'
+      if label in ['ordinary_credit','pharmacy_credit']:
        op='sale.credit';req['customer_id']='lab-p0-customer'
        req['sale'].update(customer_id='lab-p0-customer',payment_method='mixed_credit',amount_paid=5,balance_due=15,change_amount=0,metadata={'cloudInventoryEffects':True})
        req['payments'][0].update(amount=5,received_amount=5,change_amount=0)
@@ -101,8 +136,8 @@ try:
       else:passed=passed and after['sales']==1 and after['items']==1 and after['cash']==1 and after['inventory']==(0 if op=='sale.cashier' else 1) and after['stock']==before['stock']-(0 if op=='sale.cashier' else 2) and after['cash_amount']==(5 if op=='sale.credit' else 20) and after['receipts']==1
       row={'phase':phase,'case':label,'role':'authenticated' if label=='ordinary_6b' else 'anon','business':'pharmacy' if pharmacy else 'ordinary','operation':op,'passed':passed,'stdout':r.stdout,'error':r.stderr,'before':before,'after':after};results.append(row)
       print(phase,label,'PASS' if passed else 'FAIL',r.stderr.splitlines()[0] if r.stderr else '')
-      if phase=='after' and label in ['common_batch','antibiotic'] and r.returncode==0:
-       rr=call(req); replay=state(name,pid);results.append({'phase':phase,'case':label+'_replay','role':'anon','operation':'sale.cashier_inventory','passed':rr.returncode==0 and replay==after,'state':replay,'error':rr.stderr})
+      if phase=='after' and label in ['common_batch','antibiotic','pharmacy_credit'] and r.returncode==0:
+       rr=call(req,op=op); replay=state(name,pid);results.append({'phase':phase,'case':label+'_replay','role':'anon','operation':op,'passed':rr.returncode==0 and replay==after,'state':replay,'error':rr.stderr})
     # Security, retained prescriptions and confirmed-dispensation integrity.
     sql("UPDATE public.business_profiles SET business_type=ARRAY['farmacia'::public.business_category] WHERE license_id="+lit(L))
     reused = request('after-retained-reuse','ab',rx('after-antibiotic'),'ab-batch')
@@ -123,17 +158,24 @@ try:
     integrity_sql="BEGIN; SELECT private.financial_operation_hash('sale.cashier_inventory',private.canonical_financial_request_v1('sale.cashier_inventory',"+j+"),'admin:00000000-0000-0000-0000-0000000000aa','lab-cash-a','lab-station-a') AS hash \\gset\nSET LOCAL ROLE anon; SELECT public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session','after-batch-integrity-key',:'hash','sale.cashier_inventory',"+j+"); RESET ROLE; UPDATE public.pos_product_batches SET product_id='iv' WHERE id='ab-batch'; SET LOCAL ROLE anon; COMMIT;"
     rejection=sql(integrity_sql,False)
     results.append({'case':'final_batch_wrong_product','role':'anon at COMMIT; owner mutation within synthetic transaction','passed':rejection.returncode!=0 and 'PHARMACY_DISPENSATION_BATCH_REQUIRED' in rejection.stderr,'error':rejection.stderr})
+    if CURRENT_FINANCIAL:
+     # Preserve the existing v2 pilot gate; never simulate an admission witness.
+     sql("INSERT INTO private.pos_fin01_qa_pilots_v2(license_id,creation_xid,protocol) VALUES ("+lit(L)+",pg_current_xact_id(),2);")
+     initial=state('after-pilot-rejected','common')
+     rejection=call(request('after-pilot-rejected','common'))
+     results.append({'case':'v1_pilot_gate_preserved','role':'anon','passed':rejection.returncode!=0 and 'CLOUD_CLIENT_UPDATE_REQUIRED' in rejection.stderr and state('after-pilot-rejected','common')==initial,'error':rejection.stderr})
+     sql("DELETE FROM private.pos_fin01_qa_pilots_v2 WHERE license_id="+lit(L))
     assert scalar("SELECT count(*) FROM private.pharmacy_dispensations_v1 d JOIN public.pos_sale_items si ON si.id=d.sale_item_id JOIN public.pos_product_batches b ON b.id=d.batch_id WHERE d.batch_id IS DISTINCT FROM si.batch_id OR b.product_id<>d.product_id OR b.license_id<>d.license_id")=='0'
-    assert scalar("SELECT count(*) FROM public.pos_sale_payments WHERE sale_id LIKE 'after-%' AND sale_id<>'after-ordinary_credit' AND (received_amount<>100 OR change_amount<>80 OR amount<>20)")=='0'
+    assert scalar("SELECT count(*) FROM public.pos_sale_payments WHERE sale_id LIKE 'after-%' AND sale_id NOT IN ('after-ordinary_credit','after-pharmacy_credit') AND (received_amount<>100 OR change_amount<>80 OR amount<>20)")=='0'
     assert scalar("SELECT count(*) FROM public.pos_financial_operations WHERE status<>'completed'")=='0'
     roles=scalar("SELECT string_agg(rolname||':'||rolsuper||':'||rolbypassrls,',' ORDER BY rolname) FROM pg_roles WHERE rolname IN ('postgres','anon','authenticated')")
     print('ROLES',roles)
     assert 'postgres:false:true' in roles
     assert scalar("SELECT count(*) FROM private.pharmacy_prescription_items_v1 WHERE dispensed_quantity<>2")=='0'
-    assert scalar("SELECT debt FROM public.pos_customers WHERE id='lab-p0-customer'") in ['15','15.00']
+    assert scalar("SELECT debt FROM public.pos_customers WHERE id='lab-p0-customer'") in (['30','30.00'] if CURRENT_FINANCIAL else ['15','15.00'])
     Path('work').mkdir(exist_ok=True)
-    Path('work/pharmacy-stage3-results.json').write_text(json.dumps(results,indent=2))
+    Path('work/pharmacy-stage3-current-results.json' if CURRENT_FINANCIAL else 'work/pharmacy-stage3-results.json').write_text(json.dumps(results,indent=2))
     print('TOTAL',len(results),'PASS',sum(x['passed'] for x in results))
-    if not all(x['passed'] for x in results): raise SystemExit('REGRESSION_FAILED: see work/pharmacy-stage3-results.json')
+    if not all(x['passed'] for x in results): raise SystemExit('REGRESSION_FAILED: see work/pharmacy-stage3'+('-current' if CURRENT_FINANCIAL else '')+'-results.json')
 finally:
     subprocess.run(['docker','rm','-f','-v',C],capture_output=True)

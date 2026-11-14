@@ -1,0 +1,16 @@
+{
+  "final_owner": "postgres",
+  "final_invoker": true,
+  "dispense_owner": "postgres",
+  "final_zero_args": true,
+  "trigger_matches": true,
+  "dispense_invoker": true,
+  "final_body_matches": true,
+  "production_version": "PostgreSQL 17.6 on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 13.2.0, 64-bit",
+  "final_acl_owner_only": true,
+  "final_config_matches": true,
+  "final_trigger_return": true,
+  "dispense_body_matches": true,
+  "dispense_acl_owner_only": true,
+  "dispense_config_matches": true
+}

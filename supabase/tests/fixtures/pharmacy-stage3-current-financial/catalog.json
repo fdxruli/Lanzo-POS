@@ -1,0 +1,646 @@
+[
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+    "definition_md5": "3ce63cdd05c3877d0e7cc4b58079aef2",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+    "definition_md5": "b687bd16a6b276b6d7668191f064e4c9",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+    "definition_md5": "f1e7e82ef7c789389db37b375c42982e",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_execute_financial_operation_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_idempotency_key text, p_request_hash text, p_operation_type text, p_request jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\"",
+      "statement_timeout=45s",
+      "lock_timeout=20s"
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+    "definition_md5": "b869499e0b10da49afb10cff6a6969d8",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_restaurant_sale_dispatcher_context_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_cash_session_id text, p_internal_idempotency_key text, p_operation_type text",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "a377b576a53cae0cde89e20ed38a7ed1",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_request_v1",
+    "args": "p_operation_type text, p_request jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "4169cbe60cf96ad170cdf6228b262d69",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "complete_financial_operation_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_response jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "984abf9561f5e838aade4da1787ca0c2",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "enter_restaurant_financial_transition_write_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_request jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "8124a0802130c9b61a7cc655bc624e58",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_execution_request_v1",
+    "args": "p_request jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "b925cf40680e8128230bf82e2e7dbd2f",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "95d183e518eabdb784e93461afecb421",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "42507bc8d88c0f68a39943cc694e38b0",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "24d3801d360016ee96bf2a5ec5ec6c11",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "public_financial_response_v1",
+    "args": "p_operation_type text, p_response jsonb, p_external_idempotency_key text, p_internal_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "65704b35757453828b40377483ddd7cb",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "reserve_financial_operation_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_request_hash text, p_operation_type text, p_canonical_request jsonb, p_verified_actor_key text, p_verified_device_id uuid, p_cash_session_id text, p_verified_cash_station_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "ea1b87bae421c011581d8d7230700348",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_legacy_cloud_sale_no_inventory_required_v1",
+    "args": "p_license_id uuid, p_items jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "a988e4e77d089b2edb27c4397200e504",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "a68e55db68ebe4a074e767b8384f8838",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "cfe622050f457697e93f1dbb3c415360",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition_md5": "1933a892a9191b02cc603c9e25afc1df",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_authorize_sale_financial_request_v1",
+    "args": "p_operation_type text, p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "ea4613c3468a7b879da8ae3fef8cf71c",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_finalize_inventory_costs_v1",
+    "args": "p_license_id uuid, p_sale_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "faef9bc87a1c6a08b2261f8bc57cd179",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "apply_sale_inventory_effects",
+    "args": "p_license_id uuid, p_sale_id text, p_allocations jsonb, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=pg_catalog, public, private, pg_temp"
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "1e16aaed4345f55c5798a2044e0b77f3",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_pos_credit_sale_permission",
+    "args": "p_context jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "f9ff44610ce922d5bca8d3e2d3278e81",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "complete_pos_idempotency",
+    "args": "p_license_id uuid, p_idempotency_key text, p_response_payload jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "53f37d6fb8da2c6a382bd58e122631ce",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "insert_pos_idempotency_processing",
+    "args": "p_license_id uuid, p_idempotency_key text, p_operation_type text, p_entity_type text, p_entity_id text, p_request_hash text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "c808d93f60a8048f51417f689faee098",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "normalize_sale_inventory_item",
+    "args": "p_payload jsonb, p_ordinality bigint",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": null,
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "4f13f7b151f1d4c1795ce7fd81a97cd9",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_assert_sale_idempotency_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_request_hash text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "27cb4236ca9fd7cad6c873f300425ace",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_sale_inventory_allocations",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=pg_catalog, public, private, pg_temp"
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "a71e69ac32411176f3c254a379f39eb0",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_build_sale_inventory_requirements",
+    "args": "p_sale_id text, p_item_norm jsonb, p_source_product pos_products",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": null,
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "7bf28c442e187d8226710d404a14ab17",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "validate_pos_sync_context",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "8f23a11866c54497f0a8e0f463152f4a",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "prepare_direct_partial_inventory_items_v1",
+    "args": "p_license_id uuid, p_items jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "53188515d18c0ebaf8e8109968677101",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_direct_partial_inventory_v1",
+    "args": "p_license_id uuid, p_expanded_items jsonb, p_sale_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "1a728f4a00a1cbefa826ba8a455f72a9",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_pos_actor_type",
+    "args": "p_context jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": null,
+    "definition_md5": "472a3bccdc148b49076c4a9adb51eaa9",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_sale_inventory_allocations_direct_rest_inv5",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "2f07a19b1b7b083b8f6cc98f7f132a9b",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_enrich_inventory_allocations",
+    "args": "p_expanded_items jsonb, p_response jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": null,
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "10580a6d07fb351bcb91a740681e37c0",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_expand_sale_inventory_items",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": null,
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "1e155b8f0d430c5f64cf6f6fe377ba3a",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "fill_pos_sale_item_batch_snapshot",
+    "args": "",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "0af58773a7f47a119e5dc75e0045e637",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_fin01_guard_qa_write_v2",
+    "args": "",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "0d979716beaa7ddc827e017890a14b05",
+    "changed_from_snapshot": true
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cash_sale_station_for_request_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "22ecda123fbb661b8e615c03dcbc8ea5",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_cashier_enabled",
+    "args": "p_context jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "f7636853f9ee0d46fc978f516466221d",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_credit_enabled",
+    "args": "p_context jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "35a805cc199b57e58422be075b412486",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_inventory_enabled",
+    "args": "p_context jsonb",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "68c24a6fab21c2e2b866609f0d511a2d",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_pos_permission",
+    "args": "p_context jsonb, p_permission text",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "b51e67d5cbcb7f454a5edcc090900923",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "has_pos_permission",
+    "args": "p_context jsonb, p_permission text",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "c1d451aab3f4c95fb8c096aabd56ab03",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "is_pos_batch_expired_for_sale",
+    "args": "p_expiry_date timestamp with time zone",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "b99ac169f305b4032e96865e94d084d5",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_shelf_life_expired_for_sale",
+    "args": "p_product pos_products",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "90e71eb6131b9e2e7c5d2abd60c983a0",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "product_uses_batches",
+    "args": "p_product pos_products",
+    "owner": "postgres",
+    "prosecdef": false,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "1aa1e4f7213a2772a823c8fae62755cd",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "recalculate_pos_cash_session_totals",
+    "args": "p_license_id uuid, p_cash_session_id text, p_bump_version boolean",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "fb69e2039d887f301dc9d6751ae8b87b",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "recalculate_pos_customer_debt",
+    "args": "p_license_id uuid, p_customer_id text",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "6a1eac017e6ad1f736c38a50e32ceaba",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_sale_audit_event",
+    "args": "p_license_id uuid, p_sale_id text, p_event_type text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_name text, p_payload jsonb",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "cdea41c678577ecad6c596a104694a1a",
+    "changed_from_snapshot": false
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_sync_event",
+    "args": "p_license_id uuid, p_entity_type text, p_entity_id text, p_operation text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_idempotency_key text, p_metadata jsonb, p_server_version integer",
+    "owner": "postgres",
+    "prosecdef": true,
+    "proconfig": [
+      "search_path=\"\""
+    ],
+    "proacl": "{postgres=X/postgres}",
+    "definition_md5": "a6d15fd981804853cc75124172431618",
+    "changed_from_snapshot": false
+  }
+]

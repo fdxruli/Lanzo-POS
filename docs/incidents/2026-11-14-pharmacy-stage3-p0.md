@@ -1,6 +1,6 @@
 # P0 Cloud checkout: Pharmacy Stage 3 deferred validation
 
-Status: candidate correction, NOT installed; no production recovery claim.
+Status: **READY_FOR_INSTALLATION_REVIEW** after the focused current-backend compatibility follow-up below. NOT installed; no production recovery claim. Merge/installation still require separate user authorization.
 Base main: `98976ad7c15cfdba7d54fde46f6db08553828a17`. Initially inspected main was `b46115c00456c556a578ec5fb8a296b264bc3dc7` (reference `b3cf26a6` is its parent). The intervening #516 changes only preparation-station UI and its tests, outside this SQL/checkout path.
 Production was accessed only through read-only catalog/log queries. No business rows were read or changed, no checkout was replayed there, and no migration/merge/deployment was executed.
 
@@ -49,11 +49,11 @@ Structural scope: any transaction queuing this trigger and reaching deferred exe
 Runner: `python scripts/supabase/pharmacy_stage3_deferred_pg_regression.py --isolated-fixture`.
 It creates/removes a dedicated Docker container without publishing ports, uses PostgreSQL 17 pinned by image digest, real SQL transactions and COMMIT, pgcrypto, enabled RLS/policies, real constraints/triggers, and a NOSUPERUSER/BYPASSRLS postgres owner. The client connects as authenticator and SET LOCAL ROLE anon/authenticated. Synthetic data only.
 
-**Coverage boundary:** the 267 financial functions and associated schema/policies start from the repository's PR338 financial snapshot. Pharmacy Stages 1–3 are installed from canonical files, and the four Stage 3 bodies were matched against Production. Current production financial entry/wrapper definitions were inspected, but some differ from the historical fixture (restaurant transition and direct-recipe extensions). Complete current financial-backend parity, those added paths, Realtime delivery, actual Android/PWA, and production checkout are **NO DEMOSTRADO**. No missing dependency is replaced with a mock. Full current-backend validation remains an installation gate.
+**Initial coverage boundary (now closed for the P0 paths):** the first run started from PR338. The follow-up below compares the actual affected 6B/6C/credit dependency slice and overlays current definitions, rather than requiring parity of all 267 functions. The original 50-case evidence remains historical; use `--current-financial` for the current 56-case evidence. Unrelated financial operations, Realtime delivery, Android/PWA and production checkout are not certified. No missing dependency is replaced with a mock.
 
 The before phase asserts the observed defect; a PASS there means the failure was reproduced, not that original checkout worked. After phase applies the new migration twice to verify idempotence. The evidence JSON records role, operation, business type, exact PostgreSQL error/context, and before/after counts for sales, items, inventory, receipts, dispensed quantity, cash amount, cash rows and payments. Ordinary 6B intentionally has no inventory application; 6C/credit decrement stock by 2 once. Cash sales receive 100, return 80, and register 20. Credit registers 5 cash and 15 debt. Rejected transactions leave the captured state identical; confirmed operation replay preserves it exactly.
 
-The matrix and detailed evidence are generated below from the final run.
+The initial matrix is retained below; the current-backend follow-up includes its separate final evidence.
 
 ## C. Focused correction and security
 
@@ -80,25 +80,25 @@ The NULL correction cannot turn a TRUE prescription requirement into FALSE: coal
 
 ## D. Validation status
 
-- PostgreSQL regression: 50/50 assertions PASS, within the coverage boundary above.
+- PostgreSQL current-backend regression: 56/56 assertions PASS. The original 50-case snapshot run is retained below as historical evidence.
 - JavaScript: 5 files, 57 tests PASS (pharmacy mapping/dispensation/classification, financial explicit retry and receipt reconciliation).
 - Canonical migration filename/version scan: PASS (350 unique canonical versions).
 - SQL body diff: only the boolean coalesce changed in dispense_on_sale_item; final_batch body unchanged.
 - Root cause confirmed: YES. Code/migration prepared: YES.
-- Full current financial-backend parity: NO DEMOSTRADO.
+- Current 6B/6C/credit P0 dependency compatibility: PASS in the focused follow-up; not a certification of unrelated backend functions.
 - Android/PWA QA and real pharmacy QA: PENDING.
 - Migration installed in Production: NO. PR merged: NO. Production checkout recovered: NO DEMOSTRADO.
 - GitHub/Vercel checks: see the Draft PR's checks for its exact commit; local regression is not a claim that remote checks passed.
 
 ## E. Installation gate and manual QA
 
-Candidate is conditioned on closing the documented current-financial-fixture parity gap and review. Do not install just because this focused regression passes. Review this single Draft, validate current financial dependencies with representative roles, then obtain separate merge/installation authorization. This task grants neither.
+The documented current-financial-fixture compatibility gap is closed for the P0 sale paths by the focused follow-up. Status: READY_FOR_INSTALLATION_REVIEW. Review this single Draft and obtain separate merge/installation authorization. This status is not permission to merge/install and is not a production recovery claim.
 
 For an authorized installation: ensure the reviewed SQL is on current GitHub main, record that main SHA, compare this file's exact SHA-256, verify production definitions/preconditions and the complete canonical ledger/pending-version set, and stop on drift or any unexpected migration. Install only this reviewed migration with version/name/ledger traceability; do not copy a divergent Dashboard variant or run a general db push. Re-read function mode/body/ACL/search_path, trigger and ledger afterwards.
 
 Before any financial retry, resolve the earlier intent's receipt and check history/cash/inventory for an already confirmed operation. Manual QA after separately authorized installation: ordinary cash checkout with the $100 button, correct change, one history sale, one cash movement and one inventory effect; pharmacy ordinary product, a valid prescription dispensation with correct lot/quantity, and critical missing/invalid prescription and invalid/missing batch rejections. Confirm rollback and retained/immutable protections. Stop on ambiguous outcome; no automatic payment retry.
 
-## Matrix evidence (final isolated run)
+## Historical matrix evidence (initial isolated run)
 
 All matrix operations use `public.pos_execute_financial_operation_v1`; role is anon except 6B ordinary (authenticated), with session_user authenticator. State is shown as sales/items/inventory/cash/payments/receipts/dispensations; stock and cash amount are separate. Values are synthetic.
 
@@ -128,3 +128,74 @@ All matrix operations use `public.pos_execute_financial_operation_v1`; role is a
 Every rejected row had identical captured before/after state. Before-fix successful RPC bodies failed at COMMIT with no persisted sale/receipt/effects. Expected original pharmacy ordinary rejection is recorded explicitly, not treated as working checkout.
 
 Additional successful assertions: common-batch and antibiotic confirmed replays preserve state; retained prescription reuse rejected; both client roles denied private SELECT and direct validator execution; owner UPDATE/DELETE of confirmed dispensation rejected; final batch/product corruption within an uncommitted synthetic transaction rejected at COMMIT; repeated migration application; prescription quantity=2, correct batch/product/license correspondence, received=100/change=80/cash=20, completed receipts only, credit debt=15. I–III were rejected by the existing inactive-product gate before the additional pharmacy guard; this run does not claim that branch executed.
+
+## Focused current-backend compatibility follow-up (2026-11-14)
+
+The user explicitly limited this follow-up to PR #518 and the current dependencies
+that can affect sale-item triggers, COMMIT, atomicity or idempotency. The P0 SQL
+and its SHA-256 are unchanged. Only fixture/test evidence and this report changed.
+
+Read-only catalog queries obtained 50 concrete functions: the financial dispatcher,
+three sale entry wrappers, unlimited/R2B/legacy leaves, allocation/application,
+receipt reserve/complete, canonicalization, relevant authorization/cash/credit
+helpers and item triggers. Thirty-three definitions match PR338; seventeen differ
+or are new. See `supabase/tests/fixtures/pharmacy-stage3-current-financial/README.md`
+and its live catalog manifest for exact hashes, execution context and scope.
+
+Material differences were reproduced verbatim inside the existing isolated fixture:
+restaurant transition/dispatcher guards; 6B inventory-required rejection and the
+6C transaction-local internal call scope; credit permission/limit guards; current
+allocation routing; and QA-pilot admission triggers. The ordinary medical-sale
+payload does not set the explicitly gated cooking-recipe partial-fulfillment
+contract. Its normal allocation delegates and inventory application are unchanged.
+No financial function, extra application trigger, permission or commercial
+contract is modified by the PR migration.
+
+The historical positive 6B tracked-product case is no longer an allowed current
+contract: the new test uses a non-stock service, and separately proves rejection
+of legacy tracked-product sales. Missing final batch is tested using a prescription
+product without stock tracking/batches so the real final guard is reached without
+bypassing the current 6B stock guard or 6C allocation.
+
+All read-only migration preconditions still match Production: expected bodies,
+postgres ownership, invoker state, empty search_path, owner-only function ACLs,
+and enabled deferred INSERT constraint trigger. The original Stage 3 migration is
+registered; the corrective version is not. PostgreSQL in Production reports 17.6.
+No SQL was installed or changed there.
+
+Current validation command:
+
+```sh
+python scripts/supabase/pharmacy_stage3_deferred_pg_regression.py --isolated-fixture --current-financial
+```
+
+Result: **56/56 PASS**, after verifying 50 current definitions/owners/security
+modes/search_paths/ACLs. Covered: ordinary 6B, 6C, credit; pharmacy ordinary/OTC,
+valid antibiotic/IV and pharmacy credit; missing/expired/invalid prescription,
+quantity/seal/retention failures; missing/wrong batch; final batch integrity;
+retained reuse and immutable dispensations; confirmed replays (including credit);
+legacy inventory guard and QA-pilot v1 rejection. Rejections leave captured state
+unchanged; successful cash is 20 with 100 received/80 change, each credit sale
+adds 5 cash/15 debt once. The migration is applied twice only inside Docker.
+
+`READY_FOR_INSTALLATION_REVIEW` applies to code prepared and this automated
+compatibility evidence. Manual Android/PWA and real pharmacy QA remain PENDING.
+Production migration installed: NO. PR merged: NO. Production checkout recovered:
+NO DEMOSTRADO. User authorization is still required for merge and installation.
+
+Detailed current run evidence: `supabase/tests/fixtures/pharmacy-stage3-current-financial/validation.json`.
+
+| Current path | Original pharmacy migration | Corrected migration | Effects checked |
+|---|---|---|---|
+| ordinary_6b / sale.cashier | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=0, cash=20.0, receipt=1, dispensation=0 |
+| common / sale.cashier_inventory | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=20.0, receipt=1, dispensation=0 |
+| common_batch / sale.cashier_inventory | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=20.0, receipt=1, dispensation=0 |
+| ordinary_credit / sale.credit | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=5.0, receipt=1, dispensation=0 |
+| pharmacy_other / sale.cashier_inventory | `P0001: PHARMACY_PRESCRIPTION_REQUIRED` | `COMMIT` | sale=1, inventory=1, cash=20.0, receipt=1, dispensation=0 |
+| antibiotic / sale.cashier_inventory | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=20.0, receipt=1, dispensation=1 |
+| fraction_iv / sale.cashier_inventory | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=20.0, receipt=1, dispensation=1 |
+| pharmacy_credit / sale.credit | `42501: permission denied for schema private` | `COMMIT` | sale=1, inventory=1, cash=5.0, receipt=1, dispensation=1 |
+| missing_rx / sale.cashier_inventory | `P0001: PHARMACY_PRESCRIPTION_REQUIRED` | `P0001: PHARMACY_PRESCRIPTION_REQUIRED` | rollback; no captured state change |
+| missing_batch / sale.cashier | `42501: permission denied for schema private` | `P0001: PHARMACY_DISPENSATION_BATCH_REQUIRED` | rollback; no captured state change |
+| wrong_batch / sale.cashier_inventory | `P0001: CLOUD_BATCH_NOT_AVAILABLE:iv-batch` | `P0001: CLOUD_BATCH_NOT_AVAILABLE:iv-batch` | rollback; no captured state change |
+| legacy_stock_guard / sale.cashier | `P0001: CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED: Actualiza LANZO POS para vender con inventario Cloud.` | `P0001: CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED: Actualiza LANZO POS para vender con inventario Cloud.` | rollback; no captured state change |
