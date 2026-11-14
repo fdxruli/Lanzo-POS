@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductList from '../ProductList';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
+import Dexie from 'dexie';
+import { searchProductsInTable } from '../../../services/db/productSearch';
+import { buildProductSearchFields } from '../../../services/db/productSearchIndex';
 
 const mocks = vi.hoisted(() => ({
   queryBatchesByProductIdsAndActive: vi.fn(async () => []),
@@ -101,7 +105,7 @@ describe('ProductList batch-backed grocery details', () => {
     fireEvent.change(screen.getByPlaceholderText(/Buscar: Nombre, Código/i), { target: { value: 'agua' } });
 
     expect(await screen.findByText('Agua mineral')).toBeInTheDocument();
-    await waitFor(() => expect(mocks.searchProductsInDB).toHaveBeenCalledWith('agua', 'active', 'drinks'));
+    await waitFor(() => expect(mocks.searchProductsInDB).toHaveBeenCalledWith('agua', 'active', 'drinks', { eligible: expect.any(Function) }));
     expect(screen.queryByText('Pan dulce')).not.toBeInTheDocument();
     expect(screen.queryByText('Agua antigua')).not.toBeInTheDocument();
   });
@@ -119,4 +123,46 @@ describe('ProductList batch-backed grocery details', () => {
       categoryId: { type: 'uncategorized' }
     });
   });
+});
+
+
+it('F-04 finds sellable inventory after 60 ingredients using indexed search', async () => {
+  const database = new Dexie(`f04-inventory-${crypto.randomUUID()}`, { indexedDB, IDBKeyRange });
+  database.version(1).stores({ menu: 'id, name_lower, *search_tokens, barcode_normalized, sku_normalized, *search_ngrams' });
+  try {
+    await database.open();
+    await database.table('menu').bulkPut(Array.from({ length: 65 }, (_, i) => {
+      const product = { id: String(i).padStart(3, '0'), name: `QA AGUA ${String(i).padStart(3, '0')}`,
+        isActive: true, productType: i < 60 ? 'ingredient' : 'sellable', categoryId: 'drinks', price: 10, stock: 5 };
+      return { ...product, ...buildProductSearchFields(product) };
+    }));
+    mocks.catalogState.filters = { status: 'active', categoryId: 'drinks' };
+    mocks.searchProductsInDB.mockImplementation((term, status, category, options) =>
+      searchProductsInTable(database.table('menu'), term, status, 50, category, options));
+    render(<ProductList products={[]} categories={[{ id: 'drinks', name: 'Bebidas' }]} isLoading={false} />);
+    fireEvent.change(screen.getByPlaceholderText(/buscar/i), { target: { value: 'QA AGUA' } });
+    await waitFor(() => expect(screen.getByText('QA AGUA 064')).toBeInTheDocument(), { timeout: 1000 });
+    for (let i = 60; i < 65; i++) expect(screen.getByText(`QA AGUA 0${i}`)).toBeInTheDocument();
+  } finally { cleanup(); await database.delete(); }
+});
+
+it('ignores a previous inventory response after the term changes and restores pagination for empty text', async () => {
+  let finishOld;
+  mocks.searchProductsInDB.mockResolvedValueOnce([{ id: 'seed', name: 'Seed result', price: 10, stock: 5 }]);
+  const props = { products: [{ id: 'page', name: 'Paged catalog', price: 10, stock: 5 }], categories: [], isLoading: false };
+  render(<ProductList {...props} />);
+  fireEvent.change(screen.getByPlaceholderText(/buscar/i), { target: { value: 'seed' } });
+  expect(await screen.findByText('Seed result')).toBeInTheDocument();
+  const input = screen.getByPlaceholderText(/buscar/i);
+  mocks.searchProductsInDB.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }));
+  fireEvent.change(input, { target: { value: 'old' } });
+  await waitFor(() => expect(finishOld).toBeTypeOf('function'));
+  mocks.searchProductsInDB.mockResolvedValue([{ id: 'new', name: 'New result', price: 10, stock: 5 }]);
+  fireEvent.change(input, { target: { value: 'new' } });
+  expect(await screen.findByText('New result')).toBeInTheDocument();
+  act(() => finishOld([{ id: 'old', name: 'Old result', price: 10, stock: 5 }]));
+  await waitFor(() => expect(screen.getByText('New result')).toBeInTheDocument());
+  expect(screen.queryByText('Old result')).not.toBeInTheDocument();
+  fireEvent.change(input, { target: { value: '' } });
+  expect(await screen.findByText('Paged catalog')).toBeInTheDocument();
 });

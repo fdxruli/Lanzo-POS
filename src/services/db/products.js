@@ -100,14 +100,15 @@ const normalizeInitialBatchForProduct = (batch, product, now) => {
     return normalizedBatch;
 };
 
-export const searchProductsInDB = async (searchTerm, status = 'active', categoryFilter = null) => {
+export const searchProductsInDB = async (searchTerm, status = 'active', categoryFilter = null, options = {}) => {
     try {
         return await searchProductsInTable(
             db.table(STORES.MENU),
             searchTerm,
             status,
             undefined,
-            categoryFilter
+            categoryFilter,
+            options
         );
     } catch (error) {
         throw handleDexieError(error, 'searchProductsInDB');

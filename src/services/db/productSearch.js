@@ -25,26 +25,6 @@ const matchesSearchFilters = (product, status, categoryFilter) => (
   matchesStatus(product, status) && matchesCategory(product, categoryFilter)
 );
 
-const appendUnique = (target, products, takenIds, status, limit, categoryFilter) => {
-  for (const product of products) {
-    if (target.length >= limit) break;
-    if (!product || takenIds.has(product.id) || !matchesSearchFilters(product, status, categoryFilter)) {
-      continue;
-    }
-
-    takenIds.add(product.id);
-    target.push(product);
-  }
-};
-
-const queryPrefix = (productTable, indexName, term, limit, status, categoryFilter) =>
-  productTable
-    .where(indexName)
-    .startsWith(term)
-    .filter((product) => matchesSearchFilters(product, status, categoryFilter))
-    .limit(limit)
-    .toArray();
-
 const findSubstringCandidateIds = async (productTable, normalizedTerm) => {
   const ngrams = buildSearchNgrams(normalizedTerm);
   if (ngrams.length === 0) return [];
@@ -84,59 +64,76 @@ const containsNormalizedTerm = (product, normalizedTerm) => {
     || sku.includes(normalizedTerm);
 };
 
+/**
+ * Indexed candidates are hydrated in bounded groups. Only products accepted by
+ * both the synchronous predicate and optional async batch filter use the limit.
+ * The batch filter must return a subset of its input, in the same order.
+ */
 export const searchProductsInTable = async (
   productTable,
   searchTerm,
   status = 'active',
   limit = DEFAULT_SEARCH_LIMIT,
-  categoryFilter = null
+  categoryFilter = null,
+  { eligible = () => true, filterBatch = null } = {}
 ) => {
   const normalizedTerm = normalizeProductSearchValue(searchTerm);
-  if (!normalizedTerm) return [];
+  if (!normalizedTerm || limit <= 0) return [];
 
-  const exactBarcode = await productTable
-    .where('barcode_normalized')
-    .equals(normalizedTerm)
-    .first();
-
-  if (exactBarcode && matchesSearchFilters(exactBarcode, status, categoryFilter)) {
-    return [exactBarcode];
-  }
-
-  const exactSku = await productTable
-    .where('sku_normalized')
-    .equals(normalizedTerm)
-    .first();
-
-  if (exactSku && matchesSearchFilters(exactSku, status, categoryFilter)) {
-    return [exactSku];
-  }
-
-  const prefixGroups = await Promise.all([
-    queryPrefix(productTable, 'name_lower', normalizedTerm, limit, status, categoryFilter),
-    queryPrefix(productTable, 'search_tokens', normalizedTerm, limit, status, categoryFilter),
-    queryPrefix(productTable, 'barcode_normalized', normalizedTerm, limit, status, categoryFilter),
-    queryPrefix(productTable, 'sku_normalized', normalizedTerm, limit, status, categoryFilter)
-  ]);
-
+  const matches = (product) => product
+    && matchesSearchFilters(product, status, categoryFilter)
+    && eligible(product);
   const results = [];
-  const takenIds = new Set();
-  for (const products of prefixGroups) {
-    appendUnique(results, products, takenIds, status, limit, categoryFilter);
+  const visited = new Set();
+  const accept = async (products) => {
+    const candidates = products.filter((product) => {
+      if (!product || visited.has(product.id)) return false;
+      visited.add(product.id);
+      return matches(product);
+    });
+    if (!candidates.length) return;
+    const accepted = filterBatch ? await filterBatch(candidates) : candidates;
+    results.push(...accepted.slice(0, limit - results.length));
+  };
+
+  // Preserve scanner/exact-code priority, but an excluded exact match must
+  // not hide other eligible matches in the remaining index routes.
+  for (const index of ['barcode_normalized', 'sku_normalized']) {
+    const exact = await productTable.where(index).equals(normalizedTerm).filter(matches).toArray();
+    for (let offset = 0; offset < exact.length; offset += DEFAULT_SEARCH_LIMIT) {
+      await accept(exact.slice(offset, offset + DEFAULT_SEARCH_LIMIT));
+      if (results.length) return results.slice(0, 1);
+    }
   }
 
-  if (results.length >= limit || normalizedTerm.length < 3) {
-    return results;
+  const consumeIds = async (ids, substring = false) => {
+    const unseenIds = [...new Set(ids)].filter((id) => !visited.has(id));
+    for (let offset = 0; offset < unseenIds.length && results.length < limit; offset += DEFAULT_SEARCH_LIMIT) {
+      const products = await productTable.bulkGet(unseenIds.slice(offset, offset + DEFAULT_SEARCH_LIMIT));
+      await accept(substring
+        ? products.filter((product) => product && containsNormalizedTerm(product, normalizedTerm))
+        : products);
+    }
+  };
+
+  for (const index of ['name_lower', 'search_tokens', 'barcode_normalized', 'sku_normalized']) {
+    const collection = productTable.where(index).startsWith(normalizedTerm);
+    if (filterBatch) {
+      // Key-only indexed traversal avoids materializing all matching rows while
+      // async eligibility is resolved in bounded, deduplicated batches below.
+      await consumeIds(await collection.primaryKeys());
+    } else {
+      await accept(await collection
+        .distinct()
+        .filter((product) => !visited.has(product.id) && matches(product))
+        .limit(limit - results.length)
+        .toArray());
+    }
+    if (results.length >= limit) return results;
   }
 
-  const candidateIds = await findSubstringCandidateIds(productTable, normalizedTerm);
-  const candidates = candidateIds.length > 0
-    ? await productTable.bulkGet(candidateIds)
-    : [];
-  const substringMatches = candidates.filter((product) =>
-    containsNormalizedTerm(product, normalizedTerm)
-  );
-
-  appendUnique(results, substringMatches, takenIds, status, limit, categoryFilter);
+  if (normalizedTerm.length >= 3) {
+    await consumeIds(await findSubstringCandidateIds(productTable, normalizedTerm), true);
+  }
   return results;
 };

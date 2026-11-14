@@ -57,6 +57,14 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const [hasExpiredItems, setHasExpiredItems] = useState(false);
     const [assignedCategoryIds, setAssignedCategoryIds] = useState(null);
 
+    const isSearchEligible = useCallback((item) => {
+        if (item?.isActive === false || item?.productType === 'ingredient' || item?.product_type === 'ingredient') return false;
+        if (item?.deletedAt || item?.deletedTimestamp) return false;
+        if (categoryId !== null && categoryId !== undefined && item.categoryId !== categoryId) return false;
+        const outOfStock = isOutOfStockForPosMenu(item);
+        return outOfStockOnly ? outOfStock : !outOfStock;
+    }, [categoryId, outOfStockOnly]);
+
     const applyActiveFilters = useCallback(async (items = []) => {
         const expiredProductIds = await resolveExpiredProductIdsForPosMenu(items, { db, STORES });
 
@@ -88,6 +96,10 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
 
         const syncMenuVisual = async () => {
             const term = debouncedSearchTerm.trim();
+            if (searchTerm.trim() !== term) {
+                setMenuVisual([]);
+                return;
+            }
 
             if (!term) {
                 const filteredMenu = await applyActiveFilters(menu);
@@ -98,8 +110,10 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
             }
 
             try {
-                const results = await searchProductsInDB(term);
-                const filteredResults = await applyActiveFilters(results);
+                const filteredResults = await searchProductsInDB(term, 'active', categoryId, {
+                    eligible: isSearchEligible,
+                    filterBatch: applyActiveFilters
+                });
                 if (isActive) {
                     setMenuVisual(filteredResults);
                 }
@@ -118,8 +132,11 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         };
     }, [
         debouncedSearchTerm,
+        searchTerm,
         menu,
-        applyActiveFilters
+        applyActiveFilters,
+        categoryId,
+        isSearchEligible
     ]);
 
     useEffect(() => {

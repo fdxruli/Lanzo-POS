@@ -6,6 +6,10 @@ const createMockCollection = (rows) => {
   let currentRows = [...rows];
 
   return {
+    distinct() {
+      currentRows = [...new Map(currentRows.map((row) => [row.id, row])).values()];
+      return this;
+    },
     filter(predicate) {
       currentRows = currentRows.filter(predicate);
       return this;
@@ -157,4 +161,43 @@ describe('searchProductsInDB', () => {
     expect(byName.map((product) => product.id)).toEqual(['p1']);
     expect(bySku.map((product) => product.id)).toEqual(['p1']);
   });
+});
+
+
+describe('F-04 eligibility before the result limit', () => {
+  const valid = Array.from({ length: 5 }, (_, i) => ({
+    id: `valid-${i}`, name: `qa agua z${i}`, isActive: true,
+    productType: 'sellable', categoryId: 'B', stock: 5
+  }));
+  it.each(['ingredient', 'category', 'inactive', 'outOfStock', 'expired'])(
+    'continues past 60 excluded %s candidates', async (kind) => {
+      const excluded = Array.from({ length: 60 }, (_, i) => ({
+        ...valid[0], id: `excluded-${i}`, name: `qa agua a${String(i).padStart(2, '0')}`,
+        ...(kind === 'ingredient' ? { productType: 'ingredient' } : {}),
+        ...(kind === 'category' ? { categoryId: 'A' } : {}),
+        ...(kind === 'inactive' ? { isActive: false } : {}),
+        ...(kind === 'outOfStock' ? { stock: 0 } : {}),
+        ...(kind === 'expired' ? { expired: true } : {})
+      }));
+      const eligible = (p) => p.productType !== 'ingredient' && p.categoryId === 'B' && p.stock > 0;
+      const filterBatch = vi.fn(async (items) => items.filter((p) => !p.expired));
+      const result = await searchProductsInTable(createMockTable(withSearchFields([...excluded, ...valid])),
+        'qa agua', 'active', 50, null, { eligible, filterBatch });
+      expect(result.map((p) => p.id)).toEqual(valid.map((p) => p.id));
+    }
+  );
+});
+
+
+it.each(['barcode', 'sku'])('skips an excluded exact %s and continues indexed partial matches', async (field) => {
+  const rows = withSearchFields([
+    { id: 'excluded', name: 'hidden', [field]: 'agua', productType: 'ingredient', isActive: true },
+    { id: 'valid', name: 'agua mineral', isActive: true },
+    { id: 'partial', name: 'superaguafresca', isActive: true }
+  ]);
+  const result = await searchProductsInTable(createMockTable(rows), 'agua', 'active', 50, null,
+    { eligible: (p) => p.productType !== 'ingredient' });
+  expect(result.map((p) => p.id)).toEqual(['valid', 'partial']);
+  const exact = await searchProductsInTable(createMockTable(rows), 'agua');
+  expect(exact.map((p) => p.id)).toEqual(['excluded']);
 });
