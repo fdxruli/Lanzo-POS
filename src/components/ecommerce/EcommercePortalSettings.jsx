@@ -529,6 +529,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     if (!nextId || nextId === activeSection || tabConfirmOpenRef.current) return;
     const move = () => {
       tabConfirmOpenRef.current = false;
+      if (activeSection === 'catalog' && nextId !== 'catalog' && !modalOpen) {
+        catalogSessionRef.current += 1;
+        catalogRequestSeqRef.current += 1;
+        setOpeningCatalog(false);
+      }
       setOperationDirty(false);
       setDesignDirty(false);
       setActiveSection(nextId);
@@ -1065,9 +1070,16 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     catalogSessionRef.current = sessionId;
     if (!(await loadLocalCatalog({ requestKind: 'opening', sessionId }))) return;
     if (sessionId !== catalogSessionRef.current) return;
-    const sourceProduct = product?.localProductRef
-      ? await productRepository.getProductById(product.localProductRef)
-      : null;
+    let sourceProduct = null;
+    try {
+      sourceProduct = product?.localProductRef
+        ? await productRepository.getProductById(product.localProductRef)
+        : null;
+    } catch {
+      if (sessionId !== catalogSessionRef.current) return;
+      toast.error('No se pudo leer el producto original. El editor no se abrió. Intenta nuevamente.');
+      return;
+    }
     if (sessionId !== catalogSessionRef.current) return;
     if (sourceProduct?.id) {
       setLocalProducts((current) => {
@@ -1526,7 +1538,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                       type="button"
                       className="btn btn-secondary"
                       onClick={() => openEditProduct(product)}
-                      disabled={busyProductId === product.id}
+                      disabled={busyProductId === product.id || openingCatalog}
                       aria-label={`Editar ${product.publicName}`}
                     >
                       <Pencil size={16} aria-hidden="true" /> Editar

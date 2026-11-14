@@ -150,6 +150,11 @@ export default function EcommerceProductPublishModal({
     ) return selectedProductSnapshot;
     return localProducts.find((product) => String(product.id) === selectedRef) || null;
   }, [form.localProductRef, localProducts, selectedProductSnapshot]);
+  const sourceMissing = Boolean(
+    editingProduct?.localProductRef
+    && String(selectedProductSnapshot?.id || '') !== String(editingProduct.localProductRef)
+    && !localProducts.some((product) => String(product.id) === String(editingProduct.localProductRef))
+  );
 
   const searchActive = localProductSearch.trim().length > 0;
   const searchResults = searchActive ? localProducts : [];
@@ -407,7 +412,11 @@ export default function EcommerceProductPublishModal({
     const price = Number(form.price);
     const localProduct = selectedLocalProduct;
     if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
-    if (!localProduct) return toast.error('No se pudo leer el producto local seleccionado.');
+    if (sourceMissing || !localProduct) {
+      return toast.error(
+        'No encontramos el producto original en el catálogo local. Puedes consultar esta ficha, pero para modificarla primero debes recuperar el producto original.'
+      );
+    }
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
     if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
     if (!editingProduct && limitReached && form.isPublished) {
@@ -434,31 +443,36 @@ export default function EcommerceProductPublishModal({
     setSaving(true);
     let saved = false;
     try {
-      saved = await onSave({
-      id: form.id,
-      sourceType: 'local_snapshot',
-      localProductRef: form.localProductRef.trim(),
-      localProduct,
-      publicName: form.publicName.trim(),
-      publicDescription: form.publicDescription.trim() || null,
-      price,
-      categoryName: form.categoryName.trim() || null,
-      isAvailable: form.isAvailable,
-      manualAvailable: form.isAvailable,
-      isPublished: form.isPublished,
-      displayOrder: Math.max(0, Math.trunc(safeNumber(form.displayOrder, 0))),
-      imageUrl: publicUrl(form.imageUrl),
-      stockMode: resolveStockMode({
-        canUseStockVisibility,
-        featureEnabled: stockVisibilityEnabled,
-        stockTracked: form.stockTracked,
-        requestedMode: form.stockMode
-      }),
-      publicConfigurationMode: form.publicConfigurationMode,
-      wholesaleEnabled: form.wholesaleEnabled,
-      syncConfig: canSyncCatalog ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
-      metadata: { source: 'admin_ui' }
-      });
+      const payload = {
+        id: form.id,
+        sourceType: editingProduct?.sourceType || 'local_snapshot',
+        localProductRef: form.localProductRef.trim(),
+        publicName: form.publicName.trim(),
+        publicDescription: form.publicDescription.trim() || null,
+        price,
+        categoryName: form.categoryName.trim() || null,
+        isAvailable: form.isAvailable,
+        manualAvailable: form.isAvailable,
+        isPublished: form.isPublished,
+        displayOrder: Math.max(0, Math.trunc(safeNumber(form.displayOrder, 0))),
+        imageUrl: publicUrl(form.imageUrl),
+        stockMode: resolveStockMode({
+          canUseStockVisibility,
+          featureEnabled: stockVisibilityEnabled,
+          stockTracked: form.stockTracked,
+          requestedMode: form.stockMode
+        }),
+        metadata: { source: 'admin_ui' }
+      };
+      if (localProduct) {
+        Object.assign(payload, {
+          localProduct,
+          publicConfigurationMode: form.publicConfigurationMode,
+          wholesaleEnabled: form.wholesaleEnabled,
+          syncConfig: canSyncCatalog ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG
+        });
+      }
+      saved = await onSave(payload);
     } catch {
       toast.error('No se pudo guardar el producto. Tus cambios siguen aquí.');
     } finally {
@@ -610,7 +624,7 @@ export default function EcommerceProductPublishModal({
             )}
           </div>
 
-          {canSyncCatalog && (
+          {canSyncCatalog && !sourceMissing && (
             <details className="ecom-catalog-editor-disclosure ecom-admin-span-2">
               <summary>
                 <span><Link2 size={17} /> Sincronización PRO</span>
@@ -651,6 +665,15 @@ export default function EcommerceProductPublishModal({
               </div>
               </fieldset>
             </details>
+          )}
+          {sourceMissing && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Producto original no encontrado</strong>
+              <span>
+                No encontramos el producto original en el catálogo local. Puedes consultar esta
+                ficha, pero para modificarla primero debes recuperar el producto original.
+              </span>
+            </div>
           )}
 
           <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
@@ -724,6 +747,7 @@ export default function EcommerceProductPublishModal({
             <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
             <label><input type="checkbox" checked={form.isPublished} onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))} disabled={!editingProduct && limitReached} /> Publicado</label>
           </div>
+          {!sourceMissing && <>
           <div className="ecom-catalog-editor-section-title ecom-admin-span-2">
             <h4>Configuraciones comerciales</h4>
           </div>
@@ -808,10 +832,21 @@ export default function EcommerceProductPublishModal({
               La disponibilidad pública requiere que el producto esté publicado, habilitado manualmente y disponible en la fuente local.
             </small>
           )}
+          </>}
 
           <footer className="ecom-admin-span-2 ecom-catalog-editor-footer">
             <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={saving}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading || stockFeatureError}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={(
+                saving
+                || stockFeatureLoading
+                || stockFeatureError
+                || sourceMissing
+                || Boolean(editingProduct && !selectedLocalProduct)
+              )}
+            >
               {saving ? <LoaderCircle className="ecom-admin-spin" size={17} /> : <Save size={17} />}
               Guardar producto
             </button>
