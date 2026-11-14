@@ -107,7 +107,7 @@ beforeEach(() => {
 });
 
 it('offers verification for a reloaded pending payment and blocks a fresh confirmation', async () => {
-  mocks.layaways = [layaway()];
+  mocks.layaways = [layaway({ deadline: '2099-12-31' })];
   mocks.getPaymentReviews.mockResolvedValueOnce([{ id: 'intent-a', layawayId: 'layaway-active', amount: 10 }]);
   mocks.verifyPayment.mockResolvedValueOnce({ status: 'confirmed' });
   mocks.acknowledgePayment.mockResolvedValueOnce(true);
