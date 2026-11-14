@@ -345,19 +345,16 @@ function LocalBackupSettings({
 
   const manualBackup = async () => {
     setManualBackupPhase('idle');
-    const shouldUploadToDrive = isDriveConnected;
     const hasValidAccessToken = Boolean(
       driveAccessToken
       && driveTokenExpiresAt
       && driveTokenExpiresAt > Date.now()
     );
+    const driveSessionExpired = isDriveConnected && !hasValidAccessToken;
+    const shouldUploadToDrive = isDriveConnected && hasValidAccessToken;
 
-    if (shouldUploadToDrive && !hasValidAccessToken) {
+    if (driveSessionExpired) {
       markDriveNeedsReauth();
-      const message = 'La sesion de Google Drive expiro. Reconecta tu cuenta antes de respaldar.';
-      setError(message);
-      toast.error(message);
-      return;
     }
 
     let actorHandle;
@@ -383,34 +380,61 @@ function LocalBackupSettings({
       return;
     }
 
+    let uploadResult = null;
     if (shouldUploadToDrive) {
       setManualBackupPhase('uploading');
-      const uploaded = await run(
-        async (currentActorHandle) => {
-          if (!(result.blob instanceof Blob)) {
-            throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
-          }
-          currentActorHandle.assertCurrent('settings_backup');
-          await googleDriveService.uploadBackup(
-            driveAccessToken,
-            result.blob,
-            result.fileName
-          );
-          return true;
-        },
-        null,
-        actorHandle
-      );
-
-      if (!uploaded) {
-        setManualBackupPhase('idle');
+      try {
+        if (!(result.blob instanceof Blob)) {
+          throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
+        }
+        actorHandle.assertCurrent('settings_backup');
+        uploadResult = await googleDriveService.uploadBackup(
+          driveAccessToken,
+          result.blob,
+          result.fileName
+        );
+        if (!['confirmed', 'verification_pending'].includes(uploadResult?.uploadStatus)) {
+          throw new Error('No se confirmó la subida a Google Drive.');
+        }
+      } catch (driveError) {
+        const message = driveError.code === 'AUTH_REQUIRED' || driveError.status === 401
+          ? 'El respaldo local quedó generado, pero la sesión de Google Drive expiró y no se confirmó la subida.'
+          : driveError.code === 'BACKUP_PERMISSION_REQUIRED'
+            ? 'El respaldo local quedó generado, pero el usuario actual no tiene permiso para subir copias a Google Drive.'
+            : 'El respaldo local quedó generado, pero no se confirmó la subida a Google Drive.';
+        setManualBackupPhase('completed');
+        setError(message);
+        toast.error(message);
         return;
       }
     }
 
     setManualBackupPhase('completed');
+    const driveVerificationPending = shouldUploadToDrive
+      && uploadResult?.uploadStatus === 'verification_pending';
+    const driveVerificationNotice = driveVerificationPending
+      ? ' Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.'
+      : '';
     if (result.coverage?.complete === false) {
-      toast('Respaldo guardado con cobertura parcial. Revisa las condiciones señaladas antes de continuar.', { icon: '⚠️' });
+      const destination = shouldUploadToDrive && !driveVerificationPending
+        ? 'local y subido a Google Drive'
+        : 'localmente';
+      const cleanupNotice = shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending'
+        ? uploadResult.cleanupReason === 'reauth_required'
+          ? ' La sesión de Google expiró después de la subida; las copias anteriores se conservaron. Reconecta para reintentar la limpieza.'
+          : ' La limpieza de copias anteriores quedó pendiente; se conservaron.'
+        : '';
+      const reauthNotice = driveSessionExpired ? ' Google Drive requiere reconexión; no se subió una copia.' : '';
+      toast(`Respaldo guardado ${destination} con cobertura parcial. Revisa las condiciones señaladas antes de continuar.${driveVerificationNotice}${cleanupNotice}${reauthNotice}`, { icon: '⚠️' });
+    } else if (driveVerificationPending) {
+      toast(`El respaldo local se guardó.${driveVerificationNotice}`, { icon: '⚠️' });
+    } else if (shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending') {
+      const message = uploadResult.cleanupReason === 'reauth_required'
+        ? 'Respaldo cifrado subido a Google Drive. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'
+        : 'Respaldo cifrado subido a Google Drive. La limpieza de copias anteriores quedó pendiente; se conservaron.';
+      toast(message, { icon: '⚠️' });
+    } else if (driveSessionExpired) {
+      toast('Respaldo local completado. Google Drive requiere reconexión; no se subió una copia.', { icon: '⚠️' });
     } else {
       toast.success(shouldUploadToDrive ? 'Respaldo cifrado subido a Google Drive.' : 'Respaldo completado.');
     }

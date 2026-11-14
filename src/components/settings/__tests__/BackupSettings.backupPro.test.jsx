@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
+import { uploadBackup } from '../../../services/googleDriveService';
+import toast from 'react-hot-toast';
 
 const access = vi.hoisted(() => ({ isAdmin: false }));
 
@@ -68,10 +70,10 @@ vi.mock('../../../services/utils', () => ({
 }));
 
 vi.mock('react-hot-toast', () => ({
-  default: {
+  default: Object.assign(vi.fn(), {
     success: vi.fn(),
     error: vi.fn()
-  }
+  })
 }));
 
 vi.mock('../GoogleDriveSettings', () => ({
@@ -84,6 +86,11 @@ describe('BackupSettings copy by license mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     backupManager.inspectRestore.mockReset();
+    backupManager.backup.mockReset();
+    uploadBackup.mockReset();
+    appState.driveAccessToken = null;
+    appState.driveTokenExpiresAt = null;
+    appState.isDriveConnected = false;
     access.isAdmin = false;
     Object.assign(backupStatus, {
       initialized: true,
@@ -146,6 +153,117 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.queryByText('Generar copia local')).not.toBeNull();
     expect(screen.queryByText('Respaldar ahora')).toBeNull();
     expect(screen.queryByText(/cache de este dispositivo/i)).toBeNull();
+  });
+
+  it('reports confirmed Drive upload when cleanup is pending', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'temporary-drive-token';
+    appState.driveTokenExpiresAt = Date.now() + 60_000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted V2 backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk',
+      coverage: { complete: true }
+    });
+    uploadBackup.mockResolvedValue({ uploadStatus: 'confirmed', cleanupStatus: 'pending' });
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    await waitFor(() => {
+      expect(uploadBackup).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith(
+        'Respaldo cifrado subido a Google Drive. La limpieza de copias anteriores quedó pendiente; se conservaron.',
+        { icon: '⚠️' }
+      );
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('warns that Drive accepted the upload but its identity is pending verification', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'temporary-drive-token';
+    appState.driveTokenExpiresAt = Date.now() + 60_000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted V2 backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk',
+      coverage: { complete: true }
+    });
+    uploadBackup.mockResolvedValue({ uploadStatus: 'verification_pending', uploadedFile: null });
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    await waitFor(() => {
+      expect(uploadBackup).toHaveBeenCalledTimes(1);
+      expect(backupManager.backup).toHaveBeenCalledWith(expect.objectContaining({ includeBlob: true }));
+      expect(toast).toHaveBeenCalledWith(
+        'El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.',
+        { icon: '⚠️' }
+      );
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
+  });
+
+  it('does not claim Drive success when upload fails after local generation', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'temporary-drive-token';
+    appState.driveTokenExpiresAt = Date.now() + 60_000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted V2 backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk',
+      coverage: { complete: true }
+    });
+    uploadBackup.mockRejectedValue(Object.assign(new Error('network failure'), { code: 'NETWORK_ERROR' }));
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'El respaldo local quedó generado, pero no se confirmó la subida a Google Drive.'
+      );
+    });
+    expect(screen.getByText(/no se confirmó la subida a Google Drive/i)).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
+  });
+
+  it('still generates the local copy when the Drive token has expired', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'expired-drive-token';
+    appState.driveTokenExpiresAt = Date.now() - 1;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      coverage: { complete: true }
+    });
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    await waitFor(() => {
+      expect(backupManager.backup).toHaveBeenCalledWith({
+        reason: 'manual_settings',
+        manual: true,
+        includeBlob: false
+      });
+      expect(toast).toHaveBeenCalledWith(
+        'Respaldo local completado. Google Drive requiere reconexión; no se subió una copia.',
+        { icon: '⚠️' }
+      );
+    });
+    expect(uploadBackup).not.toHaveBeenCalled();
+    expect(appState.markDriveNeedsReauth).toHaveBeenCalledOnce();
   });
 
   it('keeps destructive restore controls unavailable to Staff with backup access', () => {

@@ -42,6 +42,7 @@ export const enterLocalTenantIsolationFailure = (set, error) => {
     selectedEcommerceOrderActorIdentity: null,
     driveAccessToken: null,
     driveTokenExpiresAt: null,
+    driveTenantBinding: null,
     isDriveConnected: false,
     needsDriveReauth: false,
     cashOpeningPolicy: CASH_OPENING_POLICY.MANUAL,

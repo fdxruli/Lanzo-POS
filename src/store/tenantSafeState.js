@@ -24,6 +24,7 @@ export const isUnsafeTenantStatePatch = (patch = {}, guardState = {}, currentSta
     || isPresent(patch.companyProfile)
     || isPresent(patch.profileImportCandidate)
     || isPresent(patch.driveAccessToken)
+    || isPresent(patch.driveTenantBinding)
     || patch.isDriveConnected === true
     || patch.cashOpeningPolicy === 'automatic'
     || exposesEcommerceRuntime

@@ -39,7 +39,11 @@ vi.mock('../../../src/services/tenant/localTenantGuard', () => ({
   isLocalTenantAccessError: e => e?.code?.startsWith('LOCAL_TENANT_'), getLocalTenantBinding: () => null,
   runWithLocalTenantSyncLease: async (_l,_o,f) => f()
 }));
-vi.mock('../../../src/services/tenant/localTenantPolicy', () => ({ canAccessTenantOwnedRuntimeCache: () => m.accessible }));
+vi.mock('../../../src/services/tenant/localTenantPolicy', () => ({
+  canAccessTenantOwnedRuntimeCache: () => m.accessible,
+  LOCAL_TENANT_STATUS: { GRANTED: 'granted' },
+  localTenantAccessController: { getState: () => ({ enabled: false, status: 'locked' }) }
+}));
 vi.mock('../../../src/services/tenant/tenantScopedStorage', () => ({ getTenantStorageItem: k => localStorage.getItem(k), setTenantStorageItem: (k,v) => localStorage.setItem(k,v) }));
 vi.mock('../../../src/services/auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_STATUS: { LOCKED: 'locked', AUTHENTICATING: 'authenticating', HANDOFF_CHECK: 'handoff_check', GRANTED: 'granted' },
@@ -149,13 +153,13 @@ it('BGX-16 Drive refresh is synchronous and issues no network request',()=>{
  const x=setup();expect(x.get().refreshDriveSession()).toBeUndefined();expect(m.rpc).not.toHaveBeenCalled();
 });
 it('BGX-17 Drive local token rehydrates only through existing cache permission',()=>{
- const x=setup();sessionStorage.setItem(DRIVE_SESSION_KEY,JSON.stringify({accessToken:'synthetic-token',expiresAt:Date.now()+60000}));x.get().refreshDriveSession();expect(x.get().isDriveConnected).toBe(true);m.accessible=false;x.get().refreshDriveSession();expect(x.get().isDriveConnected).toBe(false);
+ const x=setup();sessionStorage.setItem(DRIVE_SESSION_KEY,JSON.stringify({accessToken:'synthetic-token',expiresAt:Date.now()+60000,tenantBinding:'unscoped-development-session'}));x.get().refreshDriveSession();expect(x.get().isDriveConnected).toBe(true);m.accessible=false;x.get().refreshDriveSession();expect(x.get().isDriveConnected).toBe(false);
 });
 it('BGX-18 locking Drive hides token without deleting credentials',()=>{
  const x=setup();x.get().connectDrive({accessToken:'synthetic-token',expiresIn:3600});const stored=sessionStorage.getItem(DRIVE_SESSION_KEY);x.get().lockDriveSession();expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBe(stored);expect(x.get().driveAccessToken).toBeNull();
 });
 it('BGX-19 expired Drive session retains existing reauth behavior',()=>{
- const x=setup();sessionStorage.setItem(DRIVE_SESSION_KEY,JSON.stringify({accessToken:'synthetic-token',expiresAt:Date.now()-1}));x.get().refreshDriveSession();expect(x.get().needsDriveReauth).toBe(true);expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBeNull();
+ const x=setup();sessionStorage.setItem(DRIVE_SESSION_KEY,JSON.stringify({accessToken:'synthetic-token',expiresAt:Date.now()-1,tenantBinding:'unscoped-development-session'}));x.get().refreshDriveSession();expect(x.get().needsDriveReauth).toBe(true);expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBeNull();
 });
 it('BGX-20 malformed Drive session is safely cleared as before',()=>{
  const x=setup();sessionStorage.setItem(DRIVE_SESSION_KEY,'invalid-json');x.get().refreshDriveSession();expect(x.get().isDriveConnected).toBe(false);expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBeNull();

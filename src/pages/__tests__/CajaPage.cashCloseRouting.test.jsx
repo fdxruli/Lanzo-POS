@@ -9,7 +9,8 @@ const fixtures = vi.hoisted(() => ({
   showMessage: vi.fn(),
   closeAdmin: vi.fn(),
   ownerClose: vi.fn(),
-  setBackupLoading: vi.fn()
+  setBackupLoading: vi.fn(),
+  driveSession: { accessToken: null, expiresAt: null, connected: false }
 }));
 
 vi.mock('../../hooks/useCaja', () => ({ useCaja: () => fixtures.hookState }));
@@ -23,7 +24,9 @@ vi.mock('../../store/useAppStore', () => ({
   useAppStore: (selector) => selector({
     isBackupLoading: false,
     setBackupLoading: fixtures.setBackupLoading,
-    isDriveConnected: false,
+    driveAccessToken: fixtures.driveSession.accessToken,
+    driveTokenExpiresAt: fixtures.driveSession.expiresAt,
+    isDriveConnected: fixtures.driveSession.connected,
     needsDriveReauth: false,
     markDriveNeedsReauth: vi.fn()
   })
@@ -102,6 +105,8 @@ vi.mock('../../components/caja/sections', () => ({
 }));
 
 import CajaPage, { isCashSessionOwnedByActor } from '../CajaPage';
+import { backupManager } from '../../services/backup/backupManager';
+import { uploadBackup } from '../../services/googleDriveService';
 
 const renderCajaPage = (initialEntry = '/caja') => render(
   <MemoryRouter initialEntries={[initialEntry]}>
@@ -163,6 +168,9 @@ beforeEach(() => {
       comentarios: 'Conteo confirmado'
     }
   });
+  fixtures.driveSession = { accessToken: null, expiresAt: null, connected: false };
+  backupManager.backup.mockResolvedValue({ success: true });
+  uploadBackup.mockReset();
   fixtures.hookState = makeHookState();
 });
 
@@ -237,6 +245,103 @@ describe('CajaPage cash close routing', () => {
       );
       expect(dispatchSpy.mock.calls.some(([event]) => event.type === 'lanzo:cash-sync-updated')).toBe(true);
     });
+  });
+
+  it('keeps a confirmed cash close successful when the Drive upload fails', async () => {
+    fixtures.driveSession = {
+      accessToken: 'temporary-drive-token',
+      expiresAt: Date.now() + 60_000,
+      connected: true
+    };
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk'
+    });
+    uploadBackup.mockRejectedValue(Object.assign(new Error('Drive unavailable'), { code: 'NETWORK_ERROR' }));
+
+    renderCajaPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre local' }));
+
+    await waitFor(() => {
+      expect(fixtures.ownerClose).toHaveBeenCalledTimes(1);
+      expect(backupManager.backup).toHaveBeenCalledWith({
+        reason: 'cash_close',
+        manual: true,
+        includeBlob: true
+      });
+      expect(uploadBackup).toHaveBeenCalledTimes(1);
+      expect(fixtures.showMessage).toHaveBeenCalledWith(
+        expect.stringContaining('El respaldo local quedó guardado, pero no se confirmó la subida a Google Drive.'),
+        expect.any(Function),
+        expect.objectContaining({
+          type: 'warning',
+          title: 'Cierre confirmado; revisar respaldo'
+        })
+      );
+    });
+  });
+
+  it('reports Drive upload success separately when cleanup remains pending after cash close', async () => {
+    fixtures.driveSession = {
+      accessToken: 'temporary-drive-token',
+      expiresAt: Date.now() + 60_000,
+      connected: true
+    };
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk'
+    });
+    uploadBackup.mockResolvedValue({ uploadStatus: 'confirmed', cleanupStatus: 'pending' });
+
+    renderCajaPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre local' }));
+
+    await waitFor(() => {
+      expect(fixtures.ownerClose).toHaveBeenCalledTimes(1);
+      expect(fixtures.showMessage).toHaveBeenCalledWith(
+        expect.stringContaining('El respaldo local y la subida a Google Drive quedaron confirmados, pero la limpieza de copias anteriores está pendiente'),
+        expect.any(Function),
+        expect.objectContaining({
+          type: 'warning',
+          title: 'Cierre confirmado; revisar respaldo'
+        })
+      );
+    });
+  });
+
+  it('keeps the cash close confirmed and warns when the accepted Drive upload is pending verification', async () => {
+    fixtures.driveSession = {
+      accessToken: 'temporary-drive-token',
+      expiresAt: Date.now() + 60_000,
+      connected: true
+    };
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk'
+    });
+    uploadBackup.mockResolvedValue({ uploadStatus: 'verification_pending', uploadedFile: null });
+
+    renderCajaPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre local' }));
+
+    await waitFor(() => {
+      expect(fixtures.ownerClose).toHaveBeenCalledTimes(1);
+      expect(fixtures.showMessage).toHaveBeenCalledWith(
+        expect.stringContaining('El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.'),
+        expect.any(Function),
+        expect.objectContaining({
+          type: 'warning',
+          title: 'Cierre confirmado; revisar respaldo'
+        })
+      );
+    });
+    expect(fixtures.closeAdmin).not.toHaveBeenCalled();
   });
 
   it('routes Staff closing their own stable session to the normal owner Corte', () => {

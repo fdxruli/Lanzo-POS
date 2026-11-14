@@ -355,10 +355,11 @@ describe('PublicStorePage checkout integration', () => {
     expect(screen.getByRole('dialog', { name: 'Pedido enviado' })).toBeInTheDocument();
   });
 
-  it('closes editing and recoverable checkout states without clearing the cart', async () => {
+  it('closes an editing checkout on BFCache recovery, preserving the cart for reopening', async () => {
     const user = userEvent.setup();
     renderPage();
     await openAndFillCheckout(user);
+
     await act(async () => {
       dispatchPersistedPageShow();
     });
@@ -372,11 +373,17 @@ describe('PublicStorePage checkout integration', () => {
       name: 'Ver carrito, 1 unidades, subtotal $80.00'
     }));
     await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
+    expect(await screen.findByRole('dialog', { name: 'Finalizar pedido' })).toBeInTheDocument();
+  });
+
+  it('closes a recoverable checkout on BFCache recovery without clearing the cart', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+
     serviceMocks.createPublicOrder.mockRejectedValueOnce(
       new EcommercePublicError('ECOMMERCE_ORDER_CREATE_FAILED', 'No se pudo confirmar.')
     );
-    await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
-    await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar');
 
@@ -386,7 +393,7 @@ describe('PublicStorePage checkout integration', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
     });
-    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
   });
 
