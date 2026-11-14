@@ -561,11 +561,31 @@ const ORIGINAL_LIMIT = Object.freeze({
 });
 const originalText = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
 
+// V8 exposes Error.stack as an own accessor. Capture the identity of the
+// engine's getter from a fresh native Error, not from the untrusted input.
+const NATIVE_STACK_GETTER = (() => {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(new Error(), 'stack');
+    return typeof descriptor?.get === 'function' ? descriptor.get : null;
+  } catch { return null; }
+})();
+
 // Read own data or built-in native accessors only; never a supplied getter,
 // toJSON, toString, cause, arbitrary application payload or store.
 const nativeErrorField = (value, key, native, domException) => {
   const direct = consoleField(value, key);
   if (direct !== undefined) return direct;
+  if (native && key === 'stack') {
+    try {
+      const ownDescriptor = Object.getOwnPropertyDescriptor(value, 'stack');
+      // Never run an application-defined getter, even on an Error instance.
+      // Data descriptors with undefined are also intentionally left missing.
+      if (ownDescriptor) {
+        return NATIVE_STACK_GETTER && ownDescriptor.get === NATIVE_STACK_GETTER
+          ? NATIVE_STACK_GETTER.call(value) : undefined;
+      }
+    } catch { return undefined; }
+  }
   if (domException) {
     try {
       const descriptor = Object.getOwnPropertyDescriptor(DOMException.prototype, key);
@@ -577,7 +597,11 @@ const nativeErrorField = (value, key, native, domException) => {
     let prototype = Object.getPrototypeOf(value);
     for (let depth = 0; prototype && prototype !== Object.prototype && depth < 8; depth++) {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
-      if (descriptor) return Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+      if (descriptor) {
+        if (Object.hasOwn(descriptor, 'value')) return descriptor.value;
+        return key === 'stack' && NATIVE_STACK_GETTER && descriptor.get === NATIVE_STACK_GETTER
+          ? NATIVE_STACK_GETTER.call(value) : undefined;
+      }
       prototype = Object.getPrototypeOf(prototype);
     }
   } catch { /* Restricted native host prototypes. */ }

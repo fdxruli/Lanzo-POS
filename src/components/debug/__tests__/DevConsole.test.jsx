@@ -105,7 +105,8 @@ it('shows a TypeError original and stack only when inspected, never in clipboard
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   installDevConsoleCapture();
   const error = new TypeError('TECHNICAL_ORIGINAL_ONLY');
-  Object.defineProperty(error, 'stack', { value: 'TypeError: TECHNICAL_ORIGINAL_ONLY\\n at bundle.js:4:2' });
+  // Real V8 stack, not a manually injected fixture.
+  expect(error.stack).toEqual(expect.any(String));
   emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, error]);
   render(<DevConsolePanel canCopy={() => true} />);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));

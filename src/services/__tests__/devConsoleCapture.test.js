@@ -225,4 +225,27 @@ describe('development console capture privacy', () => {
     expect(entries[1].technical.message).toBe('rejected-string-original');
     expect(JSON.stringify(entries)).not.toContain('DO_NOT_COPY');
   });
+  it('passes through a real console.error(TypeError) native stack without exporting it', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { getDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording, formatDevConsoleEntries } =
+      await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+
+    const error = new TypeError('LANZO_QA_NATIVE_CONSOLE_STACK');
+    const actualStack = error.stack;
+    console.error(error);
+    const entries = getDevConsoleEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].technical.message).toBe('LANZO_QA_NATIVE_CONSOLE_STACK');
+    if (typeof actualStack === 'string') {
+      expect(entries[0].technical.stack).toBe(actualStack.slice(0, 12000));
+    } else {
+      expect(entries[0].technical.stack).toBe('');
+    }
+    const copied = formatDevConsoleEntries(entries);
+    expect(copied).not.toContain('LANZO_QA_NATIVE_CONSOLE_STACK');
+    expect(copied).not.toContain(entries[0].technical.stack || '__NO_STACK__');
+  });
+
 });

@@ -56,7 +56,27 @@ describe('safe diagnostic console projection', () => {
     expect(JSON.stringify(event)).not.toMatch(/private|12345|token|payload/);
     expect(projectDiagnosticEvent('info', [{ diagnosticOperation: '__proto__', diagnosticState: 'private' }]).operation).toBe('');
   });
-  it('preserves an unknown TypeError, actual stack and an absent stack', () => {
+  it('recovers a real TypeError native stack without replacing its stack descriptor', () => {
+    const error = new TypeError('LANZO_QA_NATIVE_STACK');
+    const nativeStack = error.stack;
+    const entry = projectDiagnosticEvent('error', [error]);
+
+    expect(entry).toMatchObject({
+      code: 'INCIDENT_UNKNOWN', category: 'unknown', errorType: 'TypeError'
+    });
+    expect(entry.technical).toMatchObject({
+      name: 'TypeError', message: 'LANZO_QA_NATIVE_STACK'
+    });
+    // Some engines do not provide a stack. Never synthesize one.
+    if (typeof nativeStack === 'string') {
+      expect(entry.technical.stack).toBe(nativeStack.slice(0, 12000));
+      expect(entry.technical.stack).toContain('LANZO_QA_NATIVE_STACK');
+    } else {
+      expect(entry.technical.stack).toBe('');
+    }
+  });
+
+  it('preserves an unknown TypeError, explicit data stack and an absent stack', () => {
     const error = new TypeError('exact technical message');
     Object.defineProperty(error, 'stack', { value: 'TypeError: exact technical message\\n    at test.js:1:2' });
     const entry = projectDiagnosticEvent('error', [error]);
@@ -77,6 +97,19 @@ describe('safe diagnostic console projection', () => {
       code: '42703', message: 'column does not exist', hint: 'Check the field name', status: 400
     });
     expect(entry.text).not.toContain('column does not exist');
+  });
+
+  it('does not invoke custom stack getters, even when they return strings', () => {
+    const error = new TypeError('message is safe');
+    let getterInvocations = 0;
+    Object.defineProperty(error, 'stack', {
+      configurable: true,
+      get() { getterInvocations += 1; return 'DO_NOT_EXECUTE_THIS_GETTER'; }
+    });
+    const result = projectDiagnosticEvent('error', [error]);
+    expect(result.technical.message).toBe('message is safe');
+    expect(result.technical.stack).toBe('');
+    expect(getterInvocations).toBe(0);
   });
 
   it('ignores hostile getters and application payloads', () => {
