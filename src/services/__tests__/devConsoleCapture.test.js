@@ -3,9 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CONSOLE_METHODS = ['log', 'info', 'warn', 'error', 'debug', 'trace', 'table'];
-const STATE_KEY = '__LANZO_DEV_CONSOLE_STATE__';
 let originalConsoleMethods;
-let previousStateDescriptor;
 let installedListeners;
 
 vi.mock('../diagnostics/incidentEventCenter', () => ({ captureAsyncIncidentNotice: vi.fn() }));
@@ -14,8 +12,6 @@ beforeEach(() => {
   originalConsoleMethods = Object.fromEntries(
     CONSOLE_METHODS.map((method) => [method, console[method]])
   );
-  previousStateDescriptor = Object.getOwnPropertyDescriptor(window, STATE_KEY);
-  delete window[STATE_KEY];
   installedListeners = [];
   const addListener = window.addEventListener.bind(window);
   vi.spyOn(window, 'addEventListener').mockImplementation((type, listener, options) => {
@@ -24,23 +20,21 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  if (window[STATE_KEY]?.timer) window.clearTimeout(window[STATE_KEY].timer);
+afterEach(async () => {
+  (await import('../devConsoleCapture')).clearDevConsoleEntries();
   installedListeners.forEach((args) => window.removeEventListener(...args));
   CONSOLE_METHODS.forEach((method) => { console[method] = originalConsoleMethods[method]; });
-  if (previousStateDescriptor) Object.defineProperty(window, STATE_KEY, previousStateDescriptor);
-  else delete window[STATE_KEY];
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
 describe('development console capture privacy', () => {
-  it('stores only safe classifications from console, window errors, and rejected promises', async () => {
+  it('preserves technical details for local inspection but copies restricted classifications', async () => {
     CONSOLE_METHODS.forEach((method) => { console[method] = vi.fn(); });
     vi.resetModules();
-    const { getDevConsoleEntries, installDevConsoleCapture } = await import('../devConsoleCapture');
-    installDevConsoleCapture();
+    const { getDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
 
     console.error(
       'payment failed customer=Ana Lopez',
@@ -62,31 +56,31 @@ describe('development console capture privacy', () => {
 
     const entries = getDevConsoleEntries();
     const serialized = JSON.stringify(entries);
+    const copied = (await import('../devConsoleCapture')).formatDevConsoleEntries(entries);
     expect(entries).toHaveLength(3);
     expect(entries[0].text).toContain('Almacenamiento local');
     expect(entries[0].text).toContain('DB_OPEN_TIMEOUT');
     expect(entries[1].source).toBe('window.error');
     expect(entries[2].source).toBe('unhandledrejection');
     expect(entries.every(({ timestamp }) => !Number.isNaN(Date.parse(timestamp)))).toBe(true);
-    expect(serialized).not.toContain('Ana Lopez');
-    expect(serialized).not.toContain('private-name');
+    expect(entries[0].technical.message).toBe('token=jwt-secret');
+    expect(entries[1].technical.message).toContain('event-secret');
+    expect(entries[2].technical.message).toContain('rejection-secret');
     expect(serialized).not.toContain('full-license-secret');
     expect(serialized).not.toContain('9876.5');
-    expect(serialized).not.toContain('jwt-secret');
-    expect(serialized).not.toContain('event-secret');
     expect(serialized).not.toContain('url-secret');
-    expect(serialized).not.toContain('rejection-secret');
+    expect(copied).not.toMatch(/Ana Lopez|private-name|full-license-secret|9876|jwt-secret|event-secret|url-secret|rejection-secret/);
   });
 
   it('installs once, forwards original arguments once, and keeps global capture working', async () => {
     const originals = Object.fromEntries(CONSOLE_METHODS.map((method) => [method, vi.fn()]));
     Object.assign(console, originals);
     vi.resetModules();
-    const { installDevConsoleCapture, getDevConsoleEntries, subscribeDevConsole } = await import('../devConsoleCapture');
+    const { installDevConsoleCapture, getDevConsoleEntries, subscribeDevConsole, setDevConsoleRecording } = await import('../devConsoleCapture');
     const { captureAsyncIncidentNotice } = await import('../diagnostics/incidentEventCenter');
     captureAsyncIncidentNotice.mockClear();
-    installDevConsoleCapture();
-    installDevConsoleCapture();
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+    installDevConsoleCapture(); setDevConsoleRecording(true);
     expect(installedListeners.map(([type]) => type)).toEqual(['error', 'unhandledrejection']);
     const error = Object.freeze(Object.assign(new TypeError('Failed to fetch'), { code: 'NETWORK_REQUEST_FAILED' }));
     const before = Object.getOwnPropertyDescriptors(error);
@@ -115,8 +109,8 @@ describe('development console capture privacy', () => {
   it('groups only adjacent known-code operations and retains distinct unknown events and first/last times', async () => {
     CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
     vi.resetModules(); vi.useFakeTimers();
-    const { installDevConsoleCapture, getDevConsoleEntries, formatDevConsoleEntries } = await import('../devConsoleCapture');
-    installDevConsoleCapture();
+    const { installDevConsoleCapture, getDevConsoleEntries, formatDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
     const operation = { diagnosticOperation: 'sync.pull' };
     console.warn(operation, { code: 'NETWORK_TIMEOUT' });
     await vi.advanceTimersByTimeAsync(1000);
@@ -142,8 +136,8 @@ describe('development console capture privacy', () => {
   it('bounds storage, batches visual updates and isolates reentrant subscribers', async () => {
     CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
     vi.resetModules(); vi.useFakeTimers();
-    const { installDevConsoleCapture, getDevConsoleEntries, subscribeDevConsole } = await import('../devConsoleCapture');
-    installDevConsoleCapture();
+    const { installDevConsoleCapture, getDevConsoleEntries, subscribeDevConsole, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
     const listener = vi.fn(() => { console.warn('subscriber feedback'); });
     const unsubscribe = subscribeDevConsole(listener);
     for (let index = 0; index < 1000; index++) console.info('private unclassified input');
@@ -161,9 +155,9 @@ describe('development console capture privacy', () => {
     const originals = Object.fromEntries(CONSOLE_METHODS.map(method => [method, vi.fn()]));
     Object.assign(console, originals);
     vi.resetModules(); vi.stubEnv('PROD', true);
-    const { installDevConsoleCapture, getDevConsoleEntries } = await import('../devConsoleCapture');
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
     const { default: Logger } = await import('../Logger');
-    installDevConsoleCapture();
+    installDevConsoleCapture(); setDevConsoleRecording(true);
     Logger.info({ diagnosticOperation: 'sync.status', diagnosticState: 'online', token: 'private-token' });
     Logger.debug('unstructured production noise');
     expect(originals.info).not.toHaveBeenCalled();
@@ -181,7 +175,7 @@ describe('development console capture privacy', () => {
     const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
     const { captureAsyncIncidentNotice } = await import('../diagnostics/incidentEventCenter');
     captureAsyncIncidentNotice.mockReset();
-    installDevConsoleCapture(); setDevConsoleRecording(false);
+    installDevConsoleCapture(); setDevConsoleRecording(true); setDevConsoleRecording(false);
     const error = Object.assign(new Error('private'), { code: 'FINANCIAL_RESULT_UNKNOWN' });
     window.dispatchEvent(new ErrorEvent('error', { error }));
     const rejection = new Event('unhandledrejection');
@@ -190,5 +184,45 @@ describe('development console capture privacy', () => {
     expect(getDevConsoleEntries()).toEqual([]);
     expect(captureAsyncIncidentNotice).toHaveBeenCalledTimes(2);
     expect(captureAsyncIncidentNotice.mock.calls[0][0]).toBe(error);
+  });
+  it('never exposes original entries through window and clears them on recording revoke', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording, formatDevConsoleEntries } =
+      await import('../devConsoleCapture');
+    installDevConsoleCapture();
+    expect(window.__LANZO_DEV_CONSOLE_STATE__).toBeUndefined();
+    expect(window.__LANZO_DEV_CONSOLE__).toBeUndefined();
+    console.error(new Error('disabled-secret'));
+    expect(getDevConsoleEntries()).toEqual([]);
+    setDevConsoleRecording(true);
+    console.error(new TypeError('enabled original'));
+    expect(getDevConsoleEntries()[0].technical.message).toBe('enabled original');
+    expect(formatDevConsoleEntries(getDevConsoleEntries())).not.toContain('enabled original');
+    setDevConsoleRecording(false);
+    expect(getDevConsoleEntries()).toEqual([]);
+    setDevConsoleRecording(true);
+    expect(getDevConsoleEntries()).toEqual([]);
+  });
+
+  it('keeps browser source locations and string rejections in memory only', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } =
+      await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+    window.dispatchEvent(new ErrorEvent('error', {
+      message: 'original browser message', filename: 'https://test.invalid/main.js?token=DO_NOT_COPY',
+      lineno: 15, colno: 6
+    }));
+    const rejection = new Event('unhandledrejection');
+    Object.defineProperty(rejection, 'reason', { value: 'rejected-string-original' });
+    window.dispatchEvent(rejection);
+    const entries = getDevConsoleEntries();
+    expect(entries[0].technical).toMatchObject({
+      message: 'original browser message', filename: 'https://test.invalid/main.js', line: 15, column: 6
+    });
+    expect(entries[1].technical.message).toBe('rejected-string-original');
+    expect(JSON.stringify(entries)).not.toContain('DO_NOT_COPY');
   });
 });

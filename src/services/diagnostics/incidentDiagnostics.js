@@ -554,6 +554,61 @@ const consoleMessageCode = (message) => {
   return undefined;
 };
 
+
+const ORIGINAL_LIMIT = Object.freeze({
+  name: 120, code: 120, message: 2400, stack: 12000,
+  details: 2400, hint: 1600, filename: 600
+});
+const originalText = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
+
+// Read own data or built-in native accessors only; never a supplied getter,
+// toJSON, toString, cause, arbitrary application payload or store.
+const nativeErrorField = (value, key, native, domException) => {
+  const direct = consoleField(value, key);
+  if (direct !== undefined) return direct;
+  if (domException) {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(DOMException.prototype, key);
+      if (descriptor?.get) return descriptor.get.call(value);
+    } catch { return undefined; }
+  }
+  if (!native) return undefined;
+  try {
+    let prototype = Object.getPrototypeOf(value);
+    for (let depth = 0; prototype && prototype !== Object.prototype && depth < 8; depth++) {
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
+      if (descriptor) return Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+      prototype = Object.getPrototypeOf(prototype);
+    }
+  } catch { /* Restricted native host prototypes. */ }
+  return undefined;
+};
+
+const originalTechnicalError = (value, native, domException, postgrest, name, message) => {
+  if (!native && !postgrest) return null;
+  const read = key => nativeErrorField(value, key, native, domException);
+  const code = read('code');
+  const status = postgrest ? consoleField(value, 'status') : undefined;
+  return Object.freeze({
+    name: originalText(name, ORIGINAL_LIMIT.name) || (postgrest ? 'PostgREST' : 'Error'),
+    code: originalText(code, ORIGINAL_LIMIT.code)
+      || (typeof code === 'number' && Number.isFinite(code) ? String(code) : ''),
+    message: originalText(message, ORIGINAL_LIMIT.message),
+    stack: native ? originalText(read('stack'), ORIGINAL_LIMIT.stack) : '',
+    details: postgrest ? originalText(consoleField(value, 'details'), ORIGINAL_LIMIT.details) : '',
+    hint: postgrest ? originalText(consoleField(value, 'hint'), ORIGINAL_LIMIT.hint) : '',
+    status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null
+  });
+};
+
+const safeGlobalLocation = (location = {}) => ({
+  // Browser URLs may carry access tokens in search/fragment strings.
+  filename: typeof location.filename === 'string'
+    ? originalText(location.filename.split(/[?#]/, 1)[0], ORIGINAL_LIMIT.filename) : '',
+  line: Number.isSafeInteger(location.line) && location.line > 0 ? location.line : null,
+  column: Number.isSafeInteger(location.column) && location.column > 0 ? location.column : null
+});
+
 const normalizeConsoleError = (value) => {
   if (typeof value === 'string') {
     const code = consoleCodeCategory(value) ? value : consoleMessageCode(value);
@@ -564,25 +619,26 @@ const normalizeConsoleError = (value) => {
   const severity = normalizeSeverity(consoleField(value, 'severity'));
   const code = consoleField(value, 'code') ?? consoleField(value, 'safeCode') ?? consoleField(value, 'safe_code');
   const normalized = category && severity && (consoleCodeCategory(code) || CONSOLE_FALLBACK_CODES.has(code));
-  const message = consoleField(value, 'message');
-  // Native Errors, known codes, normalized incident records, and the actual
-  // PostgREST error shape are supported; application objects are not errors.
-  const postgrest = typeof message === 'string' && typeof consoleField(value, 'code') === 'string'
+  const ownMessage = consoleField(value, 'message');
+  const ownCode = consoleField(value, 'code');
+  // Only recognized PostgREST response shapes expose these fields.
+  const postgrest = typeof ownMessage === 'string' && typeof ownCode === 'string'
+    && /^(?:[A-Z0-9]{5}|PGRST\d{3})$/i.test(ownCode)
     && ['details', 'hint'].every((key) => {
       const field = consoleField(value, key);
       return field === null || typeof field === 'string';
     });
   let native = false;
-  let name = consoleField(value, 'name') ?? (normalized ? consoleField(value, 'errorType') : undefined);
+  let domException = false;
   try {
     native = value instanceof Error;
-    if (native && !name) name = consoleField(Object.getPrototypeOf(value), 'name');
-    // Use the platform getter directly, never a getter supplied by the input.
-    if (typeof DOMException !== 'undefined' && value instanceof DOMException) {
-      name = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name').get.call(value);
-      native = true;
-    }
-  } catch { /* Hostile proxies are not allowed to break console capture. */ }
+    domException = typeof DOMException !== 'undefined' && value instanceof DOMException;
+    native = native || domException;
+  } catch { /* A hostile proxy cannot interrupt the console. */ }
+  const name = native
+    ? nativeErrorField(value, 'name', native, domException)
+    : consoleField(value, 'name') ?? (normalized ? consoleField(value, 'errorType') : undefined);
+  const message = native ? nativeErrorField(value, 'message', native, domException) : ownMessage;
   const knownCode = consoleCodeCategory(code);
   if (!native && !postgrest && !normalized && !knownCode) return null;
   const safeCode = knownCode || normalized ? code : consoleMessageCode(message);
@@ -590,12 +646,11 @@ const normalizeConsoleError = (value) => {
     'OpenFailedError', 'VersionError', 'TransactionInactiveError', 'ReadOnlyError',
     'ConstraintError', 'DataError'].includes(name);
   const status = consoleField(value, 'status');
-  // Preserve the existing native-Error classifier. Its message is inspected
-  // transiently; only the resulting category enters the console projection.
   const nativeCategory = native ? classifyIncident({ name, message }).category : CATEGORIES.UNKNOWN;
   return {
     code: safeCode,
     name: SAFE_ERROR_NAMES.has(name) ? name : 'Error',
+    technical: originalTechnicalError(value, native, domException, postgrest, name, message),
     category: consoleCodeCategory(safeCode) || (normalized ? category : undefined)
       || (storage ? CATEGORIES.INDEXEDDB : undefined)
       || (name === 'NetworkError' || name === 'TimeoutError' ? CATEGORIES.CONNECTIVITY : undefined)
@@ -610,8 +665,8 @@ const normalizeConsoleError = (value) => {
   };
 };
 
-/** Projection shared by storage, UI, search and clipboard; no raw values survive. */
-export const projectDiagnosticEvent = (level, args = [], source = 'console') => {
+/** Restricted summaries and locally inspectable technical fields remain separate. */
+export const projectDiagnosticEvent = (level, args = [], source = 'console', globalLocation = null) => {
   const values = args.slice(0, 30);
   const candidates = values.map(normalizeConsoleError).filter(Boolean);
   const error = candidates.find((candidate) => candidate.code || candidate.category) || candidates[0];
@@ -639,6 +694,25 @@ export const projectDiagnosticEvent = (level, args = [], source = 'console') => 
   // Unknown and category-only events must NEVER be merged on a fallback code.
   // A known code plus a known operation identifies equivalent technical events,
   // not proof that separate business incidents have the same underlying cause.
+  const original = error?.technical || null;
+  const sourceMessage = (source === 'window.error' || source === 'unhandledrejection')
+    && typeof values[0] === 'string' ? originalText(values[0], ORIGINAL_LIMIT.message) : '';
+  const location = source === 'window.error' && globalLocation
+    ? safeGlobalLocation(globalLocation) : null;
+  const technical = original || sourceMessage || location?.filename || location?.line
+    || location?.column || globalLocation?.resourceError ? Object.freeze({
+      name: original?.name || (globalLocation?.resourceError ? 'ResourceError' : 'Error'),
+      code: original?.code || '',
+      message: original?.message || sourceMessage,
+      stack: original?.stack || '',
+      details: original?.details || '',
+      hint: original?.hint || '',
+      status: original?.status ?? null,
+      filename: location?.filename || '',
+      line: location?.line ?? null,
+      column: location?.column ?? null,
+      resourceError: globalLocation?.resourceError === true
+    }) : null;
   const groupable = Boolean(error?.code && error.code !== 'DB_OPERATION_FAILED' && incident.category !== CATEGORIES.UNKNOWN
     && incident.category !== CATEGORIES.FINANCIAL_OPERATION
     && consoleCodeCategory(error.code) && context);
@@ -650,6 +724,7 @@ export const projectDiagnosticEvent = (level, args = [], source = 'console') => 
     operation: operationKey || '',
     state,
     evidence: CONSOLE_CODE_EXPLANATIONS.get(code) || '',
+    technical,
     groupable,
     text: [
       isIncident ? `${categoryLabel} · ${detail} · ${code} · ${incident.errorType}`

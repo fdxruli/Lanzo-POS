@@ -99,3 +99,22 @@ it('batches a large stream without freezing the view and shows repetitions', asy
   expect(screen.getByText(/1000 eventos equivalentes/)).toBeVisible();
   expect(document.querySelectorAll('.dev-console-entry')).toHaveLength(1);
 });
+
+it('shows a TypeError original and stack only when inspected, never in clipboard', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  const error = new TypeError('TECHNICAL_ORIGINAL_ONLY');
+  Object.defineProperty(error, 'stack', { value: 'TypeError: TECHNICAL_ORIGINAL_ONLY\\n at bundle.js:4:2' });
+  emitDiagnosticConsoleEvent('error', [{ diagnosticOperation: 'db.operation' }, error]);
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  expect(screen.queryByText(/Mensaje original: TECHNICAL_ORIGINAL_ONLY/)).toBeNull();
+  fireEvent.click(screen.getByText('Examinar registro'));
+  expect(screen.getByText(/Mensaje original: TECHNICAL_ORIGINAL_ONLY/)).toBeVisible();
+  expect(screen.getByText(/Stack original:/)).toBeVisible();
+  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  expect(writeText.mock.calls[0][0]).toContain('INCIDENT_UNKNOWN');
+  expect(writeText.mock.calls[0][0]).not.toContain('TECHNICAL_ORIGINAL_ONLY');
+});

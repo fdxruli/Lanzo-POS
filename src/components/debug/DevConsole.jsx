@@ -374,7 +374,7 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
       </div>
 
       <div className="dev-console-status" role="status">
-        {copyStatus || (isPaused ? 'Vista pausada; la captura y los avisos operativos continúan.' : 'Hasta 300 registros locales. Solo se conserva información técnica permitida.')}
+        {copyStatus || (isPaused ? 'Vista pausada; la captura y los avisos operativos continúan.' : 'Hasta 300 registros locales. Los mensajes originales son solo para inspección; la copia sigue restringida.')}
       </div>
       <div className="dev-console-list" ref={scrollRef} onScroll={event => {
         const list = event.currentTarget;
@@ -401,7 +401,26 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
               </span> : null}
               <button className="dev-console-inspect" type="button" aria-expanded={inspectedId === entry.id}
                 onClick={() => setInspectedId(current => current === entry.id ? null : entry.id)}>Examinar registro</button>
-              {inspectedId === entry.id && <pre>{formatDevConsoleEntries([entry])}</pre>}
+              {inspectedId === entry.id && (
+                <div className="dev-console-inspection">
+                  <pre>{formatDevConsoleEntries([entry])}</pre>
+                  {entry.technical && (
+                    <div className="dev-console-original">
+                      <div><strong>Tipo original:</strong> {entry.technical.name}</div>
+                      {entry.technical.code && <div><strong>Código original:</strong> {entry.technical.code}</div>}
+                      {entry.technical.status !== null && <div><strong>HTTP:</strong> {entry.technical.status}</div>}
+                      {entry.technical.message && <pre>Mensaje original: {entry.technical.message}</pre>}
+                      {entry.technical.details && <pre>Detalles: {entry.technical.details}</pre>}
+                      {entry.technical.hint && <pre>Hint: {entry.technical.hint}</pre>}
+                      {entry.technical.stack && <pre style={{ whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'auto', maxWidth: '100%', maxHeight: '32dvh', overflowY: 'auto' }}>Stack original: {'\n'}{entry.technical.stack}</pre>}
+                      {entry.technical.filename && <pre>Archivo: {entry.technical.filename}</pre>}
+                      {entry.technical.line !== null && <div><strong>Línea:</strong> {entry.technical.line}</div>}
+                      {entry.technical.column !== null && <div><strong>Columna:</strong> {entry.technical.column}</div>}
+                      {entry.technical.resourceError && <div>Evento de carga de recurso; el navegador no proporcionó una excepción JavaScript.</div>}
+                    </div>
+                  )}
+                </div>
+              )}
             </article>
           ))
         )}
