@@ -1,0 +1,183 @@
+/* Configuración > Datos y apariencia: estilos delimitados al componente */
+.settings-general-shell { container-type: inline-size; min-width: 0; }
+.settings-general-shell *, .settings-general-shell *::before,
+.settings-general-shell *::after { box-sizing: border-box; }
+.settings-general-shell .settings-general-layout,
+.settings-general-shell .settings-preferences-column {
+  display: grid; grid-template-columns: minmax(0, 1fr); align-items: start;
+  gap: var(--ui-space-md, 16px); min-width: 0;
+}
+.settings-general-shell .settings-profile-panel,
+.settings-general-shell .settings-preference-panel {
+  min-width: 0; padding: 14px; border: 1px solid var(--border-color);
+  border-radius: 10px; background: var(--card-background-color);
+}
+.settings-general-shell .settings-panel-header {
+  display: flex; flex-wrap: wrap; justify-content: space-between;
+  align-items: flex-start; gap: 8px 14px; margin: 0 0 12px;
+}
+.settings-general-shell .settings-title-row,
+.settings-general-shell .settings-preference-heading {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+}
+.settings-general-shell .settings-section-icon {
+  display: grid; place-items: center; flex: 0 0 34px; height: 34px;
+  color: var(--secondary-color); border-radius: 8px; background: var(--light-background);
+}
+.settings-general-shell .settings-title-row > div,
+.settings-general-shell .settings-preference-heading > div { min-width: 0; }
+.settings-general-shell .subtitle { margin: 0; color: var(--text-dark); }
+.settings-general-shell .settings-panel-header p,
+.settings-general-shell .settings-preference-heading p {
+  margin: 3px 0 0; font-size: 0.81rem; line-height: 1.35; color: var(--text-light);
+}
+.settings-general-shell .settings-panel-header .settings-lock-note {
+  display: inline-flex; align-items: center; gap: 5px;
+  width: auto; min-height: 0; padding: 0; border: 0;
+  border-radius: 0; font-size: 0.78rem; background: transparent;
+}
+.settings-general-shell .settings-lock-note svg { flex-shrink: 0; }
+.settings-general-shell .settings-identity-summary { display: none; }
+.settings-general-shell .settings-profile-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0;
+}
+.settings-general-shell .settings-profile-grid .form-group,
+.settings-general-shell .settings-timezone-section .form-group { min-width: 0; margin: 0; }
+.settings-general-shell .settings-profile-grid .form-label,
+.settings-general-shell .settings-timezone-section .form-label {
+  display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.settings-general-shell .settings-profile-grid .form-input,
+.settings-general-shell .settings-profile-grid .form-textarea,
+.settings-general-shell .settings-timezone-section .form-input {
+  width: 100%; min-width: 0; min-height: 44px;
+}
+.settings-general-shell .settings-readonly-value {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  min-width: 0; min-height: 44px; padding: 10px 11px; border-radius: 7px;
+  color: var(--text-dark); background: var(--ui-bg-muted, var(--light-background));
+  font-size: 0.93rem; line-height: 1.4;
+}
+.settings-general-shell .settings-readonly-value > span {
+  min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.settings-general-shell .settings-readonly-value svg { flex-shrink: 0; color: var(--text-light); }
+.settings-general-shell .logo-upload-group { display: flex; align-items: flex-start; gap: 0; }
+.settings-general-shell .image-upload-wrapper { width: 76px; height: 76px; border-style: solid; }
+.settings-general-shell .image-upload-wrapper.locked { opacity: 1; cursor: default; }
+.settings-general-shell .settings-logo-lock-overlay {
+  inset: auto 4px 4px auto; padding: 4px; border-radius: 5px;
+}
+.settings-general-shell .settings-logo-upload-cue {
+  position: absolute; right: 4px; bottom: 4px; display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 7px;
+  color: var(--secondary-color); background: var(--card-background-color); pointer-events: none;
+}
+.settings-general-shell .settings-timezone-section {
+  min-width: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);
+}
+.settings-general-shell .settings-timezone-section .form-help-text { margin-top: 5px; font-size: 0.8rem; }
+.settings-general-shell .settings-timezone-more { margin-top: 5px; font-size: 0.8rem; color: var(--text-light); }
+.settings-general-shell .settings-timezone-more summary { width: fit-content; padding: 4px 0; cursor: pointer; }
+.settings-general-shell .settings-timezone-more .form-help-text { max-width: 60ch; margin: 5px 0; }
+.settings-general-shell .settings-submit-row {
+  display: flex; align-items: center; justify-content: flex-end; min-height: 44px; margin-top: 12px;
+}
+.settings-general-shell .settings-submit-button {
+  display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px;
+}
+.settings-general-shell .settings-saved-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--ui-text-success); font-size: 0.82rem;
+}
+.settings-general-shell .settings-preference-heading { margin-bottom: 12px; }
+.settings-general-shell .settings-theme-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings-general-shell .theme-toggle-container {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  min-width: 0; margin: 0; padding: 0; border: 0; background: transparent;
+}
+.settings-general-shell .theme-radio-label { position: relative; min-width: 0; cursor: pointer; }
+.settings-general-shell .theme-radio-label input[type="radio"] {
+  position: absolute; width: 1px; height: 1px; opacity: 0;
+}
+.settings-general-shell .theme-radio-text {
+  display: flex; justify-content: center; align-items: center; gap: 5px;
+  min-width: 0; min-height: 44px; padding: 7px 4px;
+  border: 1px solid var(--ui-border-control, var(--border-color)); border-radius: 8px;
+  background: var(--ui-bg-muted, var(--light-background)); color: var(--text-dark); box-shadow: none;
+}
+.settings-general-shell .theme-radio-text strong { font-size: 0.83rem; font-weight: 650; }
+.settings-general-shell .theme-radio-label input[type="radio"]:checked + .theme-radio-text {
+  color: var(--ui-text-brand); background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected); box-shadow: none;
+}
+.settings-general-shell .theme-radio-label input[type="radio"]:focus-visible + .theme-radio-text {
+  outline: 2px solid var(--ui-focus-color); outline-offset: 2px;
+}
+.settings-general-shell .settings-visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.settings-general-shell .settings-legal-panel { padding: 0; }
+.settings-general-shell .settings-legal-button {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px;
+  padding: 10px 14px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text-dark); text-align: left; cursor: pointer;
+}
+.settings-general-shell .settings-legal-button > span {
+  display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0;
+}
+.settings-general-shell .settings-legal-button strong { color: var(--text-dark); font-size: 0.91rem; }
+.settings-general-shell .settings-legal-button small { color: var(--text-light); font-size: 0.78rem; }
+.settings-general-shell .settings-legal-chevron { margin-left: auto; flex-shrink: 0; color: var(--text-light); }
+.settings-general-shell .settings-legal-button:hover { background: var(--ui-bg-muted, var(--light-background)); }
+.settings-general-shell .settings-legal-button:focus-visible,
+.settings-general-shell .settings-identity-toggle:focus-visible,
+.settings-general-shell .settings-timezone-more summary:focus-visible,
+.settings-general-shell .image-upload-wrapper:focus-within {
+  outline: 2px solid var(--ui-focus-color); outline-offset: 2px;
+}
+@container (min-width: 600px) {
+  .settings-general-shell .settings-profile-grid,
+  .settings-general-shell .settings-preferences-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 1080px) {
+  .settings-general-shell .settings-general-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  .settings-general-shell .settings-preferences-column { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 599px) {
+  .settings-general-shell .settings-profile-panel,
+  .settings-general-shell .settings-preference-panel { padding: 12px; }
+  .settings-general-shell .settings-identity-summary {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    padding: 8px 0; border-top: 1px solid var(--border-color);
+  }
+  .settings-general-shell .settings-identity-logo {
+    flex: 0 0 44px; width: 44px; height: 44px; border-radius: 8px; object-fit: cover;
+  }
+  .settings-general-shell .settings-identity-label {
+    display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0;
+  }
+  .settings-general-shell .settings-identity-label strong {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-dark); font-size: 0.91rem;
+  }
+  .settings-general-shell .settings-identity-label small {
+    display: flex; align-items: center; gap: 4px; color: var(--text-light); font-size: 0.75rem;
+  }
+  .settings-general-shell .settings-identity-toggle {
+    display: inline-flex; justify-content: center; align-items: center; flex: 0 0 auto;
+    gap: 4px; max-width: 135px; min-height: 44px; padding: 6px;
+    border: 0; border-radius: 7px; background: transparent; color: var(--ui-text-brand);
+    text-align: center; font-size: 0.76rem; font-weight: 600; cursor: pointer;
+  }
+  .settings-general-shell .settings-identity-toggle svg { flex-shrink: 0; }
+  .settings-general-shell .settings-identity-details.is-collapsed { display: none; }
+}
+@container (max-width: 370px) {
+  .settings-general-shell .theme-radio-text svg { display: none; }
+}

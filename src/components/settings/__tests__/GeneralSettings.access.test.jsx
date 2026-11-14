@@ -38,6 +38,7 @@ vi.mock('../../common/NoPermission', () => ({
 import GeneralSettings from '../GeneralSettings';
 
 beforeEach(() => {
+  localStorage.removeItem('theme-preference');
   mocks.allowAccess = false;
   mocks.state = { companyProfile: { license_key: 'LANZO-PRO', name: 'Shop', phone: '123',
     address: 'Calle 1', logo: 'https://logo.test/a.png', business_type: ['hardware'], timezone: null } };
@@ -109,4 +110,37 @@ describe('GeneralSettings business timezone and access', () => {
       expect.stringContaining('correctamente')
     );
   });
+  it('shows protected company data as read-only and provides a compact detail toggle', async () => {
+    mocks.allowAccess = true;
+    render(<GeneralSettings />);
+    const toggle = screen.getByRole('button', { name: 'Ver datos protegidos' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: 'Nombre del negocio' })).not.toBeInTheDocument();
+    expect(screen.getByText('Calle 1')).toBeInTheDocument();
+    await userEvent.setup().click(toggle);
+    expect(screen.getByRole('button', { name: 'Ocultar datos protegidos' }))
+      .toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('keeps incomplete identity editable without unlocking confirmed values', async () => {
+    mocks.allowAccess = true;
+    mocks.state.companyProfile = { ...mocks.state.companyProfile, phone: '', address: '' };
+    render(<GeneralSettings />);
+    expect(screen.getByLabelText('Telefono o WhatsApp')).toBeEnabled();
+    expect(screen.getByLabelText('Direccion del negocio')).toBeEnabled();
+    expect(screen.queryByRole('textbox', { name: 'Nombre del negocio' })).not.toBeInTheDocument();
+    await userEvent.setup().type(screen.getByLabelText('Telefono o WhatsApp'), '5550101');
+    expect(screen.getByRole('button', { name: /Actualizar datos/ })).toBeEnabled();
+  });
+
+  it('keeps accessible theme options, persists preference and provides legal access', async () => {
+    mocks.allowAccess = true;
+    render(<GeneralSettings />);
+    expect(screen.getByRole('radio', { name: 'Tema Sistema' })).toBeChecked();
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Tema Oscuro' }));
+    expect(localStorage.getItem('theme-preference')).toBe('dark');
+    expect(screen.getByRole('radio', { name: 'Tema Oscuro' })).toBeChecked();
+    expect(screen.getByRole('button', { name: /Legal y privacidad/ })).toBeEnabled();
+  });
+
 });

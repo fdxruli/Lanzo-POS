@@ -4,6 +4,8 @@ import { compressImage, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
 import {
   Building2,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   FileText,
   Image as ImageIcon,
@@ -14,12 +16,12 @@ import {
   Moon,
   Phone,
   Save,
-  ShieldCheck,
   Sun,
   Upload
 } from 'lucide-react';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../common/TermsAndConditionsModal';
 import BusinessTimezoneField from '../common/BusinessTimezoneField';
+import './GeneralSettings.css';
 import NoPermission from '../common/NoPermission';
 import { isValidBusinessTimezone } from '../../utils/layawayCalendar';
 import {
@@ -130,143 +132,125 @@ function profileReducer(state, action) {
   }
 }
 
-function InputStatusIcon({ isLocked }) {
-  if (!isLocked) return null;
-  return (
-    <span title="Bloqueado" className="settings-lock-icon">
-      <Lock size={16} />
-    </span>
-  );
-}
-
 function ProfilePanel({ fieldId, profileState, hasChanges, isProcessingLogo, isSaving, onImageChange, onSubmit, dispatchProfile }) {
   const { name, phone, address, timezone, logoPreview, lockedFields } = profileState;
+  const [showProtectedDetails, setShowProtectedDetails] = useState(false);
+  const allIdentityProtected = Object.values(lockedFields).every(Boolean);
+  const someIdentityProtected = Object.values(lockedFields).some(Boolean);
+  const showIdentity = !allIdentityProtected || showProtectedDetails;
   const updateField = (fieldName) => (event) => dispatchProfile({ type: 'field', name: fieldName, value: event.target.value });
 
   return (
     <form onSubmit={onSubmit} className="settings-profile-panel">
-      <div className="settings-panel-header">
+      <header className="settings-panel-header">
         <div className="settings-title-row">
-          <span className="settings-section-icon" aria-hidden="true">
-            <Building2 size={18} />
-          </span>
+          <span className="settings-section-icon" aria-hidden="true"><Building2 size={18} /></span>
           <div>
-            <h3 className="subtitle settings-title-inline">Datos de la empresa</h3>
-            <p>Estos datos quedan protegidos despues de guardarlos.</p>
+            <h3 className="subtitle settings-title-inline">Datos del negocio</h3>
+            <p>Completa la información pendiente.</p>
           </div>
         </div>
+        {someIdentityProtected && (
+          <p className="settings-lock-note">
+            <Info size={14} aria-hidden="true" /> Para cambiar datos confirmados, contacta a soporte.
+          </p>
+        )}
+      </header>
 
-        <div className="settings-lock-note">
-          <Info size={14} className="settings-icon-shrink" />
-          <span>Para cambios posteriores, contacta a soporte.</span>
+      {allIdentityProtected && (
+        <div className="settings-identity-summary">
+          <img src={logoPreview} alt="" className="settings-identity-logo" />
+          <div className="settings-identity-label">
+            <strong>{name}</strong>
+            <small><Lock size={13} aria-hidden="true" /> Datos protegidos</small>
+          </div>
+          <button
+            type="button" className="settings-identity-toggle"
+            aria-expanded={showIdentity} aria-controls={fieldId + '-details'}
+            onClick={() => setShowProtectedDetails((current) => !current)}
+          >
+            {showIdentity ? 'Ocultar datos protegidos' : 'Ver datos protegidos'}
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      <div id={fieldId + '-details'} className={'settings-identity-details' + (showIdentity ? '' : ' is-collapsed')}>
+        <div className="settings-profile-grid">
+          <div className="form-group settings-field-relative">
+            <label className="form-label settings-label-icon" htmlFor={lockedFields.name ? undefined : fieldId + '-name'}>
+              <Building2 size={16} /> Nombre del negocio
+            </label>
+            {lockedFields.name ? (
+              <div className="settings-readonly-value">
+                <span>{name}</span><Lock size={15} aria-label="Protegido" />
+              </div>
+            ) : (
+              <input id={fieldId + '-name'} type="text" className="form-input" value={name}
+                onChange={updateField('name')} placeholder="Ej. Mi Tiendita" aria-label="Nombre del negocio" />
+            )}
+          </div>
+          <div className="form-group settings-field-relative">
+            <label className="form-label settings-label-icon" htmlFor={lockedFields.phone ? undefined : fieldId + '-phone'}>
+              <Phone size={16} /> Teléfono / WhatsApp
+            </label>
+            {lockedFields.phone ? (
+              <div className="settings-readonly-value">
+                <span>{phone}</span><Lock size={15} aria-label="Protegido" />
+              </div>
+            ) : (
+              <input id={fieldId + '-phone'} type="tel" className="form-input" value={phone}
+                onChange={updateField('phone')} placeholder="Ej. 55 1234 5678" aria-label="Telefono o WhatsApp" />
+            )}
+          </div>
+          <div className="form-group settings-field-relative settings-address-field">
+            <label className="form-label settings-label-icon" htmlFor={lockedFields.address ? undefined : fieldId + '-address'}>
+              <MapPin size={16} /> Dirección
+            </label>
+            {lockedFields.address ? (
+              <div className="settings-readonly-value">
+                <span>{address}</span><Lock size={15} aria-label="Protegido" />
+              </div>
+            ) : (
+              <textarea id={fieldId + '-address'} className="form-textarea" value={address}
+                onChange={updateField('address')} rows={2} placeholder="Calle, número, colonia..."
+                aria-label="Direccion del negocio" />
+            )}
+          </div>
+          <div className="form-group logo-upload-group">
+            <label className="form-label settings-label-icon" htmlFor={fieldId + '-logo'}>
+              <ImageIcon size={16} /> Logo {lockedFields.logo && <Lock size={13} aria-label="Protegido" />}
+            </label>
+            <div className={'image-upload-wrapper' + (lockedFields.logo ? ' locked' : '')}>
+              {isProcessingLogo && <div className="spinner-loader small settings-logo-spinner" />}
+              <img className="image-preview" src={logoPreview} alt="Logo del negocio" />
+              {!lockedFields.logo && !isProcessingLogo && (
+                <span className="settings-logo-upload-cue" aria-hidden="true"><Upload size={18} /></span>
+              )}
+              {lockedFields.logo && <div className="settings-logo-lock-overlay"><Lock size={16} /></div>}
+              <input id={fieldId + '-logo'} className="file-input-hidden" type="file"
+                accept="image/*" onChange={onImageChange}
+                disabled={isProcessingLogo || lockedFields.logo} aria-label="Subir logo del negocio" />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="settings-profile-grid">
-        <div className="form-group settings-field-relative">
-          <label className="form-label settings-label-icon" htmlFor={`${fieldId}-name`}>
-            <Building2 size={16} /> Nombre del negocio
-          </label>
-          <input
-            id={`${fieldId}-name`}
-            type="text"
-            className={`form-input ${lockedFields.name ? 'input-locked' : ''}`}
-            value={name}
-            onChange={updateField('name')}
-            placeholder="Ej. Mi Tiendita"
-            disabled={lockedFields.name}
-            aria-label="Nombre del negocio"
-          />
-          <InputStatusIcon isLocked={lockedFields.name} />
-        </div>
-
-        <div className="form-group settings-field-relative">
-          <label className="form-label settings-label-icon" htmlFor={`${fieldId}-phone`}>
-            <Phone size={16} /> Telefono / WhatsApp
-          </label>
-          <input
-            id={`${fieldId}-phone`}
-            type="tel"
-            className={`form-input ${lockedFields.phone ? 'input-locked' : ''}`}
-            value={phone}
-            onChange={updateField('phone')}
-            placeholder="Ej. 55 1234 5678"
-            disabled={lockedFields.phone}
-            aria-label="Telefono o WhatsApp"
-          />
-          <InputStatusIcon isLocked={lockedFields.phone} />
-        </div>
-
-        <div className="form-group logo-upload-group">
-          <label className="form-label settings-label-icon" htmlFor={`${fieldId}-logo`}>
-            <ImageIcon size={16} /> Logo
-          </label>
-          <div className={`image-upload-wrapper ${lockedFields.logo ? 'locked' : ''}`}>
-            {isProcessingLogo && (
-              <div className="spinner-loader small settings-logo-spinner"></div>
-            )}
-
-            <img className="image-preview" src={logoPreview} alt="Logo del negocio" />
-
-            {!lockedFields.logo && !isProcessingLogo && (
-              <span className="settings-logo-upload-cue" aria-hidden="true">
-                <Upload size={18} />
-              </span>
-            )}
-
-            {lockedFields.logo && (
-              <div className="settings-logo-lock-overlay">
-                <Lock size={24} />
-              </div>
-            )}
-
-            <input
-              id={`${fieldId}-logo`}
-              className="file-input-hidden"
-              type="file"
-              accept="image/*"
-              onChange={onImageChange}
-              disabled={isProcessingLogo || lockedFields.logo}
-              aria-label="Subir logo del negocio"
-            />
-          </div>
-        </div>
-
+      <div className="settings-timezone-section">
         <BusinessTimezoneField
-          value={timezone}
+          value={timezone} compactHelp
           onChange={(value) => dispatchProfile({ type: 'field', name: 'timezone', value })}
           disabled={isSaving}
         />
-
-        <div className="form-group settings-field-relative settings-address-field">
-          <label className="form-label settings-label-icon" htmlFor={`${fieldId}-address`}>
-            <MapPin size={16} /> Direccion
-          </label>
-          <textarea
-            id={`${fieldId}-address`}
-            className={`form-textarea ${lockedFields.address ? 'input-locked' : ''}`}
-            value={address}
-            onChange={updateField('address')}
-            rows="3"
-            placeholder="Calle, numero, colonia..."
-            disabled={lockedFields.address}
-            aria-label="Direccion del negocio"
-          ></textarea>
-          <InputStatusIcon isLocked={lockedFields.address} />
-        </div>
       </div>
 
       <div className="settings-submit-row">
         {hasChanges ? (
           <button type="submit" className="btn btn-save animate-fade-in settings-submit-button" disabled={isSaving}>
-            <Save size={16} />
-            Actualizar datos
+            <Save size={16} /> Actualizar datos
           </button>
         ) : (
-          <span className="settings-saved-state">
-            <CheckCircle2 size={16} />
-            Sin cambios pendientes
-          </span>
+          <span className="settings-saved-state"><CheckCircle2 size={16} /> Sin cambios pendientes</span>
         )}
       </div>
     </form>
@@ -277,65 +261,36 @@ function AppearancePanel({ activeTheme, onThemeChange }) {
   return (
     <section className="settings-preference-panel">
       <div className="settings-preference-heading">
-        <span className="settings-section-icon" aria-hidden="true">
-          <Sun size={18} />
-        </span>
-        <div>
-          <h3 className="subtitle">Apariencia</h3>
-          <p>Elige el modo visual para esta terminal.</p>
-        </div>
+        <span className="settings-section-icon" aria-hidden="true"><Sun size={18} /></span>
+        <div><h3 className="subtitle">Apariencia</h3><p>Tema de esta terminal</p></div>
       </div>
-
-      <div className="theme-toggle-container">
-        {themeOptions.map(({ value, label, description, Icon }) => (
-          <label key={value} className="theme-radio-label">
-            <input
-              type="radio"
-              name="theme"
-              value={value}
-              checked={activeTheme === value}
-              onChange={onThemeChange}
-              aria-label={`Tema ${label}`}
-            />
-            <span className="theme-radio-text">
-              <Icon size={17} />
-              <span>
+      <fieldset className="settings-theme-fieldset">
+        <legend className="settings-visually-hidden">Seleccionar tema</legend>
+        <div className="theme-toggle-container">
+          {themeOptions.map(({ value, label, description, Icon }) => (
+            <label key={value} className="theme-radio-label" title={description}>
+              <input type="radio" name="theme" value={value} checked={activeTheme === value}
+                onChange={onThemeChange} aria-label={'Tema ' + label} />
+              <span className="theme-radio-text">
+                <Icon size={17} aria-hidden="true" />
                 <strong>{label}</strong>
-                <small>{description}</small>
+                <small className="settings-visually-hidden">{description}</small>
               </span>
-            </span>
-          </label>
-        ))}
-      </div>
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </section>
   );
 }
 
 function LegalPanel({ onOpen }) {
   return (
-    <section className="settings-preference-panel">
-      <div className="settings-preference-heading">
-        <span className="settings-section-icon" aria-hidden="true">
-          <ShieldCheck size={18} />
-        </span>
-        <div>
-          <h3 className="subtitle">Legal y privacidad</h3>
-          <p>Consulta los documentos legales y avisos disponibles de Lanzo.</p>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        className="settings-legal-button"
-        onClick={onOpen}
-      >
-        <span className="settings-icon-bubble settings-icon-bubble--info">
-          <FileText size={20} />
-        </span>
-        <span>
-          <strong>Políticas y avisos de Lanzo</strong>
-          <small>Uso, privacidad, Lía, pagos y otros documentos.</small>
-        </span>
+    <section className="settings-preference-panel settings-legal-panel" aria-label="Legal y privacidad">
+      <button type="button" className="settings-legal-button" onClick={onOpen}>
+        <FileText size={19} aria-hidden="true" />
+        <span><strong>Legal y privacidad</strong><small>Políticas, condiciones y avisos</small></span>
+        <ChevronRight size={18} className="settings-legal-chevron" aria-hidden="true" />
       </button>
     </section>
   );
