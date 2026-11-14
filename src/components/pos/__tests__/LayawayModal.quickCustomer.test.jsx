@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ loadData: vi.fn(), saveDataSafe: vi.fn(), showMessageModal: vi.fn(), timezone: 'America/Merida' }));
+const mocks = vi.hoisted(() => ({ loadData: vi.fn(), saveDataSafe: vi.fn(), showMessageModal: vi.fn(), timezone: 'America/Merida', isAdmin: false, cloud: false }));
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ companyProfile: { timezone: mocks.timezone } })
+  useAppStore: (selector) => selector({
+    licenseDetails: { license_key: 'A', features: { cloud_pos_sync: mocks.cloud, cloud_cash_sync: mocks.cloud } },
+    companyProfile: { license_key: 'A', timezone: mocks.timezone }
+  })
 }));
+vi.mock('../../../services/auth/useActorAccess', () => ({ useActorAccess: () => ({ isAdmin: mocks.isAdmin }) }));
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => mocks.loadData(...args),
   saveDataSafe: (...args) => mocks.saveDataSafe(...args),
@@ -21,7 +26,7 @@ vi.mock('../../../hooks/useDismissibleHistoryLayer', () => ({ useDismissibleHist
 
 import LayawayModal from '../LayawayModal';
 
-beforeEach(() => { mocks.timezone = 'America/Merida'; mocks.loadData.mockResolvedValue([]); mocks.saveDataSafe.mockResolvedValue({ success: true }); });
+beforeEach(() => { mocks.timezone = 'America/Merida'; mocks.isAdmin = false; mocks.cloud = false; mocks.loadData.mockResolvedValue([]); mocks.saveDataSafe.mockResolvedValue({ success: true }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('LayawayModal shared QuickAdd compatibility', () => {
@@ -49,7 +54,8 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
     expect(mocks.showMessageModal).not.toHaveBeenCalled();
   });
 
-  it('allows the previous POS create flow without a configured business timezone', async () => {
+  it('preserves the Cloud create flow without a timezone in the local profile', async () => {
+    mocks.cloud = true;
     mocks.timezone = null;
     const onConfirm = vi.fn();
     const { container } = render(<LayawayModal show onClose={vi.fn()} onConfirm={onConfirm} total={250}
@@ -66,6 +72,22 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
       expectedCashSessionId: 'cash-open'
     }));
     expect(mocks.showMessageModal).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('blocks Free creation and offers settings only to Admin (%s)', (isAdmin) => {
+    mocks.timezone = null;
+    mocks.isAdmin = isAdmin;
+    const onConfirm = vi.fn();
+    render(<MemoryRouter><LayawayModal show onClose={vi.fn()} onConfirm={onConfirm} total={250} /></MemoryRouter>);
+    expect(screen.getByRole('status')).toHaveTextContent(/Configura la zona horaria/);
+    expect(screen.getByRole('button', { name: 'CONFIRMAR APARTADO' })).toBeDisabled();
+    if (isAdmin) {
+      expect(screen.getByRole('link', { name: 'Ir a Configuración' })).toHaveAttribute('href', '/configuracion?tab=general');
+    } else {
+      expect(screen.queryByRole('link', { name: 'Ir a Configuración' })).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/Solicita al administrador/);
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('cancels QuickAdd without changing the layaway payment or creating a customer', async () => {

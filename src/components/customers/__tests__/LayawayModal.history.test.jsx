@@ -18,12 +18,18 @@ const mocks = vi.hoisted(() => ({
   showConfirmModal: vi.fn(),
   showMessage: vi.fn(),
   actorRuntime: null,
-  timezone: null
+  timezone: 'America/Merida',
+  cloud: false
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ companyProfile: { timezone: mocks.timezone } })
+  useAppStore: (selector) => selector({
+    licenseDetails: { license_key: 'A', features: { cloud_pos_sync: mocks.cloud, cloud_cash_sync: mocks.cloud } },
+    companyProfile: { license_key: 'A', timezone: mocks.timezone }
+  })
 }));
+
+vi.mock('../../../services/auth/useActorAccess', () => ({ useActorAccess: () => ({ isAdmin: false }) }));
 
 vi.mock('../../../services/db/layaways', () => ({
   layawayRepository: { getByCustomer: mocks.getByCustomer }
@@ -97,7 +103,8 @@ const renderModal = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.timezone = null;
+  mocks.timezone = 'America/Merida';
+  mocks.cloud = false;
   mocks.actorRuntime = {
     status: 'granted', actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a', permissions: ['*']
   };
@@ -295,6 +302,8 @@ describe('LayawayModal history and cancellation', () => {
   });
 
   it('keeps a Cloud installment available without a timezone when the old UI allowed it', async () => {
+    mocks.cloud = true;
+    mocks.timezone = null;
     mocks.layaways = [layaway({ deadline: '2030-12-31' })];
     mocks.addPayment.mockResolvedValue({ isFullyPaid: false });
     renderModal();
@@ -311,7 +320,20 @@ describe('LayawayModal history and cancellation', () => {
       null, expect.anything());
   });
 
+  it('blocks new Free installments without timezone and keeps cancellation accessible', async () => {
+    mocks.timezone = null;
+    mocks.layaways = [layaway({ deadline: '2030-12-31' })];
+    renderModal();
+    expect(await screen.findByRole('button', { name: /Registrar nuevo abono/i })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/Solicita al administrador/);
+    expect(screen.queryByRole('link', { name: 'Ir a Configuración' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cancelar Apartado/i })).toBeEnabled();
+    expect(mocks.addPayment).not.toHaveBeenCalled();
+  });
+
   it('retains the old overdue UI block without a timezone rather than enabling a new payment', async () => {
+    mocks.cloud = true;
+    mocks.timezone = null;
     mocks.layaways = [layaway({ deadline: '2020-01-01' })];
     renderModal();
     const button = await screen.findByRole('button', { name: /Abonos bloqueados/i });

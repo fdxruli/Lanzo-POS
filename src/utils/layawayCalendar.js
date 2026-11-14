@@ -11,6 +11,17 @@ export const isValidBusinessTimezone = (timezone) => {
   }
 };
 
+export const LAYAWAY_TIMEZONE_MESSAGE = 'Configura la zona horaria del negocio antes de crear o abonar apartados. Esto permite calcular correctamente sus vencimientos.';
+
+export const requireLayawayTimezone = (timezone) => {
+  if (!isValidBusinessTimezone(timezone)) {
+    const error = new Error(LAYAWAY_TIMEZONE_MESSAGE);
+    error.code = 'LAYAWAY_TIMEZONE_REQUIRED';
+    throw error;
+  }
+  return timezone;
+};
+
 export const getLayawayCalendarDate = (value) => {
   const match = typeof value === 'string' ? value.match(DATE_RE) : null;
   if (!match) return null;
@@ -54,8 +65,8 @@ export const assertLayawayPaymentAllowed = (layaway, timezone, now = new Date())
     error.code = 'LAYAWAY_NOT_PAYABLE';
     throw error;
   }
-  const overdue = isLayawayDeadlineOverdue(layaway?.deadline, timezone, now);
-  if (overdue === null && isValidBusinessTimezone(timezone)) {
+  const overdue = isLayawayDeadlineOverdue(layaway?.deadline, requireLayawayTimezone(timezone), now);
+  if (overdue === null) {
     const error = new Error('La fecha límite del apartado no es válida.');
     error.code = 'LAYAWAY_DEADLINE_INVALID';
     throw error;

@@ -6,6 +6,8 @@ import {
 import { layawayRepository } from '../../services/db/layaways';
 import { useAppStore } from '../../store/useAppStore';
 import { isLayawayOverdueForDisplay, assertLayawayPaymentAllowed, isValidBusinessTimezone } from '../../utils/layawayCalendar';
+import { getLicenseKeyFromDetails, isCloudCashSyncEnabled } from '../../services/sync/syncConstants';
+import LayawayTimezoneNotice from '../common/LayawayTimezoneNotice';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
 import { reportsRepository } from '../../services/reports/reportsRepository';
 import { useCaja } from '../../hooks/useCaja';
@@ -75,11 +77,12 @@ export default function LayawayModal({
     const [activePaymentId, setActivePaymentId] = useState(null); // ID del apartado que se está abonando
 
     const { cajaActual } = useCaja();
+    const cloudEnabled = useAppStore((state) => Boolean(getLicenseKeyFromDetails(state.licenseDetails) && isCloudCashSyncEnabled(state.licenseDetails)));
     const companyTimezone = useAppStore((state) => (
-        state.companyProfile?.license_key && state.licenseDetails?.license_key
-            && state.companyProfile.license_key !== state.licenseDetails.license_key
-            ? null : state.companyProfile?.timezone || null
+        state.licenseDetails?.license_key && state.companyProfile?.license_key === state.licenseDetails.license_key
+            ? state.companyProfile.timezone : null
     ));
+    const timezoneRequired = !cloudEnabled && !isValidBusinessTimezone(companyTimezone);
     const actorRuntime = useActorRuntimeSnapshot();
     const salesHistoryScope = getSalesFinalHistoryScope(actorRuntime);
     const loadVersionRef = useRef(0);
@@ -165,8 +168,7 @@ export default function LayawayModal({
             showMessageModal('Este apartado ya es histórico y no acepta más abonos.', null, { type: 'warning' });
             return;
         }
-        // Cloud financial authority is unchanged until Stage 3B is installed.
-        if (isValidBusinessTimezone(companyTimezone)) {
+        if (!cloudEnabled || isValidBusinessTimezone(companyTimezone)) {
             try {
                 assertLayawayPaymentAllowed(layaway, companyTimezone);
             } catch (error) {
@@ -300,7 +302,7 @@ export default function LayawayModal({
 
     if (!show || !customer) return null;
 
-    const checkIsOverdue = (deadline) => isLayawayOverdueForDisplay(deadline, companyTimezone);
+    const checkIsOverdue = (deadline) => !timezoneRequired && isLayawayOverdueForDisplay(deadline, companyTimezone);
 
     const handleCancel = async (layaway) => {
     if (!isActionableLayaway(layaway)) {
@@ -490,7 +492,7 @@ export default function LayawayModal({
                                 // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
                                 const isReady = !isHistorical && (pending <= 0.01 || status === 'ready');
                                 const isOverdue = !isHistorical && checkIsOverdue(layaway.deadline);
-                                const paymentBlocked = !paymentReviews || paymentReviews.some((review) => review.layawayId === layaway.id);
+                                const paymentBlocked = timezoneRequired || !paymentReviews || paymentReviews.some((review) => review.layawayId === layaway.id);
                                 const isPayingThis = !paymentBlocked && activePaymentId === layaway.id;
                                 const paymentInputId = `customer-layaway-payment-${layaway.id}`;
                                 const completionFolio = historicalFolios[layaway.id] || null;
@@ -624,6 +626,7 @@ export default function LayawayModal({
         <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos bloqueados (vencido)' : 'Registrar nuevo abono'}
     </button>
 )}
+                                            {timezoneRequired && !isReady && <LayawayTimezoneNotice onClose={onClose} />}
 
                                             {/* B) Modo Abono: Formulario Expandido */}
                                             {isPayingThis && (
@@ -632,7 +635,7 @@ export default function LayawayModal({
                                                         htmlFor={paymentInputId}
                                                         className="customer-layaway-payment__label"
                                                     >
-                                                        ¿Cuánto desea abonar?
+                                                        ¿Cuánto desea abonar en efectivo?
                                                     </label>
                                                     <div className="customer-layaway-payment__input-row">
                                                         <span className="customer-layaway-payment__currency">$</span>
