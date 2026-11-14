@@ -105,6 +105,64 @@
   min-width: 0 !important;
 }
 
+.product-list-container .product-search-clear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.product-list-container .product-search-clear:hover {
+  background: var(--bg-primary, #f8fafc);
+}
+
+.product-list-container .product-search-clear:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 1px;
+}
+
+.product-list-container .product-search-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--text-light, #64748b);
+  font-size: 0.9rem;
+}
+
+.product-list-container .product-search-spinner {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.product-list-container .product-search-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--error-color, #dc2626) 35%, transparent);
+  border-radius: 8px;
+  color: var(--error-color, #b91c1c);
+  background: color-mix(in srgb, var(--error-color, #dc2626) 5%, white);
+}
+
+.product-list-container .product-search-error button {
+  min-height: 40px;
+}
+
 /* ====================================
    GRID DE PRODUCTOS
    ==================================== */

@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
   searchProductsInDB: vi.fn(async () => []),
   catalogState: {
     filters: { status: 'all', categoryId: null },
-    setFilters: vi.fn()
+    setFilters: vi.fn(),
+    fetchPage: vi.fn(),
+    loadInitialProducts: vi.fn(),
+    hasMore: false,
+    isLoading: false
   }
 }));
 
@@ -21,13 +25,7 @@ vi.mock('../../../hooks/useFeatureConfig', () => ({
 }));
 vi.mock('../../../hooks/useDebounce', () => ({ useDebounce: (value) => value }));
 vi.mock('../../../store/useInventoryCatalogStore', () => ({
-  useInventoryCatalogStore: (selector) => selector({
-    fetchPage: vi.fn(),
-    loadInitialProducts: vi.fn(),
-    hasMore: false,
-    isLoading: false,
-    ...mocks.catalogState
-  })
+  useInventoryCatalogStore: (selector) => selector(mocks.catalogState)
 }));
 vi.mock('../../../services/database', () => ({
   searchProductsInDB: mocks.searchProductsInDB,
@@ -58,16 +56,31 @@ vi.mock('../ProductCloudSyncIndicators', () => ({ default: () => null }));
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   mocks.queryBatchesByProductIdsAndActive.mockReset();
   mocks.queryBatchesByProductIdsAndActive.mockResolvedValue([]);
 });
 
 beforeEach(() => {
   mocks.catalogState.filters = { status: 'all', categoryId: null };
+  mocks.catalogState.hasMore = false;
+  mocks.catalogState.isLoading = false;
   mocks.catalogState.setFilters.mockReset();
+  mocks.catalogState.fetchPage.mockReset();
+  mocks.catalogState.loadInitialProducts.mockReset();
   mocks.searchProductsInDB.mockReset();
   mocks.searchProductsInDB.mockResolvedValue([]);
 });
+
+const createDeferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 describe('ProductList batch-backed grocery details', () => {
   it('uses sale units and the nearest active batch expiry on cards', async () => {
@@ -122,6 +135,124 @@ describe('ProductList batch-backed grocery details', () => {
     expect(mocks.catalogState.setFilters).toHaveBeenCalledWith({
       categoryId: { type: 'uncategorized' }
     });
+  });
+
+  it('keeps the search input and filters available while a search is pending without results', () => {
+    mocks.searchProductsInDB.mockReturnValueOnce(createDeferred().promise);
+    render(<ProductList products={[]} categories={[{ id: 'drinks', name: 'Bebidas' }]} isLoading={false} />);
+
+    const input = screen.getByRole('textbox', { name: 'Buscar productos' });
+    fireEvent.change(input, { target: { value: 'lento' } });
+
+    expect(input).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filtrar por estado' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filtrar por categoría' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Limpiar búsqueda' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Buscando productos...');
+  });
+
+  it('recovers from a search that never resolves and allows retry', async () => {
+    vi.useFakeTimers();
+    mocks.searchProductsInDB
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce([{ id: 'recovered', name: 'Resultado recuperado', price: 10, stock: 5 }]);
+    render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'lento' } });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Buscando productos...');
+    act(() => {
+      vi.advanceTimersByTime(15000);
+    });
+    vi.useRealTimers();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudieron buscar los productos. Intenta nuevamente.');
+    expect(screen.getByRole('textbox', { name: 'Buscar productos' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+    expect(await screen.findByText('Resultado recuperado')).toBeInTheDocument();
+    expect(mocks.searchProductsInDB).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('shows a search error after rejection and retries successfully', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.searchProductsInDB
+      .mockRejectedValueOnce(new Error('internal database details'))
+      .mockResolvedValueOnce([{ id: 'retry-result', name: 'Resultado reintentado', price: 10, stock: 5 }]);
+    render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'agua' } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron buscar los productos. Intenta nuevamente.');
+    expect(screen.queryByText('internal database details')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+    expect(await screen.findByText('Resultado reintentado')).toBeInTheDocument();
+    expect(mocks.searchProductsInDB).toHaveBeenCalledTimes(2);
+    errorSpy.mockRestore();
+  });
+
+  it('clears a pending query, restores the paged catalog, and skips an empty search', () => {
+    mocks.searchProductsInDB.mockReturnValueOnce(createDeferred().promise);
+    const products = [{ id: 'page', name: 'Producto paginado', price: 10, stock: 5 }];
+    render(<ProductList products={products} categories={[]} isLoading={false} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'pendiente' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Buscando productos...');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar búsqueda' }));
+
+    expect(screen.getByRole('textbox', { name: 'Buscar productos' })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: 'Buscar productos' })).toHaveFocus();
+    expect(screen.getByText('Producto paginado')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(mocks.searchProductsInDB).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a fresh search when filters change during a pending query', async () => {
+    mocks.searchProductsInDB
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce([
+        { id: 'inactive', name: 'Resultado inactivo', isActive: false, price: 10, stock: 5 },
+        { id: 'active', name: 'Resultado activo antiguo', isActive: true, price: 10, stock: 5 }
+      ]);
+    mocks.catalogState.setFilters.mockImplementation((patch) => {
+      mocks.catalogState.filters = { ...mocks.catalogState.filters, ...patch };
+    });
+    const props = { products: [], categories: [], isLoading: false };
+    const { rerender } = render(<ProductList {...props} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'filtro' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrar por estado' }), { target: { value: 'inactive' } });
+    rerender(<ProductList {...props} />);
+
+    expect(mocks.searchProductsInDB).toHaveBeenCalledTimes(2);
+    expect(mocks.searchProductsInDB).toHaveBeenLastCalledWith('filtro', 'inactive', null, { eligible: expect.any(Function) });
+    expect(await screen.findByText('Resultado inactivo')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filtrar por estado' })).toHaveValue('inactive');
+    expect(screen.queryByText('Resultado activo antiguo')).not.toBeInTheDocument();
+  });
+
+  it('shows an empty state, not an error, when search has no matches', async () => {
+    mocks.searchProductsInDB.mockResolvedValueOnce([]);
+    render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'sin coincidencias' } });
+
+    expect(await screen.findByText('No se encontraron productos')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('restores catalog pagination after clearing a completed search', async () => {
+    mocks.catalogState.hasMore = true;
+    mocks.searchProductsInDB.mockResolvedValueOnce([
+      { id: 'search', name: 'Producto encontrado', price: 10, stock: 5 }
+    ]);
+    const props = { products: [{ id: 'page', name: 'Producto paginado', price: 10, stock: 5 }], categories: [], isLoading: false };
+    render(<ProductList {...props} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'encontrado' } });
+    expect(await screen.findByText('Producto encontrado')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar búsqueda' }));
+
+    expect(screen.getByText('Producto paginado')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más productos' }));
+    expect(mocks.catalogState.fetchPage).toHaveBeenCalledWith('next');
   });
 });
 
