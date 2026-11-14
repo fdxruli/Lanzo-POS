@@ -193,12 +193,17 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
   const errorsCount = countByLevel(entries, 'error');
   const warningsCount = countByLevel(entries, 'warn');
 
-  const handleCopy = () => {
+  const prepareExport = useCallback((sourceEntries, scope) => {
     if (!canCopy()) return;
     try {
-      const report = prepareDevConsoleExport(visibleEntries);
+      const report = prepareDevConsoleExport(sourceEntries);
       if (!report.text) { setCopyStatus('No hay registros para copiar.'); return; }
-      setExportMeta({ included: report.included, omitted: report.omitted, revision: getDevConsolePreference().revision });
+      setExportMeta({
+        included: report.included,
+        omitted: report.omitted,
+        scope,
+        revision: getDevConsolePreference().revision,
+      });
       setExportDraft(report.text);
       setExportError('');
       setCopyStatus('');
@@ -206,7 +211,10 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
       // Fail closed: never copy unredacted originals if preparation fails.
       setCopyStatus('No se pudo preparar una copia protegida. No se copió nada.');
     }
-  };
+  }, [canCopy]);
+
+  const handleCopy = () => prepareExport(visibleEntries, 'visible');
+  const handleCopyEntry = (entry) => prepareExport([entry], 'individual');
 
   const handleConfirmCopy = async () => {
     if (!exportDraft?.trim() || exportCopyPendingRef.current) return;
@@ -481,6 +489,9 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
                       {entry.technical.resourceError && <div>Evento de carga de recurso; el navegador no proporcionó una excepción JavaScript.</div>}
                     </div>
                   )}
+                  <button className="dev-console-copy-entry" type="button" onClick={() => handleCopyEntry(entry)}>
+                    Copiar este registro
+                  </button>
                 </div>
               )}
             </article>
@@ -494,7 +505,10 @@ export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
           <header className="dev-console-export-header">
             <div>
               <strong id="dev-console-export-title">Revisar diagnóstico técnico</strong>
-              <p>{exportMeta?.included} registros visibles incluidos{exportMeta?.omitted ? ` · ${exportMeta.omitted} omitidos por tamaño` : ''}</p>
+              <p>{exportMeta?.scope === 'individual'
+                ? `${exportMeta.included} registro${exportMeta.included === 1 ? '' : 's'} incluido${exportMeta.included === 1 ? '' : 's'}`
+                : `${exportMeta?.included} registros visibles incluidos`}
+                {exportMeta?.omitted ? ` · ${exportMeta.omitted} omitidos por tamaño` : ''}</p>
             </div>
             <button type="button" onClick={closeExport} disabled={isCopyingExport} aria-label="Cancelar exportación"><X size={18} /></button>
           </header>

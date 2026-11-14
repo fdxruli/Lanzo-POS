@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Controlled diagnostic events, no POS operations.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { DevConsolePanel } from '../DevConsole';
 import { buildDevConsoleSearchText, matchesDevConsoleFilter } from '../devConsoleSearch';
 import { emitDiagnosticConsoleEvent } from '../../../services/diagnostics/consoleEventBus';
@@ -135,6 +135,57 @@ it('exports original TypeError and stack after explicit review without replacing
   expect(writeText.mock.calls[0][0]).toContain('REVISADO');
 });
 
+it('previews and copies only the individually inspected registry after review', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  ['ALPHA', 'BETA', 'GAMMA'].forEach((suffix) => {
+    emitDiagnosticConsoleEvent('error', [
+      { diagnosticOperation: 'db.operation' }, new TypeError(`LANZO_QA_SINGLE_${suffix}`),
+    ]);
+  });
+
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Examinar registro' })[1]);
+  expect(screen.getByText(/Mensaje original: LANZO_QA_SINGLE_BETA/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar este registro' }));
+
+  const dialog = screen.getByRole('dialog', { name: 'Revisar diagnóstico técnico' });
+  expect(within(dialog).getByText('1 registro incluido')).toBeVisible();
+  const preview = within(dialog).getByRole('textbox', { name: 'Texto del diagnóstico revisable' });
+  expect(preview.value).toContain('LANZO_QA_SINGLE_BETA');
+  expect(preview.value).toContain('Stack original');
+  expect(preview.value).not.toContain('LANZO_QA_SINGLE_ALPHA');
+  expect(preview.value).not.toContain('LANZO_QA_SINGLE_GAMMA');
+  expect(writeText).not.toHaveBeenCalled();
+
+  fireEvent.change(preview, { target: { value: 'DIAGNÓSTICO BETA REVISADO' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Copiar diagnóstico revisado' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  expect(writeText.mock.calls[0][0]).toBe('DIAGNÓSTICO BETA REVISADO');
+});
+
+it('redacts private data from the selected error message and stack', () => {
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('error', [
+    { diagnosticOperation: 'db.operation' },
+    new TypeError('token=LANZO_PRIVATE_TOKEN_123456 support@example.invalid'),
+  ]);
+
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Examinar registro' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar este registro' }));
+
+  const preview = screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' });
+  expect(preview.value).toContain('Stack original');
+  expect(preview.value).toContain('[REDACTADO]');
+  expect(preview.value).toContain('[CORREO_REDACTADO]');
+  expect(preview.value).not.toContain('LANZO_PRIVATE_TOKEN_123456');
+  expect(preview.value).not.toContain('support@example.invalid');
+});
+
 
 it('cancels without copying and respects only the visible level filter', () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
@@ -171,7 +222,8 @@ it('revalidates authorization before copy and discards the stale draft', () => {
   expect(getDevConsoleEntries()[0].technical.message).toBe('actor-private');
   render(<DevConsolePanel canCopy={() => authorized} />);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
-  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  fireEvent.click(screen.getByRole('button', { name: 'Examinar registro' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar este registro' }));
   expect(screen.getByRole('dialog')).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'Texto del diagnóstico revisable' }).value).toContain('actor-private');
   const confirm = screen.getByRole('button', { name: 'Copiar diagnóstico revisado' });
