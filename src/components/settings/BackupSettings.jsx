@@ -179,9 +179,32 @@ function RestoreBackupPanel({
 
 const MANUAL_BACKUP_LABELS = {
   encrypting: 'Cifrando...',
-  uploading: 'Subiendo a la nube...',
+  preparing: 'Preparando la subida a Google Drive...',
+  uploading: 'Subiendo a Google Drive...',
+  resuming: 'Reanudando la subida a Google Drive...',
+  verifying: 'Verificando el archivo en Google Drive...',
+  verification_pending: 'Verificación de Google Drive pendiente',
+  error: 'No se completó la subida a Google Drive',
   completed: 'Completado'
 };
+
+const MANUAL_BACKUP_ACTIVE_PHASES = ['encrypting', 'preparing', 'uploading', 'resuming', 'verifying'];
+
+function getDriveVerificationNotice(uploadResult) {
+  if (uploadResult?.transferStatus === 'pending') {
+    return ' No se pudo determinar si Google Drive terminó la transferencia. Conserva la copia local y revisa Drive antes de volver a intentarlo.';
+  }
+  if (uploadResult?.transferStatus === 'not_started') {
+    return ' No se pudo iniciar una sesión de subida utilizable en Google Drive. Conserva la copia local y revisa Drive antes de volver a intentarlo.';
+  }
+  if (uploadResult?.transferStatus === 'failed' && uploadResult?.verificationReason === 'session_expired') {
+    return ' La sesión de subida expiró y no se pudo completar. Conserva la copia local y revisa Drive antes de volver a intentarlo.';
+  }
+  if (uploadResult?.verificationStatus === 'failed') {
+    return ' Google Drive terminó la transferencia, pero el nombre, el negocio o el tamaño remoto no coincidieron. No se limpiaron copias anteriores; revisa Drive antes de volver a intentarlo.';
+  }
+  return ' Google Drive terminó la transferencia, pero la verificación remota sigue pendiente. Conserva la copia local y revisa Drive antes de volver a intentarlo.';
+}
 
 function formatDate(value) {
   if (!value) return 'Nunca';
@@ -249,6 +272,13 @@ function LocalBackupSettings({
   const [restorePreview, setRestorePreview] = useState(null);
   const [error, setError] = useState('');
   const [manualBackupPhase, setManualBackupPhase] = useState('idle');
+  const [manualBackupProgress, setManualBackupProgress] = useState(null);
+  const manualBackupPercent = manualBackupProgress?.percent
+    ?? (manualBackupPhase === 'completed'
+      ? 100
+      : manualBackupPhase === 'encrypting'
+        ? status.progress
+        : null);
 
   const initialTitle = isCloudLicense ? 'Copia local cifrada opcional' : 'Respaldos Locales Cifrados';
   const configuredTitle = isCloudLicense ? 'Copia local cifrada adicional' : 'Respaldos Locales Cifrados';
@@ -345,6 +375,7 @@ function LocalBackupSettings({
 
   const manualBackup = async () => {
     setManualBackupPhase('idle');
+    setManualBackupProgress(null);
     const hasValidAccessToken = Boolean(
       driveAccessToken
       && driveTokenExpiresAt
@@ -382,7 +413,7 @@ function LocalBackupSettings({
 
     let uploadResult = null;
     if (shouldUploadToDrive) {
-      setManualBackupPhase('uploading');
+      setManualBackupPhase('preparing');
       try {
         if (!(result.blob instanceof Blob)) {
           throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
@@ -391,7 +422,13 @@ function LocalBackupSettings({
         uploadResult = await googleDriveService.uploadBackup(
           driveAccessToken,
           result.blob,
-          result.fileName
+          result.fileName,
+          {
+            onProgress: (progress) => {
+              setManualBackupProgress(progress);
+              setManualBackupPhase(progress.phase);
+            }
+          }
         );
         if (!['confirmed', 'verification_pending'].includes(uploadResult?.uploadStatus)) {
           throw new Error('No se confirmó la subida a Google Drive.');
@@ -402,24 +439,26 @@ function LocalBackupSettings({
           : driveError.code === 'BACKUP_PERMISSION_REQUIRED'
             ? 'El respaldo local quedó generado, pero el usuario actual no tiene permiso para subir copias a Google Drive.'
             : 'El respaldo local quedó generado, pero no se confirmó la subida a Google Drive.';
-        setManualBackupPhase('completed');
+        setManualBackupPhase('error');
         setError(message);
         toast.error(message);
         return;
       }
     }
 
-    setManualBackupPhase('completed');
     const driveVerificationPending = shouldUploadToDrive
       && uploadResult?.uploadStatus === 'verification_pending';
+    setManualBackupPhase(driveVerificationPending ? 'verification_pending' : 'completed');
     const driveVerificationNotice = driveVerificationPending
-      ? ' Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.'
+      ? getDriveVerificationNotice(uploadResult)
       : '';
     if (result.coverage?.complete === false) {
       const destination = shouldUploadToDrive && !driveVerificationPending
         ? 'local y subido a Google Drive'
         : 'localmente';
-      const cleanupNotice = shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending'
+      const cleanupNotice = shouldUploadToDrive
+        && uploadResult?.uploadStatus === 'confirmed'
+        && uploadResult?.cleanupStatus === 'pending'
         ? uploadResult.cleanupReason === 'reauth_required'
           ? ' La sesión de Google expiró después de la subida; las copias anteriores se conservaron. Reconecta para reintentar la limpieza.'
           : ' La limpieza de copias anteriores quedó pendiente; se conservaron.'
@@ -599,7 +638,7 @@ function LocalBackupSettings({
         </div>
       )}
 
-      {status.busy && !['encrypting', 'uploading'].includes(manualBackupPhase) && (
+      {status.busy && !MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase) && (
         <div className="backup-settings-progress">
           <span>{status.phase || 'Procesando'}: {status.progress}%</span>
           <progress max="100" value={status.progress} />
@@ -610,15 +649,14 @@ function LocalBackupSettings({
         && !(manualBackupPhase === 'completed' && status.busy)
         && (
         <div className="backup-settings-progress" role="status" aria-live="polite">
-          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase]}</span>
-          {manualBackupPhase === 'uploading'
-            ? <progress max="100" />
-            : (
-              <progress
-                max="100"
-                value={manualBackupPhase === 'completed' ? 100 : status.progress}
-              />
-            )}
+          <span>
+            {MANUAL_BACKUP_LABELS[manualBackupPhase] || manualBackupLabel}
+            {manualBackupPercent !== null && ` ${manualBackupPercent}%`}
+          </span>
+          <progress
+            max="100"
+            {...(manualBackupPercent === null ? {} : { value: manualBackupPercent })}
+          />
         </div>
         )}
 
@@ -653,10 +691,10 @@ function LocalBackupSettings({
           type="button"
           className="btn btn-primary"
           onClick={manualBackup}
-          disabled={status.busy || !status.unlocked || ['encrypting', 'uploading'].includes(manualBackupPhase)}
+          disabled={status.busy || !status.unlocked || MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase)}
         >
           <span aria-hidden="true">
-            {['encrypting', 'uploading'].includes(manualBackupPhase)
+            {MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase)
               ? <Loader2 size={17} className="animate-spin" />
               : <RefreshCw size={17} />}
           </span>

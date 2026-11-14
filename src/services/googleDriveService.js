@@ -1,4 +1,5 @@
 import { evaluateSettingsAccess } from './auth/settingsAccessPolicy';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { readActorAccess } from './auth/actorAccessPolicy';
 import {
   BACKUP_EXTENSION,
@@ -14,11 +15,17 @@ import { useAppStore } from '../store/useAppStore';
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,createdTime,appProperties,mimeType';
+const DRIVE_RESUMABLE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,createdTime,appProperties,mimeType,size,sha256Checksum';
 const BACKUP_APP_PROPERTY = 'lanzo_pos_backup';
 const TENANT_APP_PROPERTY = 'tenant_fingerprint';
 const TENANT_LICENSE_ID_PROPERTY = 'tenant_license_id';
 const TENANT_LICENSE_KEY_PROPERTY = 'tenant_license_key';
 const MAX_DRIVE_BACKUPS = 14;
+const RESUMABLE_UPLOAD_THRESHOLD = 5 * 1024 * 1024;
+const RESUMABLE_CHUNK_SIZE = 4 * 1024 * 1024;
+const MAX_UPLOAD_RECOVERY_ATTEMPTS = 4;
+const MAX_EXPIRED_SESSION_RESTARTS = 1;
+const UPLOAD_REQUEST_TIMEOUT_MS = 120_000;
 
 const DRIVE_ERROR_MESSAGES = {
   NETWORK: 'No se pudo conectar con Google Drive. Revisa tu conexión a internet e inténtalo de nuevo.',
@@ -174,17 +181,18 @@ async function assertDriveOperation(token, expectedFingerprint = null) {
   return { ...currentScope, tenantFingerprint, ownerProperties };
 }
 
-async function assertSuccessfulResponse(response, token = null) {
+async function assertSuccessfulResponse(response, token = null, { sensitiveSession = false } = {}) {
   if (response.ok) return;
 
   const { message: technicalMessage, reasons } = await parseErrorResponse(response);
+  const safeTechnicalMessage = sensitiveSession ? '' : technicalMessage;
   if (response.status === 401) {
     const state = useAppStore.getState();
     if (!token || state.driveAccessToken === token) state.markDriveNeedsReauth?.();
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.AUTH, {
       status: response.status,
       code: 'AUTH_REQUIRED',
-      technicalMessage
+      technicalMessage: safeTechnicalMessage
     });
   }
 
@@ -196,7 +204,7 @@ async function assertSuccessfulResponse(response, token = null) {
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.RATE_LIMIT, {
       status: response.status,
       code: 'RATE_LIMIT',
-      technicalMessage
+      technicalMessage: safeTechnicalMessage
     });
   }
 
@@ -204,7 +212,7 @@ async function assertSuccessfulResponse(response, token = null) {
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.FORBIDDEN, {
       status: response.status,
       code: 'FORBIDDEN',
-      technicalMessage
+      technicalMessage: safeTechnicalMessage
     });
   }
 
@@ -212,17 +220,17 @@ async function assertSuccessfulResponse(response, token = null) {
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.TEMPORARY, {
       status: response.status,
       code: 'SERVICE_UNAVAILABLE',
-      technicalMessage
+      technicalMessage: safeTechnicalMessage
     });
   }
 
   throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.UNKNOWN, {
     status: response.status,
-    technicalMessage
+    technicalMessage: safeTechnicalMessage
   });
 }
 
-async function driveFetch(url, options, token, expectedFingerprint) {
+async function driveFetch(url, options, token, expectedFingerprint, { sensitiveSession = false } = {}) {
   const scope = await assertDriveOperation(token, expectedFingerprint);
   // Keep the final context check adjacent to fetch; the API request itself
   // cannot be rolled back if the active tenant changes after it is sent.
@@ -233,8 +241,8 @@ async function driveFetch(url, options, token, expectedFingerprint) {
   } catch (cause) {
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.NETWORK, {
       code: 'NETWORK_ERROR',
-      technicalMessage: cause?.message || String(cause),
-      cause
+      technicalMessage: sensitiveSession ? '' : (cause?.message || String(cause)),
+      ...(sensitiveSession ? {} : { cause })
     });
   }
 }
@@ -436,12 +444,433 @@ async function cleanupTenantBackups(token, tenantFingerprint, uploadedFileId) {
   return { deletedCount };
 }
 
+function reportUploadProgress(onProgress, phase, confirmedBytes, totalBytes, {
+  transferComplete = false,
+  measurable = true
+} = {}) {
+  if (typeof onProgress !== 'function') return;
+  const safeBytes = Math.max(0, Math.min(totalBytes, confirmedBytes));
+  const percent = transferComplete && safeBytes === totalBytes
+    ? 100
+    : measurable
+      ? Math.min(99, Math.floor((safeBytes / totalBytes) * 100))
+      : null;
+  try {
+    onProgress({ phase, bytesConfirmed: safeBytes, totalBytes, percent });
+  } catch {
+    // UI observers must not interrupt a Drive transfer.
+  }
+}
+
+function isRetryableUploadError(error) {
+  return ['NETWORK_ERROR', 'UPLOAD_TIMEOUT', 'SERVICE_UNAVAILABLE', 'RATE_LIMIT']
+    .includes(error?.code);
+}
+
+function isRetryableUploadStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function waitBeforeUploadRetry(attempt) {
+  const delay = Math.min(4000, 250 * (2 ** attempt));
+  return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+async function resumableFetch(url, options, token, tenantFingerprint) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, UPLOAD_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await driveFetch(url, {
+      ...options,
+      signal: controller.signal
+    }, token, tenantFingerprint, { sensitiveSession: true });
+  } catch (error) {
+    if (timedOut) {
+      throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.TEMPORARY, { code: 'UPLOAD_TIMEOUT' });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function readAcceptedOffset(response, totalBytes) {
+  const range = response.headers?.get?.('Range');
+  if (!range) return 0;
+  const match = String(range).match(/^bytes\s*=\s*0-(\d+)$/i);
+  const lastAcceptedByte = match ? Number(match[1]) : Number.NaN;
+  if (
+    !Number.isSafeInteger(lastAcceptedByte)
+    || lastAcceptedByte < 0
+    || lastAcceptedByte >= totalBytes
+  ) {
+    throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.TEMPORARY, {
+      code: 'UPLOAD_RANGE_INVALID'
+    });
+  }
+  return lastAcceptedByte + 1;
+}
+
+function isValidResumableSessionUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.hostname === 'www.googleapis.com'
+      && url.pathname === '/upload/drive/v3/files'
+      && Boolean(url.searchParams.get('upload_id'));
+  } catch {
+    return false;
+  }
+}
+
+async function initiateResumableSession(token, fileBlob, metadata, tenantFingerprint) {
+  const response = await resumableFetch(DRIVE_RESUMABLE_UPLOAD_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-Upload-Content-Type': fileBlob.type || 'application/octet-stream',
+      'X-Upload-Content-Length': String(fileBlob.size)
+    },
+    body: JSON.stringify(metadata)
+  }, token, tenantFingerprint);
+
+  await assertSuccessfulResponse(response, token, { sensitiveSession: true });
+  // Keep the signed session URL local to this call; never place it in progress or error data.
+  const sessionUrl = response.headers?.get?.('Location');
+  return isValidResumableSessionUrl(sessionUrl) ? sessionUrl : null;
+}
+
+async function readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint) {
+  for (let attempt = 0; attempt < MAX_UPLOAD_RECOVERY_ATTEMPTS; attempt += 1) {
+    let response;
+    try {
+      response = await resumableFetch(sessionUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Range': `bytes */${fileBlob.size}`
+        }
+      }, token, tenantFingerprint);
+    } catch (error) {
+      if (!isRetryableUploadError(error)) throw error;
+      if (attempt === MAX_UPLOAD_RECOVERY_ATTEMPTS - 1) return { uncertain: true };
+      await waitBeforeUploadRetry(attempt);
+      continue;
+    }
+
+    if (response.status === 308) {
+      return { offset: readAcceptedOffset(response, fileBlob.size) };
+    }
+    if (response.ok) {
+      let uploadedFile = null;
+      try {
+        uploadedFile = await response.json();
+      } catch {
+        // Drive may have completed the transfer even when its metadata body is unreadable.
+      }
+      return { completed: true, uploadedFile };
+    }
+    if (response.status === 404 || response.status === 410) return { expired: true };
+
+    if (isRetryableUploadStatus(response.status)) {
+      if (attempt === MAX_UPLOAD_RECOVERY_ATTEMPTS - 1) return { uncertain: true };
+      await waitBeforeUploadRetry(attempt);
+      continue;
+    }
+
+    try {
+      await assertSuccessfulResponse(response, token, { sensitiveSession: true });
+    } catch (error) {
+      if (!isRetryableUploadError(error)) throw error;
+      if (attempt === MAX_UPLOAD_RECOVERY_ATTEMPTS - 1) return { uncertain: true };
+      await waitBeforeUploadRetry(attempt);
+    }
+  }
+
+  return { uncertain: true };
+}
+
+async function uploadResumableFile(token, fileBlob, metadata, tenantFingerprint, onProgress) {
+  reportUploadProgress(onProgress, 'preparing', 0, fileBlob.size);
+  let sessionUrl;
+  try {
+    sessionUrl = await initiateResumableSession(token, fileBlob, metadata, tenantFingerprint);
+  } catch (error) {
+    if (isRetryableUploadError(error)) {
+      return { transferStatus: 'pending', issue: 'session_init_uncertain', uploadedFile: null };
+    }
+    throw error;
+  }
+  if (!sessionUrl) {
+    return { transferStatus: 'not_started', issue: 'session_url_unavailable', uploadedFile: null };
+  }
+
+  let offset = 0;
+  let noProgressAttempts = 0;
+  let expiredSessionRestarts = 0;
+  let resuming = false;
+
+  const applySessionStatus = async (status) => {
+    if (status.completed) {
+      reportUploadProgress(onProgress, 'verifying', fileBlob.size, fileBlob.size, { transferComplete: true });
+      return { transferStatus: 'confirmed', uploadedFile: status.uploadedFile };
+    }
+    if (status.uncertain) {
+      return { transferStatus: 'pending', issue: 'transfer_state_uncertain', confirmedBytes: offset, uploadedFile: null };
+    }
+    if (status.expired) {
+      if (expiredSessionRestarts >= MAX_EXPIRED_SESSION_RESTARTS) {
+        return { transferStatus: 'failed', issue: 'session_expired', confirmedBytes: offset, uploadedFile: null };
+      }
+      expiredSessionRestarts += 1;
+      try {
+        sessionUrl = await initiateResumableSession(token, fileBlob, metadata, tenantFingerprint);
+      } catch (error) {
+        if (isRetryableUploadError(error)) {
+          return { transferStatus: 'pending', issue: 'session_init_uncertain', confirmedBytes: 0, uploadedFile: null };
+        }
+        throw error;
+      }
+      if (!sessionUrl) {
+        return { transferStatus: 'not_started', issue: 'session_url_unavailable', confirmedBytes: 0, uploadedFile: null };
+      }
+      offset = 0;
+      noProgressAttempts = 0;
+      resuming = false;
+      return null;
+    }
+
+    if (status.offset === offset) {
+      noProgressAttempts += 1;
+      if (noProgressAttempts >= MAX_UPLOAD_RECOVERY_ATTEMPTS) {
+        return { transferStatus: 'pending', issue: 'transfer_state_uncertain', confirmedBytes: offset, uploadedFile: null };
+      }
+      await waitBeforeUploadRetry(noProgressAttempts - 1);
+    } else {
+      offset = status.offset;
+      noProgressAttempts = 0;
+    }
+    resuming = true;
+    return null;
+  };
+
+  while (true) {
+    if (offset >= fileBlob.size) {
+      const outcome = await applySessionStatus(
+        await readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint)
+      );
+      if (outcome) return outcome;
+      continue;
+    }
+
+    const chunkEnd = Math.min(offset + RESUMABLE_CHUNK_SIZE, fileBlob.size);
+    const chunk = fileBlob.slice(offset, chunkEnd);
+    reportUploadProgress(onProgress, resuming ? 'resuming' : 'uploading', offset, fileBlob.size);
+
+    let response;
+    try {
+      response = await resumableFetch(sessionUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Range': `bytes ${offset}-${chunkEnd - 1}/${fileBlob.size}`
+        },
+        // Blob keeps the exact slice length; browsers set Content-Length themselves.
+        body: chunk
+      }, token, tenantFingerprint);
+    } catch (error) {
+      if (!isRetryableUploadError(error)) throw error;
+      const outcome = await applySessionStatus(
+        await readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint)
+      );
+      if (outcome) return outcome;
+      continue;
+    }
+
+    if (response.status === 308) {
+      const acceptedOffset = readAcceptedOffset(response, fileBlob.size);
+      if (acceptedOffset <= offset) {
+        const outcome = await applySessionStatus(
+          await readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint)
+        );
+        if (outcome) return outcome;
+      } else {
+        offset = acceptedOffset;
+        noProgressAttempts = 0;
+      }
+      reportUploadProgress(onProgress, 'uploading', offset, fileBlob.size);
+      resuming = offset > 0;
+      continue;
+    }
+
+    if (response.ok) {
+      let uploadedFile = null;
+      try {
+        uploadedFile = await response.json();
+      } catch {
+        // The completed transfer is still checked through Drive metadata below.
+      }
+      reportUploadProgress(onProgress, 'verifying', fileBlob.size, fileBlob.size, { transferComplete: true });
+      return { transferStatus: 'confirmed', uploadedFile };
+    }
+
+    if (response.status === 404 || response.status === 410) {
+      const outcome = await applySessionStatus(
+        await readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint)
+      );
+      if (outcome) return outcome;
+      continue;
+    }
+
+    try {
+      await assertSuccessfulResponse(response, token, { sensitiveSession: true });
+    } catch (error) {
+      if (!isRetryableUploadError(error)) throw error;
+      const outcome = await applySessionStatus(
+        await readResumableSessionStatus(sessionUrl, token, fileBlob, tenantFingerprint)
+      );
+      if (outcome) return outcome;
+    }
+  }
+}
+
+function makePendingVerificationResult({
+  transferStatus,
+  verificationStatus = 'pending',
+  verificationReason = 'remote_metadata_unavailable',
+  uploadedFile = null
+}) {
+  return {
+    uploadStatus: 'verification_pending',
+    transferStatus,
+    verificationStatus,
+    verificationReason,
+    uploadedFile,
+    cleanupStatus: 'pending',
+    cleanupReason: 'verification_pending'
+  };
+}
+
+async function calculateBlobSha256(blob) {
+  const hash = sha256.create();
+  if (typeof blob.stream === 'function') {
+    const reader = blob.stream().getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        hash.update(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } else {
+    for (let offset = 0; offset < blob.size; offset += RESUMABLE_CHUNK_SIZE) {
+      const chunk = new Uint8Array(await blob.slice(offset, offset + RESUMABLE_CHUNK_SIZE).arrayBuffer());
+      hash.update(chunk);
+    }
+  }
+  return Array.from(hash.digest(), (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyUploadedBackup(token, candidate, fileBlob, fileName, tenantFingerprint, ownerProperties) {
+  if (!candidate || typeof candidate.id !== 'string' || !candidate.id) {
+    return { status: 'pending', uploadedFile: null };
+  }
+
+  const metadataUrl = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(candidate.id)}`);
+  metadataUrl.searchParams.set('fields', 'id,name,createdTime,appProperties,mimeType,size,sha256Checksum,trashed');
+  let file;
+  try {
+    const response = await driveFetch(metadataUrl.toString(), {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    }, token, tenantFingerprint);
+    await assertSuccessfulResponse(response, token);
+    file = await response.json();
+  } catch {
+    return { status: 'pending', uploadedFile: null };
+  }
+
+  const sizeMatches = Number.isSafeInteger(Number(file?.size))
+    && Number(file.size) === fileBlob.size;
+  if (
+    file?.id !== candidate.id
+    || file?.name !== fileName
+    || !isBackupFileForTenant(file, ownerProperties)
+    || !sizeMatches
+  ) {
+    return { status: 'failed', uploadedFile: null };
+  }
+
+  let checksumStatus = 'unavailable';
+  if (file.sha256Checksum !== undefined && file.sha256Checksum !== null) {
+    if (!/^[a-f0-9]{64}$/i.test(String(file.sha256Checksum))) {
+      return { status: 'failed', uploadedFile: null };
+    }
+    let localChecksum;
+    try {
+      localChecksum = await calculateBlobSha256(fileBlob);
+    } catch {
+      return { status: 'pending', uploadedFile: null };
+    }
+    if (localChecksum !== String(file.sha256Checksum).toLowerCase()) {
+      return { status: 'failed', uploadedFile: null };
+    }
+    checksumStatus = 'verified';
+  }
+
+  return { status: 'completed', uploadedFile: file, checksumStatus };
+}
+
+async function uploadSmallFileMultipart(token, fileBlob, metadata, tenantFingerprint, onProgress) {
+  const boundary = createBoundary();
+  const fileContentType = fileBlob.type || 'application/octet-stream';
+  const body = new Blob([
+    `--${boundary}\r\n`,
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+    JSON.stringify(metadata),
+    `\r\n--${boundary}\r\n`,
+    `Content-Type: ${fileContentType}\r\n\r\n`,
+    fileBlob,
+    `\r\n--${boundary}--\r\n`
+  ], {
+    type: `multipart/related; boundary=${boundary}`
+  });
+
+  reportUploadProgress(onProgress, 'uploading', 0, fileBlob.size, { measurable: false });
+  const response = await driveFetch(DRIVE_UPLOAD_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body
+  }, token, tenantFingerprint);
+  await assertSuccessfulResponse(response, token);
+
+  let uploadedFile = null;
+  try {
+    uploadedFile = await response.json();
+  } catch {
+    // HTTP acceptance without an ID is not enough to verify a remote file.
+  }
+  reportUploadProgress(onProgress, 'verifying', fileBlob.size, fileBlob.size, { transferComplete: true });
+  return { transferStatus: 'confirmed', uploadedFile };
+}
+
 /**
- * Uploads the current V2 encrypted backup and reports upload and retention
- * separately. Cleanup is best-effort and can never turn a confirmed upload
- * into an upload failure.
+ * Uploads the current V2 encrypted backup using multipart for small files and
+ * Drive resumable chunks for larger files. Retention starts only after remote
+ * identity and size verification succeeds.
  */
-export async function uploadBackup(token, fileBlob, fileName) {
+export async function uploadBackup(token, fileBlob, fileName, { onProgress } = {}) {
   const initialScope = await assertDriveOperation(token);
   if (!(fileBlob instanceof Blob)) {
     throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.INVALID_BACKUP, {
@@ -449,6 +878,7 @@ export async function uploadBackup(token, fileBlob, fileName) {
     });
   }
 
+  reportUploadProgress(onProgress, 'preparing', 0, fileBlob.size);
   let header;
   try {
     ({ header } = await parseHeader(fileBlob));
@@ -473,7 +903,6 @@ export async function uploadBackup(token, fileBlob, fileName) {
     });
   }
 
-  const boundary = createBoundary();
   const metadata = {
     name: fileName,
     appProperties: {
@@ -482,61 +911,63 @@ export async function uploadBackup(token, fileBlob, fileName) {
       ...initialScope.ownerProperties
     }
   };
-  const fileContentType = fileBlob.type || 'application/octet-stream';
-  const body = new Blob([
-    `--${boundary}\r\n`,
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
-    JSON.stringify(metadata),
-    `\r\n--${boundary}\r\n`,
-    `Content-Type: ${fileContentType}\r\n\r\n`,
+
+  const transfer = fileBlob.size > RESUMABLE_UPLOAD_THRESHOLD
+    ? await uploadResumableFile(token, fileBlob, metadata, tenantFingerprint, onProgress)
+    : await uploadSmallFileMultipart(token, fileBlob, metadata, tenantFingerprint, onProgress);
+
+  if (transfer.transferStatus !== 'confirmed') {
+    reportUploadProgress(
+      onProgress,
+      'verification_pending',
+      transfer.confirmedBytes || 0,
+      fileBlob.size
+    );
+    return makePendingVerificationResult({
+      transferStatus: transfer.transferStatus,
+      verificationReason: transfer.issue
+    });
+  }
+
+  const verification = await verifyUploadedBackup(
+    token,
+    transfer.uploadedFile,
     fileBlob,
-    `\r\n--${boundary}--\r\n`
-  ], {
-    type: `multipart/related; boundary=${boundary}`
-  });
-
-  const response = await driveFetch(DRIVE_UPLOAD_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`
-    },
-    body
-  }, token, tenantFingerprint);
-
-  await assertSuccessfulResponse(response, token);
-  let uploadedFile = null;
-  try {
-    uploadedFile = await response.json();
-  } catch {
-    // HTTP acceptance alone is not enough to confirm the file identity.
-  }
-
-  // A 2xx response means Drive accepted the request, but retention must wait
-  // until the response identifies this file and verifies its tenant metadata.
-  if (
-    typeof uploadedFile?.id !== 'string'
-    || !uploadedFile.id
-    || !isBackupFileForTenant(uploadedFile, initialScope.ownerProperties)
-  ) {
-    return {
-      uploadStatus: 'verification_pending',
-      uploadedFile: null
-    };
+    fileName,
+    tenantFingerprint,
+    initialScope.ownerProperties
+  );
+  if (verification.status !== 'completed') {
+    reportUploadProgress(onProgress, 'verification_pending', fileBlob.size, fileBlob.size, {
+      transferComplete: true
+    });
+    return makePendingVerificationResult({
+      transferStatus: 'confirmed',
+      verificationStatus: verification.status,
+      verificationReason: verification.status === 'failed' ? 'metadata_mismatch' : 'remote_metadata_unavailable'
+    });
   }
 
   try {
-    const cleanup = await cleanupTenantBackups(token, tenantFingerprint, uploadedFile.id);
+    const cleanup = await cleanupTenantBackups(token, tenantFingerprint, verification.uploadedFile.id);
+    reportUploadProgress(onProgress, 'completed', fileBlob.size, fileBlob.size, { transferComplete: true });
     return {
       uploadStatus: 'confirmed',
-      uploadedFile,
+      transferStatus: 'confirmed',
+      verificationStatus: 'completed',
+      checksumStatus: verification.checksumStatus,
+      uploadedFile: verification.uploadedFile,
       cleanupStatus: 'completed',
       deletedCount: cleanup.deletedCount
     };
   } catch (error) {
+    reportUploadProgress(onProgress, 'completed', fileBlob.size, fileBlob.size, { transferComplete: true });
     return {
       uploadStatus: 'confirmed',
-      uploadedFile,
+      transferStatus: 'confirmed',
+      verificationStatus: 'completed',
+      checksumStatus: verification.checksumStatus,
+      uploadedFile: verification.uploadedFile,
       cleanupStatus: 'pending',
       cleanupReason: cleanupPendingReason(error)
     };
