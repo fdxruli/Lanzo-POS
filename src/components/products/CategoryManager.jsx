@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Layers3, Pencil, Plus } from 'lucide-react';
 import CategoryForm from './CategoryForm';
 import CategoryList from './CategoryList';
@@ -8,6 +8,26 @@ const EMPTY_CATEGORIES = [];
 
 export default function CategoryManager({ categories = EMPTY_CATEGORIES, onSave, onRefresh, onDelete }) {
   const [editingCategory, setEditingCategory] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const formId = useId();
+  const formRef = useRef(null);
+  const createButtonRef = useRef(null);
+  const returnFocusRef = useRef(null);
+
+  const openForm = (category = null) => {
+    returnFocusRef.current = document.activeElement;
+    setEditingCategory(category);
+    setFormOpen(true);
+    requestAnimationFrame(() => formRef.current?.querySelector('input')?.focus());
+  };
+
+  const closeForm = () => {
+    setEditingCategory(null);
+    setFormOpen(false);
+    const target = returnFocusRef.current;
+    if (target?.isConnected && target.getClientRects().length > 0) target.focus();
+    else createButtonRef.current?.focus();
+  };
   const categoryCount = Array.isArray(categories) ? categories.length : 0;
 
   const handleSaveSuccess = () => {
@@ -28,13 +48,19 @@ export default function CategoryManager({ categories = EMPTY_CATEGORIES, onSave,
             <p>Organiza tus productos para encontrarlos más rápido.</p>
           </div>
         </div>
-        <div className="category-status-pill" aria-label={`${categoryCount} ${categoryCount === 1 ? 'categoría' : 'categorías'}`}>
-          {categoryCount} {categoryCount === 1 ? 'categoría' : 'categorías'}
+        <div className="category-header-actions">
+          <div className="category-status-pill" aria-label={`${categoryCount} ${categoryCount === 1 ? 'categoría' : 'categorías'}`}>
+            {categoryCount} {categoryCount === 1 ? 'categoría' : 'categorías'}
+          </div>
+          <button type="button" className="category-create-button" ref={createButtonRef}
+            aria-expanded={formOpen} aria-controls={formId} onClick={() => openForm()}>
+            <Plus size={17} aria-hidden="true" /> Nueva categoría
+          </button>
         </div>
       </header>
 
       <div className="category-manager-layout">
-        <aside className="category-form-section">
+        <aside id={formId} ref={formRef} className={`category-form-section${formOpen ? ' category-form-section--open' : ''}`}>
           <div className="category-section-heading">
             <span className="category-section-icon" aria-hidden="true">
               {editingCategory ? <Pencil size={17} /> : <Plus size={17} />}
@@ -49,7 +75,7 @@ export default function CategoryManager({ categories = EMPTY_CATEGORIES, onSave,
             initialData={editingCategory}
             onSave={onSave}
             onSaveSuccess={handleSaveSuccess}
-            onCancel={editingCategory ? () => setEditingCategory(null) : null}
+            onCancel={closeForm}
           />
         </aside>
 
@@ -58,12 +84,11 @@ export default function CategoryManager({ categories = EMPTY_CATEGORIES, onSave,
             <div>
               <h3 id="category-list-heading">Categorías existentes</h3>
             </div>
-            <span className="category-list-count" aria-hidden="true">{categoryCount}</span>
           </div>
           <div className="category-list-body">
             <CategoryList
               categories={categories}
-              onEdit={setEditingCategory}
+              onEdit={openForm}
               onDelete={onDelete}
             />
           </div>
