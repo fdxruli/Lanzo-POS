@@ -718,10 +718,12 @@ export default function CajaPage() {
                 backupResult.blob,
                 backupResult.fileName
               );
-              if (driveResult?.uploadStatus !== 'confirmed') {
+              if (driveResult?.uploadStatus === 'verification_pending') {
+                backupWarning = true;
+                backupSummary = 'El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.';
+              } else if (driveResult?.uploadStatus !== 'confirmed') {
                 throw new Error('DRIVE_UPLOAD_UNCONFIRMED');
-              }
-              if (driveResult.cleanupStatus === 'pending') {
+              } else if (driveResult.cleanupStatus === 'pending') {
                 backupWarning = true;
                 backupSummary = driveResult.cleanupReason === 'reauth_required'
                   ? 'El respaldo local y la subida a Google Drive quedaron confirmados. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'

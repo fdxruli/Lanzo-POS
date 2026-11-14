@@ -509,19 +509,19 @@ export async function uploadBackup(token, fileBlob, fileName) {
   try {
     uploadedFile = await response.json();
   } catch {
-    // A successful HTTP response confirms the upload; missing response fields
-    // only mean cleanup cannot safely identify it yet.
+    // HTTP acceptance alone is not enough to confirm the file identity.
   }
 
+  // A 2xx response means Drive accepted the request, but retention must wait
+  // until the response identifies this file and verifies its tenant metadata.
   if (
-    !uploadedFile?.id
+    typeof uploadedFile?.id !== 'string'
+    || !uploadedFile.id
     || !isBackupFileForTenant(uploadedFile, initialScope.ownerProperties)
   ) {
     return {
-      uploadStatus: 'confirmed',
-      uploadedFile: uploadedFile?.id ? uploadedFile : null,
-      cleanupStatus: 'pending',
-      cleanupReason: 'upload_metadata_unavailable'
+      uploadStatus: 'verification_pending',
+      uploadedFile: null
     };
   }
 

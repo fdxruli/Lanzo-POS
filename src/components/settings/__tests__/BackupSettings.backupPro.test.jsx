@@ -182,6 +182,35 @@ describe('BackupSettings copy by license mode', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  it('warns that Drive accepted the upload but its identity is pending verification', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'temporary-drive-token';
+    appState.driveTokenExpiresAt = Date.now() + 60_000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted V2 backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk',
+      coverage: { complete: true }
+    });
+    uploadBackup.mockResolvedValue({ uploadStatus: 'verification_pending', uploadedFile: null });
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    await waitFor(() => {
+      expect(uploadBackup).toHaveBeenCalledTimes(1);
+      expect(backupManager.backup).toHaveBeenCalledWith(expect.objectContaining({ includeBlob: true }));
+      expect(toast).toHaveBeenCalledWith(
+        'El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.',
+        { icon: '⚠️' }
+      );
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
+  });
+
   it('does not claim Drive success when upload fails after local generation', async () => {
     backupStatus.configured = true;
     access.isAdmin = true;

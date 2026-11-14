@@ -393,7 +393,7 @@ function LocalBackupSettings({
           result.blob,
           result.fileName
         );
-        if (uploadResult?.uploadStatus !== 'confirmed') {
+        if (!['confirmed', 'verification_pending'].includes(uploadResult?.uploadStatus)) {
           throw new Error('No se confirmó la subida a Google Drive.');
         }
       } catch (driveError) {
@@ -410,15 +410,24 @@ function LocalBackupSettings({
     }
 
     setManualBackupPhase('completed');
+    const driveVerificationPending = shouldUploadToDrive
+      && uploadResult?.uploadStatus === 'verification_pending';
+    const driveVerificationNotice = driveVerificationPending
+      ? ' Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.'
+      : '';
     if (result.coverage?.complete === false) {
-      const destination = shouldUploadToDrive ? 'local y subido a Google Drive' : 'localmente';
+      const destination = shouldUploadToDrive && !driveVerificationPending
+        ? 'local y subido a Google Drive'
+        : 'localmente';
       const cleanupNotice = shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending'
         ? uploadResult.cleanupReason === 'reauth_required'
           ? ' La sesión de Google expiró después de la subida; las copias anteriores se conservaron. Reconecta para reintentar la limpieza.'
           : ' La limpieza de copias anteriores quedó pendiente; se conservaron.'
         : '';
       const reauthNotice = driveSessionExpired ? ' Google Drive requiere reconexión; no se subió una copia.' : '';
-      toast(`Respaldo guardado ${destination} con cobertura parcial. Revisa las condiciones señaladas antes de continuar.${cleanupNotice}${reauthNotice}`, { icon: '⚠️' });
+      toast(`Respaldo guardado ${destination} con cobertura parcial. Revisa las condiciones señaladas antes de continuar.${driveVerificationNotice}${cleanupNotice}${reauthNotice}`, { icon: '⚠️' });
+    } else if (driveVerificationPending) {
+      toast(`El respaldo local se guardó.${driveVerificationNotice}`, { icon: '⚠️' });
     } else if (shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending') {
       const message = uploadResult.cleanupReason === 'reauth_required'
         ? 'Respaldo cifrado subido a Google Drive. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'

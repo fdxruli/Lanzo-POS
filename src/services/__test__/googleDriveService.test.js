@@ -185,6 +185,29 @@ function installDriveMock() {
       if (mode === 'tenant_invalidated_after_upload') {
         fixtures.tenantContext = makeTenantContext('business-b');
       }
+      if (mode === 'upload_missing_id') {
+        return response({
+          name: file.name,
+          createdTime: file.createdTime,
+          appProperties: file.appProperties,
+          mimeType: file.mimeType,
+          trashed: file.trashed
+        });
+      }
+      if (mode === 'upload_incompatible_metadata') {
+        return response({
+          ...file,
+          appProperties: {
+            ...file.appProperties,
+            tenant_license_id: 'f'.repeat(64)
+          }
+        });
+      }
+      if (mode === 'upload_invalid_json') {
+        const invalidJsonResponse = response(file);
+        invalidJsonResponse.json.mockRejectedValue(new SyntaxError('Invalid JSON'));
+        return invalidJsonResponse;
+      }
       return response(file);
     }
 
@@ -365,6 +388,30 @@ describe('googleDriveService', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+  });
+
+  it.each([
+    'upload_missing_id',
+    'upload_incompatible_metadata',
+    'upload_invalid_json'
+  ])('leaves an accepted upload pending verification when metadata is unusable (%s)', async (uploadMode) => {
+    mode = uploadMode;
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const oldFile = makeFile(
+      'old-a',
+      backup.tenantFingerprint,
+      Date.now() - 100_000,
+      backup.ownerProperties
+    );
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toEqual({ uploadStatus: 'verification_pending', uploadedFile: null });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
+    expect(driveFiles.some((file) => file.id === oldFile.id)).toBe(true);
   });
 
   it.each([
