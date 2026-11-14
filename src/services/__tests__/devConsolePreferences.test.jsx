@@ -74,8 +74,13 @@ describe('diagnostic preference with real actor storage and authority', () => {
     expect(toggle).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
     expect(screen.getByRole('region', { name: 'Consola de diagnóstico' })).toBeVisible();
+    installDevConsoleCapture();
+    emitDiagnosticConsoleEvent('error', [new TypeError('STAGE2_REVOKE_TEST')]);
+    fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+    expect(screen.getByRole('dialog', { name: 'Revisar diagnóstico técnico' })).toBeVisible();
     fireEvent.click(toggle);
     expect(screen.queryByRole('region', { name: 'Consola de diagnóstico' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Revisar diagnóstico técnico' })).toBeNull();
     await act(async () => { await mountActor(); });
     expect(getDevConsolePreference().enabled).toBe(false);
     fireEvent.click(toggle);
