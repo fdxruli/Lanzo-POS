@@ -433,7 +433,7 @@ export default function ProductsPage() {
             : categories.find((item) => item.id === category);
         const categoryId = categoryRecord?.id || category;
         const categoryName = categoryRecord?.name || 'esta categoría';
-        const hasReliableCount = Number.isInteger(productCount) && productCount >= 0;
+        const hasReliableCount = !cloudProductImagesEnabled && Number.isInteger(productCount) && productCount >= 0;
         const confirmationMessage = hasReliableCount
             ? productCount === 0
                 ? 'No hay productos asociados. Los productos no se eliminarán.'

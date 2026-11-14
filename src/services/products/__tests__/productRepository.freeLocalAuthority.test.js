@@ -191,6 +191,7 @@ beforeEach(() => {
 describe('productRepository FREE/local authority', () => {
   it('returns local category counts for FREE without requiring a Cloud snapshot marker', async () => {
     await expect(productRepository.getCategoryProductCounts(['cat-free'])).resolves.toEqual({
+      source: 'local',
       complete: true,
       counts: { 'cat-free': 2 }
     });
@@ -199,37 +200,35 @@ describe('productRepository FREE/local authority', () => {
     expect(mocks.getCategoryProductCounts).toHaveBeenCalledWith(['cat-free']);
   });
 
-  it('omits category counts for PRO until a complete license snapshot exists', async () => {
+  it.each([null, '2026-01-01T00:00:00Z', '2026-11-13T00:00:00Z'])(
+    'keeps PRO counts local regardless of historical snapshot %s', async (snapshot) => {
+      mocks.state.licenseDetails = {
+        license_key: 'LANZO-PRO-REPOSITORY',
+        features: { cloud_pos_sync: true, cloud_products_sync: true }
+      };
+      mocks.syncMetaGetMeta.mockResolvedValue(snapshot);
+      mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-pro': 0 });
+      await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
+        source: 'local', complete: false, counts: { 'cat-pro': 0 }
+      });
+      expect(mocks.syncMetaGetMeta).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([true, false])('keeps PRO pending local associations explicitly local (online=%s)', async (online) => {
+    vi.stubGlobal('navigator', { onLine: online });
     mocks.state.licenseDetails = {
       license_key: 'LANZO-PRO-REPOSITORY',
       features: { cloud_pos_sync: true, cloud_products_sync: true }
     };
-
-    await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
-      complete: false,
-      counts: {}
-    });
-    expect(mocks.syncMetaGetMeta).toHaveBeenCalledWith(
-      'products_last_snapshot_at',
-      null,
-      { licenseKey: 'LANZO-PRO-REPOSITORY' }
-    );
-    expect(mocks.getCategoryProductCounts).not.toHaveBeenCalled();
-  });
-
-  it('uses indexed local counts for PRO after the complete snapshot marker is present', async () => {
-    mocks.state.licenseDetails = {
-      license_key: 'LANZO-PRO-REPOSITORY',
-      features: { cloud_pos_sync: true, cloud_products_sync: true }
-    };
-    mocks.syncMetaGetMeta.mockResolvedValue('2026-11-13T00:00:00.000Z');
-    mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-pro': 7 });
-
-    await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
-      complete: true,
-      counts: { 'cat-pro': 7 }
-    });
-    expect(mocks.getCategoryProductCounts).toHaveBeenCalledWith(['cat-pro']);
+    mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-pro': 4 });
+    try {
+      await expect(productRepository.getCategoryProductCounts(['cat-pro'])).resolves.toEqual({
+        source: 'local', complete: false, counts: { 'cat-pro': 4 }
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps category CRUD local with ActorRuntime LOCKED and never enqueues cloud work', async () => {

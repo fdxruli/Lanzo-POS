@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Pencil, Search, Tag, Trash2, X } from 'lucide-react';
 import { productRepository } from '../../services/products/productRepository';
+import { useAppStore } from '../../store/useAppStore';
 import './CategoryList.css';
 
 const EMPTY_CATEGORIES = [];
@@ -12,7 +13,8 @@ const normalizeCategorySearch = (value) => String(value || '')
   .trim()
   .toLowerCase();
 
-const getProductCountLabel = (count) => {
+const getProductCountLabel = (count, localOnly) => {
+  if (localOnly) return count === 0 ? 'Sin productos registrados aquí' : `${count} ${count === 1 ? 'producto' : 'productos'} en este dispositivo`;
   if (count === 0) return 'Sin productos';
   return `${count} ${count === 1 ? 'producto' : 'productos'}`;
 };
@@ -21,6 +23,7 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
   const searchId = useId();
   const [searchQuery, setSearchQuery] = useState('');
   const [productCounts, setProductCounts] = useState(null);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const safeCategories = Array.isArray(categories) ? categories : EMPTY_CATEGORIES;
   const categoryIds = useMemo(() => safeCategories.map((category) => category.id).filter(Boolean), [safeCategories]);
 
@@ -36,14 +39,15 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
     productRepository.getCategoryProductCounts(categoryIds)
       .then((result) => {
         if (!isCurrent) return;
-        setProductCounts(result?.complete === true && result.counts ? result.counts : null);
+        setProductCounts(result?.counts && (result.complete === true || result.source === 'local')
+          ? { ...result, categoryIds, licenseDetails } : null);
       })
       .catch(() => {
         if (isCurrent) setProductCounts(null);
       });
 
     return () => { isCurrent = false; };
-  }, [categoryIds]);
+  }, [categoryIds, licenseDetails]);
 
   const sortedCategories = useMemo(() => [...safeCategories].sort((left, right) => (
     (Number(left.sortOrder) || 0) - (Number(right.sortOrder) || 0)
@@ -58,7 +62,9 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
   }, [searchQuery, sortedCategories]);
 
   const getCount = (categoryId) => {
-    const count = productCounts?.[categoryId];
+    const currentCounts = productCounts?.categoryIds === categoryIds && productCounts?.licenseDetails === licenseDetails
+      ? productCounts.counts : null;
+    const count = currentCounts?.[categoryId];
     return Number.isInteger(count) && count >= 0 ? count : null;
   };
 
@@ -114,7 +120,7 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
                 <div className="category-admin-copy">
                   <h4>{category.name}</h4>
                   {productCount !== null && (
-                    <span className="category-admin-product-count">{getProductCountLabel(productCount)}</span>
+                    <span className="category-admin-product-count">{getProductCountLabel(productCount, productCounts?.complete !== true)}</span>
                   )}
                 </div>
                 <div className="category-admin-actions">
@@ -130,7 +136,7 @@ export default function CategoryList({ categories, onEdit, onDelete }) {
                   <button
                     type="button"
                     className="category-admin-action category-admin-action--delete"
-                    onClick={() => onDelete?.(category, productCount)}
+                    onClick={() => onDelete?.(category, productCounts?.complete === true ? productCount : null)}
                     aria-label={`Eliminar ${category.name}`}
                     title="Eliminar"
                   >

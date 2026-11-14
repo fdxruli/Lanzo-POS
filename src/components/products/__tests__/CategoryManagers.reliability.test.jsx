@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CategoryManager from '../CategoryManager';
 import CategoryManagerModal from '../CategoryManagerModal';
+
+const context = vi.hoisted(() => ({ licenseDetails: null }));
+vi.mock('../../../store/useAppStore', () => ({ useAppStore: (selector) => selector(context) }));
 
 const repository = vi.hoisted(() => ({ getCategoryProductCounts: vi.fn() }));
 
@@ -171,4 +174,27 @@ describe('category manager save failure consistency', () => {
     expect(screen.queryByText('Sin productos')).not.toBeInTheDocument();
     expect(screen.queryByText('1 producto')).not.toBeInTheDocument();
   });
+  it.each(['section', 'modal'])('%s labels PRO device counts and deletes without a numeric claim', async (kind) => {
+    repository.getCategoryProductCounts.mockResolvedValue({ source: 'local', complete: false, counts: { 'category-1': 0 } });
+    const onDelete = vi.fn();
+    renderManager(kind, vi.fn(), vi.fn(), [category], onDelete);
+    expect(await screen.findByText('Sin productos registrados aquí')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar Bebidas' }));
+    expect(onDelete).toHaveBeenCalledWith(category, null);
+  });
+
+  it.each(['section', 'modal'])('%s discards a late count after a license change and a Dexie failure', async (kind) => {
+    let resolveOld;
+    repository.getCategoryProductCounts.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    const categories = [category];
+    const view = renderManager(kind, vi.fn(), vi.fn(), categories);
+    context.licenseDetails = { license_key: 'business-b' };
+    repository.getCategoryProductCounts.mockRejectedValueOnce(new Error('Dexie read failed'));
+    view.rerender(createManager(kind, vi.fn(), vi.fn(), categories));
+    await act(async () => { resolveOld({ complete: true, counts: { 'category-1': 99 } }); });
+    expect(screen.queryByText('99 productos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sin productos')).not.toBeInTheDocument();
+    context.licenseDetails = null;
+  });
+
 });
