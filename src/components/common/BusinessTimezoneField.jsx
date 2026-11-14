@@ -7,7 +7,7 @@ const COMMON_TIMEZONES = [
   'America/Matamoros', 'America/New_York', 'America/Los_Angeles'
 ];
 
-export default function BusinessTimezoneField({ value, onChange, required = false, disabled = false, showError = false, inputRef }) {
+export default function BusinessTimezoneField({ value, onChange, required = false, disabled = false, showError = false, inputRef, compactHelp = false }) {
   const id = useId();
   const [touched, setTouched] = useState(false);
   const [detectedZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || '');
@@ -45,9 +45,23 @@ export default function BusinessTimezoneField({ value, onChange, required = fals
       <datalist id={`${id}-options`}>
         {COMMON_TIMEZONES.map((zone) => <option key={zone} value={zone} />)}
       </datalist>
-      <small id={`${id}-help`} className="form-help-text">
-        La zona horaria permite gestionar correctamente fechas y horarios de tu negocio y es necesaria para algunas funciones de LANZO POS
-      </small>
+      {compactHelp ? (
+        <>
+          <small id={id + '-help'} className="form-help-text">
+            Se utiliza para fechas y horarios del negocio.
+          </small>
+          <details className="settings-timezone-more">
+            <summary>¿Por qué importa?</summary>
+            <small className="form-help-text">
+              La zona horaria permite gestionar correctamente fechas y horarios de tu negocio y es necesaria para algunas funciones de LANZO POS
+            </small>
+          </details>
+        </>
+      ) : (
+        <small id={id + '-help'} className="form-help-text">
+          La zona horaria permite gestionar correctamente fechas y horarios de tu negocio y es necesaria para algunas funciones de LANZO POS
+        </small>
+      )}
       {error && <small id={`${id}-error`} className="form-help-text validation-message error" role="alert">{error}</small>}
       {!timezone && isValidBusinessTimezone(detectedZone) && (
         <button type="button" className="ui-button ui-button--ghost" disabled={disabled} onClick={() => onChange(detectedZone)}>
