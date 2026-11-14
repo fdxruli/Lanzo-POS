@@ -720,7 +720,15 @@ export default function CajaPage() {
               );
               if (driveResult?.uploadStatus === 'verification_pending') {
                 backupWarning = true;
-                backupSummary = 'El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.';
+                backupSummary = driveResult.transferStatus === 'pending'
+                  ? 'El respaldo local se guardó. No se pudo determinar si Google Drive terminó la transferencia; revisa Drive antes de volver a intentarlo.'
+                  : driveResult.transferStatus === 'not_started'
+                    ? 'El respaldo local se guardó. No se pudo iniciar una sesión utilizable en Google Drive; revisa Drive antes de volver a intentarlo.'
+                    : driveResult.transferStatus === 'failed'
+                      ? 'El respaldo local se guardó. La sesión de subida expiró y no se pudo completar la transferencia; revisa Drive antes de volver a intentarlo.'
+                    : driveResult.verificationStatus === 'failed'
+                      ? 'El respaldo local se guardó. Google Drive terminó la transferencia, pero el nombre, el negocio o el tamaño remoto no coincidieron. Se conservaron las copias anteriores; revisa Drive antes de volver a intentarlo.'
+                      : 'El respaldo local se guardó. Google Drive terminó la transferencia, pero la verificación remota quedó pendiente. Revisa Drive antes de volver a intentarlo.';
               } else if (driveResult?.uploadStatus !== 'confirmed') {
                 throw new Error('DRIVE_UPLOAD_UNCONFIRMED');
               } else if (driveResult.cleanupStatus === 'pending') {

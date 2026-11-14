@@ -182,7 +182,7 @@ describe('BackupSettings copy by license mode', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('warns that Drive accepted the upload but its identity is pending verification', async () => {
+  it('warns without retrying when Drive transfer state is uncertain', async () => {
     backupStatus.configured = true;
     access.isAdmin = true;
     appState.driveAccessToken = 'temporary-drive-token';
@@ -194,7 +194,12 @@ describe('BackupSettings copy by license mode', () => {
       fileName: 'RESPALDO_LANZO_test.lzbk',
       coverage: { complete: true }
     });
-    uploadBackup.mockResolvedValue({ uploadStatus: 'verification_pending', uploadedFile: null });
+    uploadBackup.mockResolvedValue({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'pending',
+      verificationStatus: 'pending',
+      uploadedFile: null
+    });
 
     render(<BackupSettings isCloudLicense />);
     fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
@@ -203,12 +208,45 @@ describe('BackupSettings copy by license mode', () => {
       expect(uploadBackup).toHaveBeenCalledTimes(1);
       expect(backupManager.backup).toHaveBeenCalledWith(expect.objectContaining({ includeBlob: true }));
       expect(toast).toHaveBeenCalledWith(
-        'El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.',
+        'El respaldo local se guardó. No se pudo determinar si Google Drive terminó la transferencia. Conserva la copia local y revisa Drive antes de volver a intentarlo.',
         { icon: '⚠️' }
       );
     });
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
+  });
+
+  it('shows byte-confirmed progress while a large Drive upload is active', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'temporary-drive-token';
+    appState.driveTokenExpiresAt = Date.now() + 60_000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({
+      success: true,
+      blob: new Blob(['encrypted V2 backup']),
+      fileName: 'RESPALDO_LANZO_test.lzbk',
+      coverage: { complete: true }
+    });
+
+    let finishUpload;
+    uploadBackup.mockImplementation(async (_token, _blob, _fileName, { onProgress }) => {
+      onProgress({ phase: 'uploading', bytesConfirmed: 4, totalBytes: 10, percent: 40 });
+      return new Promise((resolve) => {
+        finishUpload = () => {
+          onProgress({ phase: 'verifying', bytesConfirmed: 10, totalBytes: 10, percent: 100 });
+          resolve({ uploadStatus: 'confirmed', cleanupStatus: 'completed' });
+        };
+      });
+    });
+
+    render(<BackupSettings isCloudLicense />);
+    fireEvent.click(screen.getByRole('button', { name: 'Generar copia local' }));
+
+    expect(await screen.findByText('Subiendo a Google Drive... 40%')).toBeInTheDocument();
+    expect(screen.queryByText('Subiendo a Google Drive... 100%')).toBeNull();
+    finishUpload();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.'));
   });
 
   it('does not claim Drive success when upload fails after local generation', async () => {
