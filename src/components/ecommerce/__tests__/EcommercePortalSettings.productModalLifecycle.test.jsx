@@ -488,10 +488,11 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(setProductPublished).not.toHaveBeenCalled();
   });
 
-  it('keeps published fields editable when the original local product no longer exists', async () => {
+  it('saves published fields without fabricating a local product when the original is missing', async () => {
     listPublishedProducts.mockResolvedValue({ success: true, products: [publishedProduct] });
     productRepository.listProductsPage.mockResolvedValue({ data: [], nextCursor: null });
     productRepository.getProductById.mockResolvedValue(null);
+    savePublishedProduct.mockResolvedValue({ success: true });
     await renderCatalog();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar Producto Uno' }));
@@ -501,7 +502,29 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByLabelText('Nombre público *').value).toBe(publishedProduct.publicName);
     expect(screen.getByLabelText('Descripción pública').value).toBe(publishedProduct.publicDescription);
     expect(screen.queryByRole('option', { name: /Producto Uno/ })).toBeNull();
-    expect(savePublishedProduct).not.toHaveBeenCalled();
+    expect(screen.getByText(/No se creará un producto local/)).toBeInTheDocument();
+
+    listPublishedProducts.mockResolvedValueOnce({
+      success: true,
+      products: [{ ...publishedProduct, publicDescription: 'Descripción actualizada' }]
+    });
+    fireEvent.change(screen.getByLabelText('Descripción pública'), {
+      target: { value: 'Descripción actualizada' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar producto' })).toBeNull());
+    expect(savePublishedProduct).toHaveBeenCalledTimes(1);
+    const [payload] = savePublishedProduct.mock.calls[0];
+    expect(payload).toMatchObject({
+      id: publishedProduct.id,
+      localProductRef: productOne.id,
+      publicDescription: 'Descripción actualizada'
+    });
+    expect(payload).not.toHaveProperty('localProduct');
+    expect(payload).not.toHaveProperty('syncConfig');
+    expect(payload).not.toHaveProperty('publicConfigurationMode');
+    expect(payload).not.toHaveProperty('wholesaleEnabled');
   });
 
   it('shows a read error and does not open an incomplete editor', async () => {
