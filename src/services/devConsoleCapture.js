@@ -20,6 +20,23 @@ const createState = () => ({
 
 const state = createState();
 
+const isProtectedEntry = entry => entry.level === 'error' || entry.severity === 'critical_blocker';
+
+const retainEntry = entry => {
+  if (state.entries.length < MAX_ENTRIES) {
+    state.entries.push(entry);
+    return true;
+  }
+
+  const oldestUnprotectedIndex = state.entries.findIndex(existing => !isProtectedEntry(existing));
+  if (oldestUnprotectedIndex !== -1) state.entries.splice(oldestUnprotectedIndex, 1);
+  else if (isProtectedEntry(entry)) state.entries.shift();
+  else return false;
+
+  state.entries.push(entry);
+  return true;
+};
+
 const truncate = (text) => {
   if (text.length <= MAX_TEXT_LENGTH) return text;
   return `${text.slice(0, MAX_TEXT_LENGTH)}\n... recortado`;
@@ -63,10 +80,7 @@ const addEntry = (level, args, source = 'console', location = null) => {
   });
 
   if (repeated) state.entries[state.entries.length - 1] = entry;
-  else {
-    state.entries.push(entry);
-    if (state.entries.length > MAX_ENTRIES) state.entries.shift();
-  }
+  else if (!retainEntry(entry)) return;
   // One visual update per burst, independent of the frequency of POS logs.
   if (state.listeners.size && !state.timer) state.timer = window.setTimeout(() => {
     state.timer = null;

@@ -133,6 +133,83 @@ describe('development console capture privacy', () => {
     expect(getDevConsoleEntries().at(-1).count).toBe(1);
   });
 
+  it('preserves an original error after an informational burst', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+
+    const originalError = new TypeError('LANZO_QA_RETAIN_ERROR');
+    const originalStack = originalError.stack;
+    console.error(originalError);
+    for (let index = 0; index < 350; index++) console.info('LANZO_QA_NOISE');
+
+    const entries = getDevConsoleEntries();
+    expect(entries).toHaveLength(300);
+    expect(entries.some(entry => entry.technical?.message === 'LANZO_QA_RETAIN_ERROR')).toBe(true);
+    const retainedError = entries.find(entry => entry.technical?.message === 'LANZO_QA_RETAIN_ERROR');
+    expect(retainedError.technical.stack).toBe(originalStack);
+    expect(entries.filter(entry => entry.level === 'info')).toHaveLength(299);
+    expect(entries.every((entry, index) => index === 0 || Date.parse(entries[index - 1].timestamp) <= Date.parse(entry.timestamp))).toBe(true);
+  });
+
+  it('keeps the newest distinct errors when the buffer is saturated with errors', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+
+    for (let index = 0; index < 350; index++) console.error(new TypeError(`LANZO_QA_DISTINCT_ERROR_${index}`));
+
+    const entries = getDevConsoleEntries();
+    expect(entries).toHaveLength(300);
+    expect(entries.map(entry => entry.technical?.message)).toEqual(
+      Array.from({ length: 300 }, (_, index) => `LANZO_QA_DISTINCT_ERROR_${index + 50}`)
+    );
+  });
+
+  it('retains a critical blocker at a non-error level through an informational burst', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+
+    const criticalIncident = Object.assign(new Error('LANZO_QA_CRITICAL_RESULT_UNKNOWN'), {
+      code: 'FINANCIAL_RESULT_UNKNOWN'
+    });
+    console.info(criticalIncident);
+    for (let index = 0; index < 350; index++) console.info(`LANZO_QA_CRITICAL_NOISE_${index}`);
+
+    const entries = getDevConsoleEntries();
+    expect(entries).toHaveLength(300);
+    expect(entries.some(entry => entry.level === 'info'
+      && entry.severity === 'critical_blocker'
+      && entry.technical?.message === 'LANZO_QA_CRITICAL_RESULT_UNKNOWN')).toBe(true);
+    expect(entries.filter(entry => entry.level === 'info')).toHaveLength(300);
+  });
+
+  it('discards informational input when every retained slot is protected and clears protected entries manually', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, clearDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    installDevConsoleCapture(); setDevConsoleRecording(true);
+
+    for (let index = 0; index < 300; index++) console.error(new TypeError(`LANZO_QA_PROTECTED_ERROR_${index}`));
+    console.info('LANZO_QA_DISCARD_WHEN_PROTECTED');
+
+    expect(getDevConsoleEntries()).toHaveLength(300);
+    expect(getDevConsoleEntries().every(entry => entry.level === 'error')).toBe(true);
+    expect(getDevConsoleEntries()[0].technical.message).toBe('LANZO_QA_PROTECTED_ERROR_0');
+
+    console.error(new TypeError('LANZO_QA_PROTECTED_ERROR_300'));
+    expect(getDevConsoleEntries()).toHaveLength(300);
+    expect(getDevConsoleEntries()[0].technical.message).toBe('LANZO_QA_PROTECTED_ERROR_1');
+    expect(getDevConsoleEntries().at(-1).technical.message).toBe('LANZO_QA_PROTECTED_ERROR_300');
+
+    clearDevConsoleEntries();
+    expect(getDevConsoleEntries()).toEqual([]);
+  });
+
   it('bounds storage, batches visual updates and isolates reentrant subscribers', async () => {
     CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
     vi.resetModules(); vi.useFakeTimers();
