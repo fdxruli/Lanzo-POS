@@ -623,7 +623,8 @@ const normalizeConsoleError = (value) => {
   const ownCode = consoleField(value, 'code');
   // Only recognized PostgREST response shapes expose these fields.
   const postgrest = typeof ownMessage === 'string' && typeof ownCode === 'string'
-    && /^(?:[A-Z0-9]{5}|PGRST\d{3})$/i.test(ownCode)
+    && (/^(?:[A-Z0-9]{5}|PGRST\d{3})$/i.test(ownCode)
+      || (ownCode === '' && Boolean(consoleMessageCode(ownMessage))))
     && ['details', 'hint'].every((key) => {
       const field = consoleField(value, key);
       return field === null || typeof field === 'string';
