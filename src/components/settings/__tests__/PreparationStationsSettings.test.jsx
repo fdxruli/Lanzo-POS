@@ -103,6 +103,7 @@ describe('PreparationStationsSettings', () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     delete HTMLDialogElement.prototype.showModal;
     delete HTMLDialogElement.prototype.close;
   });
@@ -173,6 +174,52 @@ describe('PreparationStationsSettings', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('Área creada.')).toBeInTheDocument();
     expect(opener).toHaveFocus();
+  });
+
+  it('keeps add and edit dialogs centered inside the visual viewport as the Android keyboard opens', async () => {
+    setScenario({ dynamic: true });
+    const handlers = new Map();
+    const viewport = {
+      offsetTop: 0,
+      height: 720,
+      addEventListener: vi.fn((type, handler) => handlers.set(type, handler)),
+      removeEventListener: vi.fn((type, handler) => {
+        if (handlers.get(type) === handler) handlers.delete(type);
+      })
+    };
+    vi.stubGlobal('visualViewport', viewport);
+    renderSettings();
+    const user = userEvent.setup();
+
+    for (const openerName of ['Editar Barra', 'Nueva área']) {
+      await user.click(screen.getByRole('button', { name: openerName }));
+      const dialog = screen.getByRole('dialog');
+      expect(dialog.style.getPropertyValue('--preparation-dialog-center-y')).toBe('360px');
+      expect(dialog.style.getPropertyValue('--preparation-dialog-visible-height')).toBe('696px');
+      expect(nameInput()).toHaveFocus();
+
+      // Android changes the visible viewport when Gboard opens; the layout viewport
+      // is not necessarily resized, so window.resize alone is insufficient.
+      act(() => {
+        viewport.offsetTop = 20;
+        viewport.height = 380;
+        handlers.get('resize')();
+      });
+      expect(dialog.style.getPropertyValue('--preparation-dialog-center-y')).toBe('210px');
+      expect(dialog.style.getPropertyValue('--preparation-dialog-visible-height')).toBe('356px');
+
+      act(() => {
+        viewport.offsetTop = 46;
+        handlers.get('scroll')();
+      });
+      expect(dialog.style.getPropertyValue('--preparation-dialog-center-y')).toBe('236px');
+
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(handlers.size).toBe(0);
+      viewport.offsetTop = 0;
+      viewport.height = 720;
+    }
   });
 
   it('does not expose a switch for Cocina and allows its existing rename operation', async () => {

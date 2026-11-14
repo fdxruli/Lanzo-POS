@@ -148,10 +148,20 @@
 }
 
 .preparation-station-dialog {
+  /* Position against the actual visible viewport, not the area behind the keyboard. */
+  position: fixed;
+  inset: auto;
+  top: var(--preparation-dialog-center-y, 50%);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
   box-sizing: border-box;
   width: min(27rem, calc(100% - 2rem));
   max-width: calc(100% - max(1rem, var(--safe-area-left, 0px)) - max(1rem, var(--safe-area-right, 0px)));
-  max-height: calc(100dvh - max(1rem, var(--safe-area-top, 0px)) - max(1rem, var(--safe-area-bottom, 0px)));
+  max-height: var(
+    --preparation-dialog-visible-height,
+    calc(100dvh - max(1rem, var(--safe-area-top, 0px)) - max(1rem, var(--safe-area-bottom, 0px)))
+  );
   padding: var(--ui-space-md, 16px);
   color: var(--text-dark);
   background: var(--card-background-color);
