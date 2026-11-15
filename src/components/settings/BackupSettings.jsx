@@ -37,7 +37,7 @@ const RESTORE_PARTIAL_REASON_LABELS = {
   pending_operations_require_reconciliation: 'Hay operaciones de dinero o sincronización que requieren conciliación.',
   open_cash_sessions_require_reconciliation: 'Hay cajas abiertas que requieren conciliación antes de usarse.',
   browser_state_inspection_unavailable: 'No se pudo revisar todo el estado operativo guardado en el navegador.',
-  pending_browser_operations_excluded: 'Hay pedidos, carritos o ajustes sin terminar que no se incluyen.',
+  pending_browser_operations_excluded: 'Hay pedidos sin guardar, cierres pendientes, carritos o ajustes temporales que no se incluyen; termínalos o concílialos antes de recuperar el archivo.',
   legacy_v1_backup_contains_only_original_tables: 'El formato V1 solo contiene productos, ventas y clientes.'
 };
 
@@ -467,7 +467,12 @@ function LocalBackupSettings({
         return;
       }
 
-      setBackupResult({ local: true, remote: 'Sin subida confirmada', partial: result.coverage?.complete === false });
+      setBackupResult({
+        local: true,
+        remote: 'Sin subida confirmada',
+        partial: result.coverage?.complete === false,
+        partialReasons: result.coverage?.partialReasons || []
+      });
       let uploadResult = null;
       if (shouldUploadToDrive) {
         setManualBackupPhase('preparing');
@@ -504,6 +509,7 @@ function LocalBackupSettings({
       }
 
       setBackupResult({ local: true, partial: result.coverage?.complete === false,
+        partialReasons: result.coverage?.partialReasons || [],
         remote: uploadResult?.uploadStatus === 'confirmed' ? 'Subida a Drive confirmada'
           : uploadResult?.uploadStatus === 'verification_pending' ? 'Verificación pendiente'
           : driveSessionExpired ? 'Requiere reconexión; no se subió una copia' : 'No se solicitó subida a Drive',
@@ -710,7 +716,14 @@ function LocalBackupSettings({
 
       {status.settings.lastCoverage?.complete === false && (
         <div className="backup-settings-notice" role="status">
-          El último archivo tiene cobertura parcial. Revisa las operaciones pendientes, las cajas abiertas y los estados temporales omitidos.
+          <p>El último archivo tiene cobertura parcial. Revisa los motivos y concilia lo pendiente antes de recuperar esa copia.</p>
+          {(status.settings.lastCoverage.partialReasons || []).length > 0 && (
+            <ul>
+              {status.settings.lastCoverage.partialReasons.map((reason) => (
+                <li key={reason}>{RESTORE_PARTIAL_REASON_LABELS[reason] || 'El archivo requiere una revisión adicional.'}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -722,11 +735,20 @@ function LocalBackupSettings({
       )}
 
       {backupResult && <div className="backup-settings-notice" role="status">
-        <strong>Respaldo local generado.</strong>
+        <strong>Respaldo cifrado local generado.</strong>
         <p>{backupResult.remote}.</p>
         {backupResult.remote === 'Verificación pendiente' && <p>Conserva la copia local y consulta Drive antes de volver a intentarlo.</p>}
         {backupResult.cleanupPending && <p>Limpieza pendiente: la copia nueva está confirmada; las copias anteriores se conservaron.</p>}
-        {backupResult.partial && <p>Cobertura parcial: revisa las operaciones pendientes, cajas abiertas y datos omitidos.</p>}
+        {backupResult.partial && <>
+          <p>Cobertura parcial: el respaldo cifrado se generó, pero no garantiza recuperar todos los datos y operaciones pendientes. Revisa los motivos y concilia lo indicado antes de cambiar de dispositivo.</p>
+          {(backupResult.partialReasons || []).length > 0 && (
+            <ul>
+              {backupResult.partialReasons.map((reason) => (
+                <li key={reason}>{RESTORE_PARTIAL_REASON_LABELS[reason] || 'El archivo requiere una revisión adicional.'}</li>
+              ))}
+            </ul>
+          )}
+        </>}
       </div>}
 
       {manualBackupPhase !== 'idle'

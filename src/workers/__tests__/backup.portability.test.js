@@ -100,7 +100,7 @@ async function databaseFor(ctx) {
   return database;
 }
 
-async function fixture(aliases = [keyAlias]) {
+async function fixture(aliases = [keyAlias], excludedBrowserState = null) {
   const source = context(aliases);
   const database = await databaseFor(source);
   const rows = {
@@ -117,7 +117,7 @@ async function fixture(aliases = [keyAlias]) {
   for (const [name, row] of Object.entries(rows)) await database.table(name).put(row);
   await database.table('company').put({ id: 'excluded-source' });
   await command('unlock', { pin, salt: bytesToBase64(new Uint8Array(16).fill(3)), iterations: 1000 });
-  const backup = await command('backup', { context: source });
+  const backup = await command('backup', { context: source, excludedBrowserState });
   return { source, file: backup.blob, rows, fileName: backup.fileName, header: backup.header };
 }
 
@@ -150,6 +150,54 @@ async function rewriteFixture(file, { headerChanges = {}, sourceName, legacy = f
 }
 
 describe('V2 worker portability with real encryption and Dexie', () => {
+  it('writes excluded browser-state counts into V2 coverage and keeps empty coverage complete', async () => {
+    const partial = await fixture([keyAlias], {
+      inspectionComplete: true,
+      counts: {
+        activeOrders: 2,
+        unsavedCart: 0,
+        unfinishedInventoryAdjustments: 0,
+        pendingOrderClosures: 1,
+        otherPendingBusinessState: 0
+      },
+      privateOrderPayload: 'must-not-enter-the-backup'
+    });
+
+    expect(partial.header.coverage).toMatchObject({
+      complete: false,
+      status: 'partial',
+      excludedBrowserState: {
+        activeOrders: 2,
+        unsavedCart: 0,
+        unfinishedInventoryAdjustments: 0,
+        pendingOrderClosures: 1,
+        otherPendingBusinessState: 0
+      },
+      partialReasons: ['pending_browser_operations_excluded']
+    });
+    expect(JSON.stringify(partial.header.coverage)).not.toContain('must-not-enter-the-backup');
+    const parsed = await parseHeader(partial.file);
+    const { key } = await deriveBackupKey(pin, base64ToBytes(parsed.header.salt), parsed.header.iterations);
+    const plaintext = [];
+    for await (const chunk of readEncryptedChunks(partial.file, parsed.dataOffset)) {
+      plaintext.push(await decryptChunk(key, parsed.headerBytes, chunk.index, chunk.iv, chunk.cipherBytes));
+    }
+    expect(new TextDecoder().decode(concatBytes(...plaintext))).not.toContain('must-not-enter-the-backup');
+
+    const complete = await fixture([keyAlias], {
+      inspectionComplete: true,
+      counts: {
+        activeOrders: 0,
+        unsavedCart: 0,
+        unfinishedInventoryAdjustments: 0,
+        pendingOrderClosures: 0,
+        otherPendingBusinessState: 0
+      }
+    });
+    expect(complete.header.coverage.complete).toBe(true);
+    expect(complete.header.coverage.partialReasons).toEqual([]);
+  });
+
   it('recovers an encrypted copy via mocked Drive into B and rejects it in another business', async () => {
     const { source, file, rows, fileName, header } = await fixture();
     openDatabases.find((database) => database.name === source.databaseName).close();

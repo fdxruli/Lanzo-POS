@@ -187,7 +187,7 @@ describe('BackupSettings copy by license mode', () => {
     uploadBackup.mockReturnValue(new Promise(resolve => { finish = resolve; }));
     render(<BackupSettings />);
     fireEvent.click(screen.getByRole('button', { name: 'Respaldar ahora' }));
-    await screen.findByText('Respaldo local generado.');
+    await screen.findByText('Respaldo cifrado local generado.');
     expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Seleccionar archivo' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Preparando la subida a Google Drive...' }));
@@ -196,6 +196,26 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.getByText('Subida a Drive confirmada.')).toBeInTheDocument();
     expect(screen.getByText(/Limpieza pendiente:/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Respaldar ahora' })).toBeEnabled();
+  });
+
+  it('explains partial browser-state coverage while keeping the encrypted backup result', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    backupManager.backup.mockResolvedValue({
+      blob: new Blob(['encrypted']),
+      fileName: 'partial.lzbk',
+      coverage: {
+        complete: false,
+        partialReasons: ['pending_browser_operations_excluded']
+      }
+    });
+
+    render(<BackupSettings />);
+    fireEvent.click(screen.getByRole('button', { name: 'Respaldar ahora' }));
+
+    expect(await screen.findByText('Respaldo cifrado local generado.')).toBeInTheDocument();
+    expect(screen.getByText(/no garantiza recuperar todos los datos y operaciones pendientes/i)).toBeInTheDocument();
+    expect(screen.getByText(/pedidos sin guardar, cierres pendientes, carritos o ajustes temporales que no se incluyen/i)).toBeInTheDocument();
   });
 
   it('keeps creation available during an ordinary query and lists multiple long filenames', async () => {
@@ -328,7 +348,7 @@ describe('BackupSettings copy by license mode', () => {
       );
     });
     expect(screen.getByText('Verificación pendiente.')).toBeInTheDocument();
-    expect(screen.getByText('Respaldo local generado.')).toBeInTheDocument();
+    expect(screen.getByText('Respaldo cifrado local generado.')).toBeInTheDocument();
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
   });

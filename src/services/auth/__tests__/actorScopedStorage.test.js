@@ -6,6 +6,7 @@ import {
   captureActorScopedStorageHandle,
   deriveActorStorageOpaqueId,
   getActorScopedStorageState,
+  inspectActorScopedActiveOrderDraftCount,
   invalidateActorScopedStorage,
   prepareActorScopedStorage,
   resumeActorScopedStorageWrites
@@ -185,6 +186,65 @@ describe('ActorScopedStorage cart ownership', () => {
 
     expect(cartPhysicalKey).toContain(`lanzo:t:${TENANT_A.opaqueId}:a:${opaque}:`);
     expect(cartPhysicalKey).not.toContain('admin-sensitive-id');
+  });
+
+  it('reports only the aggregate draft count for actors in the active tenant', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+    writeCart({ items: ['private-admin-draft'] });
+
+    const staffOpaqueId = await deriveActorStorageOpaqueId(TENANT_A.opaqueId, 'staff:staff-b');
+    const staffKey = `lanzo:t:${TENANT_A.opaqueId}:a:${staffOpaqueId}:${CART_KEY}`;
+    window.localStorage.setItem(staffKey, JSON.stringify({
+      state: {
+        activeOrders: [['staff-draft', { id: 'staff-draft', isSaved: false, items: ['private-staff-draft'] }]],
+        currentOrderId: 'staff-draft'
+      },
+      version: 0
+    }));
+
+    const otherTenantActor = await deriveActorStorageOpaqueId(TENANT_B.opaqueId, 'staff:tenant-b-staff');
+    const otherTenantKey = `lanzo:t:${TENANT_B.opaqueId}:a:${otherTenantActor}:${CART_KEY}`;
+    window.localStorage.setItem(otherTenantKey, JSON.stringify({
+      state: {
+        activeOrders: [['tenant-b-draft', { id: 'tenant-b-draft', isSaved: false, items: ['tenant-b-private'] }]],
+        currentOrderId: 'tenant-b-draft'
+      },
+      version: 0
+    }));
+
+    const count = inspectActorScopedActiveOrderDraftCount(TENANT_A.opaqueId, TENANT_A.databaseName);
+    expect(count).toBe(2);
+    expect(JSON.stringify(count)).not.toContain('private-');
+    expect(JSON.stringify(count)).not.toContain('staff-b');
+    expect(JSON.stringify(count)).not.toContain('tenant-b');
+  });
+
+  it('does not count empty or saved-only actor order state', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+    const actorOpaqueId = await deriveActorStorageOpaqueId(TENANT_A.opaqueId, 'admin:admin-a');
+    const actorKey = `lanzo:t:${TENANT_A.opaqueId}:a:${actorOpaqueId}:${CART_KEY}`;
+    window.localStorage.setItem(actorKey, JSON.stringify({
+      state: {
+        activeOrders: [['saved-sale', { id: 'saved-sale', isSaved: true }]],
+        currentOrderId: null
+      },
+      version: 0
+    }));
+    expect(inspectActorScopedActiveOrderDraftCount(TENANT_A.opaqueId, TENANT_A.databaseName)).toBe(0);
+
+    window.localStorage.setItem(actorKey, JSON.stringify({
+      state: { activeOrders: [], currentOrderId: null },
+      version: 0
+    }));
+    expect(inspectActorScopedActiveOrderDraftCount(TENANT_A.opaqueId, TENANT_A.databaseName)).toBe(0);
+  });
+
+  it('fails closed when an active-tenant actor order payload is malformed', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+    const staffOpaqueId = await deriveActorStorageOpaqueId(TENANT_A.opaqueId, 'staff:staff-b');
+    window.localStorage.setItem(`lanzo:t:${TENANT_A.opaqueId}:a:${staffOpaqueId}:${CART_KEY}`, '{broken');
+    expect(() => inspectActorScopedActiveOrderDraftCount(TENANT_A.opaqueId, TENANT_A.databaseName))
+      .toThrowError(expect.objectContaining({ code: ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED }));
   });
 
   it('invalidates an old storage handle on logout with ACTOR_CONTEXT_STALE', async () => {
