@@ -2,12 +2,9 @@ import Logger from '../Logger';
 import { showMessageModal } from '../utils';
 import { Money } from '../../utils/moneyMath';
 import { useAppStore } from '../../store/useAppStore';
-import { generateIdempotencyKey } from '../sync/idempotency';
 import {
   getLicenseKeyFromDetails,
   isCloudCustomerCreditSyncEnabled,
-  SYNC_ENTITY_TYPES,
-  SYNC_OPERATIONS
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerLocalRepository } from '../customers/customerLocalRepository';
@@ -18,11 +15,25 @@ import { customerCreditLocalRepository } from './customerCreditLocalRepository';
 import { salesCloudLocalRepository } from '../salesCloud/salesCloudLocalRepository';
 import { receiptPayloadToLocal } from './customerCreditMapper';
 import { actorRuntimeController, isActorRuntimeError } from '../auth/actorRuntimeController';
+import {
+  createOrGetCustomerPaymentIntent,
+  executeCustomerPaymentIntent,
+  getPendingCustomerPaymentIntent
+} from '../financial/financialIntentLedger';
 
 import './customerCreditSyncHandler';
 
 export const CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE = 'Los abonos cloud requieren conexion para proteger la deuda del cliente y el dinero en caja. Revisa tu conexion e intenta de nuevo.';
 export const CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE = 'Tu usuario puede consultar clientes, pero no tiene autorización para registrar abonos. Solicita al Administrador que active “Registrar abonos”.';
+export const CUSTOMER_PAYMENT_PENDING_MESSAGE = 'No se pudo confirmar el resultado del abono. Estamos conservando esta operación para evitar duplicarla. Revisa su estado antes de registrar otro pago.';
+
+const customerPaymentFlights = new Map();
+
+const customerPaymentPendingFailure = (error = null) => fail(
+  CUSTOMER_PAYMENT_PENDING_MESSAGE,
+  'CUSTOMER_PAYMENT_RESULT_PENDING',
+  { error, financialIntentId: error?.financialIntentId || null }
+);
 
 const fail = (message, code = 'CUSTOMER_CREDIT_ERROR', extra = {}) => ({
   success: false,
@@ -149,6 +160,35 @@ const showOfflineMessage = () => {
   showMessageModal(CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE, null, { type: 'warning' });
 };
 
+const confirmedCloudPaymentResult = async (response, amountSafe, licenseKey) => {
+  customerCreditCloudRepository.invalidateCustomerCreditCaches?.(licenseKey);
+  let applied = {};
+  try {
+    applied = await applyCreditCloudResponse(response);
+  } catch (error) {
+    // The durable server response proves the payment. A local cache failure
+    // must not turn a committed abono into a retryable failure.
+    Logger.warn('[CustomerCredit] Abono confirmado; se actualizará la vista al sincronizar:', error);
+  }
+  posSyncOrchestrator.pullIncremental('customer_payment').catch(() => {});
+
+  return {
+    success: true,
+    newDebt: String(response.new_debt ?? response.newDebt ?? applied.customer?.debt ?? 0),
+    ledgerId: response.ledger_entry?.id || applied.ledgerEntry?.id || null,
+    receipt: receiptPayloadToLocal(response.receipt || {}),
+    customer: applied.customer || response.customer || null,
+    cashSession: applied.cashSession || response.cash_session || null,
+    cashMovement: applied.cashMovement || response.cash_movement || null,
+    allocationStatus: response.sale_allocation_status || 'unconfirmed',
+    confirmedAllocations: response.sale_allocation_version === 1
+      ? (response.ledger_entry?.allocation_payload || []).map(row => ({ saleId: row.sale_id, amountApplied: String(row.amount_applied) }))
+      : [],
+    unallocatedAmount: response.unallocated_amount ?? amountSafe,
+    response
+  };
+};
+
 export const customerCreditRepository = {
   getMode,
 
@@ -184,68 +224,145 @@ export const customerCreditRepository = {
       return fail('Debes abrir tu caja antes de registrar abonos.', 'CASH_SESSION_REQUIRED');
     }
 
-    const idempotencyKey = generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CUSTOMER_LEDGER,
-      operation: SYNC_OPERATIONS.CREATE,
-      entityId: `${customerId}:${Date.now()}`,
-      prefix: 'customer_payment'
+    actorHandle?.assertCurrent('customer_payments');
+    const request = {
+      customer_id: customerId,
+      amount: amountSafe,
+      payment_method: paymentMethod,
+      cash_session_id: cashSessionId,
+      note,
+      allocations: allocations || []
+    };
+    const flightKey = JSON.stringify({
+      actorKey: actorHandle?.actorKey,
+      tenant: actorHandle?.tenant?.opaqueId,
+      generation: actorHandle?.generation,
+      request
     });
+    const existingFlight = customerPaymentFlights.get(flightKey);
+    if (existingFlight) return existingFlight;
 
-    try {
-      if (allocations?.length > 0) {
-        const summary = await customerCreditCloudRepository.getCustomerCreditSummary({
-          licenseKey: mode.licenseKey, customerId, force: true
-        });
-        if (summary?.sale_allocation_version !== 1 || summary?.sale_balances_authoritative !== true
-            || summary?.sale_allocation_status !== 'reconciled') {
-          return fail('No hay saldos por nota conciliados en el servidor. Puedes registrar un abono general.',
-            'CUSTOMER_SALE_BALANCES_UNRECONCILED');
+    const flight = (async () => {
+      try {
+        const pending = await getPendingCustomerPaymentIntent({ customerId, request, actorHandle });
+        if (pending && (pending.blocked || pending.requestMatches !== true)) {
+          return customerPaymentPendingFailure(Object.assign(new Error('CUSTOMER_PAYMENT_RECOVERY_REQUIRED'), {
+            code: 'CUSTOMER_PAYMENT_RECOVERY_REQUIRED',
+            financialIntentId: pending.intentId || null
+          }));
         }
+        if (!pending && allocations?.length > 0) {
+          const summary = await customerCreditCloudRepository.getCustomerCreditSummary({
+            licenseKey: mode.licenseKey, customerId, force: true, actorHandle
+          });
+          if (summary?.sale_allocation_version !== 1 || summary?.sale_balances_authoritative !== true
+              || summary?.sale_allocation_status !== 'reconciled') {
+            return fail('No hay saldos por nota conciliados en el servidor. Puedes registrar un abono general.',
+              'CUSTOMER_SALE_BALANCES_UNRECONCILED');
+          }
+        }
+        actorHandle?.assertCurrent('customer_payments');
+        const prepared = await createOrGetCustomerPaymentIntent({
+          request,
+          licenseKey: mode.licenseKey,
+          cashSessionId,
+          actorHandle
+        });
+        if (!prepared.requestMatches) {
+          return customerPaymentPendingFailure(Object.assign(new Error('CUSTOMER_PAYMENT_RECOVERY_REQUIRED'), {
+            code: 'CUSTOMER_PAYMENT_RECOVERY_REQUIRED',
+            financialIntentId: prepared.intent.id
+          }));
+        }
+        if (prepared.intent.status === 'CONFLICT') {
+          return customerPaymentPendingFailure(Object.assign(new Error('CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED'), {
+            code: 'CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED',
+            financialStatus: 'CONFLICT',
+            financialIntentId: prepared.intent.id
+          }));
+        }
+        const execution = await executeCustomerPaymentIntent({
+          intentId: prepared.intent.id,
+          licenseKey: mode.licenseKey,
+          actorHandle
+        });
+        const response = execution?.response || {};
+        if (response.success === false) {
+          return fail(response.message || 'No se pudo registrar el abono cloud.', response.code || 'CUSTOMER_PAYMENT_FAILED', { response });
+        }
+        return await confirmedCloudPaymentResult(response, amountSafe, mode.licenseKey);
+      } catch (error) {
+        Logger.error('[CustomerCredit] Abono cloud fallo:', error);
+        if (error?.isFinancialOperationAmbiguous === true
+          || error?.financialStatus === 'PENDING_RECEIPT'
+          || error?.financialStatus === 'CONFLICT'
+          || ['FINANCIAL_RECOVERY_LEASE_HELD', 'IDEMPOTENCY_PROCESSING', 'CUSTOMER_PAYMENT_RECOVERY_REQUIRED', 'CUSTOMER_PAYMENT_RECOVERY_OWNER_REQUIRED', 'CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED'].includes(error?.code)) {
+          return customerPaymentPendingFailure(error);
+        }
+        if (isCustomerPaymentPermissionError(error)) {
+          return fail(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, 'CUSTOMER_PAYMENT_PERMISSION_DENIED', { error });
+        }
+        if (isActorRuntimeError(error)) {
+          return fail('No se pudo validar la sesión actual. Vuelve a ingresar antes de registrar el abono.', 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW', { error });
+        }
+        return fail(error?.message || 'No se pudo registrar el abono cloud.', error?.code || 'CUSTOMER_PAYMENT_EXCEPTION', { error });
       }
-      actorHandle?.assertCurrent('customer_payments');
-      const response = await customerCreditCloudRepository.recordCustomerPayment({
+    })();
+    customerPaymentFlights.set(flightKey, flight);
+    try {
+      return await flight;
+    } finally {
+      if (customerPaymentFlights.get(flightKey) === flight) customerPaymentFlights.delete(flightKey);
+    }
+  },
+
+  async getPendingCloudPayment(customerId) {
+    const mode = getMode();
+    if (!mode.cloudEnabled) return null;
+    const { actorHandle, failure } = capturePaymentActor(mode);
+    if (failure) return { blocked: true, canRecover: false };
+    try {
+      return await getPendingCustomerPaymentIntent({ customerId, actorHandle });
+    } catch (error) {
+      if (isActorRuntimeError(error) || isCustomerPaymentPermissionError(error)) {
+        return { blocked: true, canRecover: false };
+      }
+      throw error;
+    }
+  },
+
+  async recoverCloudPayment(intentId) {
+    const mode = getMode();
+    if (!mode.cloudEnabled || !mode.online) {
+      return customerPaymentPendingFailure(new Error('CUSTOMER_PAYMENT_RECOVERY_OFFLINE'));
+    }
+    const { actorHandle, failure } = capturePaymentActor(mode);
+    if (failure) return failure;
+    try {
+      const execution = await executeCustomerPaymentIntent({
+        intentId,
         licenseKey: mode.licenseKey,
-        customerId,
-        amount: amountSafe,
-        paymentMethod,
-        cashSessionId,
-        note,
-        allocations: allocations || [],
-        idempotencyKey,
         actorHandle
       });
-
-      if (response?.success === false) {
+      const response = execution?.response || {};
+      if (response.success === false) {
         return fail(response.message || 'No se pudo registrar el abono cloud.', response.code || 'CUSTOMER_PAYMENT_FAILED', { response });
       }
-
-      const applied = await applyCreditCloudResponse(response);
-      posSyncOrchestrator.pullIncremental('customer_payment').catch(() => {});
-
-      return {
-        success: true,
-        newDebt: String(response.new_debt ?? response.newDebt ?? applied.customer?.debt ?? 0),
-        ledgerId: response.ledger_entry?.id || applied.ledgerEntry?.id || null,
-        receipt: receiptPayloadToLocal(response.receipt || {}),
-        customer: applied.customer,
-        cashSession: applied.cashSession,
-        cashMovement: applied.cashMovement,
-        allocationStatus: response.sale_allocation_status || 'unconfirmed',
-        confirmedAllocations: response.sale_allocation_version === 1
-          ? (response.ledger_entry?.allocation_payload || []).map(row => ({ saleId: row.sale_id, amountApplied: String(row.amount_applied) }))
-          : [],
-        unallocatedAmount: response.unallocated_amount ?? amountSafe,
-        response
-      };
+      return await confirmedCloudPaymentResult(response, String(response.receipt?.amount || response.amount || '0'), mode.licenseKey);
     } catch (error) {
-      Logger.error('[CustomerCredit] Abono cloud fallo:', error);
+      if (error?.isFinancialOperationAmbiguous === true
+        || error?.financialStatus === 'PENDING_RECEIPT'
+        || error?.financialStatus === 'CONFLICT'
+        || ['FINANCIAL_RECOVERY_LEASE_HELD', 'IDEMPOTENCY_PROCESSING', 'CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED'].includes(error?.code)) {
+        return customerPaymentPendingFailure(error);
+      }
       if (isCustomerPaymentPermissionError(error)) {
         return fail(CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE, 'CUSTOMER_PAYMENT_PERMISSION_DENIED', { error });
       }
       if (isActorRuntimeError(error)) {
-        return fail('No se pudo confirmar el resultado del abono. Consulta el historial antes de intentar otro pago.', 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW', { error });
+        return fail('La sesión no puede recuperar esta operación. Vuelve a ingresar con el usuario que la inició.', 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW', { error });
       }
-      return fail(error?.message || 'No se pudo registrar el abono cloud.', error?.code || 'CUSTOMER_PAYMENT_EXCEPTION', { error });
+      return fail(error?.message || 'No se pudo recuperar el abono cloud.', error?.code || 'CUSTOMER_PAYMENT_RECOVERY_FAILED', { error });
     }
   },
 

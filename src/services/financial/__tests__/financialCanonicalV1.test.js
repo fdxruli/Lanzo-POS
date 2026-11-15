@@ -119,6 +119,46 @@ describe('financial V1 canonical request and hash compatibility', () => {
     expect(actorA.requestHash).not.toBe(stationB.requestHash);
   });
 
+  it('binds customer payment amount, customer, method, cash session, note and allocations', async () => {
+    const request = {
+      customer_id: 'customer-a',
+      amount: '100.00',
+      payment_method: 'efectivo',
+      cash_session_id: 'cash-a',
+      note: 'Abono cliente',
+      allocations: [{ saleId: 'sale-a', amountApplied: '60.00' }]
+    };
+    const original = await financialRequestHashV1({
+      operationType: 'customer.payment', request, actorKey: 'staff:staff-a',
+      cashSessionId: 'cash-a', cashStationId: 'station-a'
+    });
+    const changes = [
+      { ...request, customer_id: 'customer-b' },
+      { ...request, amount: '99.99' },
+      { ...request, payment_method: 'tarjeta' },
+      { ...request, cash_session_id: 'cash-b' },
+      { ...request, note: 'Otro concepto' },
+      { ...request, allocations: [{ saleId: 'sale-b', amountApplied: '60.00' }] }
+    ];
+    for (const changed of changes) {
+      const candidate = await financialRequestHashV1({
+        operationType: 'customer.payment', request: changed, actorKey: 'staff:staff-a',
+        cashSessionId: changed.cash_session_id, cashStationId: 'station-a'
+      });
+      expect(candidate.requestHash).not.toBe(original.requestHash);
+    }
+    const otherActor = await financialRequestHashV1({
+      operationType: 'customer.payment', request, actorKey: 'staff:staff-b',
+      cashSessionId: 'cash-a', cashStationId: 'station-a'
+    });
+    const otherStation = await financialRequestHashV1({
+      operationType: 'customer.payment', request, actorKey: 'staff:staff-a',
+      cashSessionId: 'cash-a', cashStationId: 'station-b'
+    });
+    expect(otherActor.requestHash).not.toBe(original.requestHash);
+    expect(otherStation.requestHash).not.toBe(original.requestHash);
+  });
+
   it('uses the server null and blank fallback semantics and rejects invalid timestamps', () => {
     expect(canonicalFinancialRequestV1('cash.open', { opening_amount: '', montoInicial: '22', opening_origin: '  ', origen: 'manual' }))
       .toMatchObject({ opening: { opening_amount: '22', opening_origin: 'manual' } });

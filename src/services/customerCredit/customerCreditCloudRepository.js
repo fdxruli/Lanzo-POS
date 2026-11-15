@@ -83,6 +83,9 @@ const invalidateAfterCreditSuccess = (licenseKey, response) => {
 };
 
 export const customerCreditCloudRepository = {
+  invalidateCustomerCreditCaches(licenseKey) {
+    invalidateCloudCacheAfterCreditMutation(licenseKey);
+  },
   async historicalCreditBatch({ licenseKey, action, manifest = null, authorizationId = null, confirm = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);

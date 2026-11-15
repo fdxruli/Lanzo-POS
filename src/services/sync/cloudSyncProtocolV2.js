@@ -534,6 +534,8 @@ const callNegotiatedRpc = async ({
     throw new Error('CLOUD_SYNC_PROTOCOL_CLIENT_INVALID');
   }
   const financialDispatch = family === 'financial_operations' && rpcName === 'pos_execute_financial_operation_v2';
+  const customerPaymentDispatch = family === 'customer_credit' && rpcName === 'pos_record_customer_payment_v2';
+  const fencedFinancialDispatch = financialDispatch || customerPaymentDispatch;
   const noteResponse = financialDispatch ? onValidatedFinancialResponse : null;
   // Bind discovery and dispatch to this captured license, without protocol caching.
   authArgs = { ...authArgs };
@@ -569,7 +571,7 @@ const callNegotiatedRpc = async ({
       && hasText(discovery.tenant_id) && discovery.mode === undefined
       && discovery.success !== false;
     if (legacy) {
-      if (financialDispatch) beforeFinancialDispatch?.();
+      if (fencedFinancialDispatch) beforeFinancialDispatch?.();
       const { data, error } = await client.rpc(LEGACY_RPC_NAMES[rpcName], { ...params, ...authArgs });
       if (!noteResponse) actorHandle?.assertCurrent?.();
       if (error) throw error;
@@ -589,7 +591,7 @@ const callNegotiatedRpc = async ({
     contract_version: CLOUD_SYNC_CONTRACT_VERSION,
     capabilities: requestedCapabilities
   };
-  if (financialDispatch) beforeFinancialDispatch?.();
+  if (fencedFinancialDispatch) beforeFinancialDispatch?.();
   const { data, error } = await client.rpc(rpcName, {
     ...params,
     ...authArgs,

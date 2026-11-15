@@ -3,6 +3,7 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
+import { localAllocationsToCloud } from '../customerCredit/customerCreditMapper';
 import {
   canonicalFinancialRequestV1,
   canonicalJsonV1,
@@ -111,7 +112,7 @@ const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set([
   'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete',
   'layaway.create', 'layaway.payment', 'layaway.cancel'
 ]);
-const PROTOCOL_CODE_PATTERN = /(?:CLOUD_CLIENT_UPDATE_REQUIRED|IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
+const PROTOCOL_CODE_PATTERN = /(?:CLOUD_CLIENT_UPDATE_REQUIRED|IDEMPOTENCY_CONFLICT|IDEMPOTENCY_PROCESSING|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
 const TRANSPORT_MESSAGE_PATTERN = /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i;
 
 const safeRead = (value, key) => {
@@ -192,6 +193,9 @@ const classifyDispatchFailure = (error) => {
   if (code === 'IDEMPOTENCY_CONFLICT') {
     return { code, status: FINANCIAL_INTENT_STATUS.CONFLICT };
   }
+  if (code === 'IDEMPOTENCY_PROCESSING') {
+    return { code, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
+  }
   if (code) return { code, status: FINANCIAL_INTENT_STATUS.BLOCKED };
   if (evidence.codes.some(isDeterministicDatabaseCode)) {
     return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
@@ -207,6 +211,26 @@ const classifyDispatchFailure = (error) => {
   }
   if (hasTransportEvidence(evidence)) return { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
   return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+};
+
+const classifyCustomerPaymentFailure = (error, sent) => {
+  if (!sent) return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  const evidence = extractDispatchErrorEvidence(error);
+  const code = protocolCode(evidence);
+  if (code === 'IDEMPOTENCY_CONFLICT') {
+    return { code, status: FINANCIAL_INTENT_STATUS.CONFLICT };
+  }
+  if (code === 'IDEMPOTENCY_PROCESSING') {
+    return { code, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
+  }
+  if (code || evidence.deterministicServerResponse
+    || evidence.codes.some(isDeterministicDatabaseCode)
+    || (evidence.status >= 400 && evidence.status <= 499)) {
+    return { code, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  }
+  // Once the customer-payment RPC has been invoked, a malformed or missing
+  // response is also ambiguous. Only an explicit server rejection is final.
+  return { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
 };
 
 const isCashAdminCloseReviewResponse = (operationType, result) => (
@@ -884,6 +908,117 @@ export const createFinancialIntent = async (options) => {
   return Object.freeze(intent);
 };
 
+const CUSTOMER_PAYMENT_OPERATION_TYPE = 'customer.payment';
+const CUSTOMER_PAYMENT_UNRESOLVED_STATUSES = Object.freeze([
+  FINANCIAL_INTENT_STATUS.PREPARED,
+  FINANCIAL_INTENT_STATUS.DISPATCHING,
+  FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+  FINANCIAL_INTENT_STATUS.CONFLICT
+]);
+
+const isCustomerPaymentFor = (row, customerId, handle) => (
+  row.operationType === CUSTOMER_PAYMENT_OPERATION_TYPE
+  && row.requestPayload?.customer_id === customerId
+  && row.originTenantOpaqueId === handle.tenant.opaqueId
+  && row.originTenantDatabaseName === handle.tenant.databaseName
+  && CUSTOMER_PAYMENT_UNRESOLVED_STATUSES.includes(row.status)
+);
+
+const exactCustomerPaymentRequest = (left, right) => (
+  left?.requestHash === right?.requestHash
+  && canonicalJsonV1(left?.canonicalRequest) === canonicalJsonV1(right?.canonicalRequest)
+  && canonicalJsonV1(left?.requestPayload) === canonicalJsonV1(right?.requestPayload)
+  && left?.cashSessionId === right?.cashSessionId
+  && left?.cashStationId === right?.cashStationId
+);
+
+const customerPaymentRequestMatches = (intent, request) => {
+  try {
+    return canonicalJsonV1(intent.requestPayload) === canonicalJsonV1(request)
+      && canonicalJsonV1(intent.canonicalRequest)
+        === canonicalJsonV1(canonicalFinancialRequestV1(CUSTOMER_PAYMENT_OPERATION_TYPE, request));
+  } catch {
+    return false;
+  }
+};
+
+/** Reuses tenant-scoped financial intent storage for the customer-credit RPC. */
+export const createOrGetCustomerPaymentIntent = async ({
+  request,
+  licenseKey,
+  cashSessionId = null,
+  actorHandle = null,
+  timeouts = null,
+  executionScope = null
+} = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture('customers');
+  handle.assertCurrent('customer_payments');
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  const currentPending = (await table.where('operationType').equals(CUSTOMER_PAYMENT_OPERATION_TYPE).toArray())
+    .filter((row) => isCustomerPaymentFor(row, request.customer_id, handle))
+    .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))[0];
+  if (currentPending) {
+    try {
+      assertFinancialIntentRecoveryAuthority(currentPending, handle);
+    } catch {
+      const error = new Error('CUSTOMER_PAYMENT_RECOVERY_OWNER_REQUIRED');
+      error.code = error.message;
+      throw error;
+    }
+    return Object.freeze({
+      intent: currentPending,
+      reused: true,
+      requestMatches: customerPaymentRequestMatches(currentPending, request)
+    });
+  }
+  const { intent } = await withFinancialTimeout(
+    () => prepareFinancialIntent({
+      operationType: CUSTOMER_PAYMENT_OPERATION_TYPE,
+      request,
+      licenseKey,
+      cashSessionId,
+      actorHandle: handle,
+      projectionRequired: false,
+      timeouts,
+      executionScope
+    }),
+    {
+      timeoutMs: getFinancialTimeoutMs(timeouts, 'PREFLIGHT_MS'),
+      code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
+      message: 'La verificación previa del abono tardó demasiado; la operación no fue enviada.',
+      phase: 'preflight',
+      executionScope
+    }
+  );
+  handle.assertCurrent('customer_payments');
+
+  const result = await db.transaction('rw', table, async () => {
+    handle.assertCurrent('customer_payments');
+    const pending = (await table.where('operationType').equals(CUSTOMER_PAYMENT_OPERATION_TYPE).toArray())
+      .filter((row) => isCustomerPaymentFor(row, request.customer_id, handle))
+      .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
+    const existing = pending[0];
+    if (existing) {
+      try {
+        assertFinancialIntentRecoveryAuthority(existing, handle);
+      } catch {
+        const error = new Error('CUSTOMER_PAYMENT_RECOVERY_OWNER_REQUIRED');
+        error.code = error.message;
+        throw error;
+      }
+      return {
+        intent: existing,
+        reused: true,
+        requestMatches: exactCustomerPaymentRequest(existing, intent)
+      };
+    }
+    await table.add(intent);
+    return { intent, reused: false, requestMatches: true };
+  });
+  handle.assertCurrent('customer_payments');
+  return Object.freeze(result);
+};
+
 export const getFinancialIntentByIdempotencyKey = async ({ idempotencyKey, actorHandle = null } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
@@ -894,6 +1029,120 @@ export const getFinancialIntentByIdempotencyKey = async ({ idempotencyKey, actor
     .first();
   handle.assertCurrent();
   return intent || null;
+};
+
+export const getPendingCustomerPaymentIntent = async ({ customerId, request = null, actorHandle = null } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture('customers');
+  handle.assertCurrent('customer_payments');
+  const rows = await db.table(STORES.FINANCIAL_INTENTS)
+    .where('operationType').equals(CUSTOMER_PAYMENT_OPERATION_TYPE).toArray();
+  handle.assertCurrent('customer_payments');
+  const intent = rows
+    .filter((row) => isCustomerPaymentFor(row, customerId, handle))
+    .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))[0];
+  if (!intent) return null;
+  try {
+    assertFinancialIntentRecoveryAuthority(intent, handle);
+  } catch {
+    return { blocked: true, canRecover: false };
+  }
+  return {
+    intentId: intent.id,
+    status: intent.status,
+    amount: intent.requestPayload.amount,
+    paymentMethod: intent.requestPayload.payment_method,
+    cashSessionId: intent.cashSessionId,
+    canRecover: intent.status !== FINANCIAL_INTENT_STATUS.CONFLICT,
+    code: intent.lastProtocolCode || null,
+    ...(request ? { requestMatches: customerPaymentRequestMatches(intent, request) } : {})
+  };
+};
+
+/** Replay the immutable customer-payment payload through its original RPC. */
+export const executeCustomerPaymentIntent = async ({
+  intentId,
+  licenseKey,
+  actorHandle = null,
+  leaseMs,
+  timeouts = null,
+  executionScope = null
+} = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture('customers');
+  handle.assertCurrent('customer_payments');
+  let intent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+  if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(intent, handle);
+  if (intent.operationType !== CUSTOMER_PAYMENT_OPERATION_TYPE) {
+    throw new Error('CUSTOMER_PAYMENT_INTENT_TYPE_INVALID');
+  }
+  if (intent.status === FINANCIAL_INTENT_STATUS.COMPLETED) {
+    return { intentId, response: intent.responsePayload, alreadyCompleted: true };
+  }
+  if (intent.status === FINANCIAL_INTENT_STATUS.CONFLICT) {
+    throw Object.assign(new Error('CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED'), {
+      code: 'CUSTOMER_PAYMENT_RECOVERY_REVIEW_REQUIRED',
+      financialStatus: FINANCIAL_INTENT_STATUS.CONFLICT,
+      financialIntentId: intentId
+    });
+  }
+  if (![
+    FINANCIAL_INTENT_STATUS.PREPARED,
+    FINANCIAL_INTENT_STATUS.DISPATCHING,
+    FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+  ].includes(intent.status)) {
+    throw new Error('CUSTOMER_PAYMENT_INTENT_STATE_INVALID');
+  }
+  const { canonicalRequest, requestHash } = await financialRequestHashV1({
+    operationType: intent.operationType,
+    request: intent.requestPayload,
+    actorKey: intent.originActorKey,
+    cashSessionId: intent.cashSessionId,
+    cashStationId: intent.cashStationId
+  });
+  if (requestHash !== intent.requestHash
+    || canonicalJsonV1(canonicalRequest) !== canonicalJsonV1(intent.canonicalRequest)) {
+    throw new Error('FINANCIAL_REQUEST_HASH_INVALID');
+  }
+  handle.assertCurrent('customer_payments');
+
+  const claim = await claimFinancialIntentRecovery({ intentId, actorHandle: handle, leaseMs });
+  try {
+    intent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+    assertFinancialIntentRecoveryAuthority(intent, handle);
+    if (intent.status === FINANCIAL_INTENT_STATUS.COMPLETED) {
+      return { intentId, response: intent.responsePayload, alreadyCompleted: true };
+    }
+    if (![
+      FINANCIAL_INTENT_STATUS.PREPARED,
+      FINANCIAL_INTENT_STATUS.DISPATCHING,
+      FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+    ].includes(intent.status)) {
+      throw new Error('CUSTOMER_PAYMENT_INTENT_STATE_INVALID');
+    }
+    return await executeDurableFinancialIntentForRecovery({
+      intentId,
+      licenseKey,
+      actorHandle: handle,
+      expectedStatus: intent.status,
+      recoveryLeaseId: claim.recoveryLeaseId,
+      lastRecoveryCode: intent.status === FINANCIAL_INTENT_STATUS.PREPARED
+        ? 'CUSTOMER_PAYMENT_FIRST_DISPATCH'
+        : 'CUSTOMER_PAYMENT_SAME_KEY_RECOVERY',
+      resolveAmbiguousReceipt: false,
+      timeouts,
+      executionScope
+    });
+  } finally {
+    try {
+      await releaseFinancialIntentRecoveryClaim({
+        intentId,
+        leaseId: claim.recoveryLeaseId,
+        actorHandle: handle
+      });
+    } catch {
+      // A stale actor or expired lease cannot clear a newer owner.
+    }
+  }
 };
 
 export const isExplicitSaleFinancialRetry = (operationType) => EXPLICIT_SALE_RETRY_OPERATION_TYPES.has(operationType);
@@ -1077,10 +1326,12 @@ const executeDurableFinancialIntentForRecovery = async ({
 
   const checkoutSale = CLOUD_CHECKOUT_SALE_TYPES.has(durableIntent.operationType);
   const layawayPayment = durableIntent.operationType === 'layaway.payment';
+  const customerPayment = durableIntent.operationType === CUSTOMER_PAYMENT_OPERATION_TYPE;
   if (checkoutSale) {
     handle.assertCurrent('pos');
     assertFinancialIntentExecutionAuthority(durableIntent, handle);
   }
+  if (customerPayment) handle.assertCurrent('customer_payments');
   let validatedResponse = null;
   let sent = false;
   const dispatchAttemptCount = Number(durableIntent.dispatchAttemptCount || 0) + 1;
@@ -1097,6 +1348,32 @@ const executeDurableFinancialIntentForRecovery = async ({
       async () => {
         const auth = await buildAuth(licenseKey);
         handle.assertCurrent();
+        if (customerPayment) {
+          handle.assertCurrent('customer_payments');
+          const payment = durableIntent.requestPayload;
+          return callCloudSyncRpc({
+            client: supabaseClient,
+            rpcName: 'pos_record_customer_payment_v2',
+            authArgs: auth,
+            params: {
+              p_customer_id: payment.customer_id,
+              p_amount: payment.amount,
+              p_payment_method: payment.payment_method,
+              p_cash_session_id: payment.cash_session_id,
+              p_note: payment.note,
+              p_allocations: localAllocationsToCloud(payment.allocations || []),
+              p_idempotency_key: durableIntent.idempotencyKey
+            },
+            family: 'customer_credit',
+            expectedCustomerId: payment.customer_id,
+            expectedIdempotencyKey: durableIntent.idempotencyKey,
+            actorHandle: handle,
+            beforeFinancialDispatch: () => {
+              handle.assertCurrent('customer_payments');
+              sent = true;
+            }
+          });
+        }
         return callCloudSyncRpc({
           client: supabaseClient,
           rpcName: 'pos_execute_financial_operation_v2',
@@ -1131,6 +1408,11 @@ const executeDurableFinancialIntentForRecovery = async ({
     if (result?.success === false && !isCashAdminCloseReviewResponse(durableIntent.operationType, result)) {
       throw rejectedFinancialResponseError(result);
     }
+    if (customerPayment && result?.success !== true) {
+      const error = new Error('CUSTOMER_PAYMENT_RESPONSE_UNCONFIRMED');
+      error.isFinancialOperationAmbiguous = true;
+      throw error;
+    }
   } catch (error) {
     // A validated server result is evidence, not a grant to the replacement
     // session. Keep the durable dispatch for receipt recovery; do not project.
@@ -1139,9 +1421,13 @@ const executeDurableFinancialIntentForRecovery = async ({
       ? error
       : new Error(String(error));
     const uncertainLayawayPayment = layawayPayment && sent && isLayawayPaymentUncertain(error);
-    const { code, status } = error?.isFinancialOperationAmbiguous === true || uncertainLayawayPayment
-      ? { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT }
-      : classifyDispatchFailure(error);
+    const customerPaymentFailure = customerPayment
+      ? classifyCustomerPaymentFailure(error, sent)
+      : null;
+    const { code, status } = customerPaymentFailure
+      || (error?.isFinancialOperationAmbiguous === true || uncertainLayawayPayment
+        ? { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT }
+        : classifyDispatchFailure(error));
     try {
       await updateFinancialIntentForRecovery(intentId, {
         status,
@@ -1149,7 +1435,7 @@ const executeDurableFinancialIntentForRecovery = async ({
         lastProtocolCode: code
       }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
     } catch (persistenceError) {
-      if ((!checkoutSale && !layawayPayment) || !sent) throw persistenceError;
+      if ((!checkoutSale && !layawayPayment && !customerPayment) || !sent) throw persistenceError;
       // The old context cannot persist into a replacement session/tenant.
       // DISPATCHING remains durable and receipt-required, never redispatched.
       throw Object.assign(surfacedError, { isFinancialOperationAmbiguous: true,
@@ -1227,6 +1513,17 @@ const executeDurableFinancialIntentForRecovery = async ({
         surfacedError.receiptErrorCode = receiptError?.code || null;
       }
     }
+    if (customerPayment && status === FINANCIAL_INTENT_STATUS.PENDING_RECEIPT) {
+      surfacedError.isFinancialOperationAmbiguous = true;
+      surfacedError.financialStatus = FINANCIAL_INTENT_STATUS.PENDING_RECEIPT;
+      surfacedError.financialIntentId = intentId;
+      surfacedError.financialIdempotencyKey = durableIntent.idempotencyKey;
+      surfacedError.financialRecoveryCode = 'CUSTOMER_PAYMENT_SAME_KEY_REPLAY_REQUIRED';
+    } else if (customerPayment && status === FINANCIAL_INTENT_STATUS.CONFLICT) {
+      surfacedError.code = code || 'IDEMPOTENCY_CONFLICT';
+      surfacedError.financialStatus = FINANCIAL_INTENT_STATUS.CONFLICT;
+      surfacedError.financialIntentId = intentId;
+    }
     throw surfacedError;
   }
 
@@ -1248,7 +1545,8 @@ const executeDurableFinancialIntentForRecovery = async ({
       : null;
     return { intentId, response: result, projection };
   } catch (error) {
-    if (!checkoutSale) throw error;
+    if (!checkoutSale && !customerPayment) throw error;
+    if (customerPayment) handle.assertCurrent('customer_payments');
     return { intentId, response: result, projection: { intentId, outcome: 'projection_deferred' } };
   }
 };
