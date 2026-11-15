@@ -6,6 +6,16 @@ const asObject = (value) => (
 );
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
+const isValidNonNegativeMoney = (value) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return false;
+  if (typeof value === 'number' && !Number.isFinite(value)) return false;
+  const text = typeof value === 'string' ? value.trim() : String(value);
+  if (!text || text.length > 64 || !/^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(text)) {
+    return false;
+  }
+  const number = Number(text);
+  return Number.isFinite(number) && number >= 0 && number <= 9999999999.99;
+};
 const asMoney = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Number(number.toFixed(2))) : 0;
@@ -61,6 +71,16 @@ export function decodeEcommerceConfiguredLineKey(lineKey) {
 export function normalizePublicProductConfiguration(rawDetail) {
   const source = asObject(rawDetail);
   const rawProduct = asObject(source.product);
+  const rawVariants = asArray(source.variants);
+  const rawGroups = asArray(source.groups);
+  const pricingValid = isValidNonNegativeMoney(rawProduct.basePrice)
+    && rawVariants.every((variant) => (
+      !['delta', 'absolute'].includes(variant?.priceMode)
+      || isValidNonNegativeMoney(variant?.priceValue)
+    ))
+    && rawGroups.every((group) => (
+      asArray(group?.options).every((option) => isValidNonNegativeMoney(option?.priceDelta))
+    ));
   const product = {
     id: asText(rawProduct.id),
     name: asText(rawProduct.name) || 'Producto',
@@ -74,6 +94,7 @@ export function normalizePublicProductConfiguration(rawDetail) {
     hasVariants: rawProduct.hasVariants === true,
     hasOptionGroups: rawProduct.hasOptionGroups === true,
     basePrice: asMoney(rawProduct.basePrice),
+    pricingValid,
     isAvailable: rawProduct.isAvailable === true,
     availability: {
       source: asText(rawProduct.availability?.source),
@@ -82,7 +103,7 @@ export function normalizePublicProductConfiguration(rawDetail) {
     }
   };
 
-  const variants = asArray(source.variants).map((rawVariant) => {
+  const variants = rawVariants.map((rawVariant) => {
     const variant = asObject(rawVariant);
     const optionValues = Object.entries(asObject(variant.optionValues)).reduce((result, [key, value]) => {
       const normalizedKey = asText(key);
@@ -114,7 +135,7 @@ export function normalizePublicProductConfiguration(rawDetail) {
     };
   }).filter((variant) => variant.id);
 
-  const groups = asArray(source.groups).map((rawGroup) => {
+  const groups = rawGroups.map((rawGroup) => {
     const group = asObject(rawGroup);
     const selectionType = group.selectionType === 'multiple' ? 'multiple' : 'single';
     const minSelect = Math.max(0, Math.floor(Number(group.minSelect) || 0));
@@ -144,6 +165,7 @@ export function normalizePublicProductConfiguration(rawDetail) {
 
   return {
     success: source.success === true,
+    pricingValid,
     catalogRevision: Number.isSafeInteger(Number(source.catalogRevision))
       ? Number(source.catalogRevision)
       : null,
@@ -279,6 +301,9 @@ export function validateEcommerceConfiguration(detail, {
   ) {
     errors.configuration = 'La configuración cambió. Vuelve a cargar las opciones.';
   }
+  if (detail?.pricingValid === false) {
+    errors.configuration = 'No se pudo validar el precio. Vuelve a cargar el catálogo.';
+  }
 
   return {
     valid: Object.keys(errors).length === 0,
@@ -396,6 +421,7 @@ export function buildEcommerceConfiguredCartLine(detail, {
       configurationVersion: product.configurationVersion,
       configurationRevision: product.configurationRevision,
       configurationType: product.configurationType,
+      pricingValid: detail.pricingValid !== false,
       variant: variant ? {
         id: variant.id,
         name: variant.publicName,

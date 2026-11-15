@@ -974,6 +974,7 @@ function PublicStorePage() {
   const acceptCurrentCheckoutTotal = useCallback(() => {
     if (checkoutRequestUncertain || !cart.isReconciled || cart.hasStaleConfigurations) return;
     const acceptedItems = buildAcceptedEcommerceOrderItems(cart.items);
+    if (!Array.isArray(acceptedItems)) return;
     setCheckoutAcceptedItems(acceptedItems);
     setCheckoutObservedItems(acceptedItems);
     setCheckoutError(null);

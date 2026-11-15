@@ -95,6 +95,40 @@ describe('ecommercePublicService', () => {
     });
   });
 
+  it('marks corrupt public catalog prices and wholesale tiers as ineligible', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        success: true,
+        catalogRevision: 1,
+        items: [
+          { id: 'null-price', name: 'Sin precio', price: null },
+          { id: 'negative-price', name: 'Precio negativo', price: -1 },
+          { id: 'text-price', name: 'Precio textual', price: 'incorrecto' },
+          { id: 'extreme-price', name: 'Precio extremo', price: '10000000000.00' },
+          {
+            id: 'bad-tier', name: 'Tier inválido', price: '10.00', wholesaleEnabled: true,
+            wholesaleTiers: [{ sourceTierRef: 'tier-1', minQuantity: 2, unitPrice: 'incorrecto' }]
+          },
+          { id: 'valid-free', name: 'Gratis', price: '0.00' }
+        ],
+        pagination: { limit: 100, offset: 0, hasMore: false }
+      },
+      error: null
+    });
+    const service = createEcommercePublicService({ rpc });
+
+    const catalog = await service.getPublicCatalog('mi-negocio', { cache: false });
+
+    expect(catalog.items.map(({ id, pricingValid }) => ({ id, pricingValid }))).toEqual([
+      { id: 'null-price', pricingValid: false },
+      { id: 'negative-price', pricingValid: false },
+      { id: 'text-price', pricingValid: false },
+      { id: 'extreme-price', pricingValid: false },
+      { id: 'bad-tier', pricingValid: false },
+      { id: 'valid-free', pricingValid: true }
+    ]);
+  });
+
   it('sends the accepted price snapshot without trusting arbitrary display prices', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: orderResponse(), error: null });
     const service = createEcommercePublicService({ rpc });

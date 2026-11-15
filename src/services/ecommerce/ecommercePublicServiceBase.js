@@ -148,6 +148,23 @@ const asNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+const PUBLIC_MONEY_PATTERN = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+const MAX_PUBLIC_MONEY = 9999999999.99;
+const isValidPublicMoney = (value) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return false;
+  if (typeof value === 'number' && !Number.isFinite(value)) return false;
+  const text = typeof value === 'string' ? value.trim() : String(value);
+  if (!text || text.length > 64 || !PUBLIC_MONEY_PATTERN.test(text)) return false;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_PUBLIC_MONEY;
+};
+const isValidWholesaleTier = (tier) => {
+  const minQuantity = Number(tier?.minQuantity ?? tier?.min_quantity);
+  const unitPrice = tier?.unitPrice ?? tier?.unit_price ?? tier?.price;
+  return Number.isSafeInteger(minQuantity)
+    && minQuantity > 0
+    && isValidPublicMoney(unitPrice);
+};
 const asRevision = (value, fallback = null) => {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -530,19 +547,22 @@ function normalizeCatalogResult(data, expectedRevision = null) {
     const stockMode = ['hidden', 'status', 'exact'].includes(stock.mode)
       ? stock.mode
       : 'hidden';
+    const rawWholesaleTiers = asArray(item.wholesaleTiers);
     return {
       id: asText(item.id),
       name: asText(item.name, 'Producto'),
       description: asText(item.description),
       categoryName: asText(item.categoryName),
       price: Math.max(0, asNumber(item.price, 0)),
+      pricingValid: isValidPublicMoney(item.price)
+        && rawWholesaleTiers.every(isValidWholesaleTier),
       currency: asText(item.currency, DEFAULT_CURRENCY).toUpperCase(),
       imageUrl: asText(item.imageUrl),
       isAvailable: asBoolean(item.isAvailable, true),
       displayOrder: asNumber(item.displayOrder, 0),
       configuration: normalizeCatalogConfiguration(item.configuration),
       wholesaleEnabled: item.wholesaleEnabled === true,
-      wholesaleTiers: asArray(item.wholesaleTiers).map((tier) => ({
+      wholesaleTiers: rawWholesaleTiers.map((tier) => ({
         sourceTierRef: asText(tier?.sourceTierRef),
         minQuantity: Math.max(1, Math.floor(asNumber(tier?.minQuantity, 1))),
         unitPrice: Math.max(0, asNumber(tier?.unitPrice, 0))

@@ -62,4 +62,32 @@ describe('ecommercePriceAcceptance', () => {
     expect(getAcceptedEcommerceSubtotal(accepted)).toBe('0.30');
     expect(haveSameAcceptedEcommerceEconomics(accepted, [line()])).toBe(false);
   });
+
+  it('rejects missing, malformed, negative, and out-of-range money instead of treating it as zero', () => {
+    [
+      { baseUnitPrice: null },
+      { baseUnitPrice: 'no es precio' },
+      { baseUnitPrice: -1 },
+      { baseUnitPrice: '10000000000' },
+      { appliedUnitPrice: undefined },
+      { appliedUnitPrice: 'NaN' },
+      { lineTotal: null },
+      { variantAdjustment: 'invalido' },
+      { optionsAdjustment: '10000000000' }
+    ].forEach((override) => {
+      expect(buildAcceptedEcommerceOrderItems([line(override)])).toBeNull();
+    });
+    expect(getAcceptedEcommerceSubtotal(null)).toBeNull();
+  });
+
+  it('keeps legitimate zero prices and rejects inconsistent line arithmetic', () => {
+    const freeLine = line({
+      quantity: 1,
+      baseUnitPrice: 0,
+      appliedUnitPrice: 0,
+      lineTotal: '0.00'
+    });
+    expect(buildAcceptedEcommerceOrderItems([freeLine])).toHaveLength(1);
+    expect(buildAcceptedEcommerceOrderItems([line({ lineTotal: '19.99' })])).toBeNull();
+  });
 });

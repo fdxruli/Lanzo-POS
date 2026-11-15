@@ -7,7 +7,19 @@ import PublicCheckoutDialog from '../PublicCheckoutDialog';
 import { buildAcceptedEcommerceOrderItems } from '../../../../utils/ecommercePriceAcceptance';
 
 const baseCart = {
-  items: [{ product: { id: 'product-1' }, quantity: 1 }],
+  items: [{
+    product: { id: 'product-1', price: 100 },
+    quantity: 1,
+    pricingMode: 'standard',
+    baseUnitPrice: 100,
+    wholesaleBaseUnitPrice: null,
+    appliedUnitPrice: 100,
+    wholesaleTierRef: null,
+    wholesaleMinQuantity: null,
+    variantAdjustment: 0,
+    optionsAdjustment: 0,
+    lineTotal: '100.00'
+  }],
   totalUnits: 1,
   subtotal: '100.00',
   currency: 'MXN',
@@ -224,6 +236,48 @@ describe('PublicCheckoutDialog', () => {
 
     await user.click(screen.getByRole('checkbox', { name: /Acepto el total de/ }));
     expect(view.props.onAcceptCurrentTotal).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks acceptance and checkout when current pricing is invalid', () => {
+    const invalidCart = {
+      ...baseCart,
+      subtotal: '0.00',
+      items: [{
+        ...baseCart.items[0],
+        product: { ...baseCart.items[0].product, pricingValid: false },
+        baseUnitPrice: 0,
+        appliedUnitPrice: 0,
+        lineTotal: '0.00'
+      }]
+    };
+    renderDialog({ cart: invalidCart, acceptedItems: null, observedItems: null });
+
+    expect(screen.getByText('Precio no disponible')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/No se pudo validar el precio/);
+    expect(screen.queryByRole('checkbox', { name: /Acepto el total de/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeDisabled();
+  });
+
+  it('keeps the same idempotent recovery available when refreshed pricing is invalid', () => {
+    const invalidCart = {
+      ...baseCart,
+      items: [{
+        ...baseCart.items[0],
+        product: { ...baseCart.items[0].product, pricingValid: false },
+        baseUnitPrice: 0,
+        appliedUnitPrice: 0,
+        lineTotal: '0.00'
+      }]
+    };
+    renderDialog({
+      cart: invalidCart,
+      acceptedItems: baseAcceptedItems,
+      observedItems: baseAcceptedItems,
+      requestUncertain: true,
+      status: 'recoverable_error'
+    });
+
+    expect(screen.getByRole('button', { name: 'Reintentar envío seguro' })).toBeEnabled();
   });
 
   it('shows the previous and current totals after the catalog changes during checkout', async () => {

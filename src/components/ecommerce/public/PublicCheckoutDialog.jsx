@@ -139,8 +139,11 @@ function PublicCheckoutDialog({
   const hasCheckoutPriceChanged = Array.isArray(comparisonItems)
     && !haveSameAcceptedEcommerceEconomics(comparisonItems, cart?.items);
   const previousTotal = getAcceptedEcommerceSubtotal(comparisonItems);
-  const currentTotal = String(cart?.subtotal ?? getAcceptedEcommerceSubtotal(currentAcceptedItems));
-  const deltaTotal = (Number(currentTotal) - Number(previousTotal)).toFixed(2);
+  const currentTotal = getAcceptedEcommerceSubtotal(currentAcceptedItems);
+  const hasValidCurrentPricing = currentTotal !== null;
+  const deltaTotal = currentTotal !== null && previousTotal !== null
+    ? (Number(currentTotal) - Number(previousTotal)).toFixed(2)
+    : null;
   const portalSlug = portal?.slug || '';
   const pickupEnabled = portal?.pickupEnabled === true;
   const deliveryEnabled = portal?.deliveryEnabled === true;
@@ -310,16 +313,30 @@ function PublicCheckoutDialog({
             <form className="public-checkout-form" onSubmit={submit} noValidate>
               <div className="public-checkout-summary">
                 <span>{cart?.totalUnits || 0} unidades</span>
-                <strong>{formatCurrency(cart?.subtotal, cart?.currency)}</strong>
+                <strong>{hasValidCurrentPricing
+                  ? formatCurrency(currentTotal, cart?.currency)
+                  : 'Precio no disponible'}</strong>
               </div>
+
+              {!hasValidCurrentPricing ? (
+                <p className="public-checkout-field-error" role="alert">
+                  No se pudo validar el precio de uno o más productos. Actualiza el catálogo antes de aceptar el total.
+                </p>
+              ) : null}
 
               {hasCheckoutPriceChanged ? (
                 <section className="public-checkout-price-change" aria-live="polite">
                   <strong>El precio de tu pedido cambió</strong>
                   <dl>
-                    <div><dt>Antes</dt><dd>{formatCurrency(previousTotal, checkoutCurrency)}</dd></div>
-                    <div><dt>Ahora</dt><dd>{formatCurrency(currentTotal, checkoutCurrency)}</dd></div>
-                    <div><dt>Diferencia</dt><dd>{Number(deltaTotal) > 0 ? '+' : ''}{formatCurrency(deltaTotal, checkoutCurrency)}</dd></div>
+                    <div><dt>Antes</dt><dd>{previousTotal === null
+                      ? 'No disponible'
+                      : formatCurrency(previousTotal, checkoutCurrency)}</dd></div>
+                    <div><dt>Ahora</dt><dd>{currentTotal === null
+                      ? 'No disponible'
+                      : formatCurrency(currentTotal, checkoutCurrency)}</dd></div>
+                    <div><dt>Diferencia</dt><dd>{deltaTotal === null
+                      ? 'No disponible'
+                      : `${Number(deltaTotal) > 0 ? '+' : ''}${formatCurrency(deltaTotal, checkoutCurrency)}`}</dd></div>
                   </dl>
                   {requestUncertain ? (
                     <p>El envío anterior pudo haberse registrado. Reintenta con la aceptación guardada para conocer su resultado.</p>
@@ -335,7 +352,8 @@ function PublicCheckoutDialog({
                         type="button"
                         className="ui-button ui-button--primary"
                         onClick={onAcceptCurrentTotal}
-                        disabled={isSubmitting || !cart?.isReconciled || cart?.items?.length === 0}
+                        disabled={isSubmitting || !hasValidCurrentPricing
+                          || !cart?.isReconciled || cart?.items?.length === 0}
                       >
                         Aceptar nuevo total y continuar
                       </button>
@@ -344,7 +362,7 @@ function PublicCheckoutDialog({
                 </section>
               ) : null}
 
-              {!hasCheckoutPriceChanged && !requestUncertain ? (
+              {!hasCheckoutPriceChanged && !requestUncertain && hasValidCurrentPricing ? (
                 <label className="public-checkout-price-acceptance">
                   <input
                     type="checkbox"
