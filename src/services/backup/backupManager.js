@@ -24,6 +24,7 @@ import {
   captureActiveTenantWorkerContext,
   isActiveTenantWorkerContext
 } from '../tenant/tenantWorkerContext';
+import { inspectActiveTenantBackupBrowserState } from '../tenant/tenantScopedStorage';
 
 export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
@@ -123,44 +124,9 @@ const WRITE_FAILURE_NAMES = new Set([
   'NoModificationAllowedError'
 ]);
 
-const countStoredEntries = (key, raw) => {
-  if (!raw) return 0;
-  try {
-    const parsed = JSON.parse(raw);
-    const state = parsed?.state || parsed;
-    const collection = key === 'lanzo-active-orders-storage'
-      ? state?.activeOrders
-      : parsed;
-    if (Array.isArray(collection)) return collection.length;
-    if (collection && typeof collection === 'object') return Object.keys(collection).length;
-    return raw.length > 0 ? 1 : 0;
-  } catch {
-    return 1;
-  }
-};
-
-export const getExcludedBrowserStateSummary = (storage = null) => {
-  const keys = [
-    ['lanzo-active-orders-storage', 'activeOrders'],
-    ['lanzo-cart-storage', 'unsavedCart'],
-    ['lanzo-inventory-storage', 'unfinishedInventoryAdjustments'],
-    ['lanzo:restaurant-order-close-pending:v1', 'pendingOrderClosures'],
-    ['ignored_expirations_ttl', 'otherPendingBusinessState']
-  ];
-  try {
-    const targetStorage = storage || globalThis.localStorage;
-    if (!targetStorage) throw new Error('STORAGE_UNAVAILABLE');
-    const counts = Object.fromEntries(keys.map(([key, label]) => (
-      [label, countStoredEntries(key, targetStorage.getItem(key))]
-    )));
-    return { inspectionComplete: true, counts };
-  } catch {
-    return {
-      inspectionComplete: false,
-      counts: Object.fromEntries(keys.map(([, label]) => [label, 0]))
-    };
-  }
-};
+export const getExcludedBrowserStateSummary = (expectedDatabaseName = null) => (
+  inspectActiveTenantBackupBrowserState(expectedDatabaseName)
+);
 
 class BackupManager {
   constructor() {
@@ -579,7 +545,7 @@ class BackupManager {
         reason,
         includeBlob,
         context: tenantContext,
-        excludedBrowserState: getExcludedBrowserStateSummary()
+        excludedBrowserState: getExcludedBrowserStateSummary(tenantContext.databaseName)
       });
       if (!isActiveTenantWorkerContext(tenantContext)) {
         throw new Error('BACKUP_TENANT_CONTEXT_STALE');

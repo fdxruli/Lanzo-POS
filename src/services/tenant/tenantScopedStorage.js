@@ -1,5 +1,6 @@
 import {
   getActorStorageItem,
+  inspectActorScopedActiveOrderDraftCount,
   invalidateActorScopedStorage,
   isActorScopedLogicalKey,
   removeActorStorageItem,
@@ -15,6 +16,120 @@ const listeners = new Set();
 const hydrators = new Set();
 
 const physicalKey = (logicalKey) => activeNamespace ? `${PREFIX}${activeNamespace}:${logicalKey}` : null;
+
+const EXCLUDED_BACKUP_BROWSER_STATE_KEYS = Object.freeze([
+  ['lanzo-cart-storage', 'unsavedCart'],
+  ['lanzo-inventory-storage', 'unfinishedInventoryAdjustments'],
+  ['lanzo:restaurant-order-close-pending:v1', 'pendingOrderClosures'],
+  ['ignored_expirations_ttl', 'otherPendingBusinessState']
+]);
+const LEGACY_UNSCOPED_BACKUP_STATE_KEYS = Object.freeze([
+  'lanzo-active-orders-storage',
+  ...EXCLUDED_BACKUP_BROWSER_STATE_KEYS.map(([key]) => key)
+]);
+const EXPIRATION_IGNORE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const unwrapPersistedState = (value) => (
+  isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'state') ? value.state : value
+);
+
+const hasMeaningfulState = (value) => {
+  if (value === null || value === undefined || value === '' || value === false || value === 0) return false;
+  if (Array.isArray(value)) return value.some(hasMeaningfulState);
+  if (isRecord(value)) {
+    return Object.entries(value)
+      .filter(([key]) => key !== 'version' && key !== '_persist')
+      .some(([, entry]) => hasMeaningfulState(entry));
+  }
+  return true;
+};
+
+const countMeaningfulState = (value) => {
+  if (Array.isArray(value)) return value.filter(hasMeaningfulState).length;
+  if (isRecord(value)) {
+    return Object.entries(value)
+      .filter(([key]) => key !== 'version' && key !== '_persist' && hasMeaningfulState(value[key]))
+      .reduce((total, [, entry]) => total + (Array.isArray(entry) ? entry.filter(hasMeaningfulState).length : 1), 0);
+  }
+  return hasMeaningfulState(value) ? 1 : 0;
+};
+
+const parseStoredValue = (logicalKey, rawValue) => {
+  if (typeof rawValue !== 'string' || rawValue.length === 0) {
+    throw new TenantScopedStorageInspectionError('TENANT_STORAGE_BACKUP_STATE_MALFORMED');
+  }
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    throw new TenantScopedStorageInspectionError(`TENANT_STORAGE_BACKUP_STATE_MALFORMED:${logicalKey}`);
+  }
+};
+
+const countTenantBrowserState = (logicalKey, rawValue) => {
+  if (rawValue === null) return 0;
+  const parsed = parseStoredValue(logicalKey, rawValue);
+
+  if (logicalKey === 'lanzo:restaurant-order-close-pending:v1') {
+    if (!Array.isArray(parsed)) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_BACKUP_STATE_MALFORMED:pendingOrderClosures');
+    }
+    for (const row of parsed) {
+      const hasStableKey = isRecord(row) && [row.idempotencyKey, row.localOrderId]
+        .some((value) => typeof value === 'string' && value.trim().length > 0);
+      if (!hasStableKey) {
+        throw new TenantScopedStorageInspectionError('TENANT_STORAGE_BACKUP_STATE_MALFORMED:pendingOrderClosures');
+      }
+    }
+    return parsed.length;
+  }
+
+  const state = unwrapPersistedState(parsed);
+  if (!isRecord(state) && !Array.isArray(state)) {
+    throw new TenantScopedStorageInspectionError(`TENANT_STORAGE_BACKUP_STATE_MALFORMED:${logicalKey}`);
+  }
+
+  if (logicalKey === 'ignored_expirations_ttl') {
+    if (!isRecord(state)) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_BACKUP_STATE_MALFORMED:ignored_expirations_ttl');
+    }
+    const now = Date.now();
+    let activeCount = 0;
+    for (const [id, timestamp] of Object.entries(state)) {
+      if (!id || typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+        throw new TenantScopedStorageInspectionError('TENANT_STORAGE_BACKUP_STATE_MALFORMED:ignored_expirations_ttl');
+      }
+      if (now - timestamp < EXPIRATION_IGNORE_TTL_MS) activeCount += 1;
+    }
+    return activeCount;
+  }
+
+  return countMeaningfulState(state);
+};
+
+const hasUnscopedLegacyBusinessState = (browserStorage) => {
+  for (const logicalKey of LEGACY_UNSCOPED_BACKUP_STATE_KEYS) {
+    const rawValue = browserStorage.getItem(logicalKey);
+    if (rawValue === null) continue;
+    const parsed = parseStoredValue(logicalKey, rawValue);
+    const state = unwrapPersistedState(parsed);
+    if (!isRecord(state) && !Array.isArray(state)) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_UNSCOPED_BACKUP_STATE_MALFORMED');
+    }
+    if (logicalKey === 'lanzo-active-orders-storage') {
+      if (!isRecord(state) || !Array.isArray(state.activeOrders)) {
+        throw new TenantScopedStorageInspectionError('TENANT_STORAGE_UNSCOPED_BACKUP_STATE_MALFORMED');
+      }
+      if (
+        state.activeOrders.length > 0
+        || (state.currentOrderId !== null && state.currentOrderId !== undefined)
+      ) return true;
+      continue;
+    }
+    if (countTenantBrowserState(logicalKey, rawValue) > 0) return true;
+  }
+  return false;
+};
 
 export class TenantScopedStorageInspectionError extends Error {
   constructor(code) {
@@ -126,6 +241,54 @@ export const clearActiveTenantStorageNamespace = () => {
 
 export const getTenantStorageState = () => ({ opaqueId: activeNamespace, ready, writesSuspended });
 export const subscribeTenantStorage = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
+
+export const inspectActiveTenantBackupBrowserState = (expectedDatabaseName = null) => {
+  const emptyCounts = Object.fromEntries([
+    ['activeOrders', 0],
+    ...EXCLUDED_BACKUP_BROWSER_STATE_KEYS.map(([, label]) => [label, 0])
+  ]);
+
+  try {
+    const namespace = getTenantStorageState();
+    if (
+      !/^t_[a-f0-9]{32}$/.test(String(namespace.opaqueId || ''))
+      || !namespace.ready
+      || namespace.writesSuspended
+    ) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_NAMESPACE_UNAVAILABLE');
+    }
+
+    const browserStorage = storage();
+    if (!browserStorage) throw new TenantScopedStorageInspectionError('TENANT_STORAGE_ACCESS_DENIED');
+    const counts = { ...emptyCounts };
+    counts.activeOrders = inspectActorScopedActiveOrderDraftCount(
+      namespace.opaqueId,
+      expectedDatabaseName
+    );
+
+    if (hasUnscopedLegacyBusinessState(browserStorage)) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_UNSCOPED_BACKUP_STATE_UNRESOLVED');
+    }
+
+    for (const [logicalKey, label] of EXCLUDED_BACKUP_BROWSER_STATE_KEYS) {
+      const key = physicalKey(logicalKey);
+      if (!key) throw new TenantScopedStorageInspectionError('TENANT_STORAGE_NAMESPACE_MISSING');
+      counts[label] = countTenantBrowserState(logicalKey, browserStorage.getItem(key));
+    }
+
+    const finalNamespace = getTenantStorageState();
+    if (
+      finalNamespace.opaqueId !== namespace.opaqueId
+      || !finalNamespace.ready
+      || finalNamespace.writesSuspended
+    ) {
+      throw new TenantScopedStorageInspectionError('TENANT_STORAGE_NAMESPACE_CHANGED');
+    }
+    return { inspectionComplete: true, counts };
+  } catch {
+    return { inspectionComplete: false, counts: emptyCounts };
+  }
+};
 
 const storage = () => {
   try {

@@ -2,6 +2,7 @@ const TENANT_PREFIX = 'lanzo:t:';
 const ACTOR_CONTEXT_LOGICAL_KEY = 'actor-runtime-context:v1';
 const ACTOR_CONTEXT_CHANNEL = 'lanzo-actor-storage-v1';
 const ACTOR_STORAGE_VERSION = 1;
+const ACTIVE_ORDERS_LOGICAL_KEY = 'lanzo-active-orders-storage';
 
 export const ACTOR_SCOPED_STORAGE_ERROR_CODES = Object.freeze({
   CONTEXT_STALE: 'ACTOR_CONTEXT_STALE',
@@ -85,6 +86,65 @@ const sha256 = async (value) => {
 export const deriveActorStorageOpaqueId = async (tenantOpaqueId, actorKey) => (
   sha256(`${assertTenantOpaqueId(tenantOpaqueId)}\u0000${assertActorKey(actorKey)}`)
 );
+
+const countActiveOrderDrafts = (rawValue) => {
+  if (typeof rawValue !== 'string' || rawValue.length === 0) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'active_orders_payload_unavailable'
+    });
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'active_orders_payload_malformed'
+    });
+  }
+
+  const state = parsed?.state || parsed;
+  if (!state || typeof state !== 'object' || Array.isArray(state) || !Array.isArray(state.activeOrders)) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'active_orders_payload_malformed'
+    });
+  }
+
+  const orderIds = new Set();
+  const draftIds = new Set();
+  let count = 0;
+  for (const entry of state.activeOrders) {
+    if (
+      !Array.isArray(entry)
+      || entry.length < 2
+      || (typeof entry[0] !== 'string' && typeof entry[0] !== 'number')
+      || !entry[1]
+      || typeof entry[1] !== 'object'
+      || Array.isArray(entry[1])
+      || orderIds.has(entry[0])
+    ) {
+      throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+        reason: 'active_orders_payload_malformed'
+      });
+    }
+    orderIds.add(entry[0]);
+    if (entry[1].isSaved !== true) {
+      draftIds.add(entry[0]);
+      count += 1;
+    }
+  }
+
+  if (
+    state.currentOrderId !== null
+    && state.currentOrderId !== undefined
+    && !draftIds.has(state.currentOrderId)
+  ) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'active_orders_payload_malformed'
+    });
+  }
+  return count;
+};
 
 const actorPhysicalKey = (binding, logicalKey) => (
   `${TENANT_PREFIX}${binding.tenantOpaqueId}:a:${binding.actorOpaqueId}:${logicalKey}`
@@ -317,6 +377,77 @@ export const getActorScopedStorageState = () => Object.freeze({
   active: cloneBinding(activeBinding),
   writesSuspended
 });
+
+// Backup coverage needs to know whether any actor in this tenant has a draft,
+// without exposing another actor's payload or identifier to the caller.
+export const inspectActorScopedActiveOrderDraftCount = (tenantOpaqueId, expectedTenantDatabaseName = null) => {
+  const normalizedTenantId = assertTenantOpaqueId(tenantOpaqueId);
+  if (
+    !activeBinding
+    || activeBinding.tenantOpaqueId !== normalizedTenantId
+    || writesSuspended
+  ) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED, {
+      reason: 'active_actor_context_required'
+    });
+  }
+
+  const captured = assertActiveContextCurrent();
+  if (expectedTenantDatabaseName && captured.tenantDatabaseName !== expectedTenantDatabaseName) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE, {
+      reason: 'active_tenant_database_mismatch'
+    });
+  }
+
+  const browserStorage = storage();
+  if (!browserStorage) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'local_storage_unavailable'
+    });
+  }
+
+  const tenantPrefix = `${TENANT_PREFIX}${normalizedTenantId}:`;
+  const actorPrefix = `${tenantPrefix}a:`;
+  const logicalSuffix = `:${ACTIVE_ORDERS_LOGICAL_KEY}`;
+  const legacyTenantKey = `${tenantPrefix}${ACTIVE_ORDERS_LOGICAL_KEY}`;
+  let draftCount = 0;
+
+  try {
+    const legacyTenantValue = browserStorage.getItem(legacyTenantKey);
+    if (legacyTenantValue !== null) draftCount += countActiveOrderDrafts(legacyTenantValue);
+
+    const initialLength = browserStorage.length;
+    for (let index = 0; index < initialLength; index += 1) {
+      const key = browserStorage.key(index);
+      if (typeof key !== 'string') {
+        throw new Error('STORAGE_KEY_UNAVAILABLE');
+      }
+      if (!key.startsWith(actorPrefix) || !key.endsWith(logicalSuffix)) continue;
+
+      const actorOpaqueId = key.slice(actorPrefix.length, key.length - logicalSuffix.length);
+      if (!/^[a-f0-9]{64}$/.test(actorOpaqueId)) {
+        throw new Error('ACTOR_STORAGE_KEY_MALFORMED');
+      }
+      const rawValue = browserStorage.getItem(key);
+      if (rawValue === null) throw new Error('ACTOR_STORAGE_VALUE_UNAVAILABLE');
+      draftCount += countActiveOrderDrafts(rawValue);
+    }
+    if (browserStorage.length !== initialLength) throw new Error('STORAGE_CHANGED_DURING_INSPECTION');
+  } catch (error) {
+    if (error instanceof ActorScopedStorageError) throw error;
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
+      reason: 'active_orders_inspection_failed'
+    });
+  }
+
+  const current = assertActiveContextCurrent();
+  if (current.contextToken !== captured.contextToken || current.tenantOpaqueId !== normalizedTenantId) {
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE, {
+      reason: 'active_actor_context_changed'
+    });
+  }
+  return draftCount;
+};
 
 export const getActorStorageItem = (logicalKey) => {
   if (!isActorScopedLogicalKey(logicalKey)) return null;
