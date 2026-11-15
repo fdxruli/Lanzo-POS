@@ -47,7 +47,7 @@ function getOAuthErrorMessage(oauthError) {
   return 'Google no pudo autorizar el acceso a Drive. Intentalo de nuevo y, si el problema continua, contacta a soporte.';
 }
 
-function GoogleDriveOAuthControls() {
+function GoogleDriveOAuthControls({ disabled = false }) {
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
   const isDriveConnected = useAppStore((state) => state.isDriveConnected);
@@ -188,7 +188,7 @@ function GoogleDriveOAuthControls() {
           </strong>
           <p>
             {hasActiveSession
-              ? 'El token temporal esta disponible solo durante esta sesion.'
+              ? 'Puedes subir copias cifradas durante esta sesión. La conexión por sí sola no confirma un respaldo.'
               : sessionExpired
                 ? 'Reconecta Google Drive para reactivar los respaldos en la nube.'
                 : isDriveConnected
@@ -204,7 +204,7 @@ function GoogleDriveOAuthControls() {
             type="button"
             className="btn btn-primary"
             onClick={handleConnect}
-            disabled={isConnecting}
+            disabled={disabled || isConnecting}
           >
             <span aria-hidden="true">
               {isConnecting
@@ -226,7 +226,7 @@ function GoogleDriveOAuthControls() {
             type="button"
             className="btn btn-secondary"
             onClick={handleDisconnect}
-            disabled={isConnecting}
+            disabled={disabled || isConnecting}
           >
             <span aria-hidden="true"><Unplug size={17} /></span>
             <span>Desconectar</span>
@@ -236,9 +236,7 @@ function GoogleDriveOAuthControls() {
 
       {error && <p className="backup-settings-error">{error}</p>}
 
-      <p className="drive-connection-scope">
-        Permiso solicitado: <code>{GOOGLE_DRIVE_FILE_SCOPE}</code>
-      </p>
+      <details className="backup-advanced-details"><summary>Permiso de Google Drive</summary><p className="drive-connection-scope">Solo archivos creados por Lanzo: <code>{GOOGLE_DRIVE_FILE_SCOPE}</code></p></details>
     </>
   );
 }
@@ -312,8 +310,8 @@ function DriveBackupList({ disabled, onBackupDownloaded, onBusyChange }) {
   if (!access.isAdmin) return null;
   return (
     <div className="drive-backup-list" aria-label="Respaldos en Google Drive" aria-busy={Boolean(pending)}>
-      <h5>Respaldos en Google Drive</h5>
-      <p>Solo se muestran copias con identidad verificable de este negocio. También puedes importar un archivo .lzbk manualmente.</p>
+      <h5>Desde Google Drive</h5>
+      <p>Consulta las copias verificables de este negocio. Recuperar descarga el archivo cifrado; después debes introducir el PIN y revisarlo antes de restaurar.</p>
       {!canQuery && <p role="status">{needsReauth || (token && tokenExpired)
         ? 'La sesión venció. Reconecta Google Drive para consultar tus copias.'
         : 'Conecta Google Drive para consultar tus copias.'}</p>}
@@ -347,12 +345,13 @@ function DriveBackupList({ disabled, onBackupDownloaded, onBusyChange }) {
   );
 }
 
-export default function GoogleDriveSettings({ disabled = false, onBackupDownloaded, onBusyChange }) {
+export default function GoogleDriveSettings({ mode = 'all', disabled = false, onBackupDownloaded, onBusyChange }) {
   const settingsAccess = useSettingsAccess();
   if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
 
+  if (mode === 'recovery') return <DriveBackupList disabled={disabled} onBackupDownloaded={onBackupDownloaded} onBusyChange={onBusyChange} />;
   return (
-    <section className="backup-settings-card backup-settings-card--drive">
+    <section className={mode === 'connection' ? 'backup-drive-connection' : 'backup-settings-card backup-settings-card--drive'} aria-label="Conexión Google Drive">
       <div className="backup-settings-card__heading">
         <span className="backup-card-icon backup-card-icon--drive" aria-hidden="true">
           <Cloud size={20} />
@@ -365,13 +364,13 @@ export default function GoogleDriveSettings({ disabled = false, onBackupDownload
       </div>
 
       {GOOGLE_CLIENT_ID
-        ? <GoogleDriveOAuthControls />
+        ? <GoogleDriveOAuthControls disabled={disabled} />
         : (
           <div className="backup-settings-notice">
-            Configura <code>VITE_GOOGLE_CLIENT_ID</code> para habilitar la conexion con Google Drive.
+            La conexión con Google Drive no está disponible en esta instalación. Puedes crear y recuperar archivos locales.
           </div>
         )}
-      {onBackupDownloaded && <DriveBackupList disabled={disabled} onBackupDownloaded={onBackupDownloaded} onBusyChange={onBusyChange} />}
+      {mode === 'all' && onBackupDownloaded && <DriveBackupList disabled={disabled} onBackupDownloaded={onBackupDownloaded} onBusyChange={onBusyChange} />}
     </section>
   );
 }

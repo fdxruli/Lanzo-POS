@@ -76,7 +76,7 @@
 
 .backup-settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(250px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--ui-space-md);
   align-items: start;
   min-width: 0;
@@ -235,7 +235,7 @@
 
 .backup-settings-card input {
   min-width: 0;
-  min-height: 42px;
+  min-height: 44px;
   padding: 10px 12px;
   color: var(--text-dark);
   background: var(--input-background);
@@ -306,7 +306,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 44px;
   border-radius: 8px;
   font-weight: 700;
 }
@@ -613,3 +613,25 @@
   display: block;
   font-size: 0.875rem;
 }
+
+/* The operational groups stay together at every viewport width. */
+.backup-local-column { gap: 16px; }
+.backup-hero-copy { flex-basis: 100%; }
+.backup-hero-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px 16px; }
+.backup-drive-connection { border-top: 1px solid var(--border-color); padding-top: 12px; display: grid; gap: 10px; min-width: 0; }
+.backup-recovery .drive-backup-list { margin: 0; padding: 0; border: 0; }
+.backup-settings-shell button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.backup-settings-cancel { min-height: 44px; padding: 8px 12px; }
+.backup-settings-shell button:focus-visible { outline: 2px solid var(--ui-focus-color, var(--secondary-color)); outline-offset: 3px; }
+.backup-settings-shell progress { min-width: 0; }
+.backup-settings-shell input { box-sizing: border-box; }
+@media (max-width: 680px) {
+  .backup-settings-inline input { flex-basis: auto; }
+  .backup-hero-summary { grid-template-columns: minmax(0, 1fr); }
+  .drive-backup-list__files li { align-items: stretch; flex-direction: column; }
+  .drive-backup-list__files li > div { flex-basis: auto; }
+}
+
+.backup-settings-status--destination { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.backup-recovery .drive-backup-list > p { margin: 6px 0 10px; font-size: .84rem; line-height: 1.45; color: var(--text-light); }
+.backup-local-column > .backup-settings-card { max-width: 1100px; }

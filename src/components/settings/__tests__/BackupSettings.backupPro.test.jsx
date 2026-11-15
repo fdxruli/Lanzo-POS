@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
@@ -116,6 +117,117 @@ describe('BackupSettings copy by license mode', () => {
     });
   });
 
+  it.skipIf(!process.env.BACKUP_VISUAL_DIR)('exports controlled visual fixtures', async () => {
+    const out = process.env.BACKUP_VISUAL_DIR;
+    mkdirSync(out, { recursive: true });
+    const css = ['src/index.css', 'src/styles/design-tokens.css', 'src/styles/buttons.css', 'src/components/settings/BackupSettings.css'].map((path) => readFileSync(path, 'utf8')).join('\n').replaceAll(/@import[^;]+;/g, '');
+    access.isAdmin = true;
+    for (const scenario of ['setup', 'ready', 'preview']) {
+      cleanup();
+      backupStatus.configured = scenario !== 'setup';
+      backupStatus.supported = false;
+      backupStatus.settings.lastBackupAt = scenario === 'setup' ? null : '2026-11-15T12:00:00Z';
+      appState.driveAccessToken = 'fixture';
+      appState.driveTokenExpiresAt = Date.now() + 60000;
+      appState.isDriveConnected = true;
+      listBackups.mockResolvedValue({ files: [{ id: 'one', name: 'RESPALDO_LANZO_negocio_con_nombre_muy_largo_2026_11_15.lzbk', size: '2048', createdTime: '2026-11-15T12:00:00Z' }, { id: 'two', name: 'RESPALDO_LANZO_anterior.lzbk', size: '1024', createdTime: '2026-11-14T12:00:00Z' }] });
+      render(<BackupSettings isCloudLicense={scenario === 'preview'} />);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actualizar respaldos' })));
+      if (scenario === 'preview') {
+        backupManager.inspectRestore.mockResolvedValue({ formatVersion: 2, destinationHasBusinessData: true, coverage: { complete: false, categoryCounts: { sales: 12, customers: 8 }, partialReasons: ['pending_browser_operations_excluded'] } });
+        fireEvent.change(screen.getByLabelText('Archivo de respaldo a restaurar'), { target: { files: [new File(['fixture'], 'RESPALDO_LANZO_nombre_muy_largo_para_revisar_sin_desbordamiento.lzbk')] } });
+        fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      }
+      writeFileSync(`${out}/${scenario}.html`, `<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{height:auto;overflow:visible;display:block}body{margin:0}</style><body><main style="max-width:1100px;margin:auto;padding:16px">${document.body.innerHTML}</main></body></html>`);
+    }
+  });
+
+  it('does not confuse Cloud synchronization with a configured backup or a confirmed Drive copy', () => {
+    render(<BackupSettings isCloudLicense />);
+    expect(screen.getByText('Respaldos y recuperación')).toBeInTheDocument();
+    expect(screen.queryByText('Cloud + local')).not.toBeInTheDocument();
+    expect(screen.getByText(/La sincronización Cloud y el respaldo cifrado/)).toBeInTheDocument();
+    expect(screen.getByText(/Última copia Drive confirmada/).parentElement).toHaveTextContent('Sin información confirmada');
+    expect(screen.getByText(/Respaldo local:/).parentElement).toHaveTextContent('Sin configurar');
+    expect(screen.getByText(/Google Drive:/).parentElement).toHaveTextContent('Desconectado');
+  });
+
+  it('shows a real local date and a locked PIN independently of the Drive connection', () => {
+    backupStatus.configured = true;
+    backupStatus.unlocked = false;
+    backupStatus.settings.lastBackupAt = '2026-11-15T12:00:00Z';
+    appState.isDriveConnected = true;
+    appState.driveAccessToken = 'expired';
+    appState.driveTokenExpiresAt = Date.now() - 1;
+    render(<BackupSettings />);
+    expect(screen.getByText(/PIN de respaldo:/).parentElement).toHaveTextContent('Bloqueado');
+    expect(screen.getByText(/Google Drive:/).parentElement).toHaveTextContent('Requiere reconexión');
+    expect(screen.getByText(/Último respaldo local:/).parentElement).not.toHaveTextContent('Nunca');
+    expect(screen.getByRole('button', { name: 'Respaldar ahora' })).toBeDisabled();
+  });
+
+  it('keeps one recovery panel after both recovery paths', () => {
+    access.isAdmin = true;
+    render(<BackupSettings />);
+    const recovery = screen.getByRole('region', { name: 'Recuperar información' });
+    expect(recovery).toContainElement(screen.getByText('Desde Google Drive'));
+    expect(recovery).toContainElement(screen.getByText('Desde un archivo'));
+    expect(screen.getAllByLabelText('Archivo de respaldo a restaurar')).toHaveLength(1);
+  });
+
+  it('retains the local result, prevents repeated creation and blocks recovery during a Drive write', async () => {
+    backupStatus.configured = true;
+    access.isAdmin = true;
+    appState.driveAccessToken = 'token';
+    appState.driveTokenExpiresAt = Date.now() + 60000;
+    appState.isDriveConnected = true;
+    backupManager.backup.mockResolvedValue({ blob: new Blob(['encrypted']), fileName: 'test.lzbk', coverage: { complete: true } });
+    let finish;
+    uploadBackup.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    render(<BackupSettings />);
+    fireEvent.click(screen.getByRole('button', { name: 'Respaldar ahora' }));
+    await screen.findByText('Respaldo local generado.');
+    expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Seleccionar archivo' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Preparando la subida a Google Drive...' }));
+    expect(backupManager.backup).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ uploadStatus: 'confirmed', cleanupStatus: 'pending' }));
+    expect(screen.getByText('Subida a Drive confirmada.')).toBeInTheDocument();
+    expect(screen.getByText(/Limpieza pendiente:/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Respaldar ahora' })).toBeEnabled();
+  });
+
+  it('keeps creation available during an ordinary query and lists multiple long filenames', async () => {
+    access.isAdmin = true;
+    backupStatus.configured = true;
+    appState.driveAccessToken = 'token';
+    appState.driveTokenExpiresAt = Date.now() + 60000;
+    appState.isDriveConnected = true;
+    let finish;
+    listBackups.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    render(<BackupSettings />);
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar respaldos' }));
+    expect(screen.getByRole('button', { name: 'Respaldar ahora' })).toBeEnabled();
+    const name = `${'negocio_'.repeat(30)}.lzbk`;
+    await act(async () => finish({ files: [{ id: 'a', name, size: '1024', createdTime: '2026-11-15' }, { id: 'b', name: 'anterior.lzbk', size: '1024', createdTime: '2026-11-14' }] }));
+    expect(screen.getByRole('button', { name: `Recuperar ${name}` })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Recuperar anterior.lzbk' })).toBeEnabled();
+  });
+
+  it('keeps replacement blocked until the required preventive copy is configured and unlocked', async () => {
+    access.isAdmin = true;
+    backupManager.inspectRestore.mockResolvedValue({ formatVersion: 2, destinationHasBusinessData: true, coverage: { complete: true } });
+    render(<BackupSettings />);
+    fireEvent.change(screen.getByLabelText('Archivo de respaldo a restaurar'), { target: { files: [new File(['encrypted'], 'local.lzbk')] } });
+    fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+    expect(screen.getByText(/Se requiere una copia preventiva cifrada y desbloqueada/)).toBeInTheDocument();
+    expect(screen.getByText(/todavía no se han restaurado datos/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeDisabled();
+    expect(backupManager.restore).not.toHaveBeenCalled();
+  });
+
   it('keeps required local backup copy for FREE local', () => {
     render(<BackupSettings isCloudLicense={false} />);
 
@@ -215,6 +327,8 @@ describe('BackupSettings copy by license mode', () => {
         { icon: '⚠️' }
       );
     });
+    expect(screen.getByText('Verificación pendiente.')).toBeInTheDocument();
+    expect(screen.getByText('Respaldo local generado.')).toBeInTheDocument();
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalledWith('Respaldo cifrado subido a Google Drive.');
   });
@@ -314,7 +428,7 @@ describe('BackupSettings copy by license mode', () => {
     render(<BackupSettings isCloudLicense />);
 
     expect(screen.getByText('Generar copia local')).toBeInTheDocument();
-    expect(screen.queryByText('Restaurar respaldo')).not.toBeInTheDocument();
+    expect(screen.queryByText('Desde un archivo')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Restaurar' })).not.toBeInTheDocument();
   });
 
@@ -324,7 +438,7 @@ describe('BackupSettings copy by license mode', () => {
 
     render(<BackupSettings isCloudLicense />);
 
-    expect(screen.getByText('Restaurar respaldo')).toBeInTheDocument();
+    expect(screen.getByText('Desde un archivo')).toBeInTheDocument();
   });
 
   it('blocks and explains restore when the destination has pending operations', async () => {
