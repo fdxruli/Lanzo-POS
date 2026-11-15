@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sha256 } from '@noble/hashes/sha2.js';
 import {
   BACKUP_EXTENSION,
   BACKUP_ITERATIONS,
@@ -79,10 +80,11 @@ const ownerPropertiesFor = async (tenantAliases) => {
   return properties;
 };
 
-const response = (data, { status = 200, statusText = 'OK', ok = status >= 200 && status < 300 } = {}) => ({
+const response = (data, { status = 200, statusText = 'OK', ok = status >= 200 && status < 300, headers = {} } = {}) => ({
   ok,
   status,
   statusText,
+  headers: headers instanceof Headers ? headers : new Headers(headers),
   json: vi.fn().mockResolvedValue(data)
 });
 
@@ -130,11 +132,49 @@ const createV2Backup = async (tenantContext, date = new Date()) => {
   };
 };
 
+const hashBlob = async (blob) => {
+  const hash = sha256.create();
+  const reader = blob.stream().getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      hash.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Array.from(hash.digest(), (value) => value.toString(16).padStart(2, '0')).join('');
+};
+
+const expandBackupBlob = async (blob, size = 6 * 1024 * 1024 + 123) => {
+  const expanded = new Blob([blob, new Uint8Array(size - blob.size).fill(0x6c)], { type: 'application/octet-stream' });
+  resumableChecksum = await hashBlob(expanded);
+  return expanded;
+};
+
 const readMultipartMetadata = async (body) => {
   const content = await body.text();
   const start = content.indexOf('\r\n\r\n') + 4;
   const end = content.indexOf('\r\n--', start);
   return JSON.parse(content.slice(start, end));
+};
+
+const readMultipartFileSize = async (body) => {
+  const boundary = body.type.match(/boundary=([^;]+)/)?.[1];
+  const bytes = new Uint8Array(await body.arrayBuffer());
+  const encoder = new TextEncoder();
+  const mediaHeader = encoder.encode('Content-Type: application/octet-stream\r\n\r\n');
+  const ending = encoder.encode(`\r\n--${boundary}--\r\n`);
+  const findSequence = (needle, startAt = 0) => {
+    for (let index = startAt; index <= bytes.length - needle.length; index += 1) {
+      if (needle.every((byte, offset) => bytes[index + offset] === byte)) return index;
+    }
+    return -1;
+  };
+  const mediaStart = findSequence(mediaHeader) + mediaHeader.length;
+  const mediaEnd = findSequence(ending, mediaStart);
+  return mediaEnd - mediaStart;
 };
 
 let driveFiles;
@@ -145,11 +185,50 @@ let mode;
 let concurrentUploadCount;
 let concurrentUploadBarrier;
 let releaseConcurrentUploads;
+let resumableSessionUrl;
+let resumableMetadata;
+let resumableFileSize;
+let resumableBytesReceived;
+let resumableSessionCount;
+let resumableCompletedFile;
+let resumableInterruptionUsed;
+let resumableRanges;
+let resumableChecksum;
+
+const createResumableFile = () => ({
+  id: `resumable-${nextId++}`,
+  name: resumableMetadata.name,
+  createdTime: new Date(clock += 1_000).toISOString(),
+  appProperties: resumableMetadata.appProperties,
+  mimeType: 'application/octet-stream',
+  size: String(mode === 'resumable_size_mismatch' ? resumableFileSize - 1 : resumableFileSize),
+  sha256Checksum: mode === 'resumable_checksum_mismatch' ? 'f'.repeat(64) : resumableChecksum,
+  trashed: false
+});
 
 function installDriveMock() {
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (requestUrl, options = {}) => {
     const url = new URL(requestUrl);
     if (options.method === 'POST') {
+      if (url.searchParams.get('uploadType') === 'resumable') {
+        if (mode === 'resumable_init_failure') {
+          return response({ error: { message: 'Unable to start session' } }, {
+            status: 503,
+            statusText: 'Service Unavailable',
+            ok: false
+          });
+        }
+        resumableSessionCount += 1;
+        resumableMetadata = JSON.parse(options.body);
+        resumableFileSize = Number(options.headers['X-Upload-Content-Length']);
+        resumableSessionUrl = `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=test-session-${resumableSessionCount}`;
+        resumableBytesReceived = 0;
+        resumableCompletedFile = null;
+        return response(null, {
+          status: 200,
+          headers: mode === 'resumable_missing_location' ? {} : { Location: resumableSessionUrl }
+        });
+      }
       if (mode === 'upload_401') {
         return response({ error: { message: 'Invalid Credentials' } }, {
           status: 401,
@@ -171,6 +250,7 @@ function installDriveMock() {
         createdTime: new Date(clock += 1_000).toISOString(),
         appProperties: metadata.appProperties,
         mimeType: 'application/octet-stream',
+        size: String(await readMultipartFileSize(options.body)),
         trashed: false
       };
       driveFiles.push(file);
@@ -195,6 +275,11 @@ function installDriveMock() {
         });
       }
       if (mode === 'upload_incompatible_metadata') {
+        const storedFile = driveFiles.find((candidate) => candidate.id === file.id);
+        storedFile.appProperties = {
+          ...storedFile.appProperties,
+          tenant_license_id: 'f'.repeat(64)
+        };
         return response({
           ...file,
           appProperties: {
@@ -207,6 +292,93 @@ function installDriveMock() {
         const invalidJsonResponse = response(file);
         invalidJsonResponse.json.mockRejectedValue(new SyntaxError('Invalid JSON'));
         return invalidJsonResponse;
+      }
+      return response(file);
+    }
+
+    if (options.method === 'PUT' && url.searchParams.has('upload_id')) {
+      const contentRange = options.headers['Content-Range'];
+      if (contentRange?.startsWith('bytes */')) {
+        if (mode === 'resumable_session_expired' && resumableSessionCount === 1) {
+          return response({ error: { message: 'Session expired' } }, {
+            status: 404,
+            statusText: 'Not Found',
+            ok: false
+          });
+        }
+        if (resumableCompletedFile) return response(resumableCompletedFile);
+        return response(null, {
+          status: 308,
+          headers: resumableBytesReceived > 0
+            ? { Range: `bytes=0-${resumableBytesReceived - 1}` }
+            : {}
+        });
+      }
+
+      if (mode === 'resumable_auth_expired') {
+        return response({ error: { message: 'Invalid Credentials' } }, {
+          status: 401,
+          statusText: 'Unauthorized',
+          ok: false
+        });
+      }
+      if (mode === 'resumable_session_expired' && resumableSessionCount === 1) {
+        return response({ error: { message: 'Session expired' } }, {
+          status: 404,
+          statusText: 'Not Found',
+          ok: false
+        });
+      }
+      if (mode === 'resumable_permanent_network') {
+        throw new TypeError('Network request failed');
+      }
+      if (mode === 'resumable_network_interruption' && !resumableInterruptionUsed) {
+        resumableInterruptionUsed = true;
+        throw new TypeError('Network request failed');
+      }
+
+      const [, startValue, endValue, totalValue] = contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/) || [];
+      const start = Number(startValue);
+      const end = Number(endValue) + 1;
+      const total = Number(totalValue);
+      resumableRanges.push(contentRange);
+      if (start !== resumableBytesReceived) {
+        return response({ error: { message: 'Unexpected range start' } }, {
+          status: 400,
+          statusText: 'Bad Request',
+          ok: false
+        });
+      }
+
+      if (mode === 'resumable_partial_range' && resumableBytesReceived === 0) {
+        resumableBytesReceived = Math.min(end, 1024 * 1024);
+        return response(null, {
+          status: 308,
+          headers: { Range: `bytes=0-${resumableBytesReceived - 1}` }
+        });
+      }
+
+      resumableBytesReceived = Math.max(resumableBytesReceived, end);
+      if (mode === 'resumable_tenant_changed') {
+        fixtures.tenantContext = makeTenantContext('business-b');
+      }
+      if (mode === 'resumable_permission_revoked') {
+        fixtures.actorAccess = { authorized: false, isAdmin: false, permissions: [] };
+      }
+
+      if (end < total) {
+        return response(null, {
+          status: 308,
+          headers: { Range: `bytes=0-${resumableBytesReceived - 1}` }
+        });
+      }
+
+      const file = createResumableFile();
+      driveFiles.push(file);
+      resumableCompletedFile = file;
+      if (mode === 'resumable_uncertain_final' && !resumableInterruptionUsed) {
+        resumableInterruptionUsed = true;
+        throw new TypeError('Network request failed');
       }
       return response(file);
     }
@@ -228,6 +400,13 @@ function installDriveMock() {
     if (options.method === 'GET' && url.pathname !== '/drive/v3/files') {
       const id = decodeURIComponent(url.pathname.split('/').at(-1));
       const file = driveFiles.find((candidate) => candidate.id === id);
+      if (mode === 'resumable_verify_failure') {
+        return response({ error: { message: 'Metadata unavailable' } }, {
+          status: 503,
+          statusText: 'Service Unavailable',
+          ok: false
+        });
+      }
       return file
         ? response(file)
         : response({ error: { message: 'Not found' } }, { status: 404, statusText: 'Not Found', ok: false });
@@ -314,6 +493,15 @@ describe('googleDriveService', () => {
     concurrentUploadCount = 0;
     concurrentUploadBarrier = null;
     releaseConcurrentUploads = null;
+    resumableSessionUrl = null;
+    resumableMetadata = null;
+    resumableFileSize = 0;
+    resumableBytesReceived = 0;
+    resumableSessionCount = 0;
+    resumableCompletedFile = null;
+    resumableInterruptionUsed = false;
+    resumableRanges = [];
+    resumableChecksum = null;
     installDriveMock();
   });
 
@@ -346,9 +534,229 @@ describe('googleDriveService', () => {
     });
     expect(JSON.stringify(metadata)).not.toContain('LICENSE-A');
     expect(JSON.stringify(metadata)).not.toContain('license-key-sha256');
-    expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('q')).toContain(
+    const listCall = fetchMock.mock.calls.find(([requestUrl, request]) => (
+      request.method === 'GET' && new URL(requestUrl).searchParams.has('q')
+    ));
+    expect(new URL(listCall[0]).searchParams.get('q')).toContain(
       `key='tenant_license_id' and value='${backup.ownerProperties.tenant_license_id}'`
     );
+  });
+
+  it('uploads large V2 backups with a resumable session and aligned chunks', async () => {
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+    const progress = vi.fn();
+
+    const result = await uploadBackup('access-token', blob, backup.fileName, { onProgress: progress });
+
+    expect(result).toMatchObject({
+      uploadStatus: 'confirmed',
+      transferStatus: 'confirmed',
+      verificationStatus: 'completed',
+      checksumStatus: 'verified',
+      cleanupStatus: 'completed'
+    });
+    expect(resumableSessionCount).toBe(1);
+    expect(resumableMetadata).toMatchObject({
+      name: backup.fileName,
+      appProperties: {
+        type: 'lanzo_pos_backup',
+        tenant_fingerprint: backup.tenantFingerprint,
+        ...backup.ownerProperties
+      }
+    });
+    expect(fetchMock.mock.calls[0][0]).toContain('uploadType=resumable');
+    expect(fetchMock.mock.calls[0][1].headers['X-Upload-Content-Length']).toBe(String(blob.size));
+    expect(resumableRanges).toEqual([
+      `bytes 0-${4 * 1024 * 1024 - 1}/${blob.size}`,
+      `bytes ${4 * 1024 * 1024}-${blob.size - 1}/${blob.size}`
+    ]);
+    expect(progress.mock.calls.some(([value]) => value.phase === 'verifying' && value.percent === 100)).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('upload_id');
+  });
+
+  it('resumes from the byte range Drive confirmed instead of resending accepted data', async () => {
+    mode = 'resumable_partial_range';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result.uploadStatus).toBe('confirmed');
+    expect(resumableRanges[0]).toBe(`bytes 0-${4 * 1024 * 1024 - 1}/${blob.size}`);
+    expect(resumableRanges[1]).toBe(`bytes ${1024 * 1024}-${5 * 1024 * 1024 - 1}/${blob.size}`);
+    expect(resumableBytesReceived).toBe(blob.size);
+    expect(driveFiles.filter((file) => file.name === backup.fileName)).toHaveLength(1);
+  });
+
+  it('queries session state after a network interruption and retries only unconfirmed bytes', async () => {
+    mode = 'resumable_network_interruption';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result.uploadStatus).toBe('confirmed');
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([, request]) => request.headers['Content-Range'] === `bytes */${blob.size}`)).toBe(true);
+    expect(fetchMock.mock.calls.filter(([, request]) => (
+      request.method === 'PUT' && request.headers['Content-Range']?.startsWith('bytes 0-')
+    ))).toHaveLength(2);
+    expect(driveFiles.filter((file) => file.name === backup.fileName)).toHaveLength(1);
+  });
+
+  it('uses the session status after an uncertain final response instead of creating a duplicate', async () => {
+    mode = 'resumable_uncertain_final';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'confirmed',
+      transferStatus: 'confirmed',
+      verificationStatus: 'completed'
+    });
+    expect(resumableSessionCount).toBe(1);
+    expect(resumableRanges.filter((range) => !range.startsWith('bytes */'))).toHaveLength(2);
+    expect(driveFiles.filter((file) => file.name === backup.fileName)).toHaveLength(1);
+  });
+
+  it('restarts once only after Drive confirms a resumable session expired', async () => {
+    mode = 'resumable_session_expired';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result.uploadStatus).toBe('confirmed');
+    expect(resumableSessionCount).toBe(2);
+    expect(driveFiles.filter((file) => file.name === backup.fileName)).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('leaves prior copies untouched when repeated network failures keep transfer state uncertain', async () => {
+    mode = 'resumable_permanent_network';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'pending',
+      verificationStatus: 'pending',
+      verificationReason: 'transfer_state_uncertain'
+    });
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+    expect(resumableSessionCount).toBe(1);
+  });
+
+  it('does not claim remote verification when Drive reports a different file size', async () => {
+    mode = 'resumable_size_mismatch';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'confirmed',
+      verificationStatus: 'failed',
+      verificationReason: 'metadata_mismatch'
+    });
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('rejects a remote SHA-256 mismatch and preserves previous files', async () => {
+    mode = 'resumable_checksum_mismatch';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'confirmed',
+      verificationStatus: 'failed',
+      verificationReason: 'metadata_mismatch'
+    });
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('keeps previous files if remote metadata verification fails', async () => {
+    mode = 'resumable_verify_failure';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'confirmed',
+      verificationStatus: 'pending'
+    });
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('stops a resumable transfer when OAuth expires and requires reconnection', async () => {
+    mode = 'resumable_auth_expired';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    await expect(uploadBackup('access-token', blob, backup.fileName))
+      .rejects.toMatchObject({ code: 'AUTH_REQUIRED', status: 401 });
+
+    expect(fixtures.state.markDriveNeedsReauth).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
+  });
+
+  it.each(['resumable_tenant_changed', 'resumable_permission_revoked'])(
+    'stops resumable requests when %s occurs mid-transfer',
+    async (invalidationMode) => {
+      mode = invalidationMode;
+      const backup = await createV2Backup(fixtures.tenantContext);
+      const blob = await expandBackupBlob(backup.blob);
+      const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+      driveFiles.push(oldFile);
+
+      await expect(uploadBackup('access-token', blob, backup.fileName)).rejects.toMatchObject({
+        code: invalidationMode === 'resumable_permission_revoked'
+          ? 'BACKUP_PERMISSION_REQUIRED'
+          : 'BACKUP_TENANT_CONTEXT_STALE'
+      });
+
+      expect(driveFiles).toContainEqual(oldFile);
+      expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(0);
+    }
+  );
+
+  it('does not start chunk uploads if Drive does not expose a usable session URL', async () => {
+    mode = 'resumable_missing_location';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const blob = await expandBackupBlob(backup.blob);
+
+    const result = await uploadBackup('access-token', blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'not_started',
+      verificationStatus: 'pending',
+      verificationReason: 'session_url_unavailable'
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('retains up to 14 A backups without deleting B backups or unowned legacy files', async () => {
@@ -407,8 +815,12 @@ describe('googleDriveService', () => {
 
     const result = await uploadBackup('access-token', backup.blob, backup.fileName);
 
-    expect(result).toEqual({ uploadStatus: 'verification_pending', uploadedFile: null });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      verificationStatus: expect.any(String),
+      cleanupStatus: 'pending'
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(uploadMode === 'upload_incompatible_metadata' ? 2 : 1);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
     expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
     expect(driveFiles.some((file) => file.id === oldFile.id)).toBe(true);
@@ -506,9 +918,10 @@ describe('googleDriveService', () => {
 
       const result = await uploadBackup('access-token', backup.blob, backup.fileName);
 
-      expect(result.uploadStatus).toBe('confirmed');
+      expect(result.uploadStatus).toBe('verification_pending');
+      expect(result.transferStatus).toBe('confirmed');
       expect(result.cleanupStatus).toBe('pending');
-      expect(result.cleanupReason).toBe(invalidationMode.startsWith('actor') ? 'permission_required' : 'context_changed');
+      expect(result.verificationStatus).toBe('pending');
       expect(fetchMock.mock.calls).toHaveLength(1);
       expect(driveFiles.some((file) => file.id === 'old-a')).toBe(true);
     }
@@ -533,6 +946,8 @@ describe('googleDriveService', () => {
 
     expect(first.uploadStatus).toBe('confirmed');
     expect(second.uploadStatus).toBe('confirmed');
+    expect(first.verificationStatus).toBe('completed');
+    expect(second.verificationStatus).toBe('completed');
     expect(driveFiles.some((file) => file.id === 'business-b-backup')).toBe(true);
     const retainedA = driveFiles.filter((file) => file.appProperties?.tenant_fingerprint === backupA.tenantFingerprint);
     expect(retainedA.length).toBeGreaterThanOrEqual(14);

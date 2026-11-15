@@ -313,7 +313,7 @@ describe('CajaPage cash close routing', () => {
     });
   });
 
-  it('keeps the cash close confirmed and warns when the accepted Drive upload is pending verification', async () => {
+  it('keeps the cash close confirmed and warns when Drive transfer state is uncertain', async () => {
     fixtures.driveSession = {
       accessToken: 'temporary-drive-token',
       expiresAt: Date.now() + 60_000,
@@ -324,7 +324,12 @@ describe('CajaPage cash close routing', () => {
       blob: new Blob(['encrypted backup']),
       fileName: 'RESPALDO_LANZO_test.lzbk'
     });
-    uploadBackup.mockResolvedValue({ uploadStatus: 'verification_pending', uploadedFile: null });
+    uploadBackup.mockResolvedValue({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'pending',
+      verificationStatus: 'pending',
+      uploadedFile: null
+    });
 
     renderCajaPage();
     fireEvent.click(screen.getByRole('button', { name: 'Corte de caja' }));
@@ -333,7 +338,7 @@ describe('CajaPage cash close routing', () => {
     await waitFor(() => {
       expect(fixtures.ownerClose).toHaveBeenCalledTimes(1);
       expect(fixtures.showMessage).toHaveBeenCalledWith(
-        expect.stringContaining('El respaldo local se guardó. Google Drive aceptó la subida, pero no pudimos verificar el archivo. Revisa Drive antes de volver a intentarlo.'),
+        expect.stringContaining('El respaldo local se guardó. No se pudo determinar si Google Drive terminó la transferencia; revisa Drive antes de volver a intentarlo.'),
         expect.any(Function),
         expect.objectContaining({
           type: 'warning',
