@@ -22,6 +22,8 @@ vi.mock('../../notifications/notificationCapabilities', () => ({
 import {
   createSupportTicket,
   getSupportTicketThread,
+  listSupportTickets,
+  replySupportTicket,
 } from '../supportTicketService';
 
 const licenseDetails = { license_key: 'full-license-sent-only-as-rpc-auth' };
@@ -57,6 +59,59 @@ describe('support ticket service privacy boundary', () => {
     expect(JSON.stringify(payload.p_metadata)).not.toContain('device-identifier-private');
     expect(payload.p_license_key).toBe('full-license-sent-only-as-rpc-auth');
     expect(payload.p_security_token).toBe('support-token-auth-only');
+  });
+
+  it('retains the financial diagnostics source while dropping all other metadata', async () => {
+    await createSupportTicket({
+      licenseDetails,
+      subject: 'Revisión financiera financial:v1:0123456789abcdef0123456789abcdef01234567',
+      category: 'cash',
+      message: 'Solicitud de revisión financiera sanitizada.',
+      metadata: {
+        source: 'financial_diagnostics',
+        correlationId: 'must-not-be-duplicated-in-metadata',
+        securityToken: 'must-not-be-sent',
+      },
+    });
+
+    expect(mocks.rpc.mock.calls[0][1].p_metadata).toEqual({ source: 'financial_diagnostics' });
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1].p_metadata)).not.toContain('must-not-be-sent');
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1].p_metadata)).not.toContain('correlationId');
+  });
+
+  it('reuses the authorized ticket list RPC for receipt recovery lookups', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        tickets: [{ id: 'ticket-1', subject: 'Revisión financiera', last_message_preview: 'Resumen seguro' }]
+      }
+    });
+
+    const result = await listSupportTickets({ licenseDetails, limit: 100, offset: 0, includeClosed: true });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('list_support_tickets', expect.objectContaining({
+      p_limit: 100,
+      p_offset: 0,
+      p_include_closed: true,
+      p_staff_session_token: null
+    }));
+    expect(result.tickets[0]).toMatchObject({ id: 'ticket-1', subject: 'Revisión financiera' });
+  });
+
+  it('reuses the existing reply RPC and normalizes only its ticket response', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { success: true, ticket: { id: 'ticket-1', status: 'waiting_support' }, private_trace: 'excluded' }
+    });
+
+    const result = await replySupportTicket({ licenseDetails, ticketId: 'ticket-1', message: 'Additional sanitized context.' });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('reply_support_ticket', expect.objectContaining({
+      p_ticket_id: 'ticket-1',
+      p_message: 'Additional sanitized context.',
+      p_staff_session_token: null
+    }));
+    expect(result).toMatchObject({ success: true, ticket: { id: 'ticket-1', status: 'waiting_support' } });
+    expect(JSON.stringify(result)).not.toContain('private_trace');
   });
 
   it('does not expose device fingerprints or arbitrary response metadata in normalized messages', async () => {

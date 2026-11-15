@@ -38,6 +38,11 @@
 .financial-diagnostics__detail dt { font-size: .8rem; color: var(--text-muted, #5f6877); }
 .financial-diagnostics__detail dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
 .financial-diagnostics__message { margin: 0; color: var(--text-muted, #5f6877); }
+.financial-diagnostics__item-feedback { margin: .5rem 0 0 !important; }
+.financial-diagnostics__support { display: grid; gap: .45rem; margin-top: .65rem; padding: .65rem; border-left: 3px solid var(--ui-text-warning, #9a6700); background: var(--ui-bg-warning-soft, rgba(154, 103, 0, .08)); }
+.financial-diagnostics__support p { margin: 0; }
+.financial-diagnostics__support-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.financial-diagnostics__support small { color: var(--text-muted, #5f6877); }
 
 .financial-diagnostics--compact {
   display: flex;
