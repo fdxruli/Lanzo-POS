@@ -5,7 +5,7 @@
 **Migración:** `20261114231943_ecommerce_price_confirmation_v1.sql` · versión `20261114231943`
 **SHA-256:** `6f19aec959a796dfb922902c929a680c01e2792e57767039f09b8a97c01e6f34` (corrección en PR; migración no instalada)
 
-## Evidencia del seguimiento (2026-11-14)
+## Evidencia del seguimiento (2026-11-14 y 2026-11-15)
 
 - **Código:** se corrigió F6 en la aceptación frontend. Precios nulos, ausentes, negativos, no numéricos, fuera de rango, tiers mayoristas inválidos y configuraciones corruptas quedan marcados como no aptos. El checkout muestra “Precio no disponible” y no permite una aceptación nueva ni un envío nuevo con esos datos. El reintento de la misma solicitud idempotente sigue disponible ante un resultado incierto.
 - **Vitest:** 6 suites de servicio/utilidades, 76 pruebas aprobadas; `PublicCheckoutDialog.test.jsx`, 19 aprobadas; integración `PublicStoreCheckout.test.jsx`, 21 aprobadas en la ejecución conjunta de checkout. Total focalizado actual: 116 pruebas aprobadas. Los intentos amplios iniciales se cancelaron al incluir copias antiguas bajo `.tmp` o no emitir resultados; los resultados reportados corresponden a reejecuciones controladas con `--exclude .tmp/**`.
