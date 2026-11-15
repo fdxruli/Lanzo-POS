@@ -13,6 +13,9 @@ import { roundCurrency } from '../utils';
 import { calculatePricingDetails } from '../pricingLogic';
 import { processSaleCore } from '../sales/processSaleCore';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../test/tenantRuntimeTestHarness';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { getActiveTenantRuntime } from '../db/tenantRuntimeRouter';
+import { localTenantAccessController } from '../tenant/localTenantPolicy';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import { loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
 import { cancelSaleCore } from '../sales/cancelSaleCore';
@@ -21,6 +24,11 @@ const stationKey = 'local:device:fp-browser-s';
 const stationKeyA = 'local:device:fp-browser-a';
 const stationKeyB = 'local:device:fp-browser-b';
 const stationA = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
+const testTenantIdentity = {
+  aliases: ['license-key-sha256:test-tenant-runtime-a'],
+  primary: 'license-key-sha256:test-tenant-runtime-a',
+  authority: 'license_key_sha256'
+};
 const saleProduct = {
   id: 'product-cash-integration',
   name: 'Producto de prueba',
@@ -31,6 +39,32 @@ const saleProduct = {
   batchManagement: { enabled: false }
 };
 
+const grantCashActor = () => {
+  localTenantAccessController.enable('cash_test_actor_grant');
+  localTenantAccessController.grant(testTenantIdentity, 'cash_test_actor_grant');
+  const tenantRuntime = getActiveTenantRuntime();
+  if (!tenantRuntime) throw new Error('TEST_TENANT_RUNTIME_REQUIRED');
+  actorRuntimeController.lock('cash_test_actor_reset');
+  actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: stationKey });
+  return actorRuntimeController.grant({
+    actorType: 'admin',
+    actorId: 'a',
+    sessionId: 'admin-a-cash-test-session',
+    permissions: ['*'],
+    tenantOpaqueId: tenantRuntime.opaqueId,
+    deviceRef: stationKey,
+    authorizationExpiresAt: new Date(Date.now() + 60_000).toISOString()
+  });
+};
+
+const getCurrentCashActorContext = (cashSession) => {
+  const actorContext = actorRuntimeController.capture('pos');
+  if (actorContext.actorKey !== cashSession.actorKey) {
+    throw new Error('TEST_CASH_ACTOR_SESSION_MISMATCH');
+  }
+  return actorContext;
+};
+
 const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdAt }) => processSaleCore({
   order: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }],
   paymentData: {
@@ -38,7 +72,7 @@ const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdA
     amountPaid: paymentMethod === 'efectivo' ? '20' : '0',
     saldoPendiente: paymentMethod === 'efectivo' ? '0' : '20',
     cashSessionId: cashSession.id,
-    localStationKey: stationKey,
+    localStationKey: cashSession.localStationKey,
     sendReceipt: false
   },
   total: 20,
@@ -48,7 +82,8 @@ const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdA
   tempPrescriptionData: null,
   ignoreStock: false,
   activeOrderId: id,
-  createdAt
+  createdAt,
+  actorContext: getCurrentCashActorContext(cashSession)
 }, {
   loadData,
   loadMultipleData,
@@ -65,6 +100,7 @@ const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdA
 });
 
 beforeEach(async () => {
+  localTenantAccessController.reset();
   await openTestTenantRuntime();
   await db.table(STORES.CAJAS).clear();
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
@@ -75,6 +111,8 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  actorRuntimeController.lock('cash_test_actor_cleanup');
+  localTenantAccessController.reset();
   vi.restoreAllMocks();
   closeTestTenantRuntime();
 });
@@ -455,6 +493,7 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
 
   it('counts two independently committed cash sales in their linked session when an order predates opening', async () => {
     await db.table(STORES.MENU).put(saleProduct);
+    const actor = grantCashActor();
     const orderCreatedBeforeOpen = new Date(Date.now() - 60_000).toISOString();
     await db.table(STORES.SALES).put({
       id: 'order-created-before-cash-open',
@@ -466,7 +505,8 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
     });
     const cashSession = await cashLocalRepository.openCashSession({
-      actorKey: 'admin:a',
+      actorKey: actor.actorKey,
+      actorGeneration: actor.generation,
       localStationKey: stationKey,
       montoInicial: '100'
     });
@@ -529,8 +569,10 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
 
   it('does not carry a previous session sale into the next session or change its closed totals', async () => {
     await db.table(STORES.MENU).put(saleProduct);
+    const actor = grantCashActor();
     const previousSession = await cashLocalRepository.openCashSession({
-      actorKey: 'admin:a',
+      actorKey: actor.actorKey,
+      actorGeneration: actor.generation,
       localStationKey: stationKey,
       montoInicial: '100'
     });
@@ -547,11 +589,12 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       cashSessionId: previousSession.id,
       countedAmount: '120',
       nextShiftFund: '0',
-      actorKey: 'admin:a',
+      actorKey: actor.actorKey,
       localStationKey: stationKey
     });
     const nextSession = await cashLocalRepository.openCashSession({
-      actorKey: 'admin:a',
+      actorKey: actor.actorKey,
+      actorGeneration: actor.generation,
       localStationKey: stationKey,
       montoInicial: '100'
     });
