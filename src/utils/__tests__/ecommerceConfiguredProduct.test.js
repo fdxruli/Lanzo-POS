@@ -19,6 +19,7 @@ const detail = normalizePublicProductConfiguration({
   product: {
     id: 'product-1', name: 'Tenis Urban', currency: 'MXN', basePrice: 100,
     configurationType: 'variant_parent', configurationVersion: 4,
+    configurationRevision: 'a'.repeat(64),
     requiresConfiguration: true, hasVariants: true, hasOptionGroups: true,
     isAvailable: true
   },
@@ -48,6 +49,21 @@ describe('ecommerceConfiguredProduct', () => {
   it('normalizes public detail without private fields', () => {
     expect(detail.product).toMatchObject({ id: 'product-1', configurationVersion: 4 });
     expect(JSON.stringify(detail)).not.toContain('sourceIngredientId');
+  });
+
+  it('blocks configuration when a raw price is missing or invalid', () => {
+    const invalidDetail = normalizePublicProductConfiguration({
+      success: true,
+      product: { id: 'product-invalid', basePrice: null, isAvailable: true },
+      variants: [],
+      groups: []
+    });
+
+    expect(invalidDetail.product.basePrice).toBe(0);
+    expect(invalidDetail.pricingValid).toBe(false);
+    expect(validateEcommerceConfiguration(invalidDetail).errors.configuration)
+      .toMatch(/No se pudo validar el precio/);
+    expect(buildEcommerceConfiguredCartLine(invalidDetail).success).toBe(false);
   });
 
   it('derives variant attributes and valid concrete combinations', () => {
@@ -117,7 +133,10 @@ describe('ecommerceConfiguredProduct', () => {
     });
     expect(line).toMatchObject({ success: true, productId: 'product-1', quantity: 2, maxQuantity: 2, estimatedUnitPrice: 145 });
     expect(line.configurationSnapshot.variant.name).toBe('Negro / 26');
-    expect(line.display.groups[0].options).toEqual(['Rojas']);
+    expect(line.display.groups).toEqual([
+      { name: 'Extras', options: ['Protector'] },
+      { name: 'Agujetas', options: ['Rojas'] }
+    ]);
   });
 
   it('creates a minimal server payload without client prices or names', () => {
@@ -126,7 +145,9 @@ describe('ecommerceConfiguredProduct', () => {
     });
     expect(buildMinimalConfiguredOrderItem({ productId: line.lineKey, quantity: 1, price: 999 })).toEqual({
       productId: 'product-1', quantity: 1, variantId: 'variant-black-26',
-      selections: canonicalizeEcommerceSelections(validSelections)
+      selections: canonicalizeEcommerceSelections(validSelections),
+      configurationVersion: 1,
+      configurationRevision: ''
     });
   });
 });

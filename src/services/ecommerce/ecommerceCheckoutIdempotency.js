@@ -3,9 +3,9 @@ import {
   isEcommerceDeliveryAddressRecord,
   normalizeEcommerceDeliveryAddress
 } from '../../utils/ecommerceDeliveryAddress';
+import Big from 'big.js';
 
 const ATTEMPT_VERSION = 1;
-const ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 160;
 const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -36,6 +36,34 @@ const normalizeSelections = (selections) => asArray(selections)
   }))
   .filter((selection) => selection.groupId)
   .sort((left, right) => left.groupId.localeCompare(right.groupId));
+const normalizeAcceptedMoney = (value) => {
+  try {
+    return new Big(value ?? 0).round(2).toFixed(2);
+  } catch {
+    return '0.00';
+  }
+};
+const normalizeAcceptedPricing = (pricing) => {
+  if (!pricing || typeof pricing !== 'object' || Array.isArray(pricing)) return null;
+  return {
+    pricingMode: pricing.pricingMode === 'wholesale' ? 'wholesale' : 'standard',
+    baseUnitPrice: normalizeAcceptedMoney(pricing.baseUnitPrice),
+    wholesaleBaseUnitPrice: pricing.wholesaleBaseUnitPrice === null
+      || pricing.wholesaleBaseUnitPrice === undefined
+      ? null
+      : normalizeAcceptedMoney(pricing.wholesaleBaseUnitPrice),
+    appliedUnitPrice: normalizeAcceptedMoney(pricing.appliedUnitPrice),
+    wholesaleTierRef: asText(pricing.wholesaleTierRef, 160) || null,
+    wholesaleMinQuantity: pricing.wholesaleMinQuantity !== null
+      && pricing.wholesaleMinQuantity !== undefined
+      && Number.isInteger(Number(pricing.wholesaleMinQuantity))
+      ? Number(pricing.wholesaleMinQuantity)
+      : null,
+    variantAdjustment: normalizeAcceptedMoney(pricing.variantAdjustment),
+    optionsAdjustment: normalizeAcceptedMoney(pricing.optionsAdjustment),
+    lineTotal: normalizeAcceptedMoney(pricing.lineTotal)
+  };
+};
 
 export function getCheckoutAttemptStorageKey(slug) {
   return `lanzo:ecommerce:checkout-attempt:${asText(slug).toLowerCase() || 'unknown'}:v1`;
@@ -56,8 +84,9 @@ export function normalizeCheckoutPayload({ slug, customer, items }) {
       const variantId = asText(item?.variantId, 80);
       const selections = normalizeSelections(item?.selections);
       const configurationRevision = normalizeConfigurationRevision(item?.configurationRevision);
+      const acceptedPricing = normalizeAcceptedPricing(item?.acceptedPricing);
       const configured = Boolean(variantId || selections.length || configurationRevision);
-      return configured ? {
+      const normalized = configured ? {
         productId,
         quantity,
         variantId: variantId || null,
@@ -65,6 +94,7 @@ export function normalizeCheckoutPayload({ slug, customer, items }) {
         configurationVersion: Math.max(1, Math.floor(Number(item?.configurationVersion) || 1)),
         configurationRevision
       } : { productId, quantity };
+      return acceptedPricing ? { ...normalized, acceptedPricing } : normalized;
     })
     .sort((left, right) => (
       left.productId.localeCompare(right.productId)
@@ -162,6 +192,8 @@ function readAttempt(storage, storageKey) {
       || typeof parsed.payloadHash !== 'string'
       || !/^[a-f0-9]{64}$/.test(parsed.payloadHash)
       || typeof parsed.createdAt !== 'string'
+      || (parsed.status !== undefined && !['pending', 'ambiguous'].includes(parsed.status))
+      || (parsed.acceptedItems !== undefined && !Array.isArray(parsed.acceptedItems))
     ) return null;
     return parsed;
   } catch {
@@ -198,12 +230,8 @@ export async function getOrCreateCheckoutAttempt(slug, payload, {
   const storageKey = getCheckoutAttemptStorageKey(slug);
   const existing = readAttempt(storage, storageKey);
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
-  const createdAtMs = existing ? Date.parse(existing.createdAt) : Number.NaN;
-  const isFresh = Number.isFinite(createdAtMs)
-    && createdAtMs <= nowMs + (5 * 60 * 1000)
-    && nowMs - createdAtMs < ATTEMPT_MAX_AGE_MS;
 
-  if (existing && isFresh && existing.payloadHash === payloadHash) {
+  if (existing && existing.payloadHash === payloadHash) {
     return {
       idempotencyKey: existing.idempotencyKey,
       payloadHash,
@@ -212,11 +240,20 @@ export async function getOrCreateCheckoutAttempt(slug, payload, {
     };
   }
 
+  if (existing) {
+    throw new EcommerceCheckoutIdempotencyError(
+      'ECOMMERCE_CHECKOUT_RESULT_UNCERTAIN',
+      'El envío anterior todavía puede haberse registrado. Reintenta el mismo pedido antes de cambiarlo.'
+    );
+  }
+
   const attempt = {
     version: ATTEMPT_VERSION,
     idempotencyKey: createCheckoutIdempotencyKey(cryptoImpl),
     payloadHash,
-    createdAt: new Date(nowMs).toISOString()
+    createdAt: new Date(nowMs).toISOString(),
+    status: 'pending',
+    acceptedItems: normalizedPayload.items
   };
   writeAttempt(storage, storageKey, attempt);
 
@@ -226,6 +263,32 @@ export async function getOrCreateCheckoutAttempt(slug, payload, {
     createdAt: attempt.createdAt,
     reused: false
   };
+}
+
+export function getStoredCheckoutAttempt(slug, {
+  storage = globalThis.sessionStorage
+} = {}) {
+  if (!storage || typeof storage.getItem !== 'function') return null;
+  return readAttempt(storage, getCheckoutAttemptStorageKey(slug));
+}
+
+export function markCheckoutAttemptAmbiguous(slug, expectedIdempotencyKey = '', {
+  storage = globalThis.sessionStorage
+} = {}) {
+  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return false;
+  }
+  const storageKey = getCheckoutAttemptStorageKey(slug);
+  const current = readAttempt(storage, storageKey);
+  if (!current || (expectedIdempotencyKey && current.idempotencyKey !== expectedIdempotencyKey)) {
+    return false;
+  }
+  try {
+    writeAttempt(storage, storageKey, { ...current, status: 'ambiguous' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearCheckoutAttempt(slug, expectedIdempotencyKey = '', {
@@ -250,6 +313,10 @@ export function isAmbiguousCheckoutError(error) {
   return [
     'ECOMMERCE_PUBLIC_TIMEOUT',
     'ECOMMERCE_PUBLIC_NETWORK_ERROR',
-    'ECOMMERCE_ORDER_CREATE_FAILED'
+    'ECOMMERCE_ORDER_CREATE_FAILED',
+    'ECOMMERCE_CHECKOUT_RESULT_UNCERTAIN',
+    'ECOMMERCE_IDEMPOTENCY_CONFLICT',
+    'IDEMPOTENCY_CONFLICT',
+    'ORDER_ALREADY_PROCESSING'
   ].includes(error?.code);
 }

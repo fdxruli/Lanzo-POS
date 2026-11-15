@@ -16,14 +16,20 @@ import {
 } from '../services/ecommerce/ecommercePublicService';
 import {
   clearCheckoutAttempt,
-  getOrCreateCheckoutAttempt
+  getOrCreateCheckoutAttempt,
+  getStoredCheckoutAttempt,
+  isAmbiguousCheckoutError,
+  markCheckoutAttemptAmbiguous
 } from '../services/ecommerce/ecommerceCheckoutIdempotency';
 import {
   getAvailabilityDetail,
   getAvailabilityLabel,
   getAvailabilityRefreshDelay
 } from '../utils/ecommerceAvailability';
-import { buildMinimalConfiguredOrderItem } from '../utils/ecommerceConfiguredProduct';
+import {
+  buildAcceptedEcommerceOrderItems,
+  haveSameAcceptedEcommerceEconomics
+} from '../utils/ecommercePriceAcceptance';
 import {
   normalizeEcommercePortalTemplate
 } from '../utils/ecommercePortalTheme';
@@ -46,6 +52,8 @@ const AVAILABILITY_ERROR_CODES = new Set([
   'ECOMMERCE_STORE_CLOSED',
   'ECOMMERCE_SCHEDULE_NOT_CONFIGURED',
   'ECOMMERCE_CONFIGURATION_CHANGED',
+  'ECOMMERCE_CATALOG_REVISION_CHANGED',
+  'ECOMMERCE_PRICE_CONFIRMATION_CHANGED',
   'ECOMMERCE_PRODUCT_UNAVAILABLE',
   'ECOMMERCE_PRODUCT_NOT_AVAILABLE',
   'ECOMMERCE_STOCK_LIMIT_EXCEEDED',
@@ -119,6 +127,9 @@ function PublicStorePage() {
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [checkoutError, setCheckoutError] = useState(null);
   const [checkoutOpening, setCheckoutOpening] = useState(false);
+  const [checkoutAcceptedItems, setCheckoutAcceptedItems] = useState(null);
+  const [checkoutObservedItems, setCheckoutObservedItems] = useState(null);
+  const [checkoutRequestUncertain, setCheckoutRequestUncertain] = useState(false);
 
   const portal = portalResult?.portal || null;
   const publicSiteDocument = useMemo(() => normalizeEcommerceSiteDocument(portalResult?.site?.document, {
@@ -349,6 +360,9 @@ function PublicStorePage() {
     setConfirmedOrder(null);
     setCheckoutError(null);
     setCheckoutOpening(false);
+    setCheckoutAcceptedItems(null);
+    setCheckoutObservedItems(null);
+    setCheckoutRequestUncertain(false);
 
     const isCurrentRequest = () => (
       mountedRef.current
@@ -407,7 +421,7 @@ function PublicStorePage() {
     };
   }, [applyAuthoritativePortalStatus, loadCatalog, slug, storeReloadKey]);
 
-  const revalidateCatalogRevision = useCallback((reason = 'visible') => {
+  const revalidateCatalogRevision = useCallback((reason = 'visible', { forceCatalog = false } = {}) => {
     if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
     if (!portal || !isOnlineNow()) {
       setConnectionOnline(false);
@@ -438,7 +452,7 @@ function PublicStorePage() {
         cachePolicyRef.current = result.cachePolicy || null;
 
         const nextRevision = normalizeRevision(result.catalogRevision);
-        if (nextRevision === requestRevision) {
+        if (nextRevision === requestRevision && !forceCatalog) {
           setOfflineCatalog(false);
           setCatalogValidated(catalogReady);
           return true;
@@ -803,8 +817,17 @@ function PublicStorePage() {
       setCheckoutOpening(true);
       const revalidated = await revalidateCatalogRevision('checkout-open');
       if (!revalidated || availabilityRef.current?.acceptingOrders !== true) return false;
+      const existingAttempt = getStoredCheckoutAttempt(activeSlugRef.current);
+      const restoredItems = Array.isArray(existingAttempt?.acceptedItems)
+        ? existingAttempt.acceptedItems
+        : null;
       setCheckoutError(null);
       setConfirmedOrder(null);
+      if (existingAttempt) {
+        setCheckoutAcceptedItems(restoredItems);
+        setCheckoutObservedItems(restoredItems);
+      }
+      setCheckoutRequestUncertain(Boolean(existingAttempt));
       setCheckoutStatus('editing');
       setCheckoutOpen(true);
       setIsCartOpen(false);
@@ -833,7 +856,10 @@ function PublicStorePage() {
   ]);
 
   const submitCheckout = useCallback((customer) => {
-    if (!checkoutCatalogReady || !cart.isReconciled || cart.hasStaleConfigurations) {
+    if (
+      !checkoutCatalogReady
+      || (!checkoutRequestUncertain && (!cart.isReconciled || cart.hasStaleConfigurations))
+    ) {
       return Promise.reject(new EcommercePublicError(
         'ECOMMERCE_CATALOG_NOT_VALIDATED',
         'Actualiza las opciones del carrito antes de confirmar el pedido.'
@@ -841,9 +867,19 @@ function PublicStorePage() {
     }
     if (activeCheckoutPromiseRef.current) return activeCheckoutPromiseRef.current;
 
+    const acceptedItems = checkoutAcceptedItems;
+    const acceptedStillCurrent = Array.isArray(acceptedItems)
+      && haveSameAcceptedEcommerceEconomics(acceptedItems, cart.items);
+    if (!Array.isArray(acceptedItems) || (!acceptedStillCurrent && !checkoutRequestUncertain)) {
+      return Promise.reject(new EcommercePublicError(
+        'ECOMMERCE_PRICE_CONFIRMATION_CHANGED',
+        'Revisa y acepta el total actualizado antes de confirmar el pedido.'
+      ));
+    }
+
     const requestSlug = activeSlugRef.current;
     const requestRevision = activeCatalogRevisionRef.current;
-    const items = cart.items.map(buildMinimalConfiguredOrderItem);
+    const items = acceptedItems;
 
     const requestPromise = (async () => {
       setCheckoutError(null);
@@ -851,6 +887,7 @@ function PublicStorePage() {
 
       try {
         const attempt = await getOrCreateCheckoutAttempt(requestSlug, { customer, items });
+        setCheckoutRequestUncertain(true);
         if (
           activeSlugRef.current !== requestSlug
           || activeCatalogRevisionRef.current !== requestRevision
@@ -870,6 +907,7 @@ function PublicStorePage() {
         if (!mountedRef.current || activeSlugRef.current !== requestSlug) return response;
 
         clearCheckoutAttempt(requestSlug, attempt.idempotencyKey);
+        setCheckoutRequestUncertain(false);
         cart.clearCart();
         setConfirmedOrder(response);
         setCheckoutStatus('confirmed');
@@ -887,10 +925,25 @@ function PublicStorePage() {
             clearCheckoutAttempt(requestSlug);
             cart.markConfiguredLinesStale();
           }
+          if (isAmbiguousCheckoutError(safeError)) {
+            const storedAttempt = getStoredCheckoutAttempt(requestSlug);
+            if (safeError.code !== 'ECOMMERCE_CHECKOUT_RESULT_UNCERTAIN') {
+              markCheckoutAttemptAmbiguous(requestSlug, storedAttempt?.idempotencyKey);
+            }
+            setCheckoutRequestUncertain(true);
+          } else {
+            clearCheckoutAttempt(requestSlug);
+            setCheckoutRequestUncertain(false);
+          }
           setCheckoutError(safeError);
           setCheckoutStatus('recoverable_error');
           if (AVAILABILITY_ERROR_CODES.has(safeError.code)) {
-            void revalidateCatalogRevision('checkout-configuration-rejected');
+            void revalidateCatalogRevision(
+              safeError.code === 'ECOMMERCE_PRICE_CONFIRMATION_CHANGED'
+                ? 'checkout-price-rejected'
+                : 'checkout-configuration-rejected',
+              { forceCatalog: safeError.code === 'ECOMMERCE_PRICE_CONFIRMATION_CHANGED' }
+            );
           }
         }
         throw error;
@@ -905,7 +958,33 @@ function PublicStorePage() {
     };
     requestPromise.then(releaseActiveRequest, releaseActiveRequest);
     return requestPromise;
-  }, [cart, catalogValidated, checkoutCatalogReady, revalidateCatalogRevision]);
+  }, [cart, catalogValidated, checkoutAcceptedItems, checkoutCatalogReady, checkoutRequestUncertain, revalidateCatalogRevision]);
+
+  useEffect(() => {
+    if (
+      !checkoutOpen
+      || !checkoutCatalogReady
+      || !cart.isReconciled
+      || cart.hasStaleConfigurations
+    ) return;
+    const currentItems = buildAcceptedEcommerceOrderItems(cart.items);
+    setCheckoutObservedItems((existing) => existing || currentItems);
+  }, [cart.hasStaleConfigurations, cart.isReconciled, cart.items, checkoutCatalogReady, checkoutOpen]);
+
+  const acceptCurrentCheckoutTotal = useCallback(() => {
+    if (checkoutRequestUncertain || !cart.isReconciled || cart.hasStaleConfigurations) return;
+    const acceptedItems = buildAcceptedEcommerceOrderItems(cart.items);
+    if (!Array.isArray(acceptedItems)) return;
+    setCheckoutAcceptedItems(acceptedItems);
+    setCheckoutObservedItems(acceptedItems);
+    setCheckoutError(null);
+    setCheckoutStatus('editing');
+  }, [cart.hasStaleConfigurations, cart.isReconciled, cart.items, checkoutRequestUncertain]);
+
+  const clearCheckoutPriceAcceptance = useCallback(() => {
+    if (checkoutRequestUncertain) return;
+    setCheckoutAcceptedItems(null);
+  }, [checkoutRequestUncertain]);
 
   const closeCheckout = useCallback(() => {
     if (checkoutStatus === 'submitting') return;
@@ -921,12 +1000,26 @@ function PublicStorePage() {
     setCheckoutStatus('idle');
     setConfirmedOrder(null);
     setCheckoutError(null);
+    setCheckoutAcceptedItems(null);
+    setCheckoutObservedItems(null);
+    setCheckoutRequestUncertain(false);
   }, []);
+
+  const reviewCheckoutCart = useCallback(() => {
+    if (checkoutStatus === 'submitting') return;
+    setCheckoutOpen(false);
+    setCheckoutStatus('idle');
+    setCheckoutError(null);
+    setIsCartOpen(true);
+  }, [checkoutStatus]);
 
   const refreshStaleCart = useCallback(() => {
     if (checkoutStatus === 'submitting') return;
-    void revalidateCatalogRevision('checkout-refresh');
-  }, [checkoutStatus, revalidateCatalogRevision]);
+    void revalidateCatalogRevision('checkout-refresh', {
+      forceCatalog: checkoutError?.code === 'ECOMMERCE_PRICE_CONFIRMATION_CHANGED'
+        || checkoutError?.code === 'ECOMMERCE_CATALOG_REVISION_CHANGED'
+    });
+  }, [checkoutError?.code, checkoutStatus, revalidateCatalogRevision]);
 
   if (storeStatus === 'loading') {
     return (
@@ -1106,9 +1199,15 @@ function PublicStorePage() {
         portal={portal}
         features={features}
         cart={cart}
+        acceptedItems={checkoutAcceptedItems}
+        observedItems={checkoutObservedItems}
+        requestUncertain={checkoutRequestUncertain}
         confirmedOrder={confirmedOrder}
         onClose={closeCheckout}
         onSubmit={submitCheckout}
+        onAcceptCurrentTotal={acceptCurrentCheckoutTotal}
+        onClearPriceAcceptance={clearCheckoutPriceAcceptance}
+        onReviewCart={reviewCheckoutCart}
         onRefreshCart={refreshStaleCart}
         onContinue={continueShopping}
         acceptingOrders={availability?.acceptingOrders === true}

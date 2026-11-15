@@ -4,15 +4,29 @@ import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PublicCheckoutDialog from '../PublicCheckoutDialog';
+import { buildAcceptedEcommerceOrderItems } from '../../../../utils/ecommercePriceAcceptance';
 
 const baseCart = {
-  items: [{ product: { id: 'product-1' }, quantity: 1 }],
+  items: [{
+    product: { id: 'product-1', price: 100 },
+    quantity: 1,
+    pricingMode: 'standard',
+    baseUnitPrice: 100,
+    wholesaleBaseUnitPrice: null,
+    appliedUnitPrice: 100,
+    wholesaleTierRef: null,
+    wholesaleMinQuantity: null,
+    variantAdjustment: 0,
+    optionsAdjustment: 0,
+    lineTotal: '100.00'
+  }],
   totalUnits: 1,
   subtotal: '100.00',
   currency: 'MXN',
   minimumReached: true,
   isReconciled: true,
 };
+const baseAcceptedItems = buildAcceptedEcommerceOrderItems(baseCart.items);
 
 const basePortal = {
   slug: 'negocio-a',
@@ -27,10 +41,16 @@ const baseProps = (overrides = {}) => ({
   portal: basePortal,
   features: { whatsappCheckout: true },
   cart: baseCart,
+  acceptedItems: baseAcceptedItems,
+  observedItems: baseAcceptedItems,
+  requestUncertain: false,
   confirmedOrder: null,
   onClose: vi.fn(),
   onSubmit: vi.fn().mockResolvedValue(undefined),
   onRefreshCart: vi.fn(),
+  onAcceptCurrentTotal: vi.fn(),
+  onClearPriceAcceptance: vi.fn(),
+  onReviewCart: vi.fn(),
   onContinue: vi.fn(),
   ...overrides,
 });
@@ -204,6 +224,108 @@ describe('PublicCheckoutDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Actualizar carrito' }));
     expect(onRefreshCart).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires a separate acceptance when the checkout total has not been accepted yet', async () => {
+    const user = userEvent.setup();
+    const view = renderDialog({ acceptedItems: null });
+
+    await user.type(screen.getByLabelText('Nombre *'), 'Cliente QA');
+    await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+    expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: /Acepto el total de/ }));
+    expect(view.props.onAcceptCurrentTotal).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks acceptance and checkout when current pricing is invalid', () => {
+    const invalidCart = {
+      ...baseCart,
+      subtotal: '0.00',
+      items: [{
+        ...baseCart.items[0],
+        product: { ...baseCart.items[0].product, pricingValid: false },
+        baseUnitPrice: 0,
+        appliedUnitPrice: 0,
+        lineTotal: '0.00'
+      }]
+    };
+    renderDialog({ cart: invalidCart, acceptedItems: null, observedItems: null });
+
+    expect(screen.getByText('Precio no disponible')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/No se pudo validar el precio/);
+    expect(screen.queryByRole('checkbox', { name: /Acepto el total de/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeDisabled();
+  });
+
+  it('keeps the same idempotent recovery available when refreshed pricing is invalid', () => {
+    const invalidCart = {
+      ...baseCart,
+      items: [{
+        ...baseCart.items[0],
+        product: { ...baseCart.items[0].product, pricingValid: false },
+        baseUnitPrice: 0,
+        appliedUnitPrice: 0,
+        lineTotal: '0.00'
+      }]
+    };
+    renderDialog({
+      cart: invalidCart,
+      acceptedItems: baseAcceptedItems,
+      observedItems: baseAcceptedItems,
+      requestUncertain: true,
+      status: 'recoverable_error'
+    });
+
+    expect(screen.getByRole('button', { name: 'Reintentar envío seguro' })).toBeEnabled();
+  });
+
+  it('shows the previous and current totals after the catalog changes during checkout', async () => {
+    const user = userEvent.setup();
+    const originalCart = {
+      ...baseCart,
+      items: [{
+        product: { id: 'product-1' }, quantity: 1, pricingMode: 'standard',
+        baseUnitPrice: 100, appliedUnitPrice: 100, variantAdjustment: 0,
+        optionsAdjustment: 0, lineTotal: '100.00'
+      }]
+    };
+    const changedCart = {
+      ...originalCart,
+      subtotal: '120.00',
+      items: [{ ...originalCart.items[0], baseUnitPrice: 120, appliedUnitPrice: 120, lineTotal: '120.00' }]
+    };
+    const acceptedItems = buildAcceptedEcommerceOrderItems(originalCart.items);
+    const onAcceptCurrentTotal = vi.fn();
+    renderDialog({
+      cart: changedCart,
+      acceptedItems,
+      observedItems: acceptedItems,
+      onAcceptCurrentTotal
+    });
+
+    expect(screen.getByText('El precio de tu pedido cambió')).toBeInTheDocument();
+    expect(screen.getByText('$100.00')).toBeInTheDocument();
+    expect(screen.getAllByText('$120.00').length).toBeGreaterThan(0);
+    expect(screen.getByText('+$20.00')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aceptar nuevo total y continuar' }));
+    expect(onAcceptCurrentTotal).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a new request until a conflicting idempotency order is checked', () => {
+    renderDialog({
+      status: 'recoverable_error',
+      requestUncertain: true,
+      error: Object.assign(new Error('El pedido ya está registrado.'), {
+        code: 'ECOMMERCE_IDEMPOTENCY_CONFLICT',
+        action: 'check_orders'
+      })
+    });
+
+    expect(screen.getByText(/Confirma con el negocio si lo recibió antes de intentar otro/))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pedido pendiente de verificación' }))
+      .toBeDisabled();
   });
 
   it('keeps personal data after a recoverable error', async () => {

@@ -143,6 +143,7 @@ async function openAndFillCheckout(user) {
   await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
   await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
   await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+  await user.click(screen.getByRole('checkbox', { name: /Acepto el total de/ }));
 }
 
 async function fillDeliveryAddress(user, {
@@ -298,6 +299,47 @@ describe('PublicStorePage checkout integration', () => {
     await waitFor(() => expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).toBeNull());
   });
 
+  it('requires a second explicit acceptance after Supabase rejects a changed price', async () => {
+    const changedCatalog = {
+      ...catalogResult,
+      items: [{ ...catalogResult.items[0], price: 120 }]
+    };
+    serviceMocks.createPublicOrder
+      .mockRejectedValueOnce(new EcommercePublicError(
+        'ECOMMERCE_PRICE_CONFIRMATION_CHANGED',
+        'El precio del pedido cambió.'
+      ))
+      .mockResolvedValueOnce(successfulOrder(false, { order: { total: 120 } }));
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+      ...portalResult(),
+      catalogRevision: 2
+    });
+    serviceMocks.getPublicCatalog.mockResolvedValue(changedCatalog);
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    expect(await screen.findByText('El precio de tu pedido cambió')).toBeInTheDocument();
+    expect(screen.getByText('$80.00')).toBeInTheDocument();
+    expect(screen.getAllByText('$120.00').length).toBeGreaterThan(0);
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1);
+    expect(serviceMocks.createPublicOrder.mock.calls[0][1].items[0].acceptedPricing.lineTotal)
+      .toBe('80.00');
+
+    await user.click(screen.getByRole('button', { name: 'Aceptar nuevo total y continuar' }));
+    expect(screen.queryByText('El precio de tu pedido cambió')).not.toBeInTheDocument();
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByText('PED-1001')).toBeInTheDocument();
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(2);
+    expect(serviceMocks.createPublicOrder.mock.calls[1][1].items[0].acceptedPricing.lineTotal)
+      .toBe('120.00');
+    expect(serviceMocks.createPublicOrder.mock.calls[1][1].idempotencyKey)
+      .not.toBe(serviceMocks.createPublicOrder.mock.calls[0][1].idempotencyKey);
+  });
+
   it('keeps a submitting checkout visible through BFCache recovery and shows confirmation', async () => {
     const pendingOrder = deferred();
     serviceMocks.createPublicOrder.mockReturnValue(pendingOrder.promise);
@@ -442,7 +484,7 @@ describe('PublicStorePage checkout integration', () => {
       fulfillmentMethod: 'delivery'
     });
 
-    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    await user.click(screen.getByRole('button', { name: 'Reintentar envío seguro' }));
     expect(await screen.findByText('PED-1001')).toBeInTheDocument();
     expect(serviceMocks.createPublicOrder.mock.calls[1][1].idempotencyKey).toBe(firstKey);
   });

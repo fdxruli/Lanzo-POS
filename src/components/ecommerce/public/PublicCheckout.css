@@ -67,6 +67,91 @@
   font-size: 1.2rem;
 }
 
+.public-checkout-price-acceptance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-text-strong);
+  line-height: 1.45;
+}
+
+.public-checkout-price-acceptance input {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0.12rem 0 0;
+  accent-color: var(--ui-color-primary);
+}
+
+.public-checkout-price-change {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--ui-color-warning, #d97706) 45%, var(--ui-border-color));
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface) 91%, var(--ui-color-warning, #d97706));
+  color: var(--ui-text-strong);
+}
+
+.public-checkout-price-change > strong {
+  font-size: 1rem;
+}
+
+.public-checkout-price-change dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.public-checkout-price-change dl > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.public-checkout-price-change dt {
+  color: var(--ui-text-muted);
+  font-size: 0.75rem;
+}
+
+.public-checkout-price-change dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.public-checkout-price-change p {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.public-checkout-price-change__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.public-checkout-price-change__actions > button:not(.ui-button) {
+  min-height: 2.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-strong);
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.public-checkout-price-change__actions .ui-button {
+  min-height: 2.75rem;
+  padding-inline: 0.9rem;
+}
+
 .public-checkout-error {
   display: flex;
   align-items: flex-start;

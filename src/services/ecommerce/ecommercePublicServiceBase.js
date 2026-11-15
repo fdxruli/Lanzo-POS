@@ -101,6 +101,7 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_PRODUCT_NOT_AVAILABLE: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_PRODUCT_UNAVAILABLE: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catálogo cambió mientras preparabas el pedido. Actualízalo e inténtalo nuevamente.',
+  ECOMMERCE_PRICE_CONFIRMATION_CHANGED: 'El precio del pedido cambió. Actualiza el carrito, revisa el nuevo total y acéptalo para continuar.',
   ECOMMERCE_INVALID_QUANTITY: 'Revisa las cantidades del carrito.',
   ECOMMERCE_STOCK_LIMIT_EXCEEDED: 'La cantidad solicitada supera la disponibilidad actual.',
   ECOMMERCE_INSUFFICIENT_STOCK: 'La cantidad solicitada supera la disponibilidad actual.',
@@ -146,6 +147,23 @@ const asBoolean = (value, fallback = false) => (typeof value === 'boolean' ? val
 const asNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+const PUBLIC_MONEY_PATTERN = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+const MAX_PUBLIC_MONEY = 9999999999.99;
+const isValidPublicMoney = (value) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return false;
+  if (typeof value === 'number' && !Number.isFinite(value)) return false;
+  const text = typeof value === 'string' ? value.trim() : String(value);
+  if (!text || text.length > 64 || !PUBLIC_MONEY_PATTERN.test(text)) return false;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_PUBLIC_MONEY;
+};
+const isValidWholesaleTier = (tier) => {
+  const minQuantity = Number(tier?.minQuantity ?? tier?.min_quantity);
+  const unitPrice = tier?.unitPrice ?? tier?.unit_price ?? tier?.price;
+  return Number.isSafeInteger(minQuantity)
+    && minQuantity > 0
+    && isValidPublicMoney(unitPrice);
 };
 const asRevision = (value, fallback = null) => {
   const parsed = Number(value);
@@ -529,19 +547,22 @@ function normalizeCatalogResult(data, expectedRevision = null) {
     const stockMode = ['hidden', 'status', 'exact'].includes(stock.mode)
       ? stock.mode
       : 'hidden';
+    const rawWholesaleTiers = asArray(item.wholesaleTiers);
     return {
       id: asText(item.id),
       name: asText(item.name, 'Producto'),
       description: asText(item.description),
       categoryName: asText(item.categoryName),
       price: Math.max(0, asNumber(item.price, 0)),
+      pricingValid: isValidPublicMoney(item.price)
+        && rawWholesaleTiers.every(isValidWholesaleTier),
       currency: asText(item.currency, DEFAULT_CURRENCY).toUpperCase(),
       imageUrl: asText(item.imageUrl),
       isAvailable: asBoolean(item.isAvailable, true),
       displayOrder: asNumber(item.displayOrder, 0),
       configuration: normalizeCatalogConfiguration(item.configuration),
       wholesaleEnabled: item.wholesaleEnabled === true,
-      wholesaleTiers: asArray(item.wholesaleTiers).map((tier) => ({
+      wholesaleTiers: rawWholesaleTiers.map((tier) => ({
         sourceTierRef: asText(tier?.sourceTierRef),
         minQuantity: Math.max(1, Math.floor(asNumber(tier?.minQuantity, 1))),
         unitPrice: Math.max(0, asNumber(tier?.unitPrice, 0))
@@ -649,15 +670,36 @@ function normalizeCustomer(customer) {
 }
 
 function normalizeOrderItems(items) {
-  return asArray(items).map(buildMinimalConfiguredOrderItem).map((item) => {
+  return asArray(items).map((source) => ({
+    ...(source?.acceptedPricing && asText(source.productId)
+      ? source
+      : buildMinimalConfiguredOrderItem(source)),
+    ...(source?.acceptedPricing && typeof source.acceptedPricing === 'object'
+      ? { acceptedPricing: source.acceptedPricing }
+      : {})
+  })).map((item) => {
     const productId = asText(item.productId);
     const quantity = Number(item.quantity);
+    const acceptedPricing = item.acceptedPricing && typeof item.acceptedPricing === 'object'
+      ? Object.fromEntries(Object.entries({
+          pricingMode: item.acceptedPricing.pricingMode,
+          baseUnitPrice: item.acceptedPricing.baseUnitPrice,
+          wholesaleBaseUnitPrice: item.acceptedPricing.wholesaleBaseUnitPrice,
+          appliedUnitPrice: item.acceptedPricing.appliedUnitPrice,
+          wholesaleTierRef: item.acceptedPricing.wholesaleTierRef,
+          wholesaleMinQuantity: item.acceptedPricing.wholesaleMinQuantity,
+          variantAdjustment: item.acceptedPricing.variantAdjustment,
+          optionsAdjustment: item.acceptedPricing.optionsAdjustment,
+          lineTotal: item.acceptedPricing.lineTotal
+        }).filter(([, value]) => value !== undefined))
+      : null;
+    const acceptance = acceptedPricing ? { acceptedPricing } : {};
     const configured = Boolean(
       item.variantId
       || asArray(item.selections).length
       || asConfigurationRevision(item.configurationRevision)
     );
-    if (!configured) return { productId, quantity };
+    if (!configured) return { productId, quantity, ...acceptance };
 
     const configurationRevision = asConfigurationRevision(item.configurationRevision);
     return {
@@ -668,7 +710,8 @@ function normalizeOrderItems(items) {
         selections: canonicalizeEcommerceSelections(item.selections)
       } : {}),
       configurationVersion: Math.max(1, Math.floor(Number(item.configurationVersion) || 1)),
-      configurationRevision
+      configurationRevision,
+      ...acceptance
     };
   });
 }
