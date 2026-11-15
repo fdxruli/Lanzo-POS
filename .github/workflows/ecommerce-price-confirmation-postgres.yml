@@ -1,0 +1,92 @@
+name: Ecommerce Price Confirmation PostgreSQL 17
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ecommerce-price-confirmation-postgres.yml
+      - supabase/config.toml
+      - supabase/migrations/20261114231943_ecommerce_price_confirmation_v1.sql
+      - supabase/tests/ecommerce_price_confirmation_v1_test.sql
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: supabase/setup-cli@d347ba47d3fb7eeeddbbc793bc8d4779caf773ea
+        with:
+          version: 2.79.0
+
+      - name: Start isolated Supabase PostgreSQL 17 and apply migrations
+        run: |
+          supabase start
+          supabase db reset --local --no-seed
+
+      - name: Verify SQL protections and run transaction test
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          db_url="$(supabase status -o env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')"
+          test -n "${db_url}"
+          psql "${db_url}" --no-psqlrc --set ON_ERROR_STOP=1 <<'SQL'
+          do $verify$
+          declare
+            v_create_order oid := 'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure;
+            v_public_error oid := 'private.ecommerce_public_error(text)'::regprocedure;
+          begin
+            if current_setting('server_version_num')::integer / 10000 <> 17 then
+              raise exception 'EXPECTED_POSTGRESQL_17';
+            end if;
+            if to_regprocedure('extensions.digest(bytea,text)') is null
+               or not exists (select 1 from pg_extension where extname = 'pgcrypto') then
+              raise exception 'PGCRYPTO_DIGEST_MISSING';
+            end if;
+            if (select data_type from information_schema.columns
+                where table_schema = 'public' and table_name = 'ecommerce_orders'
+                  and column_name = 'metadata') is distinct from 'jsonb' then
+              raise exception 'ORDER_METADATA_NOT_JSONB';
+            end if;
+            if not exists (select 1 from supabase_migrations.schema_migrations
+                           where version = '20261114231943') then
+              raise exception 'PRICE_CONFIRMATION_MIGRATION_NOT_RECORDED';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+              where p.oid = v_create_order
+                and pg_get_userbyid(p.proowner) = 'postgres'
+                and p.prosecdef is true
+                and p.proconfig = array['search_path=""']::text[]
+                and p.proacl::text = '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'
+                and p.prosrc like '%priceAcceptanceHash%'
+            ) then
+              raise exception 'CREATE_ORDER_SIGNATURE_OR_SECURITY_POSTCHECK_FAILED';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+              where p.oid = v_public_error
+                and pg_get_userbyid(p.proowner) = 'postgres'
+                and p.prosecdef is true
+                and p.proconfig = array['search_path=""']::text[]
+                and p.proacl::text = '{postgres=X/postgres,service_role=X/postgres}'
+                and p.prosrc like '%ECOMMERCE_PRICE_CONFIRMATION_CHANGED%'
+            ) then
+              raise exception 'PUBLIC_ERROR_SIGNATURE_OR_SECURITY_POSTCHECK_FAILED';
+            end if;
+          end;
+          $verify$;
+          SQL
+          psql "${db_url}" --no-psqlrc --set ON_ERROR_STOP=1 \
+            --file supabase/tests/ecommerce_price_confirmation_v1_test.sql
+
+      - name: Stop and remove the isolated stack
+        if: always()
+        continue-on-error: true
+        run: supabase stop --no-backup
