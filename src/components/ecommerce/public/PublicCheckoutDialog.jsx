@@ -10,6 +10,11 @@ import {
   formatEcommerceDeliveryAddress,
   normalizeEcommerceDeliveryAddress
 } from '../../../utils/ecommerceDeliveryAddress';
+import {
+  buildAcceptedEcommerceOrderItems,
+  getAcceptedEcommerceSubtotal,
+  haveSameAcceptedEcommerceEconomics
+} from '../../../utils/ecommercePriceAcceptance';
 
 const STALE_CART_CODES = new Set([
   'ECOMMERCE_PRODUCT_NOT_FOUND',
@@ -58,10 +63,13 @@ const normalizeForm = (form) => {
   };
 };
 
-function validateCheckout(form, portal, cart) {
+function validateCheckout(form, portal, cart, requestUncertain, acceptedItems) {
   const errors = {};
   const normalized = normalizeForm(form);
   const phoneDigits = normalized.phone.replace(/\D/g, '');
+  const validationCart = requestUncertain
+    ? { items: acceptedItems, isReconciled: true, minimumReached: true }
+    : cart;
 
   if (normalized.name.length < 2) errors.name = 'Escribe al menos 2 caracteres.';
   if (phoneDigits.length < 8) errors.phone = 'Escribe un teléfono con al menos 8 dígitos.';
@@ -85,10 +93,10 @@ function validateCheckout(form, portal, cart) {
     }
   }
 
-  if (!cart?.isReconciled) errors.cart = 'El carrito todavía se está actualizando.';
-  if (!Array.isArray(cart?.items) || cart.items.length === 0) errors.cart = 'Agrega productos al carrito.';
-  if (!cart?.minimumReached) errors.cart = 'El pedido no alcanza el mínimo requerido.';
-  if (cart?.items?.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+  if (!validationCart?.isReconciled) errors.cart = 'El carrito todavía se está actualizando.';
+  if (!Array.isArray(validationCart?.items) || validationCart.items.length === 0) errors.cart = 'Agrega productos al carrito.';
+  if (!validationCart?.minimumReached) errors.cart = 'El pedido no alcanza el mínimo requerido.';
+  if (validationCart?.items?.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
     errors.cart = 'Revisa las cantidades del carrito.';
   }
 
@@ -102,9 +110,15 @@ function PublicCheckoutDialog({
   portal,
   features,
   cart,
+  acceptedItems,
+  observedItems,
+  requestUncertain = false,
   confirmedOrder,
   onClose,
   onSubmit,
+  onAcceptCurrentTotal,
+  onClearPriceAcceptance,
+  onReviewCart,
   onRefreshCart,
   onContinue,
   acceptingOrders = true,
@@ -115,6 +129,18 @@ function PublicCheckoutDialog({
   const [fieldErrors, setFieldErrors] = useState({});
   const isSubmitting = status === 'submitting';
   const isConfirmed = status === 'confirmed';
+  const currentAcceptedItems = useMemo(
+    () => buildAcceptedEcommerceOrderItems(cart?.items),
+    [cart?.items]
+  );
+  const hasAcceptedCurrentTotal = Array.isArray(acceptedItems)
+    && haveSameAcceptedEcommerceEconomics(acceptedItems, cart?.items);
+  const comparisonItems = Array.isArray(acceptedItems) ? acceptedItems : observedItems;
+  const hasCheckoutPriceChanged = Array.isArray(comparisonItems)
+    && !haveSameAcceptedEcommerceEconomics(comparisonItems, cart?.items);
+  const previousTotal = getAcceptedEcommerceSubtotal(comparisonItems);
+  const currentTotal = String(cart?.subtotal ?? getAcceptedEcommerceSubtotal(currentAcceptedItems));
+  const deltaTotal = (Number(currentTotal) - Number(previousTotal)).toFixed(2);
   const portalSlug = portal?.slug || '';
   const pickupEnabled = portal?.pickupEnabled === true;
   const deliveryEnabled = portal?.deliveryEnabled === true;
@@ -212,7 +238,7 @@ function PublicCheckoutDialog({
   const submit = async (event) => {
     event.preventDefault();
     if (isSubmitting || submitPromiseRef.current) return;
-    const validation = validateCheckout(form, portal, cart);
+    const validation = validateCheckout(form, portal, cart, requestUncertain, acceptedItems);
     setFieldErrors(validation.errors);
     if (Object.keys(validation.errors).length > 0) return;
     const submitPromise = Promise.resolve(onSubmit(validation.normalized));
@@ -233,6 +259,9 @@ function PublicCheckoutDialog({
   };
 
   const showRefresh = error?.action === 'adjust_quantity' || STALE_CART_CODES.has(error?.code);
+  const checkoutCurrency = cart?.currency || 'MXN';
+  const acceptedItemsMissing = requestUncertain && !Array.isArray(acceptedItems);
+  const requiresOrderCheck = requestUncertain && error?.action === 'check_orders';
 
   return (
     <div className="public-checkout-modal">
@@ -283,6 +312,65 @@ function PublicCheckoutDialog({
                 <span>{cart?.totalUnits || 0} unidades</span>
                 <strong>{formatCurrency(cart?.subtotal, cart?.currency)}</strong>
               </div>
+
+              {hasCheckoutPriceChanged ? (
+                <section className="public-checkout-price-change" aria-live="polite">
+                  <strong>El precio de tu pedido cambió</strong>
+                  <dl>
+                    <div><dt>Antes</dt><dd>{formatCurrency(previousTotal, checkoutCurrency)}</dd></div>
+                    <div><dt>Ahora</dt><dd>{formatCurrency(currentTotal, checkoutCurrency)}</dd></div>
+                    <div><dt>Diferencia</dt><dd>{Number(deltaTotal) > 0 ? '+' : ''}{formatCurrency(deltaTotal, checkoutCurrency)}</dd></div>
+                  </dl>
+                  {requestUncertain ? (
+                    <p>El envío anterior pudo haberse registrado. Reintenta con la aceptación guardada para conocer su resultado.</p>
+                  ) : (
+                    <p>Revisa el carrito. El total nuevo solo se usará cuando lo aceptes.</p>
+                  )}
+                  <div className="public-checkout-price-change__actions">
+                    <button type="button" onClick={onReviewCart} disabled={isSubmitting}>
+                      Revisar carrito
+                    </button>
+                    {!requestUncertain ? (
+                      <button
+                        type="button"
+                        className="ui-button ui-button--primary"
+                        onClick={onAcceptCurrentTotal}
+                        disabled={isSubmitting || !cart?.isReconciled || cart?.items?.length === 0}
+                      >
+                        Aceptar nuevo total y continuar
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {!hasCheckoutPriceChanged && !requestUncertain ? (
+                <label className="public-checkout-price-acceptance">
+                  <input
+                    type="checkbox"
+                    checked={hasAcceptedCurrentTotal}
+                    onChange={(event) => (
+                      event.target.checked
+                        ? onAcceptCurrentTotal?.()
+                        : onClearPriceAcceptance?.()
+                    )}
+                    disabled={isSubmitting || !cart?.isReconciled}
+                  />
+                  <span>Acepto el total de <strong>{formatCurrency(currentTotal, checkoutCurrency)}</strong>.</span>
+                </label>
+              ) : null}
+
+              {acceptedItemsMissing ? (
+                <p className="public-checkout-field-error" role="alert">
+                  Este envío pendiente no conservó su aceptación de precios. Revisa si el negocio recibió el pedido antes de iniciar otro.
+                </p>
+              ) : null}
+
+              {requiresOrderCheck ? (
+                <p className="public-checkout-field-error" role="alert">
+                  Esta clave ya está asociada a un pedido o a un envío en curso. Confirma con el negocio si lo recibió antes de intentar otro.
+                </p>
+              ) : null}
 
               {error ? (
                 <div className="public-checkout-error" role="alert">
@@ -515,7 +603,10 @@ function PublicCheckoutDialog({
               <button
                 type="submit"
                 className="ui-button ui-button--primary public-checkout-submit"
-                disabled={isSubmitting || acceptingOrders !== true}
+                disabled={isSubmitting || (!requestUncertain && acceptingOrders !== true)
+                  || acceptedItemsMissing
+                  || requiresOrderCheck
+                  || (!hasAcceptedCurrentTotal && !requestUncertain)}
               >
                 {isSubmitting ? (
                   <>
@@ -523,7 +614,9 @@ function PublicCheckoutDialog({
                     Enviando pedido...
                   </>
                 ) : (
-                  'Confirmar pedido'
+                  requiresOrderCheck
+                    ? 'Pedido pendiente de verificación'
+                    : requestUncertain ? 'Reintentar envío seguro' : 'Confirmar pedido'
                 )}
               </button>
             </form>

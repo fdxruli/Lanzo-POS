@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { buildEcommerceConfiguredLineKey } from '../../../utils/ecommerceConfiguredProduct';
 import { createEcommercePublicService } from '../ecommercePublicService';
 
 const orderResponse = {
@@ -34,23 +33,26 @@ describe('ecommercePublicService configurable products', () => {
     expect(JSON.stringify(result)).not.toContain('sourceIngredientId');
   });
 
-  it('sends only productId, quantity, variantId and canonical selections', async () => {
+  it('sends canonical configuration and the accepted economic snapshot', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: orderResponse, error: null });
     const service = createEcommercePublicService({ rpc }, { cache: null });
-    const lineKey = buildEcommerceConfiguredLineKey({
-      productId: 'p1', variantId: 'v1',
-      selections: [{ groupId: 'g2', optionIds: ['o2', 'o1'] }]
-    });
     await service.createPublicOrder('store', {
       customer: { name: 'Cliente', phone: '9610000000', fulfillmentMethod: 'pickup' },
       items: [{
         productId: 'p1',
-        lineKey,
         quantity: 2,
         variantId: 'v1',
         selections: [{ groupId: 'g2', optionIds: ['o2', 'o1'] }],
         configurationVersion: 2,
         configurationRevision: 'a'.repeat(64),
+        acceptedPricing: {
+          pricingMode: 'standard',
+          baseUnitPrice: '100.00',
+          appliedUnitPrice: '120.00',
+          variantAdjustment: '15.00',
+          optionsAdjustment: '5.00',
+          lineTotal: '240.00'
+        },
         price: 1,
         total: 2,
         display: { private: true }
@@ -64,10 +66,19 @@ describe('ecommercePublicService configurable products', () => {
         variantId: 'v1',
         selections: [{ groupId: 'g2', optionIds: ['o1', 'o2'] }],
         configurationVersion: 2,
-        configurationRevision: 'a'.repeat(64)
+        configurationRevision: 'a'.repeat(64),
+        acceptedPricing: {
+          pricingMode: 'standard',
+          baseUnitPrice: '100.00',
+          appliedUnitPrice: '120.00',
+          variantAdjustment: '15.00',
+          optionsAdjustment: '5.00',
+          lineTotal: '240.00'
+        }
       }]
     }));
-    expect(JSON.stringify(rpc.mock.calls[0][1])).not.toContain('price');
+    expect(JSON.stringify(rpc.mock.calls[0][1])).not.toContain('"price":1');
+    expect(JSON.stringify(rpc.mock.calls[0][1])).not.toContain('private');
   });
 
   it('deduplicates concurrent detail requests through the configuration cache', async () => {

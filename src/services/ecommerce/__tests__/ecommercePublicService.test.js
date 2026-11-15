@@ -95,7 +95,7 @@ describe('ecommercePublicService', () => {
     });
   });
 
-  it('creates an order with exact RPC parameters and never sends prices or totals', async () => {
+  it('sends the accepted price snapshot without trusting arbitrary display prices', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: orderResponse(), error: null });
     const service = createEcommercePublicService({ rpc });
 
@@ -113,6 +113,17 @@ describe('ecommercePublicService', () => {
         quantity: 2,
         price: 999,
         total: 1998,
+        acceptedPricing: {
+          pricingMode: 'standard',
+          baseUnitPrice: '100.00',
+          wholesaleBaseUnitPrice: null,
+          appliedUnitPrice: '100.00',
+          wholesaleTierRef: null,
+          wholesaleMinQuantity: null,
+          variantAdjustment: '0.00',
+          optionsAdjustment: '0.00',
+          lineTotal: '200.00'
+        },
         name: 'Manipulado',
         stock: 100,
       }],
@@ -128,10 +139,25 @@ describe('ecommercePublicService', () => {
         notes: 'Sin cebolla',
         fulfillmentMethod: 'pickup',
       },
-      p_items: [{ productId: 'product-1', quantity: 2 }],
+      p_items: [{
+        productId: 'product-1',
+        quantity: 2,
+        acceptedPricing: {
+          pricingMode: 'standard',
+          baseUnitPrice: '100.00',
+          wholesaleBaseUnitPrice: null,
+          appliedUnitPrice: '100.00',
+          wholesaleTierRef: null,
+          wholesaleMinQuantity: null,
+          variantAdjustment: '0.00',
+          optionsAdjustment: '0.00',
+          lineTotal: '200.00'
+        }
+      }],
       p_idempotency_key: 'web-secure-key',
     });
     expect(JSON.stringify(rpc.mock.calls[0][1])).not.toContain('999');
+    expect(JSON.stringify(rpc.mock.calls[0][1])).not.toContain('Manipulado');
     expect(result).toMatchObject({
       success: true,
       idempotent: false,

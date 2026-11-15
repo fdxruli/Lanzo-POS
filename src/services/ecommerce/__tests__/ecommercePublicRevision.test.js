@@ -12,6 +12,7 @@ import {
 } from '../ecommercePublicService';
 import {
   getOrCreateCheckoutAttempt,
+  clearCheckoutAttempt,
   normalizeCheckoutPayload
 } from '../ecommerceCheckoutIdempotency';
 
@@ -196,6 +197,7 @@ describe('configurationRevision public contract', () => {
 
     const first = await getOrCreateCheckoutAttempt('mi-tienda', base, { storage: storageApi, cryptoImpl });
     const replay = await getOrCreateCheckoutAttempt('mi-tienda', base, { storage: storageApi, cryptoImpl });
+    clearCheckoutAttempt('mi-tienda', first.idempotencyKey, { storage: storageApi });
     const refreshed = await getOrCreateCheckoutAttempt('mi-tienda', {
       ...base,
       items: [{ ...base.items[0], configurationRevision: REVISION_B }]

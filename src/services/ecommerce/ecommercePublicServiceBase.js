@@ -101,6 +101,7 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_PRODUCT_NOT_AVAILABLE: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_PRODUCT_UNAVAILABLE: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catálogo cambió mientras preparabas el pedido. Actualízalo e inténtalo nuevamente.',
+  ECOMMERCE_PRICE_CONFIRMATION_CHANGED: 'El precio del pedido cambió. Actualiza el carrito, revisa el nuevo total y acéptalo para continuar.',
   ECOMMERCE_INVALID_QUANTITY: 'Revisa las cantidades del carrito.',
   ECOMMERCE_STOCK_LIMIT_EXCEEDED: 'La cantidad solicitada supera la disponibilidad actual.',
   ECOMMERCE_INSUFFICIENT_STOCK: 'La cantidad solicitada supera la disponibilidad actual.',
@@ -649,15 +650,36 @@ function normalizeCustomer(customer) {
 }
 
 function normalizeOrderItems(items) {
-  return asArray(items).map(buildMinimalConfiguredOrderItem).map((item) => {
+  return asArray(items).map((source) => ({
+    ...(source?.acceptedPricing && asText(source.productId)
+      ? source
+      : buildMinimalConfiguredOrderItem(source)),
+    ...(source?.acceptedPricing && typeof source.acceptedPricing === 'object'
+      ? { acceptedPricing: source.acceptedPricing }
+      : {})
+  })).map((item) => {
     const productId = asText(item.productId);
     const quantity = Number(item.quantity);
+    const acceptedPricing = item.acceptedPricing && typeof item.acceptedPricing === 'object'
+      ? Object.fromEntries(Object.entries({
+          pricingMode: item.acceptedPricing.pricingMode,
+          baseUnitPrice: item.acceptedPricing.baseUnitPrice,
+          wholesaleBaseUnitPrice: item.acceptedPricing.wholesaleBaseUnitPrice,
+          appliedUnitPrice: item.acceptedPricing.appliedUnitPrice,
+          wholesaleTierRef: item.acceptedPricing.wholesaleTierRef,
+          wholesaleMinQuantity: item.acceptedPricing.wholesaleMinQuantity,
+          variantAdjustment: item.acceptedPricing.variantAdjustment,
+          optionsAdjustment: item.acceptedPricing.optionsAdjustment,
+          lineTotal: item.acceptedPricing.lineTotal
+        }).filter(([, value]) => value !== undefined))
+      : null;
+    const acceptance = acceptedPricing ? { acceptedPricing } : {};
     const configured = Boolean(
       item.variantId
       || asArray(item.selections).length
       || asConfigurationRevision(item.configurationRevision)
     );
-    if (!configured) return { productId, quantity };
+    if (!configured) return { productId, quantity, ...acceptance };
 
     const configurationRevision = asConfigurationRevision(item.configurationRevision);
     return {
@@ -668,7 +690,8 @@ function normalizeOrderItems(items) {
         selections: canonicalizeEcommerceSelections(item.selections)
       } : {}),
       configurationVersion: Math.max(1, Math.floor(Number(item.configurationVersion) || 1)),
-      configurationRevision
+      configurationRevision,
+      ...acceptance
     };
   });
 }
