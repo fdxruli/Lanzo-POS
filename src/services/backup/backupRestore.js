@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { importInto, peakImportFile } from 'dexie-export-import';
 import { createBackupCashIdentitySanitizer } from './backupCashIdentity';
+import { assertPortableV2Restore } from './backupRestoreIdentity';
 import {
   BACKUP_TABLE_NAMES,
   BACKUP_MONITORED_TABLE_NAMES,
@@ -88,11 +89,15 @@ export async function inspectBackupArchive(exportedBlob, { formatVersion = 2 } =
 export async function restoreWhitelistedDatabase(database, exportedBlob, {
   expectedDatabaseName = database.name,
   formatVersion = 2,
+  portableV2Permit = null,
+  revalidateBeforeWrite = null,
   progressCallback
 } = {}) {
+  if (expectedDatabaseName !== database.name) throw new Error('BACKUP_DATABASE_MISMATCH');
   const { metadata, safeSourceNames } = await inspectBackupArchive(exportedBlob, { formatVersion });
   if (metadata?.data?.databaseName !== expectedDatabaseName) {
-    throw new Error('BACKUP_DATABASE_MISMATCH');
+    if (formatVersion !== 2 || typeof revalidateBeforeWrite !== 'function') throw new Error('BACKUP_DATABASE_MISMATCH');
+    assertPortableV2Restore(portableV2Permit, exportedBlob, metadata?.data?.databaseName, database.name);
   }
 
   const { includedTableNames } = getBackupTableScope(database, { allowMissing: true });
@@ -146,6 +151,7 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
   }
 
   await database.transaction('rw', database.tables, async () => {
+    if (revalidateBeforeWrite) await Dexie.waitFor(revalidateBeforeWrite('before'));
     const pendingOperationCounts = countPendingRestoreOperations(await readPendingOperationRows(database));
     if (Object.values(pendingOperationCounts).some((count) => count > 0)) {
       throw new Error('BACKUP_RESTORE_PENDING_OPERATIONS');
@@ -161,6 +167,8 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
         await database.table(tableName).bulkPut(restoredRows[tableName]);
       }
     }
+    // Revocation while the transaction was writing must roll it back too.
+    if (revalidateBeforeWrite) await Dexie.waitFor(revalidateBeforeWrite('after'));
   });
 
   return {

@@ -1,6 +1,7 @@
 import { db } from '../db/dexie';
 import { evaluator } from '../BackupRiskEvaluator';
 import Logger from '../Logger';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   BACKUP_ITERATIONS,
   bytesToBase64
@@ -31,6 +32,13 @@ export const BACKUP_WARNING_PARTIAL_COVERAGE = 'PARTIAL_COVERAGE';
 export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
 export const BACKUP_KEY_SESSION_MARKER = 'lanzo_backup_key_session:v1';
 const sessionMarkerFor = (tenantKey) => `${BACKUP_KEY_SESSION_MARKER}:${tenantKey}`;
+const restorePreviews = new WeakMap();
+
+const captureRestoreActor = () => {
+  const actor = actorRuntimeController.capture('settings_backup');
+  if (actor.actorType !== 'admin') throw new Error('BACKUP_PERMISSION_REQUIRED');
+  return actor;
+};
 
 const requireBackupTenantContext = () => {
   try {
@@ -257,6 +265,15 @@ class BackupManager {
     const worker = new Worker(new URL('../../workers/backup.worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = (event) => {
       const message = event.data;
+      if (message.type === 'restore-authority') {
+        let authorized = false;
+        try {
+          this.pending.get(message.id)?.assertRestoreAuthority?.();
+          authorized = Boolean(this.pending.get(message.id)?.assertRestoreAuthority);
+        } catch { /* A stale actor or tenant must fail closed in the worker. */ }
+        worker.postMessage({ command: 'restore-authority', requestId: message.requestId, authorized });
+        return;
+      }
       if (message.type === 'progress') {
         this.state.progress = message.progress;
         this.state.phase = message.phase;
@@ -290,6 +307,11 @@ class BackupManager {
   }
 
   callWorker(command, payload = {}, timeoutMs = 30000) {
+    const actor = ['inspect', 'restore'].includes(command) ? captureRestoreActor() : null;
+    const assertRestoreAuthority = actor ? () => {
+      actor.assertCurrent('settings_backup');
+      if (!isActiveTenantWorkerContext(payload.context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    } : null;
     const id = this.nextId;
     this.nextId += 1;
     return new Promise((resolve, reject) => {
@@ -300,6 +322,7 @@ class BackupManager {
         }
       }, timeoutMs);
       this.pending.set(id, {
+        assertRestoreAuthority,
         resolve: (value) => { clearTimeout(timer); resolve(value); },
         reject: (error) => { clearTimeout(timer); reject(error); }
       });
@@ -613,10 +636,12 @@ class BackupManager {
   }
 
   async inspectRestore(file, pin) {
+    const actor = captureRestoreActor();
     if (!file) throw new Error('Selecciona un archivo de respaldo.');
     this.validatePin(pin);
     const tenantContext = requireBackupTenantContext();
     await this.ensureTenantContext(tenantContext);
+    actor.assertCurrent('settings_backup');
     if (!isActiveTenantWorkerContext(tenantContext)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
     this.state.busy = true;
@@ -625,7 +650,9 @@ class BackupManager {
     this.emit();
     try {
       const preview = await this.callWorker('inspect', { file, pin, context: tenantContext });
+      actor.assertCurrent('settings_backup');
       if (!isActiveTenantWorkerContext(tenantContext)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      restorePreviews.set(preview, { file, actor, context: tenantContext });
       return preview;
     } finally {
       this.state.busy = false;
@@ -635,11 +662,17 @@ class BackupManager {
   }
 
   async restore(file, pin, preview = null) {
+    const actor = captureRestoreActor();
     const tenantContext = requireBackupTenantContext();
     await this.ensureTenantContext(tenantContext);
     if (!file) throw new Error('Selecciona un archivo de respaldo.');
     this.validatePin(pin);
     const inspected = preview || await this.inspectRestore(file, pin);
+    const reviewed = restorePreviews.get(inspected);
+    if (!reviewed || reviewed.file !== file) throw new Error('BACKUP_RESTORE_REVIEW_REQUIRED');
+    reviewed.actor.assertCurrent('settings_backup');
+    if (!isActiveTenantWorkerContext(reviewed.context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    actor.assertCurrent('settings_backup');
     if (!isActiveTenantWorkerContext(tenantContext)) {
       throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     }
@@ -655,6 +688,7 @@ class BackupManager {
         throw new Error('BACKUP_PRE_RESTORE_FAILED');
       }
     }
+    actor.assertCurrent('settings_backup');
     if (!isActiveTenantWorkerContext(tenantContext)) {
       throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     }

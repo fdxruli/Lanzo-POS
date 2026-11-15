@@ -24,6 +24,7 @@ import {
   BACKUP_MONITORED_TABLE_NAMES
 } from '../services/backup/backupScope.js';
 import { countPendingRestoreOperations } from '../services/backup/backupRestore.js';
+import { authorizePortableV2Restore, validateV2RestoreIdentity } from '../services/backup/backupRestoreIdentity.js';
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
@@ -36,6 +37,24 @@ let sessionVerifier = '';
 let sessionSalt = '';
 let sessionIterations = 600000;
 let activeOperation = false;
+let authorizationSequence = 0;
+const authorizations = new Map();
+
+function requestRestoreAuthority(operationId) {
+  const requestId = ++authorizationSequence;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      authorizations.delete(requestId);
+      reject(new Error('BACKUP_TENANT_CONTEXT_STALE'));
+    }, 5000);
+    authorizations.set(requestId, (authorized) => {
+      clearTimeout(timer);
+      if (authorized === true) resolve();
+      else reject(new Error('BACKUP_TENANT_CONTEXT_STALE'));
+    });
+    self.postMessage({ type: 'restore-authority', id: operationId, requestId });
+  });
+}
 
 function postProgress(operation, completed, total, phase) {
   self.postMessage({
@@ -300,28 +319,35 @@ async function validateBackupTenant(header, context, binding) {
     return;
   }
 
-  const expectedFingerprint = await createTenantFingerprint(context.tenantAliases);
-  if (header.tenantFingerprint !== expectedFingerprint) throw new Error('BACKUP_TENANT_MISMATCH');
+  await validateV2RestoreIdentity(header, context, binding);
 }
 
-async function inspectBackup(file, pin, context = null) {
+async function validateRestoreArchive(decrypted, context, binding, archive) {
+  await validateBackupTenant(decrypted.header, context, binding);
+  const sourceName = archive.metadata?.data?.databaseName;
+  let permit = null;
+  if (decrypted.header.version === 2 && (decrypted.header.archiveVersion || 2) === 2) {
+    permit = await authorizePortableV2Restore(decrypted.blob, decrypted.header, context, binding, sourceName);
+  } else if (sourceName !== context.databaseName) throw new Error('BACKUP_DATABASE_MISMATCH');
+  if ((decrypted.header.archiveVersion || decrypted.header.version) === 2) {
+    const declared = decrypted.header.coverage?.tableCounts;
+    if (!declared || JSON.stringify(Object.fromEntries(Object.entries(archive.tableCounts).sort()))
+      !== JSON.stringify(Object.fromEntries(Object.entries(declared).sort()))) {
+      throw new Error('BACKUP_COVERAGE_MANIFEST_MISMATCH');
+    }
+  }
+  return permit;
+}
+
+async function inspectBackup(file, pin, context = null, assertAuthority) {
+  await assertAuthority();
   const decrypted = await decryptBackupBlob(file, pin);
   const archiveVersion = decrypted.header.archiveVersion || decrypted.header.version;
   const database = await openSourceDb(context);
   try {
     const binding = await requireMatchingTenantBinding(database, context.tenantAliases);
-    await validateBackupTenant(decrypted.header, context, binding);
     const archive = await inspectBackupArchive(decrypted.blob, { formatVersion: archiveVersion });
-    if (archive.metadata?.data?.databaseName !== context.databaseName) {
-      throw new Error('BACKUP_DATABASE_MISMATCH');
-    }
-    if (archiveVersion === 2) {
-      const declared = decrypted.header.coverage?.tableCounts;
-      if (!declared || JSON.stringify(Object.fromEntries(Object.entries(archive.tableCounts).sort()))
-        !== JSON.stringify(Object.fromEntries(Object.entries(declared).sort()))) {
-        throw new Error('BACKUP_COVERAGE_MANIFEST_MISMATCH');
-      }
-    }
+    await validateRestoreArchive(decrypted, context, binding, archive);
 
     const targetCounts = {};
     const targetNames = archive.safeSourceNames.filter((name) => database.tables.some((table) => table.name === name));
@@ -333,6 +359,7 @@ async function inspectBackup(file, pin, context = null) {
     });
     const destinationPendingOperationCounts = countPendingRestoreOperations(pendingRows);
     const destinationHasBusinessData = Object.values(targetCounts).some((count) => count > 0);
+    await assertAuthority();
     return {
       header: decrypted.header,
       formatVersion: archiveVersion,
@@ -355,15 +382,15 @@ async function inspectBackup(file, pin, context = null) {
   }
 }
 
-async function restoreBackup(file, pin, context = null, expectedDestinationHasBusinessData = false) {
+async function restoreBackup(file, pin, context = null, expectedDestinationHasBusinessData = false, assertAuthority) {
+  await assertAuthority();
   const decrypted = await decryptBackupBlob(file, pin);
   const archiveVersion = decrypted.header.archiveVersion || decrypted.header.version;
   const database = await openSourceDb(context);
   try {
     const binding = await requireMatchingTenantBinding(database, context.tenantAliases);
-    await validateBackupTenant(decrypted.header, context, binding);
     const archive = await inspectBackupArchive(decrypted.blob, { formatVersion: archiveVersion });
-    if (archive.metadata?.data?.databaseName !== context.databaseName) throw new Error('BACKUP_DATABASE_MISMATCH');
+    const portableV2Permit = await validateRestoreArchive(decrypted, context, binding, archive);
     const targetNames = archive.safeSourceNames.filter((name) => database.tables.some((table) => table.name === name));
     let destinationHasBusinessData = false;
     const monitoredNames = BACKUP_MONITORED_TABLE_NAMES.filter((name) => database.tables.some((table) => table.name === name));
@@ -384,6 +411,21 @@ async function restoreBackup(file, pin, context = null, expectedDestinationHasBu
     const restored = await restoreWhitelistedDatabase(database, decrypted.blob, {
       expectedDatabaseName: context.databaseName,
       formatVersion: archiveVersion,
+      portableV2Permit,
+      revalidateBeforeWrite: async (phase) => {
+        await assertAuthority();
+        const currentBinding = await requireMatchingTenantBinding(database, context.tenantAliases);
+        await validateBackupTenant(decrypted.header, context, currentBinding);
+        if (phase === 'before') {
+          let hasData = false;
+          for (const name of targetNames) {
+            if (await database.table(name).count() > 0) hasData = true;
+          }
+          if (hasData !== (expectedDestinationHasBusinessData === true)) {
+            throw new Error('BACKUP_DESTINATION_CHANGED_REVIEW_AGAIN');
+          }
+        }
+      },
       progressCallback: ({ completedRows, totalRows }) => {
         postProgress('restore', completedRows, totalRows, 'importing');
         return true;
@@ -554,13 +596,15 @@ async function handleMessage(message) {
         message.payload.file,
         message.payload.pin,
         message.payload.context,
-        message.payload.expectedDestinationHasBusinessData
+        message.payload.expectedDestinationHasBusinessData,
+        () => requestRestoreAuthority(message.id)
       );
     case 'inspect':
       return inspectBackup(
         message.payload.file,
         message.payload.pin,
-        message.payload.context
+        message.payload.context,
+        () => requestRestoreAuthority(message.id)
       );
     case 'rekey':
       return reencryptDirectory(
@@ -576,6 +620,12 @@ async function handleMessage(message) {
 }
 
 self.onmessage = async (event) => {
+  if (event.data.command === 'restore-authority') {
+    const complete = authorizations.get(event.data.requestId);
+    authorizations.delete(event.data.requestId);
+    complete?.(event.data.authorized);
+    return;
+  }
   const { id } = event.data;
   if (activeOperation) {
     self.postMessage({ id, type: 'error', error: normalizeError(new Error('BACKUP_OPERATION_IN_PROGRESS')) });
