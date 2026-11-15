@@ -64,6 +64,27 @@ describe('backupRestore', () => {
     databases.clear();
   });
 
+  it('rejects a V2 archive from a different device database before changing destination data', async () => {
+    const sourceName = `LanzoDB_t_t_${crypto.randomUUID().replaceAll('-', '')}`;
+    const targetName = `LanzoDB_t_t_${crypto.randomUUID().replaceAll('-', '')}`;
+    databases.add(sourceName);
+    databases.add(targetName);
+    const archive = await openCurrentArchive(sourceName);
+    const destination = await openDestination(targetName);
+    try {
+      await destination.table('menu').add({ id: 'existing', name: 'Conservar' });
+      await expect(restoreWhitelistedDatabase(destination, archive, {
+        expectedDatabaseName: targetName,
+        formatVersion: 2
+      })).rejects.toThrow('BACKUP_DATABASE_MISMATCH');
+      expect(await destination.table('menu').toArray()).toEqual([{ id: 'existing', name: 'Conservar' }]);
+      expect(await destination.table('cajas').count()).toBe(0);
+      expect(await destination.table('movimientos_caja').count()).toBe(0);
+    } finally {
+      destination.close();
+    }
+  });
+
   it('restores a V1 archive as partial and keeps tables absent from the file', async () => {
     const databaseName = `backup-restore-v1-${crypto.randomUUID()}`;
     databases.add(databaseName);

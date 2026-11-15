@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   clearPersistedBackupKey: vi.fn(),
@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   savePersistedBackupKey: vi.fn(),
   saveBackupSettings: vi.fn(),
   tenantContext: null
+}));
+
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: { capture: vi.fn(() => ({ actorType: 'admin', assertCurrent: vi.fn() })) }
 }));
 
 vi.mock('../../db/dexie', () => ({
@@ -61,6 +65,7 @@ import {
   backupManager
 } from '../backupManager';
 import { localTenantAccessController } from '../../tenant/localTenantPolicy';
+import { actorRuntimeController } from '../../auth/actorRuntimeController';
 
 const configuredSettings = {
   configured: true,
@@ -78,6 +83,7 @@ const persistedCryptoKey = {
 };
 
 describe('BackupManager persisted key', () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     localTenantAccessController.reset();
     mocks.tenantContext = {
@@ -128,7 +134,8 @@ describe('BackupManager persisted key', () => {
     });
     const file = new Blob(['encrypted archive']);
     const preview = { destinationHasBusinessData: false };
-
+    workerSpy.mockResolvedValueOnce(preview);
+    await backupManager.inspectRestore(file, '12345678');
     const result = await backupManager.restore(file, '12345678', preview);
 
     expect(result.restored).toBe(true);
@@ -141,14 +148,66 @@ describe('BackupManager persisted key', () => {
   });
 
   it('rejects restore with pending destination operations before making a pre-restore copy', async () => {
-    const workerSpy = vi.spyOn(backupManager, 'callWorker');
-
-    await expect(backupManager.restore(new Blob(['encrypted archive']), '12345678', {
+    const preview = {
       destinationHasBusinessData: true,
       destinationPendingOperationCounts: { sync_outbox: 1, financial_intents: 0 }
-    })).rejects.toThrow('BACKUP_RESTORE_PENDING_OPERATIONS');
+    };
+    const workerSpy = vi.spyOn(backupManager, 'callWorker').mockResolvedValue(preview);
+    const file = new Blob(['encrypted archive']);
+    await backupManager.inspectRestore(file, '12345678');
+    workerSpy.mockClear();
+    await expect(backupManager.restore(file, '12345678', preview)).rejects.toThrow('BACKUP_RESTORE_PENDING_OPERATIONS');
 
     expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it('requires destination protection and never restores when the preventive copy fails', async () => {
+    const file = new Blob(['encrypted archive']);
+    const preview = { destinationHasBusinessData: true };
+    const workerSpy = vi.spyOn(backupManager, 'callWorker').mockResolvedValue(preview);
+    await backupManager.inspectRestore(file, '12345678');
+    await backupManager.ensureTenantContext(mocks.tenantContext);
+    backupManager.state.configured = false;
+    await expect(backupManager.restore(file, '12345678', preview))
+      .rejects.toThrow('BACKUP_DESTINATION_PROTECTION_REQUIRED');
+    backupManager.state.configured = true;
+    backupManager.state.unlocked = true;
+    const copy = vi.spyOn(backupManager, 'backup').mockResolvedValue({ success: false });
+    await expect(backupManager.restore(file, '12345678', preview)).rejects.toThrow('BACKUP_PRE_RESTORE_FAILED');
+    expect(copy).toHaveBeenCalledWith({ reason: 'pre_restore', manual: true });
+    expect(workerSpy).not.toHaveBeenCalledWith('restore', expect.anything());
+  });
+
+  it('requires a fresh review when the file or the actor that inspected it changes', async () => {
+    const reviewedActor = { actorType: 'admin', assertCurrent: vi.fn() };
+    vi.mocked(actorRuntimeController.capture).mockReturnValueOnce(reviewedActor);
+    const file = new Blob(['encrypted archive']);
+    const preview = { destinationHasBusinessData: false };
+    const workerSpy = vi.spyOn(backupManager, 'callWorker').mockResolvedValue(preview);
+    await backupManager.inspectRestore(file, '12345678');
+    workerSpy.mockClear();
+    await expect(backupManager.restore(new Blob(['different file']), '12345678', preview))
+      .rejects.toThrow('BACKUP_RESTORE_REVIEW_REQUIRED');
+    reviewedActor.assertCurrent.mockImplementation(() => { throw new Error('ACTOR_CONTEXT_STALE'); });
+    await expect(backupManager.restore(file, '12345678', preview)).rejects.toThrow('ACTOR_CONTEXT_STALE');
+    expect(workerSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['actor', 'tenant'])('denies worker write authorization after %s revocation', async (revocation) => {
+    const assertCurrent = vi.fn();
+    vi.mocked(actorRuntimeController.capture).mockReturnValueOnce({ actorType: 'admin', assertCurrent });
+    vi.stubGlobal('Worker', class {
+      postMessage = vi.fn();
+    });
+    const operation = backupManager.callWorker('restore', { context: mocks.tenantContext });
+    const worker = backupManager.worker;
+    const id = worker.postMessage.mock.calls[0][0].id;
+    if (revocation === 'actor') assertCurrent.mockImplementation(() => { throw new Error('ACTOR_CONTEXT_STALE'); });
+    else mocks.tenantContext = null;
+    worker.onmessage({ data: { type: 'restore-authority', id, requestId: 10 } });
+    expect(worker.postMessage).toHaveBeenLastCalledWith({ command: 'restore-authority', requestId: 10, authorized: false });
+    worker.onmessage({ data: { type: 'error', id, error: { message: 'BACKUP_TENANT_CONTEXT_STALE' } } });
+    await expect(operation).rejects.toThrow('BACKUP_TENANT_CONTEXT_STALE');
   });
 
   it('surfaces an unassigned prior configuration without reading its key into the active business', async () => {

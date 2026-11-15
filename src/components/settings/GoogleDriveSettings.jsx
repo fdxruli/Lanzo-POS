@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Cloud, Link2, Loader2, ShieldCheck, Unplug } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import toast from 'react-hot-toast';
@@ -9,8 +9,24 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { useSettingsAccess, useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
 import NoPermission from '../common/NoPermission';
+import { downloadBackup, listBackups } from '../../services/googleDriveService';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
+
+function useExpiredDriveToken(token, expiresAt) {
+  const [expired, setExpired] = useState(() => !token || Number(expiresAt) <= Date.now());
+  useEffect(() => {
+    const remaining = Number(expiresAt) - Date.now();
+    if (!token || !Number.isFinite(remaining) || remaining <= 0) {
+      setExpired(true);
+      return;
+    }
+    setExpired(false);
+    const timer = setTimeout(() => setExpired(true), Math.min(remaining, 2_147_483_647));
+    return () => clearTimeout(timer);
+  }, [token, expiresAt]);
+  return expired;
+}
 
 function revokeGoogleToken(accessToken) {
   const revoke = window.google?.accounts?.oauth2?.revoke;
@@ -43,7 +59,9 @@ function GoogleDriveOAuthControls() {
   const [error, setError] = useState('');
   const connectActionRef = useRef(null);
 
-  const hasActiveSession = Boolean(driveAccessToken && driveTokenExpiresAt);
+  const tokenExpired = useExpiredDriveToken(driveAccessToken, driveTokenExpiresAt);
+  const sessionExpired = needsDriveReauth || Boolean(driveAccessToken && tokenExpired);
+  const hasActiveSession = Boolean(driveAccessToken && driveTokenExpiresAt && !sessionExpired);
 
   const login = useGoogleLogin({
     flow: 'implicit',
@@ -154,7 +172,7 @@ function GoogleDriveOAuthControls() {
 
   return (
     <>
-      <div className={`drive-connection-status ${hasActiveSession ? 'is-connected' : ''} ${needsDriveReauth ? 'needs-reauth' : ''}`}>
+      <div className={`drive-connection-status ${hasActiveSession ? 'is-connected' : ''} ${sessionExpired ? 'needs-reauth' : ''}`}>
         <span className="drive-connection-status__icon">
           {hasActiveSession ? <ShieldCheck size={20} /> : <Cloud size={20} />}
         </span>
@@ -162,7 +180,7 @@ function GoogleDriveOAuthControls() {
           <strong>
             {hasActiveSession
               ? 'Conexion activa'
-              : needsDriveReauth
+              : sessionExpired
                 ? 'Sesion expirada'
                 : isDriveConnected
                   ? 'Autorizado previamente'
@@ -171,7 +189,7 @@ function GoogleDriveOAuthControls() {
           <p>
             {hasActiveSession
               ? 'El token temporal esta disponible solo durante esta sesion.'
-              : needsDriveReauth
+              : sessionExpired
                 ? 'Reconecta Google Drive para reactivar los respaldos en la nube.'
                 : isDriveConnected
                   ? 'Vuelve a conectar para obtener un token temporal nuevo.'
@@ -225,7 +243,111 @@ function GoogleDriveOAuthControls() {
   );
 }
 
-export default function GoogleDriveSettings() {
+function DriveBackupList({ disabled, onBackupDownloaded, onBusyChange }) {
+  const token = useAppStore((state) => state.driveAccessToken);
+  const connected = useAppStore((state) => state.isDriveConnected);
+  const needsReauth = useAppStore((state) => state.needsDriveReauth);
+  const expiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const binding = useAppStore((state) => state.driveTenantBinding);
+  const access = useSettingsAccess();
+  const captureAction = useSettingsActionGuard();
+  const requestRef = useRef(null);
+  const [files, setFiles] = useState(null);
+  const [pending, setPending] = useState('');
+  const [error, setError] = useState('');
+  const tokenExpired = useExpiredDriveToken(token, expiresAt);
+  const canQuery = Boolean(connected && token && !tokenExpired && !needsReauth);
+
+  useEffect(() => {
+    setFiles(null);
+    setError('');
+    setPending('');
+    return () => {
+      requestRef.current?.abort();
+      requestRef.current = null;
+      onBusyChange?.(false);
+    };
+  }, [token, binding, access.actorKey, access.generation, onBusyChange]);
+
+  const cancel = () => {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setPending('');
+    onBusyChange?.(false);
+  };
+
+  const query = async (file = null) => {
+    if (requestRef.current || disabled || !canQuery) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setError('');
+    setPending(file ? `Descargando ${file.name}…` : 'Consultando respaldos…');
+    onBusyChange?.(true);
+    let actor;
+    try {
+      actor = captureAction('settings_backup', { adminOnly: true });
+      const result = file
+        ? await downloadBackup(token, file, { signal: controller.signal })
+        : await listBackups(token, { signal: controller.signal });
+      actor.assertCurrent('settings_backup');
+      if (requestRef.current !== controller || controller.signal.aborted) return;
+      if (file) onBackupDownloaded(result);
+      else setFiles(result.files);
+    } catch (actionError) {
+      if (requestRef.current !== controller || controller.signal.aborted) return;
+      if (!file) setFiles(null);
+      const code = actionError.code || actionError.message;
+      setError(code === 'DRIVE_LIST_INCOMPLETE' || code === 'DRIVE_LIST_AMBIGUOUS'
+        ? 'No se pudo obtener un listado completo y verificable. Actualiza los respaldos o reconecta Google Drive.'
+        : actionError.message);
+    } finally {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setPending('');
+        onBusyChange?.(false);
+      }
+    }
+  };
+
+  if (!access.isAdmin) return null;
+  return (
+    <div className="drive-backup-list" aria-label="Respaldos en Google Drive" aria-busy={Boolean(pending)}>
+      <h5>Respaldos en Google Drive</h5>
+      <p>Solo se muestran copias con identidad verificable de este negocio. También puedes importar un archivo .lzbk manualmente.</p>
+      {!canQuery && <p role="status">{needsReauth || (token && tokenExpired)
+        ? 'La sesión venció. Reconecta Google Drive para consultar tus copias.'
+        : 'Conecta Google Drive para consultar tus copias.'}</p>}
+      <button type="button" className="btn btn-secondary" disabled={!canQuery || disabled || Boolean(pending)} onClick={() => query()}>
+        Actualizar respaldos
+      </button>
+      {pending && <div role="status" aria-live="polite">
+        <p>{pending}</p>
+        <button type="button" className="btn btn-secondary" onClick={cancel}>Cancelar descarga o consulta</button>
+      </div>}
+      {error && <p className="backup-settings-error" role="alert">{error}</p>}
+      {files?.length === 0 && <p role="status">No se encontraron copias verificables para este negocio.</p>}
+      {canQuery && files?.length > 0 && <ul className="drive-backup-list__files">
+        {files.map((file) => {
+          const size = Number(file.size);
+          const available = Number.isSafeInteger(size) && size > 0 && file.capabilities?.canDownload !== false;
+          return <li key={file.id}>
+            <div>
+              <strong>{file.name}</strong>
+              <span>{new Date(file.createdTime).toLocaleString()} · {Number.isSafeInteger(size) && size > 0
+                ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(size / 1024)} KB`
+                : 'Tamaño no disponible'}</span>
+              <span>{available ? 'Disponible para descargar' : 'No disponible para descargar'}</span>
+            </div>
+            <button type="button" className="btn btn-secondary" aria-label={`Recuperar ${file.name}`}
+              disabled={!available || disabled || Boolean(pending)} onClick={() => query(file)}>Recuperar</button>
+          </li>;
+        })}
+      </ul>}
+    </div>
+  );
+}
+
+export default function GoogleDriveSettings({ disabled = false, onBackupDownloaded, onBusyChange }) {
   const settingsAccess = useSettingsAccess();
   if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
 
@@ -249,6 +371,7 @@ export default function GoogleDriveSettings() {
             Configura <code>VITE_GOOGLE_CLIENT_ID</code> para habilitar la conexion con Google Drive.
           </div>
         )}
+      {onBackupDownloaded && <DriveBackupList disabled={disabled} onBackupDownloaded={onBackupDownloaded} onBusyChange={onBusyChange} />}
     </section>
   );
 }

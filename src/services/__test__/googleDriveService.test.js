@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { createHash } from 'node:crypto';
 import {
   BACKUP_EXTENSION,
   BACKUP_ITERATIONS,
@@ -12,6 +13,7 @@ import {
 } from '../backup/backupFormat';
 import {
   deleteBackup,
+  downloadBackup,
   GoogleDriveError,
   listBackups,
   uploadBackup
@@ -463,6 +465,17 @@ function installDriveMock() {
 }
 
 describe('googleDriveService', () => {
+  const prepareDownload = async (overrides = {}) => {
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const file = makeFile('download-file', backup.tenantFingerprint, new Date(), backup.ownerProperties, {
+      name: backup.fileName, size: String(backup.blob.size), mimeType: 'application/octet-stream',
+      version: '1', sha256Checksum: await hashBlob(backup.blob), capabilities: { canDownload: true }, ...overrides
+    });
+    const media = { ...response(null), blob: vi.fn().mockResolvedValue(backup.blob) };
+    const fetchMock = vi.fn(async (url) => new URL(url).searchParams.get('alt') === 'media' ? media : response(file));
+    vi.stubGlobal('fetch', fetchMock);
+    return { file, blob: backup.blob, media, fetchMock };
+  };
   beforeEach(() => {
     const tenantContext = makeTenantContext('business-a');
     fixtures.tenantContext = tenantContext;
@@ -470,6 +483,7 @@ describe('googleDriveService', () => {
     fixtures.actorAccess = {
       authorized: true,
       isAdmin: true,
+      runtimeSnapshot: { status: 'granted', actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a', sessionId: 'session-a', generation: 1, deviceRef: 'device-a' },
       permissions: []
     };
     fixtures.state = {
@@ -503,6 +517,79 @@ describe('googleDriveService', () => {
     resumableRanges = [];
     resumableChecksum = null;
     installDriveMock();
+  });
+
+  it('downloads encrypted bytes with metadata revalidation, size and SHA-256 verification', async () => {
+    const { file, blob, fetchMock } = await prepareDownload();
+    const result = await downloadBackup('access-token', file);
+    expect(result.name).toBe(file.name);
+    expect(new Uint8Array(await result.arrayBuffer())).toEqual(new Uint8Array(await blob.arrayBuffer()));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('alt')).toBe('media');
+    expect(fetchMock.mock.calls.every(([, options]) => options.method === 'GET')).toBe(true);
+  });
+
+  it('verifies the binary MD5 supplied by Drive when SHA-256 is absent', async () => {
+    const { file, blob } = await prepareDownload({ sha256Checksum: null });
+    file.md5Checksum = createHash('md5').update(new Uint8Array(await blob.arrayBuffer())).digest('hex');
+    expect((await downloadBackup('access-token', file)).size).toBe(blob.size);
+  });
+
+  it.each([
+    ['foreign alias', { appProperties: { type: 'lanzo_pos_backup', tenant_license_id: 'f'.repeat(64) } }, 'DRIVE_FILE_OWNERSHIP_UNVERIFIED'],
+    ['trash', { trashed: true }, 'DRIVE_FILE_OWNERSHIP_UNVERIFIED'],
+    ['download denied', { capabilities: { canDownload: false } }, 'DRIVE_DOWNLOAD_DENIED'],
+    ['invalid size', { size: 'unknown' }, 'DRIVE_SIZE_INVALID'],
+    ['changed name', { name: 'changed.lzbk' }, 'DRIVE_FILE_OWNERSHIP_UNVERIFIED'],
+    ['changed version', { version: '2' }, 'DRIVE_FILE_CHANGED']
+  ])('refuses %s before fetching media', async (_, changes, code) => {
+    const { file, fetchMock } = await prepareDownload();
+    fetchMock.mockResolvedValue(response({ ...file, ...changes }));
+    await expect(downloadBackup('access-token', file)).rejects.toMatchObject({ code });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 403, 404, 500])('handles HTTP %s without exposing a downloaded file', async (status) => {
+    const { file, fetchMock } = await prepareDownload();
+    fetchMock.mockResolvedValue(response({ error: { message: 'Remote failure' } }, { status }));
+    await expect(downloadBackup('access-token', file)).rejects.toBeInstanceOf(GoogleDriveError);
+    if (status === 401) expect(fixtures.state.markDriveNeedsReauth).toHaveBeenCalled();
+  });
+
+  it('rejects a foreign selection and an expired token without requesting media', async () => {
+    const { file, fetchMock } = await prepareDownload();
+    const foreign = { ...file, appProperties: { ...file.appProperties, tenant_license_id: 'f'.repeat(64) } };
+    await expect(downloadBackup('access-token', foreign)).rejects.toMatchObject({ code: 'DRIVE_FILE_OWNERSHIP_UNVERIFIED' });
+    fixtures.state.driveTokenExpiresAt = Date.now() - 1;
+    await expect(downloadBackup('access-token', file)).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['size', 'sha256', 'md5', 'body interrupted', 'network', 'partial HTTP', 'changed during transfer'])('rejects %s', async (failure) => {
+    const overrides = failure === 'size' ? { size: '1' }
+      : failure === 'sha256' ? { sha256Checksum: 'f'.repeat(64) }
+      : failure === 'md5' ? { md5Checksum: 'f'.repeat(32) } : {};
+    const { file, media, fetchMock } = await prepareDownload(overrides);
+    if (failure === 'body interrupted') media.blob.mockRejectedValue(new TypeError('connection lost'));
+    if (failure === 'partial HTTP') media.status = 206;
+    if (failure === 'network') fetchMock.mockRejectedValue(new TypeError('network failed'));
+    if (failure === 'changed during transfer') fetchMock
+      .mockResolvedValueOnce(response(file)).mockResolvedValueOnce(media)
+      .mockResolvedValueOnce(response({ ...file, version: '2' }));
+    await expect(downloadBackup('access-token', file)).rejects.toBeInstanceOf(GoogleDriveError);
+  });
+
+  it.each(['actor', 'tenant', 'token'])('invalidates a successful transfer after %s changes', async (change) => {
+    const { file, blob, media } = await prepareDownload();
+    media.blob.mockImplementation(async () => {
+      if (change === 'actor') fixtures.actorAccess = { ...fixtures.actorAccess, runtimeSnapshot: {
+        ...fixtures.actorAccess.runtimeSnapshot, sessionId: 'another-admin-session'
+      } };
+      if (change === 'tenant') fixtures.tenantContext = { ...fixtures.tenantContext, generation: 2 };
+      if (change === 'token') fixtures.state.driveTokenExpiresAt = Date.now() - 1;
+      return blob;
+    });
+    await expect(downloadBackup('access-token', file)).rejects.toBeInstanceOf(GoogleDriveError);
   });
 
   afterEach(() => {
