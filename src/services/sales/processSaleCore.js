@@ -71,7 +71,7 @@ const LOCAL_STATION_KEY_PREFIX = 'local:device:';
 const CREDIT_SALES_PERMISSION_DENIED_CODE = 'POS_PERMISSION_DENIED:pos_credit_sales';
 const CREDIT_SALES_PERMISSION_DENIED_MESSAGE = 'Tu usuario no tiene autorización para generar saldos pendientes mediante ventas.';
 
-const assertSaleAuthority = (actorContext, createsNewDebt) => {
+export const assertSaleAuthority = (actorContext, createsNewDebt) => {
     if (!actorContext) return;
     actorContext.assertCurrent('pos');
     if (!createsNewDebt) return;

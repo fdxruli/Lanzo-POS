@@ -1277,6 +1277,47 @@ describe('splitOpenTableOrderCore', () => {
     ]);
   });
 
+  it('binds local child sales to the confirming actor, fresh cash session, and station', async () => {
+    const parentSale = buildParentSale();
+    parentSale.cashOriginActorKey = 'staff:historical';
+    parentSale.cashOriginActorGeneration = 3;
+    parentSale.cash_session_id = 'cash-historical';
+    parentSale.localStationKey = 'local:device:old';
+    const actorContext = {
+      actorKey: 'staff:current',
+      generation: 12,
+      assertCurrent: vi.fn()
+    };
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(makeParams(parentSale, {
+      actorContext,
+      cashSessionId: 'cash-current',
+      localStationKey: 'local:device:current'
+    }), deps);
+
+    expect(result.success, result.message).toBe(true);
+    const [transaction, options] = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0];
+    expect(transaction.childPayloads.map(({ sale }) => sale)).toEqual([
+      expect.objectContaining({
+        cashOriginActorKey: 'staff:current',
+        cashOriginActorGeneration: 12,
+        cash_session_id: 'cash-current',
+        localStationKey: 'local:device:current'
+      }),
+      expect.objectContaining({
+        cashOriginActorKey: 'staff:current',
+        cashOriginActorGeneration: 12,
+        cash_session_id: 'cash-current',
+        localStationKey: 'local:device:current'
+      })
+    ]);
+    expect(transaction.childPayloads.every(({ sale }) => sale.cashOriginActorKey !== 'staff:historical')).toBe(true);
+    expect(options.assertAuthorized).toEqual(expect.any(Function));
+    expect(options.subscribeAuthority).toEqual(expect.any(Function));
+    options.assertAuthorized();
+    expect(actorContext.assertCurrent).toHaveBeenCalledWith('pos');
+  });
+
   it('does not block successful split when post-sale effects fail for a child', async () => {
     const parentSale = buildParentSale();
     const deps = makeDeps(parentSale);

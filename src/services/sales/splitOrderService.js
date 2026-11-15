@@ -1,7 +1,9 @@
 import { generateID } from '../utils';
 import { Money } from '../../utils/moneyMath';
 import { normalizeStock } from '../db/utils';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { SALE_STATUS } from './financialStats';
+import { assertSaleAuthority } from './processSaleCore';
 import { buildProcessedItemsAndDeductions } from './inventoryFlow';
 import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
@@ -556,6 +558,7 @@ const buildChildSaleRecord = ({
     ticketFinancials,
     normalizedPayment,
     processedItems,
+    financialContext = null,
     currentIsoTime,
     saleId = null
 }) => ({
@@ -582,6 +585,13 @@ const buildChildSaleRecord = ({
     changeAmount: normalizedPayment.changeAmount || '0',
     paymentReference: normalizedPayment.paymentReference || null,
     initialPaymentMethod: normalizedPayment.initialPaymentMethod || null,
+    ...(financialContext ? {
+        cash_session_id: financialContext.cashSessionId || null,
+        cashStationId: financialContext.cashStationId || null,
+        localStationKey: financialContext.localStationKey || null,
+        cashOriginActorKey: financialContext.actorContext?.actorKey || null,
+        cashOriginActorGeneration: financialContext.actorContext?.generation ?? null
+    } : {}),
     status: SALE_STATUS.CLOSED,
     orderType: parentSale.orderType || TABLE_ORDER_TYPE,
     tableData: parentSale.tableData || null,
@@ -653,7 +663,10 @@ export const splitOpenTableOrderCore = async ({
     companyName,
     cloudSpecialFlows = false,
     licenseDetails = null,
-    cashSessionId = null
+    cashSessionId = null,
+    cashStationId = null,
+    localStationKey = null,
+    actorContext = null
 } = {}, {
     loadData,
     loadMultipleData,
@@ -932,6 +945,12 @@ export const splitOpenTableOrderCore = async ({
                 ticketFinancials,
                 normalizedPayment,
                 processedItems,
+                financialContext: !cloudSpecialFlows && actorContext ? {
+                    actorContext,
+                    cashSessionId,
+                    cashStationId,
+                    localStationKey
+                } : null,
                 currentIsoTime,
                 saleId: `sale_split_${stableHash(`${splitGroupId}:${label}`)}`
             });
@@ -952,6 +971,11 @@ export const splitOpenTableOrderCore = async ({
 
         if (totalChildrenCents !== parentTotalCents) {
             throw new Error('La suma de tickets no cuadra con el total de la orden padre.');
+        }
+
+        const createsNewDebt = childDefinitions.some((child) => Money.init(child.sale.saldoPendiente || 0).gt(0));
+        if (!cloudSpecialFlows && actorContext) {
+            assertSaleAuthority(actorContext, createsNewDebt);
         }
 
         if (cloudSpecialFlows) {
@@ -1019,7 +1043,7 @@ export const splitOpenTableOrderCore = async ({
             };
         }
 
-        const transactionResult = await executeSplitOpenTableOrderTransactionSafe({
+        const transactionPayload = {
             parentOrderId,
             parentExpectedVersion: buildParentSnapshotVersion(parentSale),
             splitGroupId,
@@ -1028,9 +1052,26 @@ export const splitOpenTableOrderCore = async ({
                 sale: child.sale,
                 deductions: child.deductions
             }))
-        });
+        };
+        const transactionOptions = actorContext ? {
+            assertAuthorized: () => assertSaleAuthority(actorContext, createsNewDebt),
+            subscribeAuthority: actorRuntimeController.subscribe
+        } : undefined;
+        const transactionResult = await executeSplitOpenTableOrderTransactionSafe(
+            transactionPayload,
+            transactionOptions
+        );
 
         if (!transactionResult.success) {
+            const authorityCode = transactionResult.code || transactionResult.error?.code;
+            if (String(authorityCode || '').startsWith('ACTOR_')) {
+                return {
+                    success: false,
+                    code: authorityCode,
+                    errorType: authorityCode,
+                    message: transactionResult.message || transactionResult.error?.message || 'La autoridad del operador cambió antes de confirmar el cobro.'
+                };
+            }
             if (transactionResult.isConcurrencyError) {
                 return {
                     success: false,
@@ -1120,6 +1161,7 @@ export const splitOpenTableOrderCore = async ({
         Logger.error('SplitOrder Service Error:', error);
         return {
             success: false,
+            ...(error?.code ? { code: error.code, errorType: error.code } : {}),
             message: error?.message || 'No se pudo dividir/cobrar la cuenta.'
         };
     } finally {

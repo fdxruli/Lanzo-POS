@@ -680,6 +680,9 @@ const processSaleWithinTransaction = async ({
             const owner = getCashSessionActorKey(activeCashSession);
             const station = getCashSessionStationId(activeCashSession);
             const sessionLocalStationKey = getCashSessionLocalStationKey(activeCashSession);
+            if ((saleHasCashComponent(sale) || requestedSessionId) && !saleActorKey) {
+                throw buildCashBindingError('CASH_ACTOR_CONTEXT_REQUIRED', 'La venta de efectivo requiere el actor autenticado.');
+            }
             if (owner && saleActorKey && owner !== saleActorKey) {
                 throw buildCashBindingError('CASH_HANDOFF_REQUIRED', 'La venta no puede usar la sesión financiera de otro actor.');
             }
@@ -915,8 +918,14 @@ export const salesRepository = {
         splitGroupId,
         splitIntent = 'by_items',
         childPayloads = []
-    }) {
+    }, { assertAuthorized = null, subscribeAuthority = null } = {}) {
+        let authorityError = null;
         try {
+            if (typeof assertAuthorized !== 'function') {
+                const error = new Error('La liquidación local de una mesa requiere la autoridad vigente del operador.');
+                error.code = 'ACTOR_CONTEXT_REQUIRED';
+                throw error;
+            }
             if (!parentOrderId) {
                 throw new Error('SPLIT_ORDER_INVALID: parentOrderId es obligatorio.');
             }
@@ -932,9 +941,24 @@ export const salesRepository = {
             const lockedStoreNames = resolveRequiredStoreNames(salesToEvaluate);
             const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
 
-            return await db.transaction('rw', dexieTablesToLock, async () => {
+            return await db.transaction('rw', dexieTablesToLock, async (transaction) => {
                 const tables = buildTransactionTables(lockedStoreNames);
+                assertAuthorized();
+                const unsubscribe = subscribeAuthority?.(() => {
+                    try {
+                        assertAuthorized();
+                    } catch (error) {
+                        authorityError = error;
+                        try { transaction?.abort(); } catch { /* transaction already settled */ }
+                    }
+                });
+                if (unsubscribe && typeof transaction?.on === 'function') {
+                    transaction.on('complete', unsubscribe);
+                    transaction.on('abort', unsubscribe);
+                    transaction.on('error', unsubscribe);
+                }
                 const parentSale = await tables.sales.get(parentOrderId);
+                assertAuthorized();
 
                 if (!parentSale) {
                     throw buildConcurrencyError('La orden padre ya no existe.');
@@ -956,6 +980,7 @@ export const salesRepository = {
                 const childSaleIds = [];
 
                 for (const childPayload of childPayloads) {
+                    assertAuthorized();
                     const childSale = childPayload?.sale;
                     const childDeductions = childPayload?.deductions || [];
 
@@ -980,6 +1005,7 @@ export const salesRepository = {
                     }
 
                     childSaleIds.push(childSale.id);
+                    assertAuthorized();
                 }
 
                 const nowIso = new Date().toISOString();
@@ -995,6 +1021,7 @@ export const salesRepository = {
                     updatedAt: nowIso
                 };
 
+                assertAuthorized();
                 await tables.sales.put(parentUpdated);
 
                 await tables.transactionLog.add({
@@ -1007,6 +1034,7 @@ export const salesRepository = {
                     splitGroupId,
                     splitChildIds: childSaleIds
                 });
+                assertAuthorized();
 
                 return {
                     success: true,
@@ -1016,6 +1044,8 @@ export const salesRepository = {
                 };
             });
         } catch (error) {
+            if (authorityError) throw authorityError;
+            if (String(error?.code || '').startsWith('ACTOR_')) throw error;
             if (error?.isInventoryError || (error?.message && error.message.includes('STOCK_INSUFFICIENT'))) {
                 return {
                     success: false,

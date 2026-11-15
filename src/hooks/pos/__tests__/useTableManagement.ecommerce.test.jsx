@@ -241,7 +241,23 @@ beforeEach(() => {
   mocks.canUseCloudSplitTableSale.mockResolvedValue(true);
   mocks.cashGetCurrentSession.mockResolvedValue({
     success: true,
-    cashSession: { id: 'cloud-session', estado: 'abierta' },
+    cashSession: {
+      id: 'cloud-session', estado: 'abierta', actorKey: mocks.actorHandle.actorKey,
+      cashStationId: mocks.licenseKey ? 'cash-station-current' : null,
+      localStationKey: mocks.licenseKey ? null : 'local:device:device-a'
+    },
+    actor: { actorKey: mocks.actorHandle.actorKey },
+    financialStatus: 'OWN_SESSION_OPEN',
+    financialState: {
+      status: 'OWN_SESSION_OPEN', stateKnown: true,
+      cashSession: {
+        id: 'cloud-session', estado: 'abierta', actorKey: mocks.actorHandle.actorKey,
+        cashStationId: mocks.licenseKey ? 'cash-station-current' : null,
+        localStationKey: mocks.licenseKey ? null : 'local:device:device-a'
+      }
+    },
+    cashStationId: mocks.licenseKey ? 'cash-station-current' : null,
+    localStationKey: mocks.licenseKey ? null : 'local:device:device-a',
     readOnly: false,
     stateKnown: true
   });

@@ -471,7 +471,7 @@ describe('salesRepository.executeSaleTransaction', () => {
         { sale: buildChildSale('sale-child-a', 'A'), deductions: [] },
         { sale: buildChildSale('sale-child-b', 'B'), deductions: [] }
       ]
-    });
+    }, { assertAuthorized: () => true });
 
     expect(result.success).toBe(true);
     expect(result.childSaleIds).toEqual(['sale-child-a', 'sale-child-b']);
@@ -562,7 +562,7 @@ describe('salesRepository.executeSaleTransaction', () => {
         { sale: buildChildSale('sale-child-2', 'T2'), deductions: [] },
         { sale: buildChildSale('sale-child-3', 'T3'), deductions: [] }
       ]
-    });
+    }, { assertAuthorized: () => true });
 
     expect(result.success).toBe(true);
     expect(result.childSaleIds).toEqual(['sale-child-1', 'sale-child-2', 'sale-child-3']);
@@ -576,5 +576,115 @@ describe('salesRepository.executeSaleTransaction', () => {
       stock: 7,
       committedStock: 0
     });
+  });
+
+  it('reproduce CASH_ACTOR_CONTEXT_REQUIRED cuando un split cash omite el actor moderno', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.CAJAS].set('cash-modern-a', {
+      id: 'cash-modern-a',
+      estado: 'abierta',
+      actorKey: 'admin:a',
+      cashStationId: 'station-a'
+    });
+    state.maps[state.STORES.SALES].set('split-parent-modern', {
+      id: 'split-parent-modern', status: 'open', orderType: 'table', total: 20,
+      items: [], updatedAt: '2026-10-01T10:00:00.000Z'
+    });
+
+    const child = (id, label) => ({
+      id,
+      total: 10,
+      paymentMethod: 'cash',
+      payments: [{ method: 'cash', amount: '10' }],
+      abono: '10',
+      saldoPendiente: '0',
+      splitLabel: label,
+      splitParentId: 'split-parent-modern',
+      status: 'closed',
+      items: []
+    });
+
+    await expect(salesRepository.executeSplitOpenTableOrderTransaction({
+      parentOrderId: 'split-parent-modern',
+      parentExpectedVersion: '2026-10-01T10:00:00.000Z',
+      splitGroupId: 'split-cash-without-actor',
+      childPayloads: [
+        { sale: child('split-child-a', 'A'), deductions: [] },
+        { sale: child('split-child-b', 'B'), deductions: [] }
+      ]
+    }, { assertAuthorized: () => true })).rejects.toMatchObject({
+      name: 'DatabaseError',
+      message: expect.stringContaining('CASH_ACTOR_CONTEXT_REQUIRED')
+    });
+
+    expect(state.maps[state.STORES.SALES].get('split-parent-modern').status).toBe('open');
+    expect(state.maps[state.STORES.SALES].has('split-child-a')).toBe(false);
+    expect(state.maps[state.STORES.SALES].has('split-child-b')).toBe(false);
+    expect(state.maps[state.STORES.TRANSACTION_LOG].size).toBe(0);
+  });
+
+  it('rechaza una sesión cerrada o inexistente en un split cash antes de persistir hijos', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.SALES].set('split-parent-closed-cash', {
+      id: 'split-parent-closed-cash', status: 'open', orderType: 'table', total: 10,
+      items: [], updatedAt: '2026-10-01T10:00:00.000Z'
+    });
+    const sale = {
+      id: 'split-child-closed-cash', total: 10, paymentMethod: 'cash',
+      payments: [{ method: 'cash', amount: '10' }], abono: '10', saldoPendiente: '0',
+      cash_session_id: 'cash-closed', cashStationId: 'station-a',
+      cashOriginActorKey: 'admin:a', cashOriginActorGeneration: 4, items: []
+    };
+
+    await expect(salesRepository.executeSplitOpenTableOrderTransaction({
+      parentOrderId: 'split-parent-closed-cash',
+      parentExpectedVersion: '2026-10-01T10:00:00.000Z',
+      splitGroupId: 'split-cash-closed',
+      childPayloads: [
+        { sale, deductions: [] },
+        { sale: { ...sale, id: 'split-child-closed-cash-2' }, deductions: [] }
+      ]
+    }, { assertAuthorized: () => true })).rejects.toMatchObject({
+      name: 'DatabaseError',
+      message: expect.stringContaining('CASH_SESSION_NOT_OPEN')
+    });
+
+    expect(state.maps[state.STORES.SALES].get('split-parent-closed-cash').status).toBe('open');
+    expect(state.maps[state.STORES.SALES].has('split-child-closed-cash')).toBe(false);
+    expect(state.maps[state.STORES.TRANSACTION_LOG].size).toBe(0);
+  });
+
+  it('rechaza una caja abierta de otro actor en el split sin registrar ventas ni caja', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.CAJAS].set('cash-owner-a', {
+      id: 'cash-owner-a', estado: 'abierta', actorKey: 'admin:a', cashStationId: 'station-s'
+    });
+    state.maps[state.STORES.SALES].set('split-parent-other-actor', {
+      id: 'split-parent-other-actor', status: 'open', orderType: 'table', total: 10,
+      items: [], updatedAt: '2026-10-01T10:00:00.000Z'
+    });
+    const sale = {
+      id: 'split-child-other-actor', total: 10, paymentMethod: 'cash',
+      payments: [{ method: 'cash', amount: '10' }], abono: '10', saldoPendiente: '0',
+      cash_session_id: 'cash-owner-a', cashStationId: 'station-s',
+      cashOriginActorKey: 'staff:b', cashOriginActorGeneration: 6, items: []
+    };
+
+    await expect(salesRepository.executeSplitOpenTableOrderTransaction({
+      parentOrderId: 'split-parent-other-actor',
+      parentExpectedVersion: '2026-10-01T10:00:00.000Z',
+      splitGroupId: 'split-other-actor',
+      childPayloads: [
+        { sale, deductions: [] },
+        { sale: { ...sale, id: 'split-child-other-actor-2' }, deductions: [] }
+      ]
+    }, { assertAuthorized: () => true })).rejects.toMatchObject({
+      name: 'DatabaseError',
+      message: expect.stringContaining('CASH_HANDOFF_REQUIRED')
+    });
+
+    expect(state.maps[state.STORES.SALES].get('split-parent-other-actor').status).toBe('open');
+    expect(state.maps[state.STORES.SALES].has('split-child-other-actor')).toBe(false);
+    expect(state.maps[state.STORES.TRANSACTION_LOG].size).toBe(0);
   });
 });

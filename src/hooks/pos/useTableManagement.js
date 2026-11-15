@@ -25,6 +25,7 @@ import {
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
 import { cashRepository } from '../../services/cash/cashRepository';
+import { assertCashFinancialWriteAccess } from '../../services/cash/cashFinancialGate';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { hydrateRestaurantCloudOrderToLocalOpenSale } from '../../services/restaurant/restaurantTableHydration';
@@ -49,6 +50,11 @@ const SPLIT_BILL_INTEGRITY_OPTIONS = {
 const countSellableItems = (items = []) => (
     (Array.isArray(items) ? items : []).filter((item) => Number(item?.quantity) > 0).length
 );
+const getCashSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
+const getCashSessionStationIdentity = (session = {}) => ({
+    cashStationId: session.cashStationId || session.cash_station_id || null,
+    localStationKey: session.localStationKey || session.local_station_key || null
+});
 
 export function useTableManagement({
     openModal,
@@ -870,6 +876,7 @@ export function useTableManagement({
     }, [blockEcommerceRestaurantEffect, blockRemoteSplit, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
+        const splitActorContext = actorRuntimeController.capture('pos');
         const blocked = blockEcommerceRestaurantEffect();
         if (blocked) return blocked;
 
@@ -929,17 +936,22 @@ export function useTableManagement({
             }
         }
 
-        let resolvedCashSessionId = cajaActual?.id || null;
+        let resolvedCashSessionId = null;
+        let resolvedCashStationId = null;
+        let resolvedLocalStationKey = null;
         if (cloudSpecialFlows) {
             try {
+                splitActorContext.assertCurrent('pos');
                 const appCashStateNeedsEnsure = !cajaActual || cajaActual.estado !== 'abierta';
                 let ensuredCashSession = false;
                 if (appCashStateNeedsEnsure && typeof asegurarCajaAbierta === 'function') {
                     await asegurarCajaAbierta();
+                    splitActorContext.assertCurrent('pos');
                     ensuredCashSession = true;
                 }
 
                 let currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                splitActorContext.assertCurrent('pos');
                 const cashAuthority = currentCashState?.success === false && handlePosActorAuthorityError(currentCashState, 'split_checkout');
                 if (cashAuthority) return cashAuthority;
                 let currentCashSession = currentCashState?.cashSession || null;
@@ -950,13 +962,17 @@ export function useTableManagement({
 
                 if (!sessionIsUsable() && !ensuredCashSession && typeof asegurarCajaAbierta === 'function') {
                     await asegurarCajaAbierta();
+                    splitActorContext.assertCurrent('pos');
                     currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                    splitActorContext.assertCurrent('pos');
                     currentCashSession = currentCashState?.cashSession || null;
                 }
                 if (!sessionIsUsable()) {
                     throw new Error('CASH_SESSION_NOT_OPEN');
                 }
                 resolvedCashSessionId = currentCashSession.id;
+                resolvedCashStationId = currentCashState.cashStationId || currentCashSession.cashStationId || currentCashSession.cash_station_id || null;
+                resolvedLocalStationKey = currentCashState.localStationKey || currentCashSession.localStationKey || currentCashSession.local_station_key || null;
             } catch (cashStateError) {
                 const authorityResult = handlePosActorAuthorityError(cashStateError, 'split_checkout');
                 if (authorityResult) return authorityResult;
@@ -967,20 +983,111 @@ export function useTableManagement({
                 showMessageModal(message, null, { type: 'error' });
                 return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message };
             }
-        } else if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
-            if (typeof asegurarCajaAbierta !== 'function') {
-                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
-            }
-
+        } else {
             try {
-                await asegurarCajaAbierta();
+                splitActorContext.assertCurrent('pos');
+                let currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                splitActorContext.assertCurrent('pos');
+
+                const throwCashStateError = (state, fallbackCode, fallbackMessage) => {
+                    if (state?.success === false || state?.readOnly || state?.stateKnown === false
+                        || state?.financialStatus === 'BLOCKED') {
+                        const error = new Error(state?.message || fallbackMessage);
+                        error.code = state?.financialCode || state?.code || fallbackCode;
+                        throw error;
+                    }
+                    if (state?.financialStatus === 'HANDOFF_REQUIRED') {
+                        const error = new Error('La caja abierta pertenece a otro operador y requiere una entrega explícita.');
+                        error.code = state?.financialCode || 'CASH_HANDOFF_REQUIRED';
+                        throw error;
+                    }
+                };
+                const getCurrentSession = (state) => state?.cashSession || state?.cash_session || null;
+                const getStation = (state, session) => {
+                    const sessionStation = getCashSessionStationIdentity(session || {});
+                    return {
+                        cashStationId: state?.cashStationId || sessionStation.cashStationId || null,
+                        localStationKey: state?.localStationKey || sessionStation.localStationKey || null
+                    };
+                };
+                const hasUsableSession = (state) => {
+                    const session = getCurrentSession(state);
+                    const station = getStation(state, session);
+                    return state?.success !== false
+                        && !state?.readOnly
+                        && state?.stateKnown !== false
+                        && state?.financialStatus === 'OWN_SESSION_OPEN'
+                        && session?.estado === 'abierta'
+                        && session?.id
+                        && getCashSessionActorKey(session) === splitActorContext.actorKey
+                        && Boolean(station.cashStationId || station.localStationKey);
+                };
+
+                throwCashStateError(currentCashState, 'CASH_STATE_UNVERIFIED', 'No se pudo verificar la caja y la estación de cobro.');
+                let currentCashSession = getCurrentSession(currentCashState);
+                if (currentCashSession?.estado === 'abierta'
+                    && getCashSessionActorKey(currentCashSession)
+                    && getCashSessionActorKey(currentCashSession) !== splitActorContext.actorKey) {
+                    const error = new Error('La caja abierta pertenece a otro operador y no puede reutilizarse.');
+                    error.code = 'CASH_HANDOFF_REQUIRED';
+                    throw error;
+                }
+
+                const appCashStateNeedsEnsure = !cajaActual || cajaActual.estado !== 'abierta';
+                if (requiresCashSessionCompatibility && (appCashStateNeedsEnsure || !hasUsableSession(currentCashState))) {
+                    if (typeof asegurarCajaAbierta !== 'function') {
+                        const error = new Error('Se requiere una caja abierta para este cobro separado.');
+                        error.code = 'CASH_SESSION_REQUIRED';
+                        throw error;
+                    }
+                    await asegurarCajaAbierta();
+                    splitActorContext.assertCurrent('pos');
+                    currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                    splitActorContext.assertCurrent('pos');
+                    throwCashStateError(currentCashState, 'CASH_STATE_UNVERIFIED', 'No se pudo verificar la caja después de abrirla.');
+                    currentCashSession = getCurrentSession(currentCashState);
+                    if (!hasUsableSession(currentCashState)) {
+                        const error = new Error('El cobro separado requiere una sesión abierta de esta estación y del operador actual.');
+                        error.code = currentCashState?.financialCode || 'CASH_SESSION_NOT_OPEN';
+                        throw error;
+                    }
+                }
+
+                const station = getStation(currentCashState, currentCashSession);
+                if (!station.cashStationId && !station.localStationKey) {
+                    const error = new Error('No se pudo resolver la identidad financiera de esta estación.');
+                    error.code = 'CASH_STATION_UNRESOLVED';
+                    throw error;
+                }
+
+                if (requiresCashSessionCompatibility) {
+                    assertCashFinancialWriteAccess({
+                        state: currentCashState.financialState || {
+                            status: currentCashState.financialStatus,
+                            stateKnown: currentCashState.stateKnown,
+                            code: currentCashState.financialCode,
+                            cashSession: currentCashSession
+                        },
+                        cashSessionId: currentCashSession?.id,
+                        actorKey: splitActorContext.actorKey,
+                        cashStationId: station.cashStationId,
+                        localStationKey: station.localStationKey,
+                        operation: 'el cobro separado'
+                    });
+                    resolvedCashSessionId = currentCashSession.id;
+                }
+                resolvedCashStationId = station.cashStationId;
+                resolvedLocalStationKey = station.localStationKey;
             } catch (error) {
                 const authorityResult = handlePosActorAuthorityError(error, 'split_checkout');
                 if (authorityResult) return authorityResult;
-                Logger.error('No se pudo abrir caja para Split Bill:', error);
-                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
+                Logger.error('No se pudo validar caja y estación para Split Bill:', error);
+                const message = error?.code === 'CASH_SESSION_REQUIRED'
+                    || error?.code === 'CASH_SESSION_NOT_OPEN'
+                    ? 'El cobro separado requiere una caja abierta del operador y la estación actuales. No se aplicaron cobros.'
+                    : error?.message || 'No se pudo verificar la caja y la estación. No se aplicaron cobros.';
+                showMessageModal(message, null, { type: 'error' });
+                return { success: false, code: error?.code || 'CASH_VALIDATION_FAILED', message };
             }
         }
 
@@ -994,7 +1101,10 @@ export function useTableManagement({
                 companyName,
                 cloudSpecialFlows,
                 licenseDetails,
-                cashSessionId: resolvedCashSessionId
+                cashSessionId: resolvedCashSessionId,
+                cashStationId: resolvedCashStationId,
+                localStationKey: resolvedLocalStationKey,
+                actorContext: splitActorContext
             });
 
             if (!result.success) {

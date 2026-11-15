@@ -19,6 +19,7 @@ import {
     runTrackedActorOperationIfGranted
 } from './auth/actorOperationalHandoff';
 import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
+import { ACTOR_RUNTIME_ERROR_CODES, ActorRuntimeError } from './auth/actorRuntimeController';
 import { processSaleCore } from './sales/processSaleCore';
 import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
@@ -237,35 +238,73 @@ export const processSale = async (params, maxRetries = 3) => (
     })
 );
 
-export const splitOpenTableOrder = async (params, maxRetries = 3) => (
-    runTrackedActorOperationIfGranted('sales.splitOpenTableOrder', async () => {
-        Logger.info('Iniciando split bill de mesa (Safe Mode)...');
+const isCommittedSplitResult = (result, parentOrderId) => Boolean(
+    result?.success === true && (
+        (result.parentOrderId === parentOrderId && Array.isArray(result.childSaleIds) && result.childSaleIds.length > 0)
+        || (result.cloudCommitted === true && result.sourceMode === 'cloud_committed')
+    )
+);
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            const result = await _splitOpenTableOrderInternal(params);
+export const splitOpenTableOrder = async (params, maxRetries = 3) => {
+    let committedSplitResult = null;
+    try {
+        return await runTrackedActorOperationIfGranted('sales.splitOpenTableOrder', async ({ handle }) => {
+            const confirmationActor = params?.actorContext;
+            if (!confirmationActor || typeof confirmationActor.assertCurrent !== 'function') {
+                throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+                    reason: 'split_confirmation_actor_context_required'
+                });
+            }
+            confirmationActor.assertCurrent('pos');
+            handle.assertCurrent('pos');
+            if (confirmationActor.actorKey !== handle.actorKey
+                || confirmationActor.sessionId !== handle.sessionId
+                || confirmationActor.generation !== handle.generation
+                || confirmationActor.deviceRef !== handle.deviceRef
+                || confirmationActor.tenant?.opaqueId !== handle.tenant?.opaqueId
+                || confirmationActor.tenant?.generation !== handle.tenant?.generation) {
+                throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+                    reason: 'split_confirmation_actor_changed'
+                });
+            }
 
-            if (result.success) {
+            Logger.info('Iniciando split bill de mesa (Safe Mode)...');
+            const authorizedParams = { ...params, actorContext: handle };
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                handle.assertCurrent('pos');
+                const result = await _splitOpenTableOrderInternal(authorizedParams);
+                if (isCommittedSplitResult(result, params?.parentOrderId)) committedSplitResult = result;
+                handle.assertCurrent('pos');
+
+                if (result.success) {
+                    return result;
+                }
+
+                if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
+                    const delay = 100 * attempt;
+                    Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en split bill. Reintentando en ${delay}ms...`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    continue;
+                }
+
                 return result;
             }
 
-            if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
-                const delay = 100 * attempt;
-                Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en split bill. Reintentando en ${delay}ms...`);
-                await new Promise((resolve) => setTimeout(resolve, delay));
-                continue;
-            }
-
-            return result;
+            Logger.error('Fallo en split bill tras multiples intentos de concurrencia.');
+            return {
+                success: false,
+                errorType: 'MAX_RETRIES',
+                message: 'El sistema esta muy ocupado. Por favor intenta dividir/cobrar de nuevo.'
+            };
+        }, 'pos');
+    } catch (error) {
+        if (committedSplitResult && String(error?.code || '').startsWith('ACTOR_')) {
+            return committedSplitResult;
         }
-
-        Logger.error('Fallo en split bill tras multiples intentos de concurrencia.');
-        return {
-            success: false,
-            errorType: 'MAX_RETRIES',
-            message: 'El sistema esta muy ocupado. Por favor intenta dividir/cobrar de nuevo.'
-        };
-    })
-);
+        throw error;
+    }
+};
 
 const findSaleForCancellation = async ({ saleId, timestamp, currentSales = [] }) => {
     const fromMemory = currentSales.find((sale) => (
