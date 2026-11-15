@@ -1,16 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useActorAccess } from '../../../services/auth/useActorAccess';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
-import {
-  canStaffAccessSupportCenter,
-  getNotificationCapabilities,
-  getSupportChannel,
-  isSupportCenterEnabled
-} from '../../../services/notifications/notificationCapabilities';
-import {
-  buildFinancialDiagnosticText,
-  buildFinancialSupportTicketSummary
-} from '../../../services/financial/financialIntentDiagnostics';
+import { useActorRuntimeSnapshot } from '../../../services/auth/useActorRuntimeSnapshot';
+import { buildFinancialDiagnosticText } from '../../../services/financial/financialIntentDiagnostics';
 import {
   getFinancialDiagnosticSummary,
   getFinancialIntentDiagnostic,
@@ -18,10 +9,10 @@ import {
 } from '../../../services/financial/financialIntentObservability';
 import { retryFinancialIntentProjection } from '../../../services/financial/financialProjectionRepair';
 import { refreshFinancialIntentReceipt } from '../../../services/financial/financialReceiptReconciliation';
-import { listSupportTickets } from '../../../services/support/supportTicketService';
-import { useAppStore } from '../../../store/useAppStore';
 import { getCashMode } from '../../../services/cash/cashActor';
 import './FinancialDiagnosticsPanel.css';
+
+const FinancialSupportEscalation = lazy(() => import('./FinancialSupportEscalation'));
 
 const FILTERS = Object.freeze([
   ['attention', 'Requiere revisión'],
@@ -63,51 +54,16 @@ const matchesFilter = (diagnostic, filter) => {
   return true;
 };
 
-const SUPPORT_TICKET_PAGE_SIZE = 100;
-const SUPPORT_TICKET_MAX_PAGES = 10;
-const SUPPORT_TICKET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FINANCIAL_UNCERTAIN_STATUSES = new Set(['DISPATCHING', 'PENDING_RECEIPT', 'CONFLICT', 'BLOCKED']);
 const UNCERTAIN_RECEIPT_OUTCOMES = new Set([
   'receipt_processing', 'receipt_not_found_no_resend', 'receipt_unavailable', 'receipt_conflict', 'receipt_unrecognized'
 ]);
-const DEFINITIVE_TICKET_REJECTIONS = new Set([
-  'SUPPORT_CENTER_DISABLED', 'STAFF_SUPPORT_DISABLED', 'INVALID_METADATA',
-  'SUBJECT_REQUIRED', 'MESSAGE_TOO_SHORT', 'MESSAGE_TOO_LONG'
-]);
 
-const isTicketId = (value) => typeof value === 'string' && SUPPORT_TICKET_ID.test(value);
 const isSupportUncertain = (diagnostic, feedback) => (
   FINANCIAL_UNCERTAIN_STATUSES.has(String(diagnostic?.financialStatus || '').toUpperCase())
   || (String(diagnostic?.financialStatus || '').toUpperCase() === 'PREPARED' && Number(diagnostic?.dispatchAttemptCount || 0) > 0)
   || (feedback?.kind === 'receipt' && UNCERTAIN_RECEIPT_OUTCOMES.has(feedback.outcome))
 );
-
-const lookupSupportTicketBySubject = async ({ licenseDetails, subject, actorHandle }) => {
-  for (let page = 0; page < SUPPORT_TICKET_MAX_PAGES; page += 1) {
-    actorHandle.assertCurrent();
-    const offset = page * SUPPORT_TICKET_PAGE_SIZE;
-    let result;
-    try {
-      result = await listSupportTickets({
-        licenseDetails,
-        limit: SUPPORT_TICKET_PAGE_SIZE,
-        offset,
-        includeClosed: true
-      });
-    } catch {
-      actorHandle.assertCurrent();
-      return { status: 'unavailable' };
-    }
-    actorHandle.assertCurrent();
-
-    if (result?.success !== true || result?.skipped) return { status: 'unavailable' };
-    const match = (result.tickets || []).find((ticket) => ticket.subject === subject);
-    if (match) return isTicketId(match.id) ? { status: 'found', ticket: match } : { status: 'unverified' };
-    if ((result.tickets || []).length < SUPPORT_TICKET_PAGE_SIZE) return { status: 'not_found' };
-  }
-
-  return { status: 'incomplete' };
-};
 
 const receiptFeedback = (result, diagnostic) => {
   const outcome = result?.outcome;
@@ -153,12 +109,6 @@ const projectionFeedback = (result) => {
   return 'No se confirmó la actualización local. El estado financiero no se reenvió; revisa el diagnóstico antes de continuar.';
 };
 
-const supportFailureMessage = (code) => {
-  if (code === 'STAFF_SUPPORT_DISABLED') return 'Tu usuario Staff no tiene permiso para soporte interno. Contacta al administrador.';
-  if (code === 'SUPPORT_CENTER_DISABLED') return 'Esta licencia no tiene soporte interno habilitado. Copia el diagnóstico sanitizado y contacta el canal externo de soporte.';
-  return 'El servidor no confirmó la recepción del ticket.';
-};
-
 const writeClipboard = async (text) => {
   if (globalThis.navigator?.clipboard?.writeText) {
     await globalThis.navigator.clipboard.writeText(text);
@@ -180,31 +130,18 @@ const writeClipboard = async (text) => {
 /** A presentation-only consumer of the sanitized financial DTO. */
 const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false }) => {
   const cashMode = getCashMode();
-  const actorAccess = useActorAccess();
-  const isStaff = Boolean(cashMode.actor?.isStaff) || actorAccess.actorType === 'staff';
-  const supportLicenseDetails = useAppStore((state) => state.licenseDetails);
-  const notificationsAccessDenied = useAppStore((state) => state.notificationsAccessDenied);
-  const createTicket = useAppStore((state) => state.createTicket);
-  const openNotificationCenter = useAppStore((state) => state.openNotificationCenter);
-  const supportCapabilities = getNotificationCapabilities(supportLicenseDetails);
-  const staffSupportPermission = canStaffAccessSupportCenter(supportLicenseDetails, actorAccess.permissionSession);
-  const supportPlanEnabled = isSupportCenterEnabled(supportLicenseDetails)
-    && getSupportChannel(supportLicenseDetails) === 'in_app'
-    && supportCapabilities.support_tickets === true;
-  const supportEnabled = actorAccess.isAuthorizedActor
-    && !notificationsAccessDenied
-    && supportPlanEnabled
-    && staffSupportPermission;
-  const supportContextKey = [
-    actorAccess.actorType || 'unknown',
-    actorAccess.actorId || 'unknown',
-    actorAccess.runtimeSnapshot?.generation ?? 'unknown',
-    actorAccess.runtimeSnapshot?.sessionId || 'unknown',
-    supportLicenseDetails?.tenant_opaque_id || 'unknown',
-    supportLicenseDetails?.tenant_database_name || supportLicenseDetails?.database_name || 'unknown',
-    supportPlanEnabled ? 'support-enabled' : 'support-disabled',
-    staffSupportPermission ? 'staff-authorized' : 'staff-denied',
-    notificationsAccessDenied ? 'notifications-denied' : 'notifications-allowed'
+  const runtimeSnapshot = useActorRuntimeSnapshot();
+  const isStaff = Boolean(cashMode.actor?.isStaff);
+  const actionContextKey = [
+    cashMode.actor?.actorKey || 'unknown',
+    runtimeSnapshot.status || 'unknown',
+    runtimeSnapshot.actorType || 'unknown',
+    runtimeSnapshot.actorId || 'unknown',
+    runtimeSnapshot.generation ?? 'unknown',
+    runtimeSnapshot.sessionId || 'unknown',
+    runtimeSnapshot.tenant?.opaqueId || 'unknown',
+    runtimeSnapshot.tenant?.databaseName || 'unknown',
+    runtimeSnapshot.tenant?.generation ?? 'unknown'
   ].join(':');
   const [filter, setFilter] = useState('attention');
   const [diagnostics, setDiagnostics] = useState([]);
@@ -214,7 +151,6 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
   const [busyIntentId, setBusyIntentId] = useState(null);
   const [message, setMessage] = useState('');
   const [actionFeedback, setActionFeedback] = useState({});
-  const [supportFeedback, setSupportFeedback] = useState({});
   const [expanded, setExpanded] = useState(() => Boolean(initiallyExpanded && !isStaff));
   const actionLockRef = useRef(false);
   const activeActionRef = useRef(null);
@@ -255,9 +191,8 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
     actionLockRef.current = false;
     setBusyIntentId(null);
     setActionFeedback({});
-    setSupportFeedback({});
     setMessage('');
-  }, [supportContextKey]);
+  }, [actionContextKey]);
 
   const selected = useMemo(() => diagnostics.find((diagnostic) => diagnostic.intentId === selectedId) || null, [diagnostics, selectedId]);
 
@@ -277,6 +212,8 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
     actionLockRef.current = false;
     setBusyIntentId(null);
   };
+
+  const isActionCurrent = (token) => activeActionRef.current === token;
 
   const captureActionHandle = () => {
     try {
@@ -353,232 +290,6 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
     () => retryFinancialIntentProjection({ intentId: diagnostic.intentId }),
     'projection'
   );
-
-  const setSupportState = (intentId, token, state) => {
-    if (activeActionRef.current !== token) return;
-    setSupportFeedback((current) => ({ ...current, [intentId]: state }));
-  };
-
-  const openTicketInSupportCenter = (ticketId, actorHandle) => {
-    if (!isTicketId(ticketId)) return;
-    try {
-      actorHandle.assertCurrent();
-      openNotificationCenter?.({ tab: 'support', ticketId });
-    } catch {
-      // Ticket receipt remains confirmed even if the optional drawer cannot open.
-    }
-  };
-
-  const findTicket = async (summary, actorHandle) => lookupSupportTicketBySubject({
-    licenseDetails: supportLicenseDetails,
-    subject: summary.subject,
-    actorHandle
-  });
-
-  const showConfirmedTicket = (diagnostic, summary, ticket, token, actorHandle) => {
-    actorHandle.assertCurrent();
-    if (activeActionRef.current !== token || !isTicketId(ticket?.id)) return;
-    setSupportState(diagnostic.intentId, token, {
-      status: 'confirmed',
-      correlationId: summary.correlationId,
-      ticketId: ticket.id,
-      text: `El servidor confirmó la recepción. Folio: ${ticket.id}.`
-    });
-    openTicketInSupportCenter(ticket.id, actorHandle);
-  };
-
-  const handleSupportLookup = async (diagnostic) => {
-    const token = beginAction(diagnostic);
-    if (!token) return;
-    const actorHandle = captureActionHandle();
-    if (!actorHandle) {
-      setSupportState(diagnostic.intentId, token, {
-        status: 'lookup_unavailable',
-        text: 'La sesión autorizada cambió. No se consultó ni reenvió ningún ticket.'
-      });
-      finishAction(token);
-      return;
-    }
-    const summary = buildFinancialSupportTicketSummary(diagnostic, { appVersion: globalThis.__APP_VERSION__ || null });
-    if (!summary) {
-      setSupportState(diagnostic.intentId, token, {
-        status: 'lookup_unavailable',
-        text: 'No se puede construir una referencia financiera segura. Copia el diagnóstico y contacta al administrador.'
-      });
-      finishAction(token);
-      return;
-    }
-    setSupportState(diagnostic.intentId, token, {
-      status: 'checking',
-      correlationId: summary.correlationId,
-      text: 'Consultando el historial autorizado de tickets…'
-    });
-    try {
-      const found = await findTicket(summary, actorHandle);
-      actorHandle.assertCurrent();
-      if (found.status === 'found') {
-        showConfirmedTicket(diagnostic, summary, found.ticket, token, actorHandle);
-      } else {
-        setSupportState(diagnostic.intentId, token, {
-          status: 'uncertain',
-          correlationId: summary.correlationId,
-          text: found.status === 'not_found'
-            ? 'No se encontró un ticket con esta referencia. El envío anterior sigue sin confirmarse; no se creó otro ticket automáticamente. Busca la referencia en el Centro de soporte o contacta al administrador.'
-            : 'No se pudo completar la consulta de tickets. El envío anterior sigue sin confirmarse; no se creó otro ticket.'
-        });
-      }
-    } catch {
-      try {
-        actorHandle.assertCurrent();
-      } catch {
-        return;
-      }
-      setSupportState(diagnostic.intentId, token, {
-        status: 'uncertain',
-        correlationId: summary.correlationId,
-        text: 'No se pudo consultar el ticket. El envío anterior sigue sin confirmarse; no se creó otro ticket.'
-      });
-    } finally {
-      finishAction(token);
-    }
-  };
-
-  const handleSupportRequest = async (diagnostic) => {
-    const token = beginAction(diagnostic);
-    if (!token) return;
-    const actorHandle = captureActionHandle();
-    if (!actorHandle) {
-      setSupportState(diagnostic.intentId, token, {
-        status: 'lookup_unavailable',
-        text: 'La sesión autorizada cambió. No se envió ningún ticket; vuelve a validar el actor.'
-      });
-      finishAction(token);
-      return;
-    }
-    const summary = buildFinancialSupportTicketSummary(diagnostic, { appVersion: globalThis.__APP_VERSION__ || null });
-    if (!summary) {
-      setSupportState(diagnostic.intentId, token, {
-        status: 'lookup_unavailable',
-        text: 'No se puede construir una referencia financiera segura. Copia el diagnóstico y contacta al administrador.'
-      });
-      finishAction(token);
-      return;
-    }
-
-    setSupportState(diagnostic.intentId, token, {
-      status: 'checking',
-      correlationId: summary.correlationId,
-      text: 'Comprobando si ya existe un ticket para esta operación…'
-    });
-
-    try {
-      actorHandle.assertCurrent();
-      const existing = await findTicket(summary, actorHandle);
-      actorHandle.assertCurrent();
-      if (existing.status === 'found') {
-        showConfirmedTicket(diagnostic, summary, existing.ticket, token, actorHandle);
-        return;
-      }
-      if (existing.status !== 'not_found') {
-        setSupportState(diagnostic.intentId, token, {
-          status: 'lookup_failed',
-          correlationId: summary.correlationId,
-          text: 'No se envió una solicitud porque no se pudo comprobar el historial de tickets. Intenta consultar de nuevo o usa el Centro de soporte.'
-        });
-        return;
-      }
-
-      const result = await createTicket?.({
-        subject: summary.subject,
-        category: 'cash',
-        priority: 'normal',
-        message: summary.message,
-        metadata: { source: 'financial_diagnostics' }
-      });
-      actorHandle.assertCurrent();
-
-      if (result?.success === true && isTicketId(result?.ticket?.id)) {
-        showConfirmedTicket(diagnostic, summary, result.ticket, token, actorHandle);
-        return;
-      }
-
-      if (result?.success === false && DEFINITIVE_TICKET_REJECTIONS.has(result?.code)) {
-        setSupportState(diagnostic.intentId, token, {
-          status: 'rejected',
-          correlationId: summary.correlationId,
-          text: supportFailureMessage(result.code)
-        });
-        return;
-      }
-
-      setSupportState(diagnostic.intentId, token, {
-        status: 'uncertain',
-        correlationId: summary.correlationId,
-        text: 'No llegó una confirmación válida del servidor. El ticket podría haberse creado; no enviaremos otro automáticamente.'
-      });
-
-      const recovered = await findTicket(summary, actorHandle);
-      actorHandle.assertCurrent();
-      if (recovered.status === 'found') {
-        showConfirmedTicket(diagnostic, summary, recovered.ticket, token, actorHandle);
-      } else {
-        setSupportState(diagnostic.intentId, token, {
-          status: 'uncertain',
-          correlationId: summary.correlationId,
-          text: recovered.status === 'not_found'
-            ? 'No llegó una confirmación válida y el historial no muestra un ticket con esta referencia. El resultado sigue incierto; no se reenvió. Consulta el Centro de soporte manualmente antes de continuar.'
-            : 'No llegó una confirmación válida y no se pudo comprobar el historial. El resultado sigue incierto; no se reenvió.'
-        });
-      }
-    } catch {
-      try {
-        actorHandle.assertCurrent();
-      } catch {
-        return;
-      }
-      setSupportState(diagnostic.intentId, token, {
-        status: 'uncertain',
-        correlationId: summary.correlationId,
-        text: 'No se recibió una confirmación del servidor. El ticket podría haberse creado; no enviaremos otro automáticamente.'
-      });
-      try {
-        const recovered = await findTicket(summary, actorHandle);
-        actorHandle.assertCurrent();
-        if (recovered.status === 'found') {
-          showConfirmedTicket(diagnostic, summary, recovered.ticket, token, actorHandle);
-        } else if (activeActionRef.current === token) {
-          setSupportState(diagnostic.intentId, token, {
-            status: 'uncertain',
-            correlationId: summary.correlationId,
-            text: recovered.status === 'not_found'
-              ? 'No se encontró el ticket en el historial consultado. El resultado sigue incierto; no se reenvió. Busca la referencia en el Centro de soporte o contacta al administrador.'
-              : 'No se pudo verificar el historial de tickets. El resultado sigue incierto; no se reenvió.'
-          });
-        }
-      } catch {
-        try {
-          actorHandle.assertCurrent();
-        } catch {
-          return;
-        }
-      }
-    } finally {
-      finishAction(token);
-    }
-  };
-
-  const openSupportCenter = (diagnostic) => {
-    try {
-      const actorHandle = actorRuntimeController.capture();
-      actorHandle.assertCurrent();
-      openNotificationCenter?.({ tab: 'support' });
-    } catch {
-      setSupportFeedback((current) => ({
-        ...current,
-        [diagnostic.intentId]: { ...current[diagnostic.intentId], text: 'La sesión cambió. Inicia sesión con el actor autorizado y vuelve a abrir Soporte.' }
-      }));
-    }
-  };
 
   const handleCopy = async (diagnostic) => {
     const mode = getCashMode();
@@ -658,10 +369,7 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
       <div className="financial-diagnostics__list">
         {diagnostics.map((diagnostic) => {
           const feedback = actionFeedback[diagnostic.intentId];
-          const supportState = supportFeedback[diagnostic.intentId];
           const needsSupport = isSupportUncertain(diagnostic, feedback);
-          const staffDenied = isStaff && !staffSupportPermission;
-          const supportUnavailable = !supportPlanEnabled || notificationsAccessDenied || !actorAccess.isAuthorizedActor;
           return (
             <article key={diagnostic.intentId} className="financial-diagnostics__item">
               <div>
@@ -671,45 +379,16 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
                 <small>Actor: {diagnostic.originActorKey} · Edad: {age(diagnostic.ageMs)}</small>
                 {feedback?.text && feedback.text !== message && <p className="financial-diagnostics__item-feedback" role="status">{feedback.text}</p>}
                 {needsSupport && (
-                  <div className="financial-diagnostics__support" aria-label="Escalamiento de operación financiera">
-                    <strong>Solicitar revisión de soporte</strong>
-                    {supportState?.text && <p role="status">{supportState.text}</p>}
-                    {supportState?.status === 'confirmed' ? (
-                      <button type="button" onClick={() => openSupportCenter(diagnostic)} disabled={Boolean(busyIntentId)}>
-                        Abrir folio en Centro de soporte
-                      </button>
-                    ) : supportEnabled ? (
-                      supportState?.status === 'uncertain' || supportState?.status === 'lookup_failed' ? (
-                        <div className="financial-diagnostics__support-actions">
-                          <button type="button" onClick={() => handleSupportLookup(diagnostic)} disabled={Boolean(busyIntentId)}>
-                            Consultar tickets
-                          </button>
-                          <button type="button" onClick={() => openSupportCenter(diagnostic)} disabled={Boolean(busyIntentId)}>
-                            Abrir Centro de soporte
-                          </button>
-                        </div>
-                      ) : supportState?.status === 'rejected' || supportState?.status === 'lookup_unavailable' ? (
-                        <button type="button" onClick={() => openSupportCenter(diagnostic)} disabled={Boolean(busyIntentId)}>
-                          Abrir Centro de soporte
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => handleSupportRequest(diagnostic)} disabled={Boolean(busyIntentId)}>
-                          {supportState?.status === 'checking' ? 'Comprobando soporte…' : 'Solicitar soporte'}
-                        </button>
-                      )
-                    ) : staffDenied ? (
-                      <p>Tu usuario Staff no tiene permiso para soporte interno. Contacta al administrador; puedes copiar el diagnóstico sanitizado.</p>
-                    ) : supportPlanEnabled && notificationsAccessDenied ? (
-                      <p>No se pudo validar el acceso al Centro de soporte. Contacta al administrador; puedes copiar el diagnóstico sanitizado.</p>
-                    ) : !actorAccess.isAuthorizedActor ? (
-                      <p>Valida una sesión autorizada antes de solicitar soporte. No se envió ningún ticket.</p>
-                    ) : supportUnavailable ? (
-                      <p>Esta licencia no tiene tickets internos habilitados. Usa «Copiar diagnóstico» y contacta el canal externo de soporte.</p>
-                    ) : null}
-                    {(supportState?.status === 'uncertain' || supportState?.status === 'lookup_failed') && (
-                      <small>La RPC actual no deduplica tickets por operación. El resultado incierto no se reenvía automáticamente.</small>
-                    )}
-                  </div>
+                  <Suspense fallback={<p className="financial-diagnostics__message" role="status">Preparando opciones de soporte…</p>}>
+                    <FinancialSupportEscalation
+                      diagnostic={diagnostic}
+                      contextKey={actionContextKey}
+                      busy={Boolean(busyIntentId)}
+                      beginAction={beginAction}
+                      finishAction={finishAction}
+                      isActionCurrent={isActionCurrent}
+                    />
+                  </Suspense>
                 )}
               </div>
               <div className="financial-diagnostics__actions">

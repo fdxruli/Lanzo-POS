@@ -20,6 +20,9 @@ vi.mock('../../../../services/cash/cashActor', () => ({
 vi.mock('../../../../services/auth/useActorAccess', () => ({
   useActorAccess: () => fixtures.actorAccess
 }));
+vi.mock('../../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => fixtures.actorAccess?.runtimeSnapshot || {}
+}));
 vi.mock('../../../../services/auth/actorRuntimeController', () => ({
   actorRuntimeController: {
     capture: () => ({
@@ -183,7 +186,7 @@ describe('FinancialDiagnosticsPanel', () => {
     expect(screen.getByText('Requiere iniciar sesión con el actor de origen.')).toBeTruthy();
     expect(document.body.textContent).not.toContain('transient-only');
     expect(document.body.textContent).not.toContain('requestPayload');
-    fireEvent.click(screen.getByRole('button', { name: 'Solicitar soporte' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Solicitar soporte' }));
     expect(await screen.findByText(`El servidor confirmó la recepción. Folio: ${TICKET_ID}.`)).toBeVisible();
     expect(fixtures.receipt).not.toHaveBeenCalled();
     expect(fixtures.projection).not.toHaveBeenCalled();
