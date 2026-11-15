@@ -1,6 +1,6 @@
 # Ecommerce price confirmation v1 — instalación y QA
 
-**Estado actual:** `BLOCKED` · migración **NO INSTALADA**
+**Estado actual:** `READY_FOR_ROLLBACK_TEST` · migración **NO INSTALADA**
 **Proyecto objetivo inspeccionado:** Supabase Production `odlrhijtfyavryeqivaa` (PostgreSQL 17.6)
 **Migración:** `20261114231943_ecommerce_price_confirmation_v1.sql` · versión `20261114231943`
 **SHA-256:** `6f19aec959a796dfb922902c929a680c01e2792e57767039f09b8a97c01e6f34` (corrección en PR; migración no instalada)
@@ -17,11 +17,51 @@
 - **Diagnóstico SQL dinámico (2026-11-15 15:46:42.847 UTC):** una ejecución puntual autorizada falló y revirtió completamente antes de insertar el ledger. El log registra `SQLSTATE 42601`, `syntax error at or near "("`, posición interna `24148`, durante `EXECUTE v_definition` al crear `public.ecommerce_create_order`; `DETAIL` y `HINT` llegaron vacíos. El contexto identifica `CREATE OR REPLACE FUNCTION public.ecommerce_create_order(...)`. El fragmento exacto era `::text[])<>'{}'::jsonbor not (v_accepted_pricing?&array[...]::text[])`.
 - **Causa y corrección:** reconstruí en memoria `pg_get_functiondef` vigente (MD5 `ed11bdd80c3a3ffaba58c2582fdf60f0`) y apliqué en orden las sustituciones de la migración, sin escritura en Production. La concatenación del comparador unía `::jsonb` y `or not` sin espacio: `...<>'{}'::jsonbor not (...)`. Se corrigió únicamente a `...<>'{}'::jsonb or not (...)`. Las anclas se encontraron con cuentas `1` declaración, `1` hash de solicitud, `2` ramas de idempotencia, `1` allowlist, `1` comparación de precio y `1` metadatos. Las dos apariciones confirman que se cubren tanto el replay inicial como `EXCEPTION WHEN unique_violation`.
 - **Compilación PostgreSQL:** PENDING. Esta máquina no tiene servicio/proceso PostgreSQL; los binarios locales carecen de `share` (`postgres.bki`), y `docker info` no obtuvo respuesta del daemon. La reconstrucción y el chequeo de fragmentos no se reportan como compilación real.
-- **Estado posterior a la ejecución fallida:** solo lecturas confirmaron que `20261114231943` sigue ausente, el ledger sigue en 360 filas y ambas funciones conservan MD5, owner, ACL, `SECURITY DEFINER` y `search_path` previos. No se reintentó SQL ni hubo cambios de datos comerciales.
+- **Estado posterior a la ejecución fallida:** solo lecturas confirmaron que `20261114231943` sigue ausente, el ledger sigue en 360 filas y ambas funciones conservan MD5, owner, ACL, `SECURITY DEFINER` y `search_path` previos. No se reintentó la escritura; no hay cambios persistentes ni cambios de datos comerciales.
+- **Preflight actual de solo lectura:** el proyecto `odlrhijtfyavryeqivaa` está `ACTIVE_HEALTHY`, PostgreSQL `17.6.1.063`; el ejecutor es `postgres`, `transaction_read_only=off`; ledger 360, target count 0, latest `20261114055610`; sesiones activas relacionadas 0. Los hashes, firmas, ACL, owner, `SECURITY DEFINER`, `search_path`, `extensions.digest` y metadata JSONB siguen como se indica arriba. `transaction_timeout` está disponible con contexto `user` en PostgreSQL Production.
+- **Comprobación con ROLLBACK preparada, no ejecutada:** `docs/runbooks/ecommerce-price-confirmation-v1-rollback-compile.sql`, SHA-256 `0b68ea481253bc8153709ccbcc757859b8b32ea904e6d323e33c236f5bae78bf`. Contiene una única transacción, `lock_timeout=3s`, `statement_timeout=25s`, `transaction_timeout=60s`, preflight, los dos bloques `DO` canónicos copiados exactamente sin los delimitadores externos, postflight y `ROLLBACK` final. No incluye `COMMIT`, inserts al ledger, fixtures ni operaciones comerciales. El cuerpo entre marcadores coincide textualmente con el de la migración tras normalizar los saltos de línea.
+- **MCP:** `execute_sql` recibe un solo parámetro `query`. La ejecución anterior aceptó múltiples sentencias y DDL en una llamada; una prueba previa de `BEGIN; SET LOCAL ...; ROLLBACK;` mostró que el ajuste transaccional local se revirtió, y el postflight tras el error anterior confirmó que la transacción quedó revertida. La ruta de DDL exitosa seguida de `ROLLBACK` aún no se ha ejecutado; el script la deja explícita y requiere una lectura independiente después. No se dividirá entre llamadas.
+- **Ejecutor MCP:** `execute_sql` recibe un solo argumento `query`. Una comprobación anterior de `BEGIN; SET LOCAL ...; ROLLBACK;` en una sola llamada confirmó alcance transaccional (el ajuste local se revirtió); la ejecución fallida previa aceptó múltiples sentencias y DDL en una única llamada, devolvió el error de PostgreSQL y el postflight independiente confirmó rollback. No se ha comprobado todavía una ruta exitosa de DDL seguida de `ROLLBACK`; el script propuesto la termina explícitamente así. Debe enviarse completo en una sola llamada; nunca dividirlo. Ante error, la llamada debe finalizar y la siguiente acción será únicamente el postflight de lectura, sin reintento.
+- **Riesgo temporal:** `CREATE OR REPLACE FUNCTION` toma locks de catálogo/función que pueden hacer esperar llamadas concurrentes hasta el `ROLLBACK`. El límite de espera para locks es 3 s; cada sentencia está limitada a 25 s. Si el lock no se obtiene o una sentencia excede el límite, el preflight/postflight aborta y se confirma el estado mediante lecturas independientes.
+- **Autorización:** esta preparación no autoriza ejecutar el script. No se hizo DDL en Production durante esta revisión; la autorización anterior era para la instalación con el hash previo y no aplica a esta comprobación.
 - **QA SQL y concurrencia local:** bloqueados. Docker Desktop está disponible, pero el servicio/daemon no arrancó y requiere elevación que esta sesión no tiene; no hay distribución WSL y el PostgreSQL local no tiene `postgres.bki`. El fixture SQL reusable no contiene la función real, sus helpers ni las tablas necesarias. Dos intentos locales razonables no produjeron un entorno fiel. No se usaron funciones ficticias, Production ni un proyecto externo para suplirlo.
 - **CI PostgreSQL aislado:** se intentó reconstruir el proyecto con Supabase CLI 2.79.0 y PostgreSQL 17 en un job efímero, sin secretos ni conexión a Production. `supabase start` inició el stack, pero `supabase db reset --local --no-seed` falló en la primera migración, `20260614224210_harden_public_tables_and_pos_rpcs.sql`, con `relation "public.plans" does not exist (SQLSTATE 42P01)`. La limpieza `supabase stop --no-backup` terminó correctamente. La migración objetivo y `supabase/tests/ecommerce_price_confirmation_v1_test.sql` no se ejecutaron; tampoco C1–C5. El historial de migraciones del repositorio no recrea por sí solo una base vacía y fiel. Se retiró el workflow diagnóstico fallido en lugar de dejar un check roto.
 - **QA manual:** pendiente; no hay portal QA autorizado para escrituras.
-- **Production:** sin escrituras y sin instalación de la migración.
+- **Production:** sin cambios persistentes; la única transacción anterior falló y se revirtió. Migración sin instalar.
+
+## Comprobación transaccional de compilación
+
+La comprobación solo crea las dos funciones dentro de la transacción y no las invoca. Requiere autorización separada del propietario. Antes de ejecutarla, volver a verificar proyecto, HEAD, SHA de la migración, hashes/ACL/owner/configuración de ambas funciones y ledger. Si algo difiere, detenerse.
+
+Enviar el contenido completo de `docs/runbooks/ecommerce-price-confirmation-v1-rollback-compile.sql` como el parámetro `query` de **una sola** llamada `mcp__codex_apps__supabase_execute_sql` con `project_id="odlrhijtfyavryeqivaa"`. No separar llamadas ni quitar el `ROLLBACK` final. El script ejecuta el cuerpo canónico sin sus delimitadores exteriores, conserva los dos bloques originales de preflight y postcheck y no registra la versión en el ledger.
+
+La llamada exitosa debe terminar con `ROLLBACK`. Después, en una llamada nueva solo de lectura, ejecutar:
+
+```sql
+select count(*) as ledger_total,
+       count(*) filter (where version = '20261114231943') as target_count,
+       max(version) as latest_version
+from supabase_migrations.schema_migrations;
+
+select p.oid::regprocedure as signature,
+       md5(p.prosrc) as source_md5,
+       pg_get_userbyid(p.proowner) as owner,
+       p.prosecdef as security_definer,
+       p.proconfig as function_config,
+       p.proacl::text[] as execute_acl,
+       position('acceptedPricing' in p.prosrc) = 0 as acceptance_marker_absent,
+       position('priceAcceptanceHash' in p.prosrc) = 0 as hash_marker_absent
+from pg_proc p
+where p.oid in (
+  'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure,
+  'private.ecommerce_public_error(text)'::regprocedure
+)
+order by 1;
+```
+
+Esperado: ledger total `360`, target count `0`, latest `20261114055610`; MD5 originales `ed11bdd80c3a3ffaba58c2582fdf60f0` y `0c68e50ab545d4b7911d7ad69977309c`; owner, ACL, `SECURITY DEFINER` y `search_path` idénticos al preflight; marcadores ausentes en la función legacy. Si la ejecución devuelve cualquier error, capturar el SQLSTATE/mensaje/contexto y hacer únicamente este postflight; no reintentar hasta explicar la causa.
+
+`CREATE OR REPLACE FUNCTION` puede esperar por el lock de función y mantenerlo hasta el `ROLLBACK`, por lo que llamadas concurrentes al checkout podrían esperar. `lock_timeout=3s` limita la espera por locks, `statement_timeout=25s` limita cada sentencia y `transaction_timeout=60s` limita la transacción completa; estos límites son locales y se revierten. No existe garantía de despliegue atómico, aunque no se confirma ningún cambio.
 
 ## Alcance y orden de activación
 
