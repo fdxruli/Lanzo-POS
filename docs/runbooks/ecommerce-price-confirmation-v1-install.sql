@@ -619,4 +619,3 @@ END;
 $install_ledger_postflight$;
 
 COMMIT;
-
