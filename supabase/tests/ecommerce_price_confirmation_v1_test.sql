@@ -18,6 +18,7 @@ declare
   v_items jsonb;
   v_result jsonb;
   v_first_order uuid;
+  v_replay_guard_count integer;
   v_orders_before bigint;
   v_items_before bigint;
   v_events_before bigint;
@@ -59,6 +60,16 @@ begin
   select count(*) into v_orders_before from public.ecommerce_orders where portal_id = v_portal;
   select count(*) into v_items_before from public.ecommerce_order_items where portal_id = v_portal;
   select count(*) into v_events_before from public.ecommerce_order_events where portal_id = v_portal;
+
+  -- The patch must protect both the initial replay lookup and the unique_violation race path.
+  select (length(p.prosrc) - length(replace(p.prosrc, 'v_existing_acceptance_hash:=nullif', '')))
+         / length('v_existing_acceptance_hash:=nullif')
+    into v_replay_guard_count
+  from pg_proc p
+  where p.oid = 'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure;
+  if v_replay_guard_count <> 2 then
+    raise exception 'P1_BOTH_IDEMPOTENCY_PATHS_NOT_GUARDED: %', v_replay_guard_count;
+  end if;
 
   -- P1-01: current $100 matches explicit acceptance.
   v_items := jsonb_build_array(jsonb_build_object(
