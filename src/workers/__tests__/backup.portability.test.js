@@ -10,6 +10,27 @@ import {
 } from '../../services/backup/backupFormat';
 
 import { createCanonicalLanzoDatabase } from '../../services/db/dexie.js';
+import { downloadBackup, listBackups } from '../../services/googleDriveService';
+import { useAppStore } from '../../store/useAppStore';
+
+const drive = vi.hoisted(() => ({ context: null }));
+vi.mock('../../services/tenant/tenantWorkerContext', async (importOriginal) => ({
+  ...await importOriginal(),
+  captureActiveTenantWorkerContext: () => drive.context,
+  isActiveTenantWorkerContext: (captured) => Boolean(drive.context)
+    && captured.databaseName === drive.context.databaseName && captured.generation === drive.context.generation
+}));
+vi.mock('../../services/auth/actorAccessPolicy', async (importOriginal) => ({
+  ...await importOriginal(),
+  readActorAccess: () => ({
+    isAdmin: true, isAuthorizedActor: true, actorType: 'admin', actorId: 'synthetic-admin',
+    canAccessPermission: () => true,
+    runtimeSnapshot: {
+      status: 'granted', actorType: 'admin', actorId: 'synthetic-admin', actorKey: 'admin:synthetic-admin',
+      sessionId: 'synthetic-session', generation: 1, deviceRef: 'synthetic-device'
+    }
+  })
+}));
 
 const keyAlias = `license-key-sha256:${'a'.repeat(64)}`;
 const idAlias = 'license-id:synthetic-business';
@@ -97,7 +118,7 @@ async function fixture(aliases = [keyAlias]) {
   await database.table('company').put({ id: 'excluded-source' });
   await command('unlock', { pin, salt: bytesToBase64(new Uint8Array(16).fill(3)), iterations: 1000 });
   const backup = await command('backup', { context: source });
-  return { source, file: backup.blob, rows };
+  return { source, file: backup.blob, rows, fileName: backup.fileName, header: backup.header };
 }
 
 // Re-authenticate synthetic fixtures with the original PIN to exercise policy
@@ -129,6 +150,60 @@ async function rewriteFixture(file, { headerChanges = {}, sourceName, legacy = f
 }
 
 describe('V2 worker portability with real encryption and Dexie', () => {
+  it('recovers an encrypted copy via mocked Drive into B and rejects it in another business', async () => {
+    const { source, file, rows, fileName, header } = await fixture();
+    openDatabases.find((database) => database.name === source.databaseName).close();
+    await Dexie.delete(source.databaseName);
+    const target = context([keyAlias, idAlias]);
+    const destination = await databaseFor(target);
+    drive.context = target;
+    useAppStore.setState({
+      driveAccessToken: 'synthetic-token', isDriveConnected: true,
+      driveTokenExpiresAt: Date.now() + 3_600_000, driveTenantBinding: target.databaseName
+    });
+    const hexDigest = async (value) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', value)),
+      (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const metadata = {
+      id: 'synthetic-drive-copy', name: fileName, createdTime: header.createdAt,
+      size: String(file.size), version: '1', mimeType: 'application/octet-stream', trashed: false,
+      capabilities: { canDownload: true }, sha256Checksum: await hexDigest(await file.arrayBuffer()),
+      appProperties: {
+        type: 'lanzo_pos_backup', tenant_fingerprint: header.tenantFingerprint,
+        tenant_license_key: await hexDigest(new TextEncoder().encode(`lanzo-drive-owner:v1\n${keyAlias}`))
+      }
+    };
+    const fetchMock = vi.fn(async (requestUrl) => {
+      const url = new URL(requestUrl);
+      return {
+        ok: true, status: 200, headers: new Headers(),
+        json: async () => url.pathname.endsWith('/files') ? { files: [metadata] } : metadata,
+        blob: async () => file
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const listed = await listBackups('synthetic-token');
+    const downloaded = await downloadBackup('synthetic-token', listed.files[0]);
+    const preview = await command('inspect', { file: downloaded, pin, context: target });
+    expect(preview.destinationHasBusinessData).toBe(false);
+    expect(preview.sourceTableCounts.sales).toBe(1);
+    await command('restore', { file: downloaded, pin, context: target });
+    for (const [name, row] of Object.entries(rows)) {
+      expect(await destination.table(name).count()).toBe(1);
+      if (name === 'cajas') expect(await destination.table(name).get(row.id)).toMatchObject({ id: 'cash', estado: 'cerrada' });
+      else expect(await destination.table(name).get(row.id)).toMatchObject(row);
+    }
+    expect(await Dexie.getDatabaseNames()).not.toContain(source.databaseName);
+    expect((await Dexie.getDatabaseNames()).filter((name) => name.includes('_backup_stage_'))).toEqual([]);
+    expect(fetchMock.mock.calls.some(([url]) => new URL(url).searchParams.get('alt') === 'media')).toBe(true);
+    const foreign = context(['license-id:another-business']);
+    const foreignDatabase = await databaseFor(foreign);
+    for (const operation of ['inspect', 'restore']) {
+      await expect(command(operation, { file: downloaded, pin, context: foreign })).rejects.toThrow('BACKUP_TENANT_MISMATCH');
+    }
+    expect(await foreignDatabase.table('sales').count()).toBe(0);
+    expect(await foreignDatabase.table('menu').count()).toBe(0);
+  });
+
   it.each([false, true])('restores A → B with original PIN and enriched aliases=%s', async (enriched) => {
     const { source, file, rows } = await fixture();
     const origin = openDatabases.find((database) => database.name === source.databaseName);

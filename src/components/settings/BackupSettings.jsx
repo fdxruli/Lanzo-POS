@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   DatabaseBackup,
   FolderKey,
@@ -69,6 +69,7 @@ function RestoreBackupPanel({
   isAdmin,
   status,
   restoreInputRef,
+  restorePinInputRef,
   restoreFile,
   restorePin,
   restorePreview,
@@ -112,7 +113,7 @@ function RestoreBackupPanel({
       {restoreFile && (
         <>
           <div className="backup-settings-inline">
-            <input type="password" inputMode="numeric" value={restorePin} onChange={(event) => setRestorePin(event.target.value.replace(/\D/g, ''))} placeholder="PIN con el que se creó este archivo" aria-label="PIN del archivo de respaldo" />
+            <input ref={restorePinInputRef} type="password" inputMode="numeric" disabled={status.busy} value={restorePin} onChange={(event) => setRestorePin(event.target.value.replace(/\D/g, ''))} placeholder="PIN con el que se creó este archivo" aria-label="PIN del archivo de respaldo" />
             <button type="button" className="btn btn-secondary" onClick={validateRestore} disabled={status.busy || restorePin.length < 8}>
               Revisar archivo
             </button>
@@ -167,7 +168,7 @@ function RestoreBackupPanel({
             >
               <RotateCcw size={17} /> Restaurar datos
             </button>
-            <button type="button" className="backup-settings-cancel" onClick={() => clearRestore(null)}>
+            <button type="button" className="backup-settings-cancel" disabled={status.busy} onClick={() => clearRestore(null)}>
               Cancelar
             </button>
           </div>
@@ -252,6 +253,11 @@ function CardHeading({ Icon, eyebrow, title, description }) {
 function LocalBackupSettings({
   backupContext,
   captureSettingsAction,
+  restoreState,
+  setRestoreState,
+  driveBusy,
+  restoreActionPending,
+  setRestoreActionPending,
   isCloudLicense = false,
   isAdmin = false
 }) {
@@ -261,16 +267,24 @@ function LocalBackupSettings({
   const isDriveConnected = useAppStore((state) => state.isDriveConnected);
   const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
   const restoreInputRef = useRef(null);
+  const restorePinInputRef = useRef(null);
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [newPinConfirm, setNewPinConfirm] = useState('');
   const [selectedDirectory, setSelectedDirectory] = useState(null);
-  const [restorePin, setRestorePin] = useState('');
-  const [restoreFile, setRestoreFile] = useState(null);
-  const [restorePreview, setRestorePreview] = useState(null);
+  const { pin: restorePin, file: restoreFile, preview: restorePreview } = restoreState;
+  const restoreStateRef = useRef(restoreState);
+  restoreStateRef.current = restoreState;
+  const restoreActionRef = useRef(false);
+  const setRestorePin = (value) => setRestoreState((current) => ({ ...current, pin: value, preview: null }));
+  const restoreStatus = { ...status, busy: status.busy || driveBusy || restoreActionPending };
   const [error, setError] = useState('');
+  useEffect(() => {
+    setError('');
+    if (restoreFile) restorePinInputRef.current?.focus();
+  }, [restoreFile]);
   const [manualBackupPhase, setManualBackupPhase] = useState('idle');
   const [manualBackupProgress, setManualBackupProgress] = useState(null);
   const manualBackupPercent = manualBackupProgress?.percent
@@ -312,6 +326,20 @@ function LocalBackupSettings({
       }
       const message = actionError.message === 'BACKUP_PIN_INVALID'
         ? 'PIN incorrecto.'
+        : actionError.message === 'BACKUP_AUTHENTICATION_FAILED'
+          ? 'PIN incorrecto o archivo dañado. Revisa el PIN original del respaldo.'
+        : actionError.message === 'BACKUP_TENANT_MISMATCH'
+          ? 'No se puede verificar que el respaldo pertenezca a la licencia de este negocio.'
+        : actionError.message === 'BACKUP_PRE_RESTORE_FAILED'
+          ? 'Falló la copia preventiva. No se reemplazaron los datos del negocio.'
+        : actionError.message === 'BACKUP_DESTINATION_PROTECTION_REQUIRED'
+          ? 'Configura y desbloquea la copia preventiva antes de reemplazar los datos de este equipo.'
+        : actionError.message === 'BACKUP_DESTINATION_CHANGED_REVIEW_AGAIN'
+          ? 'Los datos del destino cambiaron. Vuelve a revisar el respaldo antes de restaurar.'
+        : /^BACKUP_(INVALID|UNSUPPORTED|INTEGRITY|CHUNK|COVERAGE|REQUIRED_TABLES|TABLE_METADATA|DATABASE_MISMATCH)/.test(actionError.message)
+          ? 'El respaldo está dañado o no es compatible. Selecciona otra copia y vuelve a revisarla.'
+        : actionError.message === 'BACKUP_RESTORE_REVIEW_REQUIRED' || actionError.message === 'BACKUP_TENANT_CONTEXT_STALE'
+          ? 'La sesión, la licencia o el archivo cambió. Vuelve a seleccionar y revisar el respaldo.'
         : actionError.message === 'BACKUP_RESTORE_PENDING_OPERATIONS'
           ? 'No se restauró: el negocio destino tiene operaciones de sincronización o financieras pendientes. Sincronízalas y resuelve recibos inciertos antes de volver a revisar el archivo.'
         : actionError.message;
@@ -327,9 +355,7 @@ function LocalBackupSettings({
   };
 
   const clearRestore = (file = null) => {
-    setRestoreFile(file);
-    setRestorePreview(null);
-    setRestorePin('');
+    setRestoreState({ file, pin: '', preview: null });
     setError('');
   };
 
@@ -346,7 +372,8 @@ function LocalBackupSettings({
       null,
       actorHandle
     );
-    if (preview) setRestorePreview(preview);
+    if (preview) setRestoreState((current) => current.file === restoreFile && current.pin === restorePin
+      ? { ...current, preview } : current);
   };
 
   const configure = async () => {
@@ -480,40 +507,47 @@ function LocalBackupSettings({
   };
 
   const executeRestore = async () => {
-    if (!restoreFile || !restorePin || !restorePreview) return;
-    let actorHandle;
+    if (!restoreFile || !restorePin || !restorePreview || restoreActionRef.current || restoreStatus.busy) return;
+    restoreActionRef.current = true;
+    setRestoreActionPending(true);
     try {
-      actorHandle = captureSettingsAction('settings_backup', { adminOnly: true });
-    } catch {
-      return;
-    }
-    const confirmed = await showConfirmModal(
-      restorePreview.destinationHasBusinessData
-        ? 'Los datos actuales de las tablas del respaldo serán reemplazados. Se guardará una copia preventiva cifrada antes de continuar. ¿Restaurar?'
-        : 'Se agregarán los datos del respaldo a este equipo, que no tiene datos comerciales en esas tablas. ¿Continuar?',
-      {
-        title: 'Restaurar respaldo',
-        confirmButtonText: 'Si, restaurar',
-        cancelButtonText: 'Cancelar'
+      let actorHandle;
+      try {
+        actorHandle = captureSettingsAction('settings_backup', { adminOnly: true });
+      } catch {
+        return;
       }
-    );
-    if (!confirmed) return;
+      const confirmed = await showConfirmModal(
+        restorePreview.destinationHasBusinessData
+          ? 'Los datos actuales de las tablas del respaldo serán reemplazados. Se guardará una copia preventiva cifrada antes de continuar. ¿Restaurar?'
+          : 'Se agregarán los datos del respaldo a este equipo, que no tiene datos comerciales en esas tablas. ¿Continuar?',
+        {
+          title: 'Restaurar respaldo',
+          confirmButtonText: 'Si, restaurar',
+          cancelButtonText: 'Cancelar'
+        }
+      );
+      if (!confirmed || restoreStateRef.current !== restoreState) return;
 
-    try {
-      actorHandle.assertCurrent('settings_backup');
-    } catch {
-      return;
-    }
+      try {
+        actorHandle.assertCurrent('settings_backup');
+      } catch {
+        return;
+      }
 
-    const result = await run(
-      () => backupManager.restore(restoreFile, restorePin, restorePreview),
-      null,
-      actorHandle
-    );
-    if (result) {
-      toast.success('Restauracion completada. La aplicacion se recargara.');
-      clearRestore(null);
-      setTimeout(() => window.location.reload(), 800);
+      const result = await run(
+        () => backupManager.restore(restoreFile, restorePin, restorePreview),
+        null,
+        actorHandle
+      );
+      if (result) {
+        toast.success('Restauracion completada. La aplicacion se recargara.');
+        clearRestore(null);
+        setTimeout(() => window.location.reload(), 800);
+      }
+    } finally {
+      restoreActionRef.current = false;
+      setRestoreActionPending(false);
     }
   };
 
@@ -579,7 +613,7 @@ function LocalBackupSettings({
           )}
         </div>
 
-        {error && <p className="backup-settings-error">{error}</p>}
+        {error && <p className="backup-settings-error" role="alert">{error}</p>}
 
         <div className="backup-settings-actions">
           <button type="button" className="btn btn-primary" onClick={configure} disabled={status.busy || pin.length < 8 || pin !== pinConfirm}>
@@ -588,8 +622,9 @@ function LocalBackupSettings({
         </div>
         <RestoreBackupPanel
           isAdmin={isAdmin}
-          status={status}
+          status={restoreStatus}
           restoreInputRef={restoreInputRef}
+          restorePinInputRef={restorePinInputRef}
           restoreFile={restoreFile}
           restorePin={restorePin}
           restorePreview={restorePreview}
@@ -704,8 +739,9 @@ function LocalBackupSettings({
 
       <RestoreBackupPanel
         isAdmin={isAdmin}
-        status={status}
+        status={restoreStatus}
         restoreInputRef={restoreInputRef}
+        restorePinInputRef={restorePinInputRef}
         restoreFile={restoreFile}
         restorePin={restorePin}
         restorePreview={restorePreview}
@@ -733,7 +769,7 @@ function LocalBackupSettings({
       )}
 
       {(error || status.settings.lastError) && (
-        <p className="backup-settings-error">{error || status.settings.lastError}</p>
+        <p className="backup-settings-error" role="alert">{error || status.settings.lastError}</p>
       )}
     </section>
   );
@@ -749,6 +785,12 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
   const backupContext = useBackupManager();
   const { status } = backupContext;
   const captureSettingsAction = useSettingsActionGuard();
+  const [restoreState, setRestoreState] = useState({ file: null, pin: '', preview: null });
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [restoreActionPending, setRestoreActionPending] = useState(false);
+  useEffect(() => {
+    setRestoreState({ file: null, pin: '', preview: null });
+  }, [settingsAccess.actorKey, settingsAccess.generation]);
 
   return (
     <div className="backup-settings-shell">
@@ -759,12 +801,21 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
           <LocalBackupSettings
             backupContext={backupContext}
             captureSettingsAction={captureSettingsAction}
+            restoreState={restoreState}
+            setRestoreState={setRestoreState}
+            driveBusy={driveBusy}
+            restoreActionPending={restoreActionPending}
+            setRestoreActionPending={setRestoreActionPending}
             isCloudLicense={isCloudLicense}
             isAdmin={settingsAccess.isAdmin}
           />
         </div>
         <aside className="backup-cloud-column">
-          <GoogleDriveSettings />
+          <GoogleDriveSettings
+            disabled={status.busy || restoreActionPending}
+            onBusyChange={setDriveBusy}
+            onBackupDownloaded={(file) => setRestoreState({ file, pin: '', preview: null })}
+          />
           <div className="backup-safety-note">
             <ShieldCheck size={17} aria-hidden="true" />
             <span>Las copias locales se guardan cifradas.</span>

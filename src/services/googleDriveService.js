@@ -1,5 +1,6 @@
 import { evaluateSettingsAccess } from './auth/settingsAccessPolicy';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { md5 } from '@noble/hashes/legacy.js';
 import { readActorAccess } from './auth/actorAccessPolicy';
 import {
   BACKUP_EXTENSION,
@@ -148,7 +149,34 @@ function getCurrentDriveAccess(token, expectedFingerprint = null) {
     });
   }
 
-  return { state, tenantContext, expectedFingerprint };
+  return { state, tenantContext, expectedFingerprint, actorAccess };
+}
+
+// Recovery captures one administrator/session; a different authorized admin
+// must not inherit an in-flight download merely by remaining authorized.
+function captureRecoveryAccess(token) {
+  const initial = getCurrentDriveAccess(token);
+  const actorIdentity = (access) => {
+    const snapshot = access?.runtimeSnapshot;
+    if (!access?.isAdmin || snapshot?.status !== 'granted'
+      || !snapshot.sessionId || !Number.isFinite(snapshot.generation)) {
+      throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.BACKUP_PERMISSION, { code: 'BACKUP_PERMISSION_REQUIRED' });
+    }
+    return JSON.stringify([snapshot.actorType, snapshot.actorId, snapshot.actorKey,
+      snapshot.sessionId, snapshot.generation, snapshot.deviceRef]);
+  };
+  const actor = actorIdentity(initial.actorAccess);
+  const aliases = [...initial.tenantContext.tenantAliases].sort().join('\n');
+  return () => {
+    const current = getCurrentDriveAccess(token);
+    if (actorIdentity(current.actorAccess) !== actor
+      || !isActiveTenantWorkerContext(initial.tenantContext)
+      || current.tenantContext.databaseName !== initial.tenantContext.databaseName
+      || current.tenantContext.generation !== initial.tenantContext.generation
+      || [...current.tenantContext.tenantAliases].sort().join('\n') !== aliases) {
+      throw new GoogleDriveError(DRIVE_ERROR_MESSAGES.CONTEXT, { code: 'BACKUP_TENANT_CONTEXT_STALE' });
+    }
+  };
 }
 
 async function assertDriveOperation(token, expectedFingerprint = null) {
@@ -291,7 +319,7 @@ function buildTenantQuery(ownerProperties) {
     + ' and trashed = false';
 }
 
-async function listBackupsForTenant(token, tenantFingerprint) {
+async function listBackupsForTenant(token, tenantFingerprint, signal) {
   const tenantScope = await assertDriveOperation(token, tenantFingerprint);
   const files = [];
   const pageTokens = new Set();
@@ -303,11 +331,12 @@ async function listBackupsForTenant(token, tenantFingerprint) {
     url.searchParams.set('q', buildTenantQuery(tenantScope.ownerProperties));
     url.searchParams.set('orderBy', 'createdTime desc');
     url.searchParams.set('pageSize', '1000');
-    url.searchParams.set('fields', 'nextPageToken,incompleteSearch,files(id,name,createdTime,appProperties,trashed)');
+    url.searchParams.set('fields', 'nextPageToken,incompleteSearch,files(id,name,createdTime,appProperties,trashed,size,mimeType,version,modifiedTime,sha256Checksum,md5Checksum,capabilities(canDownload))');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
 
     const response = await driveFetch(url.toString(), {
       method: 'GET',
+      signal,
       headers: { Authorization: `Bearer ${token}` }
     }, token, tenantFingerprint);
     await assertSuccessfulResponse(response, token);
@@ -363,9 +392,99 @@ async function listBackupsForTenant(token, tenantFingerprint) {
 /**
  * Lists only current-tenant LANZO backups. Untagged legacy files are excluded.
  */
-export async function listBackups(token) {
+export async function listBackups(token, { signal } = {}) {
+  const assertCurrent = captureRecoveryAccess(token);
   const scope = await assertDriveOperation(token);
-  return listBackupsForTenant(token, scope.tenantFingerprint);
+  const result = await listBackupsForTenant(token, scope.tenantFingerprint, signal);
+  assertCurrent();
+  return result;
+}
+
+const recoveryError = (code, message) => new GoogleDriveError(message, { code });
+
+const fileSnapshot = (file) => JSON.stringify([
+  file.id, file.name, file.createdTime, String(file.size), file.mimeType,
+  file.version, file.modifiedTime, file.sha256Checksum, file.md5Checksum,
+  Object.entries(file.appProperties || {}).sort(([left], [right]) => left.localeCompare(right))
+]);
+
+/** Fetch encrypted bytes only. PIN, format, integrity and restore authority
+ * remain with Backup V2; no downloaded content is persisted by this service. */
+export async function downloadBackup(token, selectedFile, { signal } = {}) {
+  const assertCurrent = captureRecoveryAccess(token);
+  const scope = await assertDriveOperation(token);
+  assertCurrent();
+  if (typeof selectedFile?.id !== 'string' || !/^[\w-]+$/.test(selectedFile.id)
+    || !isBackupFileForTenant(selectedFile, scope.ownerProperties)) {
+    throw recoveryError('DRIVE_FILE_OWNERSHIP_UNVERIFIED', 'No se pudo verificar que esta copia pertenezca al negocio activo. Actualiza los respaldos.');
+  }
+  const url = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(selectedFile.id)}`);
+  url.searchParams.set('fields', 'id,name,createdTime,appProperties,trashed,size,mimeType,version,modifiedTime,sha256Checksum,md5Checksum,capabilities(canDownload)');
+  const readMetadata = async () => {
+    assertCurrent();
+    const response = await driveFetch(url.toString(), {
+      method: 'GET', cache: 'no-store', signal, headers: { Authorization: `Bearer ${token}` }
+    }, token, scope.tenantFingerprint, { sensitiveSession: true });
+    assertCurrent();
+    if (response.status === 404) throw recoveryError('DRIVE_FILE_UNAVAILABLE', 'La copia fue eliminada o ya no está disponible en Google Drive.');
+    await assertSuccessfulResponse(response, token, { sensitiveSession: true });
+    let file;
+    try { file = await response.json(); }
+    catch { throw recoveryError('DRIVE_METADATA_INVALID', 'No se pudieron leer los datos de esta copia. Actualiza los respaldos.'); }
+    assertCurrent();
+    if (file?.id !== selectedFile.id || !isBackupFileForTenant(file, scope.ownerProperties)) {
+      throw recoveryError('DRIVE_FILE_OWNERSHIP_UNVERIFIED', 'La copia ya no tiene una identidad verificable para este negocio.');
+    }
+    if (file.capabilities?.canDownload !== undefined && file.capabilities.canDownload !== true) {
+      throw recoveryError('DRIVE_DOWNLOAD_DENIED', 'Google Drive no permite descargar esta copia. Revisa los permisos de la cuenta.');
+    }
+    if (!/^\d+$/.test(String(file.size)) || !Number.isSafeInteger(Number(file.size)) || Number(file.size) <= 0
+      || String(file.mimeType || '').startsWith('application/vnd.google-apps.')) {
+      throw recoveryError('DRIVE_SIZE_INVALID', 'La copia no tiene un tamaño binario válido. No se descargó.');
+    }
+    for (const [field, length] of [['sha256Checksum', 64], ['md5Checksum', 32]]) {
+      if (file[field] !== undefined && file[field] !== null
+        && !new RegExp(`^[a-f0-9]{${length}}$`, 'i').test(String(file[field]))) {
+        throw recoveryError('DRIVE_CHECKSUM_MISMATCH', 'Google Drive devolvió un checksum inválido para esta copia. No se descargó.');
+      }
+    }
+    return file;
+  };
+  const file = await readMetadata();
+  if (fileSnapshot(file) !== fileSnapshot(selectedFile)) {
+    throw recoveryError('DRIVE_FILE_CHANGED', 'La copia cambió desde el listado. Actualiza los respaldos y vuelve a seleccionarla.');
+  }
+  const mediaUrl = new URL(`${DRIVE_FILES_URL}/${encodeURIComponent(file.id)}`);
+  mediaUrl.searchParams.set('alt', 'media');
+  assertCurrent();
+  const response = await driveFetch(mediaUrl.toString(), {
+    method: 'GET', cache: 'no-store', signal, headers: { Authorization: `Bearer ${token}` }
+  }, token, scope.tenantFingerprint, { sensitiveSession: true });
+  assertCurrent();
+  if (response.status === 404) throw recoveryError('DRIVE_FILE_UNAVAILABLE', 'La copia fue eliminada o ya no está disponible en Google Drive.');
+  await assertSuccessfulResponse(response, token, { sensitiveSession: true });
+  if (response.status !== 200) throw recoveryError('DRIVE_DOWNLOAD_INCOMPLETE', 'Google Drive devolvió una descarga incompleta. Intenta de nuevo.');
+  let blob;
+  try { blob = await response.blob(); }
+  catch { throw recoveryError('DRIVE_DOWNLOAD_INTERRUPTED', 'La descarga se interrumpió. Revisa la conexión y vuelve a intentarlo.'); }
+  assertCurrent();
+  if (blob.size !== Number(file.size)) throw recoveryError('DRIVE_SIZE_MISMATCH', 'El tamaño descargado no coincide con Google Drive. No se puede revisar esta copia.');
+  for (const [field, length, algorithm] of [['sha256Checksum', 64, sha256], ['md5Checksum', 32, md5]]) {
+    if (file[field] === undefined || file[field] === null) continue;
+    if (!new RegExp(`^[a-f0-9]{${length}}$`, 'i').test(String(file[field]))
+      || await calculateBlobSha256(blob, algorithm) !== String(file[field]).toLowerCase()) {
+      throw recoveryError('DRIVE_CHECKSUM_MISMATCH', 'La verificación del archivo descargado falló. Actualiza los respaldos e intenta de nuevo.');
+    }
+    assertCurrent();
+  }
+  // A metadata/version change during transfer must also invalidate selection.
+  const finalMetadata = await readMetadata();
+  if (fileSnapshot(file) !== fileSnapshot(finalMetadata)) {
+    throw recoveryError('DRIVE_FILE_CHANGED', 'La copia cambió durante la descarga. Vuelve a seleccionarla.');
+  }
+  assertCurrent();
+  if (signal?.aborted) throw recoveryError('DRIVE_DOWNLOAD_INTERRUPTED', 'Descarga cancelada.');
+  return new File([blob], file.name, { type: 'application/octet-stream', lastModified: Date.parse(file.createdTime) });
 }
 
 /**
@@ -757,8 +876,8 @@ function makePendingVerificationResult({
   };
 }
 
-async function calculateBlobSha256(blob) {
-  const hash = sha256.create();
+async function calculateBlobSha256(blob, algorithm = sha256) {
+  const hash = algorithm.create();
   if (typeof blob.stream === 'function') {
     const reader = blob.stream().getReader();
     try {

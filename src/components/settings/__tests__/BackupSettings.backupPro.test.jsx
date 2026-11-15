@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
-import { uploadBackup } from '../../../services/googleDriveService';
+import { downloadBackup, listBackups, uploadBackup } from '../../../services/googleDriveService';
 import toast from 'react-hot-toast';
+import { showConfirmModal } from '../../../services/utils';
 
 const access = vi.hoisted(() => ({ isAdmin: false }));
 
@@ -62,7 +63,7 @@ vi.mock('../../../services/auth/useSettingsAccess', () => ({
 }));
 
 vi.mock('../../../services/googleDriveService', () => ({
-  uploadBackup: vi.fn()
+  uploadBackup: vi.fn(), listBackups: vi.fn(), downloadBackup: vi.fn()
 }));
 
 vi.mock('../../../services/utils', () => ({
@@ -76,9 +77,7 @@ vi.mock('react-hot-toast', () => ({
   })
 }));
 
-vi.mock('../GoogleDriveSettings', () => ({
-  default: () => <div data-testid="google-drive-settings" />
-}));
+vi.mock('@react-oauth/google', () => ({ useGoogleLogin: () => vi.fn() }));
 
 describe('BackupSettings copy by license mode', () => {
   afterEach(cleanup);
@@ -88,6 +87,10 @@ describe('BackupSettings copy by license mode', () => {
     backupManager.inspectRestore.mockReset();
     backupManager.backup.mockReset();
     uploadBackup.mockReset();
+    listBackups.mockReset();
+    downloadBackup.mockReset();
+    backupManager.restore.mockReset();
+    showConfirmModal.mockReset();
     appState.driveAccessToken = null;
     appState.driveTokenExpiresAt = null;
     appState.isDriveConnected = false;
@@ -126,7 +129,7 @@ describe('BackupSettings copy by license mode', () => {
     expect(screen.queryByText('Copia local cifrada opcional')).not.toBeNull();
     expect(screen.queryByText('Configurar copia opcional')).not.toBeNull();
     expect(screen.queryByText('Configurar respaldos')).toBeNull();
-    expect(screen.queryByTestId('google-drive-settings')).not.toBeNull();
+    expect(screen.getByText('Respaldo en Google Drive')).toBeInTheDocument();
   });
 
   it('shows the recovery path for an unassigned prior backup configuration', () => {
@@ -343,5 +346,140 @@ describe('BackupSettings copy by license mode', () => {
 
     await waitFor(() => expect(screen.getByText(/Restauración bloqueada: el negocio destino tiene 1 sincronización pendiente, 1 intenciones financieras sin recibo confirmado/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeDisabled();
+  });
+
+  describe('Drive recovery through the existing restore panel', () => {
+    const listed = { id: 'drive-copy', name: 'synthetic.lzbk', size: '1024', createdTime: '2026-01-01T00:00:00Z' };
+    const file = new File(['encrypted fixture'], listed.name);
+    const preview = {
+      formatVersion: 2, header: { createdAt: listed.createdTime },
+      destinationHasBusinessData: false, destinationPendingOperationCounts: {},
+      coverage: { complete: false, categoryCounts: { sales: 1 }, partialReasons: ['pending_browser_operations_excluded'] }
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      access.isAdmin = true;
+      appState.driveAccessToken = 'synthetic-token';
+      appState.driveTokenExpiresAt = Date.now() + 3_600_000;
+      appState.isDriveConnected = true;
+      listBackups.mockResolvedValue({ files: [listed] });
+      downloadBackup.mockResolvedValue(file);
+      backupManager.inspectRestore.mockResolvedValue(preview);
+    });
+    afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+    const selectDriveFile = async () => {
+      const view = render(<BackupSettings />);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actualizar respaldos' })));
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: `Recuperar ${listed.name}` })));
+      return view;
+    };
+
+    it('downloads, requests PIN, previews partial coverage and restores once only after explicit confirmation', async () => {
+      await selectDriveFile();
+      expect(backupManager.inspectRestore).not.toHaveBeenCalled();
+      expect(backupManager.restore).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Archivo de respaldo a restaurar')).toHaveAttribute('accept', '.lzbk,application/octet-stream');
+      fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      expect(backupManager.inspectRestore).toHaveBeenCalledWith(file, '12345678');
+      expect(screen.getByText(/La cobertura de este archivo es parcial/)).toBeInTheDocument();
+      let confirm;
+      showConfirmModal.mockReturnValue(new Promise((resolve) => { confirm = resolve; }));
+      backupManager.restore.mockResolvedValue({ restored: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Restaurar datos' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Restaurar datos' }));
+      expect(showConfirmModal).toHaveBeenCalledTimes(1);
+      expect(backupManager.restore).not.toHaveBeenCalled();
+      await act(async () => confirm(true));
+      expect(backupManager.restore).toHaveBeenCalledTimes(1);
+      expect(backupManager.restore).toHaveBeenCalledWith(file, '12345678', preview);
+    });
+
+    it('can cancel confirmation, invalidates preview on PIN changes and preserves manual import', async () => {
+      await selectDriveFile();
+      fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      showConfirmModal.mockResolvedValue(false);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Restaurar datos' })));
+      expect(backupManager.restore).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '87654321' } });
+      expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(screen.queryByLabelText('PIN del archivo de respaldo')).not.toBeInTheDocument();
+      const manual = new File(['manual'], 'manual.lzbk');
+      fireEvent.change(screen.getByLabelText('Archivo de respaldo a restaurar'), { target: { files: [manual] } });
+      expect(screen.getByText('manual.lzbk')).toBeInTheDocument();
+    });
+
+    it('reports a failed download and permits retry without inspecting or restoring', async () => {
+      downloadBackup.mockRejectedValue(new Error('La copia fue eliminada.'));
+      await selectDriveFile();
+      expect(screen.getByRole('alert')).toHaveTextContent('La copia fue eliminada.');
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeEnabled();
+      expect(backupManager.inspectRestore).not.toHaveBeenCalled();
+      expect(backupManager.restore).not.toHaveBeenCalled();
+    });
+
+    it('can cancel an in-flight download and ignores its later result', async () => {
+      let finish;
+      downloadBackup.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      await selectDriveFile();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar descarga o consulta' }));
+      expect(downloadBackup.mock.calls[0][2].signal.aborted).toBe(true);
+      await act(async () => finish(file));
+      expect(screen.queryByLabelText('PIN del archivo de respaldo')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeEnabled();
+      expect(backupManager.restore).not.toHaveBeenCalled();
+    });
+
+    it('retains only the encrypted selection when Drive is disconnected after download', async () => {
+      const view = await selectDriveFile();
+      appState.driveAccessToken = null;
+      appState.isDriveConnected = false;
+      view.rerender(<BackupSettings />);
+      expect(screen.getByLabelText('PIN del archivo de respaldo')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeDisabled();
+      fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      expect(backupManager.inspectRestore).toHaveBeenCalledWith(file, '12345678');
+    });
+
+    it('shows an empty list and recovers from a failed refresh', async () => {
+      listBackups.mockResolvedValue({ files: [] });
+      render(<BackupSettings />);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actualizar respaldos' })));
+      expect(screen.getByText('No se encontraron copias verificables para este negocio.')).toBeInTheDocument();
+      listBackups.mockRejectedValue(new Error('DRIVE_LIST_INCOMPLETE'));
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Actualizar respaldos' })));
+      expect(screen.getByRole('alert')).toHaveTextContent('No se pudo obtener un listado completo');
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeEnabled();
+    });
+
+    it('shows expiration and stops queries when the token expires while the page remains open', async () => {
+      appState.driveTokenExpiresAt = Date.now() + 1000;
+      render(<BackupSettings />);
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeEnabled();
+      await act(async () => vi.advanceTimersByTime(1001));
+      expect(screen.getByRole('button', { name: 'Actualizar respaldos' })).toBeDisabled();
+      expect(screen.getByText('La sesión venció. Reconecta Google Drive para consultar tus copias.')).toBeInTheDocument();
+      expect(listBackups).not.toHaveBeenCalled();
+    });
+
+    it('does not keep controls blocked after PIN or restore failures', async () => {
+      await selectDriveFile();
+      backupManager.inspectRestore.mockRejectedValueOnce(new Error('BACKUP_AUTHENTICATION_FAILED'));
+      fireEvent.change(screen.getByLabelText('PIN del archivo de respaldo'), { target: { value: '12345678' } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      expect(screen.getByText(/PIN incorrecto o archivo dañado/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeDisabled();
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Revisar archivo' })));
+      backupManager.restore.mockRejectedValue(new Error('BACKUP_PRE_RESTORE_FAILED'));
+      showConfirmModal.mockResolvedValue(true);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Restaurar datos' })));
+      expect(screen.getByText(/Falló la copia preventiva/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Restaurar datos' })).toBeEnabled();
+    });
   });
 });
