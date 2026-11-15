@@ -179,7 +179,25 @@ const readMultipartFileSize = async (body) => {
   return mediaEnd - mediaStart;
 };
 
+const readMultipartFileBlob = async (body) => {
+  const boundary = body.type.match(/boundary=([^;]+)/)?.[1];
+  const bytes = new Uint8Array(await body.arrayBuffer());
+  const encoder = new TextEncoder();
+  const mediaHeader = encoder.encode('Content-Type: application/octet-stream\r\n\r\n');
+  const ending = encoder.encode(`\r\n--${boundary}--\r\n`);
+  const findSequence = (needle, startAt = 0) => {
+    for (let index = startAt; index <= bytes.length - needle.length; index += 1) {
+      if (needle.every((byte, offset) => bytes[index + offset] === byte)) return index;
+    }
+    return -1;
+  };
+  const mediaStart = findSequence(mediaHeader) + mediaHeader.length;
+  const mediaEnd = findSequence(ending, mediaStart);
+  return new Blob([bytes.slice(mediaStart, mediaEnd)], { type: 'application/octet-stream' });
+};
+
 let driveFiles;
+let driveFileContents;
 let nextId;
 let clock;
 let fetchMock;
@@ -245,7 +263,18 @@ function installDriveMock() {
           ok: false
         });
       }
+      if (mode === 'upload_rejected') {
+        return response({ error: { message: 'Invalid request' } }, {
+          status: 400,
+          statusText: 'Bad Request',
+          ok: false
+        });
+      }
+      if (mode === 'multipart_transport_no_receive') {
+        throw new TypeError('Network request failed');
+      }
       const metadata = await readMultipartMetadata(options.body);
+      const uploadedBlob = await readMultipartFileBlob(options.body);
       const file = {
         id: `new-${nextId++}`,
         name: metadata.name,
@@ -253,9 +282,18 @@ function installDriveMock() {
         appProperties: metadata.appProperties,
         mimeType: 'application/octet-stream',
         size: String(await readMultipartFileSize(options.body)),
+        ...(mode === 'multipart_response_lost_without_checksum'
+          ? {}
+          : {
+            sha256Checksum: mode === 'multipart_response_lost_checksum_mismatch'
+              ? 'f'.repeat(64)
+              : await hashBlob(uploadedBlob)
+          }),
         trashed: false
       };
+      if (mode === 'multipart_response_lost_size_mismatch') file.size = String(Number(file.size) + 1);
       driveFiles.push(file);
+      driveFileContents.set(file.id, uploadedBlob);
       if (mode === 'concurrent_uploads') {
         concurrentUploadCount += 1;
         if (concurrentUploadCount === 2) releaseConcurrentUploads();
@@ -266,6 +304,11 @@ function installDriveMock() {
       }
       if (mode === 'tenant_invalidated_after_upload') {
         fixtures.tenantContext = makeTenantContext('business-b');
+      }
+      if (mode.startsWith('multipart_response_lost')
+        || ['reconcile_actor_changed', 'reconcile_tenant_changed', 'reconcile_list_failure',
+          'reconcile_list_incomplete', 'reconcile_auth_expired', 'reconcile_foreign_file'].includes(mode)) {
+        throw new TypeError('Network request failed');
       }
       if (mode === 'upload_missing_id') {
         return response({
@@ -402,6 +445,13 @@ function installDriveMock() {
     if (options.method === 'GET' && url.pathname !== '/drive/v3/files') {
       const id = decodeURIComponent(url.pathname.split('/').at(-1));
       const file = driveFiles.find((candidate) => candidate.id === id);
+      if (url.searchParams.get('alt') === 'media') {
+        const blob = driveFileContents.get(id);
+        if (!blob) return response({ error: { message: 'Not found' } }, { status: 404, statusText: 'Not Found', ok: false });
+        const media = response(null);
+        media.blob = vi.fn().mockResolvedValue(blob);
+        return media;
+      }
       if (mode === 'resumable_verify_failure') {
         return response({ error: { message: 'Metadata unavailable' } }, {
           status: 503,
@@ -441,11 +491,55 @@ function installDriveMock() {
       }
 
       const query = url.searchParams.get('q') || '';
+      const exactName = query.match(/ and name='([^']*)'$/)?.[1] || null;
+      if (exactName && mode === 'reconcile_list_failure') {
+        return response({ error: { message: 'List failed' } }, {
+          status: 503,
+          statusText: 'Service Unavailable',
+          ok: false
+        });
+      }
+      if (exactName && mode === 'reconcile_list_incomplete') {
+        return response({ incompleteSearch: true, files: [] });
+      }
+      if (exactName && mode === 'reconcile_auth_expired') {
+        return response({ error: { message: 'Invalid Credentials' } }, {
+          status: 401,
+          statusText: 'Unauthorized',
+          ok: false
+        });
+      }
+      if (exactName && mode === 'reconcile_foreign_file') {
+        return response({ files: [{
+          id: 'foreign-candidate',
+          name: exactName,
+          createdTime: new Date(clock).toISOString(),
+          appProperties: {
+            type: 'lanzo_pos_backup',
+            tenant_fingerprint: 'b'.repeat(64),
+            tenant_license_id: 'f'.repeat(64)
+          },
+          size: '1',
+          mimeType: 'application/octet-stream',
+          trashed: false
+        }] });
+      }
+      if (exactName && mode === 'reconcile_actor_changed') {
+        const files = driveFiles.filter((file) => file.name === exactName);
+        fixtures.actorAccess = { authorized: false, isAdmin: false, permissions: [] };
+        return response({ files });
+      }
+      if (exactName && mode === 'reconcile_tenant_changed') {
+        const files = driveFiles.filter((file) => file.name === exactName);
+        fixtures.tenantContext = makeTenantContext('business-b');
+        return response({ files });
+      }
       const ownerClauses = [...query.matchAll(/key='(tenant_license_id|tenant_license_key)' and value='([a-f0-9]{64})'/gi)]
         .map(([, key, value]) => [key, value]);
       const scopedFiles = driveFiles
         .filter((file) => file.appProperties?.type === 'lanzo_pos_backup'
           && ownerClauses.some(([key, value]) => file.appProperties?.[key] === value)
+          && (exactName === null || file.name === exactName)
           && file.trashed !== true)
         .sort((left, right) => Date.parse(right.createdTime) - Date.parse(left.createdTime));
       const pageToken = url.searchParams.get('pageToken');
@@ -501,6 +595,7 @@ describe('googleDriveService', () => {
       })
     };
     driveFiles = [];
+    driveFileContents = new Map();
     nextId = 1;
     clock = Date.now();
     mode = '';
@@ -874,22 +969,140 @@ describe('googleDriveService', () => {
     expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'DELETE')).toHaveLength(1);
   });
 
-  it('does not list or delete when the upload fails', async () => {
+  it('keeps an uncertain HTTP server response pending without repeating the POST', async () => {
     mode = 'upload_failure';
     const backup = await createV2Backup(fixtures.tenantContext);
 
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'pending',
+      verificationReason: 'file_not_found'
+    });
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([requestUrl, request]) => (
+      request.method === 'GET' && new URL(requestUrl).searchParams.has('q')
+    ))).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
+  });
+
+  it('does not reconcile a definitive HTTP rejection', async () => {
+    mode = 'upload_rejected';
+    const backup = await createV2Backup(fixtures.tenantContext);
+
     await expect(uploadBackup('access-token', backup.blob, backup.fileName))
-      .rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+      .rejects.toMatchObject({ status: 400 });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
   });
 
+  it('recovers a multipart upload whose server-side save preceded a lost response', async () => {
+    mode = 'multipart_response_lost';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'recovered',
+      transferStatus: 'confirmed',
+      verificationStatus: 'completed',
+      checksumStatus: 'verified',
+      cleanupStatus: 'completed'
+    });
+    expect(driveFiles.filter((file) => file.name === backup.fileName)).toHaveLength(1);
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([requestUrl, request]) => (
+      request.method === 'GET' && new URL(requestUrl).searchParams.get('alt') === 'media'
+    ))).toBe(false);
+  });
+
+  it('compares the remote encrypted bytes when Drive has no usable checksum', async () => {
+    mode = 'multipart_response_lost_without_checksum';
+    const backup = await createV2Backup(fixtures.tenantContext);
+
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'recovered',
+      verificationStatus: 'completed',
+      checksumStatus: 'verified'
+    });
+    expect(fetchMock.mock.calls.some(([requestUrl, request]) => (
+      request.method === 'GET' && new URL(requestUrl).searchParams.get('alt') === 'media'
+    ))).toBe(true);
+  });
+
   it.each([
-    'upload_missing_id',
-    'upload_incompatible_metadata',
-    'upload_invalid_json'
-  ])('leaves an accepted upload pending verification when metadata is unusable (%s)', async (uploadMode) => {
+    ['multipart_transport_no_receive', 'file_not_found'],
+    ['reconcile_list_failure', 'reconciliation_unavailable'],
+    ['reconcile_list_incomplete', 'listing_incomplete'],
+    ['reconcile_foreign_file', 'listing_ambiguous'],
+    ['multipart_response_lost_size_mismatch', 'metadata_mismatch'],
+    ['multipart_response_lost_checksum_mismatch', 'metadata_mismatch'],
+    ['reconcile_auth_expired', 'auth_required'],
+    ['reconcile_actor_changed', 'permission_required'],
+    ['reconcile_tenant_changed', 'context_changed']
+  ])('keeps multipart recovery pending when %s prevents verification', async (failureMode, reason) => {
+    mode = failureMode;
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const oldFile = makeFile('old-a', backup.tenantFingerprint, Date.now() - 100_000, backup.ownerProperties);
+    driveFiles.push(oldFile);
+
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      verificationReason: reason,
+      cleanupStatus: 'pending'
+    });
+    expect(driveFiles).toContainEqual(oldFile);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
+    if (failureMode === 'reconcile_auth_expired') {
+      expect(fixtures.state.markDriveNeedsReauth).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('treats multiple same-name candidates as ambiguous and preserves every copy', async () => {
+    mode = 'multipart_transport_no_receive';
+    const backup = await createV2Backup(fixtures.tenantContext);
+    const checksum = await hashBlob(backup.blob);
+    const candidates = [0, 1].map((index) => makeFile(
+      `candidate-${index}`,
+      backup.tenantFingerprint,
+      Date.now() - index * 1000,
+      backup.ownerProperties,
+      {
+        name: backup.fileName,
+        size: String(backup.blob.size),
+        mimeType: 'application/octet-stream',
+        sha256Checksum: checksum
+      }
+    ));
+    driveFiles.push(...candidates);
+
+    const result = await uploadBackup('access-token', backup.blob, backup.fileName);
+
+    expect(result).toMatchObject({
+      uploadStatus: 'verification_pending',
+      transferStatus: 'pending',
+      verificationReason: 'multiple_candidates'
+    });
+    expect(driveFiles).toEqual(candidates);
+    expect(fetchMock.mock.calls.filter(([, request]) => request.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
+  });
+
+  it.each([
+    ['upload_missing_id', 'recovered'],
+    ['upload_invalid_json', 'recovered'],
+    ['upload_incompatible_metadata', 'verification_pending']
+  ])('reconciles an accepted response with unusable metadata (%s)', async (uploadMode, expectedStatus) => {
     mode = uploadMode;
     const backup = await createV2Backup(fixtures.tenantContext);
     const oldFile = makeFile(
@@ -903,11 +1116,10 @@ describe('googleDriveService', () => {
     const result = await uploadBackup('access-token', backup.blob, backup.fileName);
 
     expect(result).toMatchObject({
-      uploadStatus: 'verification_pending',
-      verificationStatus: expect.any(String),
-      cleanupStatus: 'pending'
+      uploadStatus: expectedStatus,
+      ...(expectedStatus === 'recovered' ? { verificationStatus: 'completed' } : {}),
+      cleanupStatus: expectedStatus === 'recovered' ? 'completed' : 'pending'
     });
-    expect(fetchMock).toHaveBeenCalledTimes(uploadMode === 'upload_incompatible_metadata' ? 2 : 1);
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
     expect(fetchMock.mock.calls.some(([, request]) => request.method === 'DELETE')).toBe(false);
     expect(driveFiles.some((file) => file.id === oldFile.id)).toBe(true);
@@ -1006,7 +1218,7 @@ describe('googleDriveService', () => {
       const result = await uploadBackup('access-token', backup.blob, backup.fileName);
 
       expect(result.uploadStatus).toBe('verification_pending');
-      expect(result.transferStatus).toBe('confirmed');
+      expect(result.transferStatus).toBe('pending');
       expect(result.cleanupStatus).toBe('pending');
       expect(result.verificationStatus).toBe('pending');
       expect(fetchMock.mock.calls).toHaveLength(1);
