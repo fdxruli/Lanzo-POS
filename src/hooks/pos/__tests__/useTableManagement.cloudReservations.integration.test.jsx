@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({
   database: null, appState: null, cloudStock: new Map(), failBeforeCommit: false, cloudMode: true,
   transport: vi.fn(), postEffects: vi.fn(), storage: new Map(),
-  actorHandle: { assertCurrent: vi.fn() }
+  actorHandle: {
+    actorKey: 'admin:owner-a', actorType: 'admin', actorId: 'owner-a',
+    sessionId: 'split-reservations-session', generation: 1, deviceRef: 'device-a',
+    tenant: { opaqueId: 'tenant-a', databaseName: 'split-reservations', generation: 1 },
+    assertCurrent: vi.fn()
+  }
 }));
 
 vi.mock('../../../services/db/dexie', () => ({
@@ -41,6 +46,8 @@ vi.mock('../../../services/tenant/tenantScopedStorage', () => ({
     setItem: (key, value) => runtime.storage.set(key, value),
     removeItem: (key) => runtime.storage.delete(key)
   },
+  getTenantStorageItem: (key) => runtime.storage.get(key) || null,
+  setTenantStorageItem: (key, value) => runtime.storage.set(key, value),
   registerTenantStorageHydrator: vi.fn(), suspendTenantStorageWrites: vi.fn()
 }));
 vi.mock('../../../services/supabase', () => ({ getStableDeviceId: async () => 'device-a' }));
@@ -49,7 +56,11 @@ vi.mock('../../../services/auth/refundsActorAuthorization', () => ({
 }));
 vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => ({
   ...await importOriginal(),
-  actorRuntimeController: { capture: () => runtime.actorHandle, subscribe: () => () => {}, getState: () => ({ status: 'granted' }) }
+  actorRuntimeController: {
+    capture: () => runtime.actorHandle,
+    subscribe: () => () => {},
+    getState: () => ({ status: 'granted', ...runtime.actorHandle })
+  }
 }));
 vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
   reportActorAuthorityError: vi.fn(() => false), getActorAuthorityRecoverySnapshot: () => null
@@ -69,7 +80,25 @@ vi.mock('../../../services/db/layaways', () => ({ layawayRepository: {} }));
 vi.mock('../../../services/products/productSyncHandler', () => ({ pullCatalogChanges: vi.fn(async () => {}) }));
 vi.mock('../../../services/cash/cashRepository', () => ({
   cashRepository: { getCurrentCashSession: async () => ({
-    success: true, cashSession: { id: 'cash-session', estado: 'abierta' }
+    success: true,
+    cashSession: {
+      id: 'cash-session', estado: 'abierta', actorKey: runtime.actorHandle.actorKey,
+      cashStationId: runtime.cloudMode ? 'cash-station-current' : null,
+      localStationKey: runtime.cloudMode ? null : 'local:device:device-a'
+    },
+    actor: { actorKey: runtime.actorHandle.actorKey },
+    financialStatus: 'OWN_SESSION_OPEN',
+    financialState: {
+      status: 'OWN_SESSION_OPEN', stateKnown: true,
+      cashSession: {
+        id: 'cash-session', estado: 'abierta', actorKey: runtime.actorHandle.actorKey,
+        cashStationId: runtime.cloudMode ? 'cash-station-current' : null,
+        localStationKey: runtime.cloudMode ? null : 'local:device:device-a'
+      }
+    },
+    readOnly: false, stateKnown: true,
+    cashStationId: runtime.cloudMode ? 'cash-station-current' : null,
+    localStationKey: runtime.cloudMode ? null : 'local:device:device-a'
   }) }
 }));
 vi.mock('../../../services/sync/syncConstants', async (importOriginal) => ({
@@ -113,7 +142,7 @@ vi.mock('../../../services/salesService', () => ({
     return splitOpenTableOrderCore(params, {
       loadData: (store, id) => runtime.database.table(store).get(id),
       loadMultipleData: (store) => runtime.database.table(store).toArray(), STORES, Logger,
-      executeSplitOpenTableOrderTransactionSafe: (args) => salesRepository.executeSplitOpenTableOrderTransaction(args),
+      executeSplitOpenTableOrderTransactionSafe: (args, options) => salesRepository.executeSplitOpenTableOrderTransaction(args, options),
       roundCurrency: (value) => Math.round(Number(value) * 100) / 100
     });
   }

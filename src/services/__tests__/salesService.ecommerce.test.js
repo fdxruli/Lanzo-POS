@@ -44,7 +44,7 @@ vi.mock('../database', () => ({
 // permissive production fallback for LOCKED/HANDOFF_CHECK.
 vi.mock('../auth/actorOperationalHandoff', () => ({
   runCheckoutActorOperation: async ({ operation }) => operation({ handle: mocks.grantedHandle }),
-  runTrackedActorOperationIfGranted: async (_label, operation) => operation()
+  runTrackedActorOperationIfGranted: async (_label, operation) => operation({ handle: mocks.grantedHandle })
 }));
 
 vi.mock('../sales/processSaleCore', () => ({
@@ -80,7 +80,7 @@ vi.mock('../Logger', () => ({
   }
 }));
 
-import { processSale, salesServiceInternals } from '../salesService';
+import { processSale, salesServiceInternals, splitOpenTableOrder } from '../salesService';
 
 const ecommerceParams = {
   activeOrderId: 'ecom-order-1',
@@ -109,11 +109,49 @@ const configureSalesTable = () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.grantedHandle.assertCurrent.mockReset();
   salesServiceInternals.clearEcommerceSalePromisesForTests();
   configureSalesTable();
 });
 
 describe('salesService ecommerce idempotency', () => {
+  it('requires the confirming POS actor and rebinds the split to its tracked handle', async () => {
+    mocks.splitOpenTableOrderCore.mockResolvedValueOnce({ success: true });
+
+    const result = await splitOpenTableOrder({ actorContext: mocks.grantedHandle });
+
+    expect(result).toEqual({ success: true });
+    expect(mocks.grantedHandle.assertCurrent).toHaveBeenCalledWith('pos');
+    expect(mocks.splitOpenTableOrderCore).toHaveBeenCalledWith(
+      expect.objectContaining({ actorContext: mocks.grantedHandle }),
+      expect.any(Object)
+    );
+  });
+
+  it('blocks a split call that does not carry the confirmation actor context', async () => {
+    await expect(splitOpenTableOrder({})).rejects.toMatchObject({ code: 'ACTOR_CONTEXT_STALE' });
+    expect(mocks.splitOpenTableOrderCore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { source: 'local', committedResult: { success: true, parentOrderId: 'table-1', childSaleIds: ['child-1'] } },
+    { source: 'Cloud', committedResult: { success: true, cloudCommitted: true, sourceMode: 'cloud_committed' } }
+  ])('preserves an already committed $source split if actor authority changes before returning', async ({ committedResult }) => {
+    mocks.grantedHandle.assertCurrent
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' });
+      });
+    mocks.splitOpenTableOrderCore.mockResolvedValueOnce(committedResult);
+
+    const result = await splitOpenTableOrder({ parentOrderId: 'table-1', actorContext: mocks.grantedHandle });
+
+    expect(result).toEqual(committedResult);
+    expect(mocks.splitOpenTableOrderCore).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed before processSaleCore when Dexie cannot read existing sales', async () => {
     mocks.getSale.mockRejectedValueOnce(new Error('DEXIE_READ_FAILED'));
 

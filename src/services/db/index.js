@@ -132,8 +132,15 @@ export const processBatchDeductions = (deductions, options = {}) =>
 export const executeSaleTransactionSafe = (sale, deductions, options) =>
     safeExecute(() => salesRepository.executeSaleTransaction(sale, deductions, options));
 
-export const executeSplitOpenTableOrderTransactionSafe = (payload) =>
-    safeExecute(() => salesRepository.executeSplitOpenTableOrderTransaction(payload));
+export const executeSplitOpenTableOrderTransactionSafe = async (payload, options) => {
+    try {
+        const result = await salesRepository.executeSplitOpenTableOrderTransaction(payload, options);
+        return result ? { success: true, ...result } : { success: true };
+    } catch (error) {
+        if (String(error?.code || '').startsWith('ACTOR_')) throw error;
+        return safeExecute(() => Promise.reject(error));
+    }
+};
 
 export const layawayRepo = {
     create: (data, initial) => safeExecute(() => layawayFinancialService.create({ layawayData: data, initialPayment: initial })),
