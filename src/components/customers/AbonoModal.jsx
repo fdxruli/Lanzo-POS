@@ -46,12 +46,15 @@ export default function AbonoModal({
   cashActor = null,
   authoritativePendingSales = null,
   cloudAllocationStatus = 'unavailable',
-  onReloadPendingSales = null
+  onReloadPendingSales = null,
+  pendingCloudPayment = null,
+  onRecoverPending = null
 }) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
   const [sendReceipt, setSendReceipt] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecoveringPayment, setIsRecoveringPayment] = useState(false);
   const [mode, setMode] = useState('general');
   const [allocations, setAllocations] = useState({});
   const [localSales, setLocalSales] = useState([]);
@@ -297,6 +300,22 @@ export default function AbonoModal({
     }
   };
 
+  const handleRecoverPending = async () => {
+    if (isSubmittingRef.current || !pendingCloudPayment?.intentId || !pendingCloudPayment.canRecover) return;
+    isSubmittingRef.current = true;
+    setIsRecoveringPayment(true);
+    setIsSubmitting(true);
+    try {
+      await onRecoverPending?.(pendingCloudPayment.intentId);
+    } finally {
+      isSubmittingRef.current = false;
+      if (isMountedRef.current) {
+        setIsRecoveringPayment(false);
+        setIsSubmitting(false);
+      }
+    }
+  };
+
   if (!show || !customer) return null;
   const modeHelp = specific
     ? 'Abre una o varias notas e indica cuánto deseas abonar a cada una.'
@@ -351,6 +370,35 @@ export default function AbonoModal({
                 </p>
               )}
             </div>
+            {pendingCloudPayment ? (
+              <section className="abono-note-state abono-note-state--warning" role="status" aria-live="polite">
+                <AlertTriangle size={24} aria-hidden="true" />
+                <strong>Abono pendiente de confirmación</strong>
+                {pendingCloudPayment.canRecover ? (
+                  <>
+                    <p>
+                      Se conserva el intento original por {formatMoneyValue(pendingCloudPayment.amount)}.
+                      Verificarlo reutiliza la misma clave y los mismos datos; no crea otro abono.
+                    </p>
+                    <button
+                      type="button"
+                      className="ui-button ui-button--ghost"
+                      onClick={handleRecoverPending}
+                      disabled={isSubmitting}
+                    >
+                      {isRecoveringPayment ? 'Verificando abono…' : 'Verificar y recuperar abono'}
+                    </button>
+                  </>
+                ) : (
+                  <p>
+                    {pendingCloudPayment.blocked
+                      ? 'No registres otro pago. Para recuperar esta operación, vuelve con el usuario y dispositivo que la iniciaron.'
+                      : 'El resultado requiere revisión. No registres otro pago para este cliente hasta resolverlo.'}
+                  </p>
+                )}
+              </section>
+            ) : (
+              <>
             {isBlocked && (
               <p className="ui-alert ui-alert--danger abono-alert" role="alert">
                 <AlertTriangle size={18} aria-hidden="true" />
@@ -586,8 +634,23 @@ export default function AbonoModal({
                 {validation || error}
               </p>
             )}
+              </>
+            )}
           </div>
           <footer className="abono-footer">
+            {pendingCloudPayment ? (
+              <div className="ui-modal__actions abono-actions">
+                <button
+                  type="button"
+                  className="ui-button ui-button--ghost"
+                  onClick={() => dismissModal()}
+                  disabled={isSubmitting}
+                >
+                  Cerrar
+                </button>
+              </div>
+            ) : (
+              <>
             <div className="abono-totals" aria-live="polite">
               {specific && (
                 <div>
@@ -634,6 +697,8 @@ export default function AbonoModal({
                 Cancelar
               </button>
             </div>
+              </>
+            )}
           </footer>
         </form>
       </div>

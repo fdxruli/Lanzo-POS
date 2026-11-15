@@ -4,10 +4,12 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   getLicenseKeyFromDetails: vi.fn(() => 'LIC-1'),
   isCloudCustomerCreditSyncEnabled: vi.fn(() => true),
-  generateIdempotencyKey: vi.fn(() => 'payment-idem-1'),
   pullIncremental: vi.fn(() => Promise.resolve()),
   getCashMode: vi.fn(() => ({ online: true })),
-  recordCustomerPayment: vi.fn(),
+  applyCloudLedger: vi.fn(),
+  createOrGetCustomerPaymentIntent: vi.fn(),
+  executeCustomerPaymentIntent: vi.fn(),
+  getPendingCustomerPaymentIntent: vi.fn(),
   localProcessPayment: vi.fn(),
   runtimeState: { actorType: 'staff', permissions: ['customers', 'customer_payments'] },
   lastActorHandle: null
@@ -21,6 +23,12 @@ const permissionError = (permission) => {
 
 const createActorHandle = (requiredPermission) => ({
   actorType: mocks.runtimeState.actorType,
+  actorKey: `${mocks.runtimeState.actorType}:staff-1`,
+  actorId: 'staff-1',
+  sessionId: 'session-1',
+  generation: 1,
+  deviceRef: 'device-1',
+  tenant: { opaqueId: 'tenant-1', databaseName: 'tenant-db-1', generation: 1 },
   assertCurrent: vi.fn((permission = requiredPermission) => {
     if (mocks.runtimeState.actorType === 'staff'
       && !mocks.runtimeState.permissions.includes(permission)) {
@@ -37,7 +45,8 @@ vi.mock('../../auth/actorRuntimeController', () => ({
       const handle = createActorHandle(permission);
       handle.assertCurrent(permission);
       return handle;
-    })
+    }),
+    subscribe: vi.fn(() => () => {})
   },
   isActorRuntimeError: (error) => String(error?.code || '').startsWith('ACTOR_')
 }));
@@ -48,12 +57,9 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../utils', () => ({ showMessageModal: vi.fn() }));
-vi.mock('../../sync/idempotency', () => ({ generateIdempotencyKey: mocks.generateIdempotencyKey }));
 vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: mocks.getLicenseKeyFromDetails,
   isCloudCustomerCreditSyncEnabled: mocks.isCloudCustomerCreditSyncEnabled,
-  SYNC_ENTITY_TYPES: { CUSTOMER_LEDGER: 'customer_ledger' },
-  SYNC_OPERATIONS: { CREATE: 'create' }
 }));
 vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: { pullIncremental: mocks.pullIncremental } }));
 vi.mock('../../customers/customerLocalRepository', () => ({
@@ -67,17 +73,22 @@ vi.mock('../../cash/cashLocalRepository', () => ({
 }));
 vi.mock('../../cash/cashActor', () => ({ getCashMode: mocks.getCashMode }));
 vi.mock('../customerCreditCloudRepository', () => ({
-  customerCreditCloudRepository: { recordCustomerPayment: mocks.recordCustomerPayment }
+  customerCreditCloudRepository: { getCustomerCreditSummary: vi.fn() }
 }));
 vi.mock('../customerCreditLocalRepository', () => ({
   customerCreditLocalRepository: {
     processPayment: mocks.localProcessPayment,
-    applyCloudLedger: vi.fn(() => Promise.resolve(null)),
+    applyCloudLedger: mocks.applyCloudLedger,
     applyCloudLedgers: vi.fn(() => Promise.resolve([]))
   }
 }));
 vi.mock('../../salesCloud/salesCloudLocalRepository', () => ({ salesCloudLocalRepository: {} }));
 vi.mock('../customerCreditMapper', () => ({ receiptPayloadToLocal: (receipt) => receipt }));
+vi.mock('../../financial/financialIntentLedger', () => ({
+  createOrGetCustomerPaymentIntent: mocks.createOrGetCustomerPaymentIntent,
+  executeCustomerPaymentIntent: mocks.executeCustomerPaymentIntent,
+  getPendingCustomerPaymentIntent: mocks.getPendingCustomerPaymentIntent
+}));
 vi.mock('../customerCreditSyncHandler', () => ({}));
 
 import { customerCreditRepository, CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE } from '../customerCreditRepository';
@@ -92,18 +103,23 @@ describe('customer payment service authorization', () => {
       licenseDetails: { license_key: 'LIC-1' }
     });
     mocks.isCloudCustomerCreditSyncEnabled.mockReturnValue(true);
-    mocks.recordCustomerPayment.mockImplementation(async ({ actorHandle }) => {
+    mocks.getPendingCustomerPaymentIntent.mockResolvedValue(null);
+    mocks.applyCloudLedger.mockResolvedValue(null);
+    mocks.createOrGetCustomerPaymentIntent.mockResolvedValue({
+      intent: { id: 'intent-1', status: 'PREPARED' }, reused: false, requestMatches: true
+    });
+    mocks.executeCustomerPaymentIntent.mockImplementation(async ({ actorHandle }) => {
       mocks.lastActorHandle = actorHandle;
       actorHandle.assertCurrent();
       // Model a permission revocation after the server has committed the payment.
       mocks.runtimeState = { actorType: 'staff', permissions: ['customers'] };
       actorHandle.assertCurrent();
-      return {
+      return { response: {
         success: true,
         new_debt: 90,
         ledger_entry: { id: 'ledger-1' },
         receipt: { customer_id: 'customer-1', amount: 10, new_debt: 90, ledger_id: 'ledger-1' }
-      };
+      } };
     });
     mocks.localProcessPayment.mockResolvedValue({ success: true, newDebt: '90', ledgerId: 'local-ledger-1' });
   });
@@ -120,7 +136,7 @@ describe('customer payment service authorization', () => {
       code: 'CUSTOMER_PAYMENT_PERMISSION_DENIED',
       message: CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE
     });
-    expect(mocks.recordCustomerPayment).not.toHaveBeenCalled();
+    expect(mocks.executeCustomerPaymentIntent).not.toHaveBeenCalled();
     expect(mocks.localProcessPayment).not.toHaveBeenCalled();
   });
 
@@ -134,7 +150,7 @@ describe('customer payment service authorization', () => {
       code: 'CUSTOMER_PAYMENT_PERMISSION_DENIED',
       message: CUSTOMER_PAYMENT_PERMISSION_DENIED_MESSAGE
     });
-    expect(mocks.recordCustomerPayment).not.toHaveBeenCalled();
+    expect(mocks.executeCustomerPaymentIntent).not.toHaveBeenCalled();
     expect(mocks.localProcessPayment).not.toHaveBeenCalled();
   });
 
@@ -144,8 +160,53 @@ describe('customer payment service authorization', () => {
     expect(result).toMatchObject({ success: true, newDebt: '90', ledgerId: 'ledger-1' });
     expect(mocks.lastActorHandle.assertCurrent).toHaveBeenCalledWith('customer_payments');
     expect(mocks.lastActorHandle.assertCurrent).toHaveBeenCalledWith('customers');
-    expect(mocks.lastActorHandle.assertCurrent.mock.calls.filter(([permission]) => permission === 'customer_payments'))
-      .toHaveLength(2);
+    expect(mocks.lastActorHandle.assertCurrent).toHaveBeenCalledWith('customer_payments');
+  });
+
+  it('coalesces two same-runtime submissions into one financial intent and dispatch', async () => {
+    let releaseDispatch;
+    const dispatchGate = new Promise((resolve) => { releaseDispatch = resolve; });
+    mocks.executeCustomerPaymentIntent.mockImplementation(async () => {
+      await dispatchGate;
+      return { response: { success: true, new_debt: 90, ledger_entry: { id: 'ledger-1' } } };
+    });
+    const first = customerCreditRepository.processPayment('customer-1', 10, 'efectivo', 'cash-1');
+    const second = customerCreditRepository.processPayment('customer-1', 10, 'efectivo', 'cash-1');
+    releaseDispatch();
+    const results = await Promise.all([first, second]);
+
+    expect(results[0]).toMatchObject({ success: true, ledgerId: 'ledger-1' });
+    expect(results[1]).toMatchObject({ success: true, ledgerId: 'ledger-1' });
+    expect(mocks.createOrGetCustomerPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(mocks.executeCustomerPaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a pending state after an uncertain Cloud response and does not call a new RPC key', async () => {
+    const ambiguous = Object.assign(new TypeError('Failed to fetch'), {
+      isFinancialOperationAmbiguous: true,
+      financialStatus: 'PENDING_RECEIPT',
+      financialIntentId: 'intent-pending'
+    });
+    mocks.executeCustomerPaymentIntent.mockRejectedValue(ambiguous);
+
+    const result = await customerCreditRepository.processPayment('customer-1', 10, 'efectivo', 'cash-1');
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'CUSTOMER_PAYMENT_RESULT_PENDING',
+      financialIntentId: 'intent-pending',
+      message: 'No se pudo confirmar el resultado del abono. Estamos conservando esta operación para evitar duplicarla. Revisa su estado antes de registrar otro pago.'
+    });
+    expect(mocks.createOrGetCustomerPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(mocks.executeCustomerPaymentIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a confirmed payment successful when updating the local ledger projection fails', async () => {
+    mocks.applyCloudLedger.mockRejectedValue(new Error('local cache unavailable'));
+
+    const result = await customerCreditRepository.processPayment('customer-1', 10, 'efectivo', 'cash-1');
+
+    expect(result).toMatchObject({ success: true, newDebt: '90', ledgerId: 'ledger-1' });
   });
 
   it('preserves the local Admin path and never writes a Cloud payment while offline', async () => {
@@ -166,6 +227,6 @@ describe('customer payment service authorization', () => {
 
     expect(offlineResult.code).toBe('CUSTOMER_CREDIT_CLOUD_OFFLINE');
     expect(mocks.localProcessPayment).not.toHaveBeenCalled();
-    expect(mocks.recordCustomerPayment).not.toHaveBeenCalled();
+    expect(mocks.executeCustomerPaymentIntent).not.toHaveBeenCalled();
   });
 });

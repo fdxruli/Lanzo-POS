@@ -101,6 +101,7 @@ import {
   FINANCIAL_INTENT_STATUS,
   claimFinancialIntentRecovery,
   createFinancialIntent,
+  createOrGetCustomerPaymentIntent,
   executeNewFinancialIntent,
   getFinancialIntent,
   releaseFinancialIntentRecoveryClaim,
@@ -156,7 +157,7 @@ beforeEach(async () => {
   const name = `lanzo-financial-concurrency-${crypto.randomUUID()}`;
   names.push(name);
   const database = new Dexie(name);
-  database.version(1).stores({ financial_intents: 'id, &idempotencyKey' });
+  database.version(1).stores({ financial_intents: 'id, &idempotencyKey, operationType' });
   await database.open();
   runtime.database = database;
   runtime.handle = makeHandle();
@@ -175,6 +176,38 @@ afterEach(async () => {
 });
 
 describe('financial intent real Dexie fencing', () => {
+  it('allocates one pending customer-payment identity across concurrent IndexedDB callers', async () => {
+    const request = {
+      customer_id: 'customer-1', amount: '10.00', payment_method: 'efectivo',
+      cash_session_id: 'session-a', note: 'Abono', allocations: []
+    };
+    const options = {
+      request,
+      licenseKey: 'fixture-license',
+      cashSessionId: 'session-a',
+      actorHandle: runtime.handle
+    };
+
+    const results = await Promise.all([
+      createOrGetCustomerPaymentIntent(options),
+      createOrGetCustomerPaymentIntent(options)
+    ]);
+
+    expect(results[0].intent.id).toBe(results[1].intent.id);
+    expect(results[0].intent.idempotencyKey).toBe(results[1].intent.idempotencyKey);
+    expect(results.map((result) => result.reused).sort()).toEqual([false, true]);
+    const rows = await runtime.database.table('financial_intents').toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      operationType: 'customer.payment',
+      status: FINANCIAL_INTENT_STATUS.PREPARED,
+      requestPayload: request,
+      cashSessionId: 'session-a',
+      cashStationId: 'station-a'
+    });
+    expect(runtime.rpcCalls.some(({ name }) => name === 'pos_record_customer_payment_v2')).toBe(false);
+  });
+
   it('rejects an expired owner write and preserves a replacement lease', async () => {
     const intent = await createIntent('lease-expiry-k');
     const base = Date.now();

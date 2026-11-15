@@ -171,6 +171,58 @@ for(const c of contexts) {
    assert.deepEqual(await state(other,foreign),targetBefore);assert.deepEqual(await state(c,id),before);
  });
  if(c.version===2) {
+   await test(c,'a lost V2 payment response replays one $100 payment with the same key',async()=>{
+     const id=await customer(c),key=randomUUID();
+     await fixture(c,`update public.pos_customers set debt=500,debt_cents=50000 where id=${lit(id)} and license_id='${c.tenant}';
+       insert into public.pos_customer_ledger(id,license_id,customer_id,type,amount,balance_after,debt_cents_after,actor_name)
+       values (${lit(randomUUID())},'${c.tenant}',${lit(id)},'INITIAL_BALANCE',500,500,50000,'Synthetic fixture');`);
+     const before=await state(c,id);
+     await pay(c,id,100,[],key); // The committed response is deliberately discarded.
+     await fixture(c,`update public.pos_cash_sessions set status='closed',closed_at=now() where id=${lit(c.cash)} and license_id='${c.tenant}'`);
+     let recovered,after,closedAttempt,closedSessionState,changedPayloadReplay;
+     try {
+       recovered=await pay(c,id,100,[],key);
+       after=await state(c,id);
+       assert.equal(after.debt,400);
+       assert.equal(after.payments,before.payments+1);
+       assert.equal(after.cash,before.cash+1);
+       assert.equal(after.ledger,before.ledger+1);
+       assert.equal(recovered.ledger_entry.amount,-100);
+
+       changedPayloadReplay=await pay(c,id,99,[],key);
+       assert.equal(changedPayloadReplay.ledger_entry.id,recovered.ledger_entry.id);
+       assert.deepEqual(await state(c,id),after);
+
+       closedSessionState=await state(c,id);
+       closedAttempt=await pay(c,id,1,[],randomUUID()).catch(error=>({success:false,code:error.message}));
+       assert.notEqual(closedAttempt.success,true);
+       assert.match(String(closedAttempt.code||''),/CASH|SESSION/u);
+       assert.deepEqual(await state(c,id),closedSessionState);
+     } finally {
+       await fixture(c,`update public.pos_cash_sessions set status='open',closed_at=null where id=${lit(c.cash)} and license_id='${c.tenant}'`);
+     }
+     await fs.writeFile('work/sql-compatibility/lost-customer-payment-response.json',JSON.stringify({
+       protocol:'pos_record_customer_payment_v2',key_reused:true,before,after,
+       ledger_id:recovered.ledger_entry.id,cash_movement_id:recovered.cash_movement.id,
+       server_returns_original_result_for_changed_payload:{requested_amount:99,original_ledger_id:recovered.ledger_entry.id,replay_ledger_id:changedPayloadReplay.ledger_entry.id},
+       closed_cash_new_key_result:{code:closedAttempt.code||null,success:closedAttempt.success||false},
+       unchanged_after_closed_rejection:closedSessionState
+     },null,2));
+   });
+   await test(c,'a different actor cannot post customer payment to the owner cash session',async()=>{
+     const id=await customer(c);await sale(c,id,20);const before=await state(c,id);
+     const priorPermissions=await raw("select permissions from public.license_staff_users where id='50000000-0000-0000-0000-000000000001'");
+     await fixture(c,"update public.license_staff_users set permissions=permissions||'{\"customer_payments\":true,\"cash_register\":true}' where id='50000000-0000-0000-0000-000000000001'");
+     let attempt;
+     try {
+       attempt=await pay({...c,token:'staff-session'},id,5,[],randomUUID()).catch(error=>({success:false,code:error.message}));
+       assert.notEqual(attempt.success,true);
+       assert.match(String(attempt.code||''),/CASH|SESSION/u);
+       assert.deepEqual(await state(c,id),before);
+     } finally {
+       await fixture(c,`update public.license_staff_users set permissions=${lit(priorPermissions)}::jsonb where id='50000000-0000-0000-0000-000000000001'`);
+     }
+   });
    await test(c,'second V2 device reads live notes, customer projection, events and cursors',async()=>{
      const id=await customer(c),s=await sale(c,id,20);
      const cursor=Number(await raw(`select coalesce(max(change_seq),0) from public.pos_sync_events where license_id='${c.tenant}'`));

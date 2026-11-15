@@ -6,11 +6,16 @@ const runtime = vi.hoisted(() => {
     contract_version: 2,
     tenant_id: 'tenant-a',
     endpoint,
-    family: 'financial_operations',
-    customer_projection_scope: 'OPERATION_RESULT',
+    family: endpoint === 'pos_record_customer_payment_v2' ? 'customer_credit' : 'financial_operations',
+    ...(endpoint === 'pos_record_customer_payment_v2' ? { customer_id: args.p_customer_id } : {
+      customer_projection_scope: 'OPERATION_RESULT'
+    }),
     payload,
     customer_projections: [],
-    operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+    operation: {
+      idempotency_key: args.p_idempotency_key,
+      ...(args.p_request_hash ? { request_hash: args.p_request_hash } : {})
+    }
   });
   const table = {
     async add(row) {
@@ -23,7 +28,13 @@ const runtime = vi.hoisted(() => {
     },
     async get(id) { return rows.has(id) ? structuredClone(rows.get(id)) : undefined; },
     async update(id, changes) { rows.set(id, { ...rows.get(id), ...structuredClone(changes) }); },
-    where() { return { anyOf: (...statuses) => ({ toArray: async () => [...rows.values()].filter((row) => statuses.includes(row.status)).map(structuredClone) }) }; }
+    where(index) { return {
+      anyOf: (...values) => ({ toArray: async () => [...rows.values()].filter((row) => values.includes(row[index])).map((row) => structuredClone(row)) }),
+      equals: (value) => ({
+        toArray: async () => [...rows.values()].filter((row) => row[index] === value).map((row) => structuredClone(row)),
+        first: async () => structuredClone([...rows.values()].find((row) => row[index] === value))
+      })
+    }; }
   };
   const makeHandle = (actorKey = 'admin:actor-a') => {
     let current = true;
@@ -56,6 +67,7 @@ const runtime = vi.hoisted(() => {
     makeHandle,
     execute: async () => ({ success: true, receipt: 'server-result' }),
     executeError: null,
+    discoveryError: null,
     protocol: 2,
     stationState: async () => ({ cash_station: { id: 'station-a' } }),
     receipt: async () => ({ status: 'NOT_FOUND' }),
@@ -84,6 +96,9 @@ vi.mock('../../supabase', () => ({
     rpc: async (name, args) => {
       runtime.rpcCalls.push({ name, args });
       if (name === 'pos_get_cash_station_state') return { data: await runtime.stationState(args), error: null };
+      if (name === 'pos_fin01_sync_contract_v1' && runtime.discoveryError) {
+        return { data: null, error: runtime.discoveryError };
+      }
       if (name === 'pos_fin01_sync_contract_v1') return { data: runtime.protocol === 1 ? {
         contract_version: 2, tenant_id: 'tenant-a', server_status: 'UPDATE_REQUIRED',
         active_protocol: 1, reason: 'QA_PILOT_NOT_ENABLED'
@@ -91,13 +106,17 @@ vi.mock('../../supabase', () => ({
         contract_version: 2,
         tenant_id: 'tenant-a',
         server_status: 'SUPPORTED',
-        endpoint_families: ['financial_operations'],
-        endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+        endpoint_families: ['financial_operations', 'customer_credit'],
+        endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2', 'pos_record_customer_payment_v2'],
         capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
       }, error: null };
       if (name === 'pos_execute_financial_operation_v2' || name === 'pos_execute_financial_operation_v1') {
         if (runtime.executeError) return { data: null, error: runtime.executeError };
         return { data: runtime.protocol === 1 ? await runtime.execute(args) : runtime.envelope(name, args, await runtime.execute(args)), error: null };
+      }
+      if (name === 'pos_record_customer_payment_v2') {
+        if (runtime.executeError) return { data: null, error: runtime.executeError };
+        return { data: runtime.envelope(name, args, await runtime.execute(args)), error: null };
       }
       if (name === 'pos_get_financial_operation_receipt') return { data: await runtime.receipt(args), error: null };
       if (name === 'pos_get_financial_operation_receipt_v2') return { data: runtime.envelope(name, args, await runtime.receipt(args)), error: null };
@@ -109,9 +128,12 @@ vi.mock('../../supabase', () => ({
 import {
   FINANCIAL_INTENT_STATUS,
   createFinancialIntent,
+  createOrGetCustomerPaymentIntent,
+  executeCustomerPaymentIntent,
   executeFinancialIntent,
   executePreparedFinancialIntentForRecovery,
   getFinancialIntent,
+  getPendingCustomerPaymentIntent,
   getFinancialIntentReceiptForRecovery,
   markFinancialIntentProjectionApplied,
   markFinancialIntentProjectionFailed
@@ -133,6 +155,7 @@ describe('financial intent ledger', () => {
     runtime.handle = runtime.makeHandle();
     runtime.execute = async () => ({ success: true, receipt: 'server-result' });
     runtime.executeError = null;
+    runtime.discoveryError = null;
     runtime.protocol = 2;
     runtime.stationState = async () => ({ cash_station: { id: 'station-a' } });
     runtime.receipt = async () => ({ status: 'NOT_FOUND' });
@@ -154,6 +177,164 @@ describe('financial intent ledger', () => {
       'pos_fin01_sync_contract_v1',
       'pos_execute_financial_operation_v2'
     ]);
+  });
+
+  it('persists a customer payment first and recovers a lost response with the same key and payload', async () => {
+    runtime.stationState = async () => ({
+      cash_station: { id: 'station-a' },
+      station_open_cash_session: { id: 'cash-a' }
+    });
+    const request = {
+      customer_id: 'customer-1',
+      amount: '100.00',
+      payment_method: 'efectivo',
+      cash_session_id: 'cash-a',
+      note: 'Abono de cliente',
+      allocations: [{ saleId: 'sale-1', amountApplied: '60.00' }]
+    };
+    const prepared = await createOrGetCustomerPaymentIntent({
+      request,
+      licenseKey: 'fixture-license-secret',
+      cashSessionId: 'cash-a',
+      actorHandle: runtime.handle
+    });
+    expect(prepared).toMatchObject({ reused: false, requestMatches: true, intent: { status: 'PREPARED' } });
+    expect(runtime.rpcCalls.filter(({ name }) => name === 'pos_record_customer_payment_v2')).toHaveLength(0);
+
+    const committed = {
+      success: true,
+      new_debt: '400.00',
+      ledger_entry: { id: 'ledger-payment-1', amount: '-100.00' },
+      cash_movement: { id: 'cash-movement-1', amount: '100.00' }
+    };
+    const dispatched = [];
+    let lostFirstResponse = true;
+    runtime.execute = async (args) => {
+      dispatched.push(structuredClone(args));
+      if (lostFirstResponse) {
+        lostFirstResponse = false;
+        throw new TypeError('Failed to fetch');
+      }
+      return structuredClone(committed);
+    };
+
+    let firstError;
+    try {
+      await executeCustomerPaymentIntent({
+        intentId: prepared.intent.id,
+        licenseKey: 'fixture-license-secret',
+        actorHandle: runtime.handle
+      });
+    } catch (error) { firstError = error; }
+    expect(firstError).toMatchObject({
+      isFinancialOperationAmbiguous: true,
+      financialStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+    });
+    expect(await getFinancialIntent(prepared.intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      idempotencyKey: prepared.intent.idempotencyKey,
+      dispatchAttemptCount: 1
+    });
+    const reloadedActor = runtime.makeHandle();
+    reloadedActor.sessionId = 'session-after-reload';
+    reloadedActor.generation = 2;
+    expect(await getPendingCustomerPaymentIntent({
+      customerId: 'customer-1', request, actorHandle: reloadedActor
+    })).toMatchObject({
+      intentId: prepared.intent.id,
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      amount: '100.00',
+      canRecover: true,
+      requestMatches: true
+    });
+
+    const changed = await createOrGetCustomerPaymentIntent({
+      request: { ...request, amount: '99.00' },
+      licenseKey: 'fixture-license-secret',
+      cashSessionId: 'cash-a',
+      actorHandle: runtime.handle
+    });
+    expect(changed).toMatchObject({ reused: true, requestMatches: false, intent: { id: prepared.intent.id } });
+    expect(runtime.rpcCalls.filter(({ name }) => name === 'pos_get_cash_station_state')).toHaveLength(1);
+
+    const recovered = await executeCustomerPaymentIntent({
+      intentId: prepared.intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: reloadedActor
+    });
+    expect(recovered.response).toMatchObject(committed);
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched[0].p_idempotency_key).toBe(dispatched[1].p_idempotency_key);
+    for (const key of ['p_customer_id', 'p_amount', 'p_payment_method', 'p_cash_session_id', 'p_note', 'p_allocations']) {
+      expect(dispatched[0][key]).toEqual(dispatched[1][key]);
+    }
+    expect(dispatched[0].p_allocations).toEqual([{ sale_id: 'sale-1', amount_applied: '60.00' }]);
+    expect(await getFinancialIntent(prepared.intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      dispatchAttemptCount: 2,
+      responsePayload: committed
+    });
+  });
+
+  it('does not let another actor or tenant recover a pending customer payment', async () => {
+    runtime.stationState = async () => ({
+      cash_station: { id: 'station-a' },
+      station_open_cash_session: { id: 'cash-a' }
+    });
+    const prepared = await createOrGetCustomerPaymentIntent({
+      request: {
+        customer_id: 'customer-1', amount: '10.00', payment_method: 'efectivo',
+        cash_session_id: 'cash-a', note: 'Abono', allocations: []
+      },
+      licenseKey: 'fixture-license-secret',
+      cashSessionId: 'cash-a',
+      actorHandle: runtime.handle
+    });
+    await runtime.table.update(prepared.intent.id, { status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, dispatchAttemptCount: 1 });
+    const otherActor = runtime.makeHandle('admin:actor-b');
+    await expect(executeCustomerPaymentIntent({
+      intentId: prepared.intent.id, licenseKey: 'fixture-license-secret', actorHandle: otherActor
+    })).rejects.toThrow('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
+    const otherTenant = runtime.makeHandle();
+    otherTenant.tenant = { ...otherTenant.tenant, opaqueId: 'tenant-b' };
+    await expect(executeCustomerPaymentIntent({
+      intentId: prepared.intent.id, licenseKey: 'fixture-license-secret', actorHandle: otherTenant
+    })).rejects.toThrow('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
+    expect(runtime.rpcCalls.filter(({ name }) => name === 'pos_record_customer_payment_v2')).toHaveLength(0);
+  });
+
+  it('treats a failure before the payment RPC as a confirmed no-write and permits a fresh attempt', async () => {
+    runtime.stationState = async () => ({
+      cash_station: { id: 'station-a' },
+      station_open_cash_session: { id: 'cash-a' }
+    });
+    const options = {
+      request: {
+        customer_id: 'customer-1', amount: '10.00', payment_method: 'efectivo',
+        cash_session_id: 'cash-a', note: 'Abono', allocations: []
+      },
+      licenseKey: 'fixture-license-secret',
+      cashSessionId: 'cash-a',
+      actorHandle: runtime.handle
+    };
+    const prepared = await createOrGetCustomerPaymentIntent(options);
+    runtime.discoveryError = new TypeError('Failed to fetch');
+
+    await expect(executeCustomerPaymentIntent({
+      intentId: prepared.intent.id,
+      licenseKey: options.licenseKey,
+      actorHandle: runtime.handle
+    })).rejects.toThrow('Failed to fetch');
+    expect(await getFinancialIntent(prepared.intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter(({ name }) => name === 'pos_record_customer_payment_v2')).toHaveLength(0);
+
+    runtime.discoveryError = null;
+    const next = await createOrGetCustomerPaymentIntent(options);
+    expect(next.reused).toBe(false);
+    expect(next.intent.id).not.toBe(prepared.intent.id);
   });
 
   it('recovers the original credit receipt repeatedly without redispatch or changing its K/H/result', async () => {

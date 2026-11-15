@@ -219,6 +219,25 @@ describe('payment modalities and financial UI boundaries', () => {
     expect(confirm).toHaveBeenCalledOnce();
     await act(async () => finish({ success: true }));
   });
+  it('offers only same-intent recovery when a Cloud payment remains pending', async () => {
+    const recover = vi.fn().mockResolvedValue({ success: true });
+    open({
+      pendingCloudPayment: { intentId: 'intent-original', amount: '100.00', canRecover: true },
+      onRecoverPending: recover
+    });
+    expect(screen.getByText('Abono pendiente de confirmación')).toBeTruthy();
+    expect(screen.getByText(/reutiliza la misma clave y los mismos datos/)).toBeTruthy();
+    expect(screen.queryByLabelText('Monto del abono')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Verificar y recuperar abono' })));
+    expect(recover).toHaveBeenCalledWith('intent-original');
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it('does not expose recovery or a new payment when another actor owns the pending intent', () => {
+    open({ pendingCloudPayment: { blocked: true, canRecover: false } });
+    expect(screen.getByText(/vuelve con el usuario y dispositivo que la iniciaron/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Verificar y recuperar abono' })).toBeNull();
+    expect(screen.queryByLabelText('Monto del abono')).toBeNull();
+  });
   it('preserves the receipt choice and existing cash/permission block', async () => {
     const view = open({ isBlocked: true, blockedReason: 'Abre tu caja para continuar.' });
     expect(screen.getByRole('alert').textContent).toContain('Abre tu caja');

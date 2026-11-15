@@ -121,6 +121,7 @@ vi.mock('../../services/customerCredit/customerCreditRepository', () => ({
   CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE: 'Caja cloud sin conexión.',
   customerCreditRepository: {
     getMode: () => ({ cloudEnabled: state.paymentTest }),
+    getPendingCloudPayment: vi.fn().mockResolvedValue(null),
     getCustomerCreditSummary: vi.fn(),
     processPayment: vi.fn()
   }

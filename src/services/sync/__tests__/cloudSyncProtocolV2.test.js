@@ -5,6 +5,7 @@ import {
   CLOUD_SYNC_CONTRACT_RPC,
   CLOUD_SYNC_CONTRACT_VERSION,
   CLOUD_FINANCIAL_RESULT_CAPABILITY,
+  callCloudSyncRpc,
   validateCloudSyncV2Envelope
 } from '../cloudSyncProtocolV2';
 
@@ -131,6 +132,40 @@ describe('immutable financial operation results', () => {
     await expect(callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_pull_customer_credit_changes_v2',
       authArgs: { p_license_key: 'license' }, family: 'customer_credit' }))
       .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED', retryable: false });
+  });
+
+  it('fences a Cloud customer-payment dispatch immediately before its mutation RPC', async () => {
+    const events = [];
+    const paymentContract = { ...contract, endpoints: ['pos_record_customer_payment_v2'] };
+    const rpc = vi.fn(async (name) => {
+      events.push(name);
+      if (name === CLOUD_SYNC_CONTRACT_RPC) return { data: paymentContract, error: null };
+      return { data: {
+        contract_version: 2,
+        tenant_id: 'tenant-1',
+        endpoint: 'pos_record_customer_payment_v2',
+        family: 'customer_credit',
+        customer_id: 'customer-1',
+        payload: { success: true },
+        customer_projections: [],
+        operation: { idempotency_key: 'payment-key' }
+      }, error: null };
+    });
+    const beforeFinancialDispatch = vi.fn(() => events.push('authorized-dispatch'));
+
+    await callCloudSyncRpc({
+      client: { rpc },
+      rpcName: 'pos_record_customer_payment_v2',
+      authArgs: { p_license_key: 'license-key' },
+      params: { p_customer_id: 'customer-1', p_idempotency_key: 'payment-key' },
+      family: 'customer_credit',
+      expectedCustomerId: 'customer-1',
+      expectedIdempotencyKey: 'payment-key',
+      beforeFinancialDispatch
+    });
+
+    expect(events).toEqual([CLOUD_SYNC_CONTRACT_RPC, 'authorized-dispatch', 'pos_record_customer_payment_v2']);
+    expect(beforeFinancialDispatch).toHaveBeenCalledOnce();
   });
 
   it('does not write or fall back to v1 when the server has not enabled the QA pilot', async () => {

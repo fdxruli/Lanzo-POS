@@ -139,6 +139,7 @@ export default function CustomersPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [isAbonoConfirmationPending, setIsAbonoConfirmationPending] = useState(false);
+  const [pendingCloudPayment, setPendingCloudPayment] = useState(null);
   const [abonoCashSession, setAbonoCashSession] = useState(null);
   const isCloudCredit = customerCreditRepository.getMode().cloudEnabled;
   const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
@@ -230,11 +231,13 @@ export default function CustomersPage() {
     setAbonoCashSession(null);
     setAbonoPendingNotes(null);
     showMessageModal(
-      'Se retiró el permiso para registrar abonos. El formulario se cerró y no se confirmó ningún pago.',
+      pendingCloudPayment
+        ? 'Se retiró el permiso para registrar abonos. El abono sigue pendiente de confirmación y se conserva; no registres otro pago hasta resolverlo.'
+        : 'Se retiró el permiso para registrar abonos. El formulario se cerró y no se confirmó ningún pago.',
       null,
       { type: 'warning' }
     );
-  }, [canRegisterAbonos, isAbonoConfirmationPending, isAbonoModalOpen]);
+  }, [canRegisterAbonos, isAbonoConfirmationPending, isAbonoModalOpen, pendingCloudPayment]);
 
   const customerPortfolio = useMemo(() => {
     return customers.reduce((summary, customer) => {
@@ -842,6 +845,22 @@ export default function CustomersPage() {
       return;
     }
 
+    if (customerCreditRepository.getMode().cloudEnabled) {
+      try {
+        const pending = await customerCreditRepository.getPendingCloudPayment(customer.id);
+        if (pending) {
+          setPendingCloudPayment(pending);
+          setSelectedCustomer(customer);
+          setAbonoCashSession(pending.cashSessionId ? { id: pending.cashSessionId } : null);
+          setIsAbonoModalOpen(true);
+          return;
+        }
+      } catch {
+        showMessageModal('No se pudo comprobar si hay un abono pendiente. Intenta de nuevo antes de registrar otro pago.', null, { type: 'warning' });
+        return;
+      }
+    }
+
     let cajaVigente = null;
 
     try {
@@ -861,6 +880,7 @@ export default function CustomersPage() {
     }
 
     setAbonoCashSession(cajaVigente);
+    setPendingCloudPayment(null);
     if (!cajaActual || cajaActual.id !== cajaVigente.id || cajaActual.estado !== 'abierta') {
       await sincronizarEstadoCaja();
     }
@@ -879,6 +899,7 @@ export default function CustomersPage() {
     abonoNotesRequestRef.current += 1;
     setSelectedCustomer(null);
     setAbonoCashSession(null);
+    setPendingCloudPayment(null);
     setAbonoPendingNotes(null);
     setIsHistoryModalOpen(false);
     setIsAbonoModalOpen(false);
@@ -968,6 +989,13 @@ export default function CustomersPage() {
       );
 
       if (!result?.success) {
+        if (result?.code === 'CUSTOMER_PAYMENT_RESULT_PENDING') {
+          const pending = await customerCreditRepository.getPendingCloudPayment(customer.id).catch(() => null);
+          setPendingCloudPayment(pending || { blocked: true, canRecover: false });
+          setIsAbonoConfirmationPending(false);
+          showMessageModal(result.message, null, { type: 'warning' });
+          return result;
+        }
         setIsAbonoConfirmationPending(false);
         const resultNeedsReview = result?.code === 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW';
         if (resultNeedsReview || result?.code === 'CUSTOMER_PAYMENT_PERMISSION_DENIED') {
@@ -978,9 +1006,7 @@ export default function CustomersPage() {
           null,
           { type: resultNeedsReview || result?.code === 'CUSTOMER_PAYMENT_PERMISSION_DENIED' ? 'warning' : 'error' }
         );
-        return createFinancialNotificationResult({
-          financialResult: { status: 'failed', code: result?.code || 'CUSTOMER_PAYMENT_FAILED' }
-        });
+        return result;
       }
 
     } catch (error) {
@@ -1049,6 +1075,43 @@ export default function CustomersPage() {
     }
 
     return createFinancialNotificationResult({ financialResult, notificationResult });
+  };
+
+  const handleRecoverPendingAbono = async (intentId) => {
+    if (!intentId) return;
+    setIsAbonoConfirmationPending(true);
+    const result = await customerCreditRepository.recoverCloudPayment(intentId);
+    if (!result?.success) {
+      if (result?.code === 'CUSTOMER_PAYMENT_RESULT_PENDING') {
+        const pending = await customerCreditRepository.getPendingCloudPayment(selectedCustomer?.id).catch(() => null);
+        setPendingCloudPayment(pending || { blocked: true, canRecover: false });
+        setIsAbonoConfirmationPending(false);
+        showMessageModal(result.message, null, { type: 'warning' });
+        return;
+      }
+      setIsAbonoConfirmationPending(false);
+      if (result?.code === 'CUSTOMER_PAYMENT_RESULT_REQUIRES_REVIEW'
+        || result?.code === 'CUSTOMER_PAYMENT_PERMISSION_DENIED') {
+        handleCloseModals();
+      } else {
+        setPendingCloudPayment(null);
+        handleCloseModals();
+      }
+      showMessageModal(result?.message || 'No se pudo recuperar el abono.', null, { type: 'warning' });
+      return;
+    }
+
+    setIsAbonoConfirmationPending(false);
+
+    showMessageModal(result.allocationStatus === 'applied'
+      ? '¡Abono registrado exitosamente!'
+      : 'Abono general registrado. La deuda del cliente se redujo; la conciliación por nota no está confirmada.');
+    handleCloseModals();
+    try {
+      await Promise.all([loadInitialCustomers(), sincronizarEstadoCaja()]);
+    } catch (error) {
+      Logger.warn('[CustomersPage] El abono recuperado fue confirmado, pero no se pudo actualizar la vista:', error);
+    }
   };
 
   const handleShareStatementImage = async (customer) => {
@@ -1280,6 +1343,8 @@ export default function CustomersPage() {
         authoritativePendingSales={abonoPendingNotes}
         cloudAllocationStatus={abonoAllocationStatus}
         onReloadPendingSales={() => loadAbonoPendingNotes(selectedCustomer)}
+        pendingCloudPayment={pendingCloudPayment}
+        onRecoverPending={handleRecoverPendingAbono}
       />
 
       <LayawayModal

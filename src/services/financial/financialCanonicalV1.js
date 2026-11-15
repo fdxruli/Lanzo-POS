@@ -371,6 +371,25 @@ export const canonicalFinancialRequestV1 = (operationType, request = {}) => {
     case 'layaway.payment':
     case 'layaway.cancel':
       return canonicalLayawayRequest(operationType, request);
+    case 'customer.payment': {
+      const customerId = text(firstNonblank(request, ['customer_id', 'customerId']));
+      const amount = decimal(firstNonblank(request, ['amount']));
+      const allocations = request.allocations;
+      if (!customerId || !amount || !Array.isArray(allocations)) {
+        throw new Error('FINANCIAL_CUSTOMER_PAYMENT_CONTRACT_INVALID');
+      }
+      return {
+        customer_id: customerId,
+        amount,
+        payment_method: request.payment_method ?? request.paymentMethod ?? null,
+        cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])),
+        note: request.note === null || request.note === undefined ? null : String(request.note),
+        allocations: allocations.map((allocation) => compact({
+          sale_id: text(firstNonblank(allocation, ['sale_id', 'saleId'])),
+          amount_applied: decimal(firstNonblank(allocation, ['amount_applied', 'amountApplied']))
+        }))
+      };
+    }
     case 'cash.open': return { opening: {
       opening_amount: decimal(firstNonblank(request, ['opening_amount', 'montoInicial'])) || '0',
       opening_counted_amount: decimal(firstNonblank(request, ['opening_counted_amount', 'montoContado', 'montoContadoInicial'])),
