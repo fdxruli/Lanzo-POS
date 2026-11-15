@@ -6,8 +6,7 @@ import {
   Loader2,
   LockKeyhole,
   RefreshCw,
-  RotateCcw,
-  ShieldCheck
+  RotateCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
@@ -93,8 +92,8 @@ function RestoreBackupPanel({
       <div className="backup-danger-heading">
         <span className="backup-danger-icon" aria-hidden="true"><RotateCcw size={17} /></span>
         <div>
-          <h5>Restaurar respaldo</h5>
-          <p>Valida el archivo y revisa su contenido antes de aplicarlo. Puedes hacerlo en un equipo nuevo con la licencia activada y el PIN del archivo.</p>
+          <h5>Desde un archivo</h5>
+          <p>Selecciona un archivo .lzbk de este negocio. Las copias descargadas de Drive se revisan aquí con el mismo PIN original.</p>
         </div>
       </div>
 
@@ -121,12 +120,16 @@ function RestoreBackupPanel({
 
           {restorePreview && (
             <div className="backup-restore-preview" role="status">
-              <strong>Versión {restorePreview.formatVersion} · {restorePreview.header?.createdAt ? formatDate(restorePreview.header.createdAt) : 'fecha no disponible'}</strong>
+              <strong>Archivo revisado · Versión {restorePreview.formatVersion} · {restorePreview.header?.createdAt ? formatDate(restorePreview.header.createdAt) : 'fecha no disponible'}</strong>
+              <p>Revisión completada; todavía no se han restaurado datos.</p>
               <p>La cobertura de este archivo es {restorePreview.coverage?.complete === true ? 'completa' : 'parcial'}.</p>
               {categoryCounts.length > 0 && (
+                <>
+                <p>Datos incluidos que se aplicarán en este equipo:</p>
                 <ul>
                   {categoryCounts.map(([label, count]) => <li key={label}>{label}: {count}</li>)}
                 </ul>
+                </>
               )}
               {restorePreview.formatVersion === 1 && (
                 <p>Este archivo antiguo solo contiene productos, ventas y clientes. Las tablas que faltan se conservarán.</p>
@@ -214,22 +217,38 @@ function formatDate(value) {
 }
 
 function BackupHero({ status, isCloudLicense }) {
-  const protectionLabel = isCloudLicense ? 'Cloud + local' : status.configured ? 'Local cifrado' : 'Sin configurar';
-  const sessionLabel = status.configured ? (status.unlocked ? 'Desbloqueada' : 'Bloqueada') : 'Pendiente';
-
+  const connected = useAppStore((state) => state.isDriveConnected);
+  const token = useAppStore((state) => state.driveAccessToken);
+  const expiresAt = useAppStore((state) => state.driveTokenExpiresAt);
+  const needsReauth = useAppStore((state) => state.needsDriveReauth);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const remaining = Number(expiresAt) - Date.now();
+    setNow(Date.now());
+    if (remaining > 0) {
+      const timer = setTimeout(() => setNow(Date.now()), Math.min(remaining, 2_147_483_647));
+      return () => clearTimeout(timer);
+    }
+  }, [expiresAt]);
+  const driveLabel = connected && token && Number(expiresAt) > now && !needsReauth
+    ? 'Conectado' : connected || needsReauth ? 'Requiere reconexión' : 'Desconectado';
   return (
     <header className="backup-settings-hero">
       <div className="backup-hero-copy">
         <span className="backup-hero-icon" aria-hidden="true"><DatabaseBackup size={20} /></span>
         <div>
-          <h2>Respaldos y datos</h2>
-          <p>Protege tu negocio, recupera tu información y exporta lo que necesites.</p>
+          <h2>Respaldos y recuperación</h2>
+          <p>{isCloudLicense
+            ? 'La sincronización Cloud y el respaldo cifrado son protecciones distintas. Restaurar aquí no reconstruye todos los datos Cloud.'
+            : 'Crea copias cifradas y conserva el PIN para recuperar tu negocio.'}</p>
         </div>
       </div>
       <div className="backup-hero-summary" aria-label="Resumen de respaldos">
-        <span><b>Protección:</b> {protectionLabel}</span>
-        <span><b>Sesión:</b> {sessionLabel}</span>
-        <span><b>Última copia:</b> {formatDate(status.settings?.lastBackupAt)}</span>
+        <span><b>Respaldo local:</b> {!status.initialized ? 'Consultando…' : status.configured ? 'Configurado' : 'Sin configurar'}</span>
+        <span><b>PIN de respaldo:</b> {!status.initialized ? 'Consultando…' : !status.configured ? 'Sin configurar' : status.unlocked ? 'Desbloqueado' : 'Bloqueado'}</span>
+        <span><b>Google Drive:</b> {driveLabel}</span>
+        <span><b>Último respaldo local:</b> {formatDate(status.settings?.lastBackupAt)}</span>
+        <span><b>Última copia Drive confirmada:</b> Sin información confirmada</span>
       </div>
     </header>
   );
@@ -256,12 +275,15 @@ function LocalBackupSettings({
   restoreState,
   setRestoreState,
   driveBusy,
+  onDriveBusyChange,
+  onWriteBusyChange,
   restoreActionPending,
   setRestoreActionPending,
   isCloudLicense = false,
   isAdmin = false
 }) {
-  const { status, backupManager } = backupContext;
+  const { status: managerStatus, backupManager } = backupContext;
+  const status = { ...managerStatus, busy: managerStatus.busy || restoreActionPending };
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
   const isDriveConnected = useAppStore((state) => state.isDriveConnected);
@@ -285,6 +307,8 @@ function LocalBackupSettings({
     setError('');
     if (restoreFile) restorePinInputRef.current?.focus();
   }, [restoreFile]);
+  const manualActionRef = useRef(false);
+  const [backupResult, setBackupResult] = useState(null);
   const [manualBackupPhase, setManualBackupPhase] = useState('idle');
   const [manualBackupProgress, setManualBackupProgress] = useState(null);
   const manualBackupPercent = manualBackupProgress?.percent
@@ -298,10 +322,10 @@ function LocalBackupSettings({
   const configuredTitle = isCloudLicense ? 'Copia local cifrada adicional' : 'Respaldos Locales Cifrados';
   const initialDescription = isCloudLicense
     ? 'Tus datos principales se sincronizan en la nube. Configura un PIN solo si deseas copias locales cifradas.'
-    : 'Configura un PIN de al menos 8 digitos y la carpeta donde se guardaran las copias.';
+    : 'Elige un PIN de al menos 8 dígitos y consérvalo en un lugar seguro. Sin él no podrás recuperar las copias.';
   const configuredDescription = isCloudLicense
     ? 'Esta copia complementa la sincronizacion en la nube para exportar o resguardar archivos locales.'
-    : 'Archivos AES-GCM por fragmentos, con rotacion automatica de siete copias.';
+    : 'Guarda una copia cifrada. Necesitarás su PIN para recuperarla.';
   const configureSuccessMessage = isCloudLicense
     ? 'Copia local cifrada configurada.'
     : 'Respaldos cifrados configurados.';
@@ -401,108 +425,123 @@ function LocalBackupSettings({
   };
 
   const manualBackup = async () => {
-    setManualBackupPhase('idle');
-    setManualBackupProgress(null);
-    const hasValidAccessToken = Boolean(
-      driveAccessToken
-      && driveTokenExpiresAt
-      && driveTokenExpiresAt > Date.now()
-    );
-    const driveSessionExpired = isDriveConnected && !hasValidAccessToken;
-    const shouldUploadToDrive = isDriveConnected && hasValidAccessToken;
-
-    if (driveSessionExpired) {
-      markDriveNeedsReauth();
-    }
-
-    let actorHandle;
+    if (manualActionRef.current || status.busy) return;
+    manualActionRef.current = true;
+    onWriteBusyChange(true);
+    setBackupResult(null);
     try {
-      actorHandle = captureSettingsAction('settings_backup');
-    } catch {
-      return;
-    }
-
-    setManualBackupPhase('encrypting');
-    const result = await run(
-      () => backupManager.backup({
-        reason: 'manual_settings',
-        manual: true,
-        includeBlob: shouldUploadToDrive
-      }),
-      null,
-      actorHandle
-    );
-
-    if (!result) {
       setManualBackupPhase('idle');
-      return;
-    }
+      setManualBackupProgress(null);
+      const hasValidAccessToken = Boolean(
+        driveAccessToken
+        && driveTokenExpiresAt
+        && driveTokenExpiresAt > Date.now()
+      );
+      const driveSessionExpired = isDriveConnected && !hasValidAccessToken;
+      const shouldUploadToDrive = isDriveConnected && hasValidAccessToken;
 
-    let uploadResult = null;
-    if (shouldUploadToDrive) {
-      setManualBackupPhase('preparing');
+      if (driveSessionExpired) {
+        markDriveNeedsReauth();
+      }
+
+      let actorHandle;
       try {
-        if (!(result.blob instanceof Blob)) {
-          throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
-        }
-        actorHandle.assertCurrent('settings_backup');
-        uploadResult = await googleDriveService.uploadBackup(
-          driveAccessToken,
-          result.blob,
-          result.fileName,
-          {
-            onProgress: (progress) => {
-              setManualBackupProgress(progress);
-              setManualBackupPhase(progress.phase);
-            }
-          }
-        );
-        if (!['confirmed', 'verification_pending'].includes(uploadResult?.uploadStatus)) {
-          throw new Error('No se confirmó la subida a Google Drive.');
-        }
-      } catch (driveError) {
-        const message = driveError.code === 'AUTH_REQUIRED' || driveError.status === 401
-          ? 'El respaldo local quedó generado, pero la sesión de Google Drive expiró y no se confirmó la subida.'
-          : driveError.code === 'BACKUP_PERMISSION_REQUIRED'
-            ? 'El respaldo local quedó generado, pero el usuario actual no tiene permiso para subir copias a Google Drive.'
-            : 'El respaldo local quedó generado, pero no se confirmó la subida a Google Drive.';
-        setManualBackupPhase('error');
-        setError(message);
-        toast.error(message);
+        actorHandle = captureSettingsAction('settings_backup');
+      } catch {
         return;
       }
-    }
 
-    const driveVerificationPending = shouldUploadToDrive
-      && uploadResult?.uploadStatus === 'verification_pending';
-    setManualBackupPhase(driveVerificationPending ? 'verification_pending' : 'completed');
-    const driveVerificationNotice = driveVerificationPending
-      ? getDriveVerificationNotice(uploadResult)
-      : '';
-    if (result.coverage?.complete === false) {
-      const destination = shouldUploadToDrive && !driveVerificationPending
-        ? 'local y subido a Google Drive'
-        : 'localmente';
-      const cleanupNotice = shouldUploadToDrive
-        && uploadResult?.uploadStatus === 'confirmed'
-        && uploadResult?.cleanupStatus === 'pending'
-        ? uploadResult.cleanupReason === 'reauth_required'
-          ? ' La sesión de Google expiró después de la subida; las copias anteriores se conservaron. Reconecta para reintentar la limpieza.'
-          : ' La limpieza de copias anteriores quedó pendiente; se conservaron.'
+      setManualBackupPhase('encrypting');
+      const result = await run(
+        () => backupManager.backup({
+          reason: 'manual_settings',
+          manual: true,
+          includeBlob: shouldUploadToDrive
+        }),
+        null,
+        actorHandle
+      );
+
+      if (!result) {
+        setManualBackupPhase('idle');
+        return;
+      }
+
+      setBackupResult({ local: true, remote: 'Sin subida confirmada', partial: result.coverage?.complete === false });
+      let uploadResult = null;
+      if (shouldUploadToDrive) {
+        setManualBackupPhase('preparing');
+        try {
+          if (!(result.blob instanceof Blob)) {
+            throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
+          }
+          actorHandle.assertCurrent('settings_backup');
+          uploadResult = await googleDriveService.uploadBackup(
+            driveAccessToken,
+            result.blob,
+            result.fileName,
+            {
+              onProgress: (progress) => {
+                setManualBackupProgress(progress);
+                setManualBackupPhase(progress.phase);
+              }
+            }
+          );
+          if (!['confirmed', 'verification_pending'].includes(uploadResult?.uploadStatus)) {
+            throw new Error('No se confirmó la subida a Google Drive.');
+          }
+        } catch (driveError) {
+          const message = driveError.code === 'AUTH_REQUIRED' || driveError.status === 401
+            ? 'El respaldo local quedó generado, pero la sesión de Google Drive expiró y no se confirmó la subida.'
+            : driveError.code === 'BACKUP_PERMISSION_REQUIRED'
+              ? 'El respaldo local quedó generado, pero el usuario actual no tiene permiso para subir copias a Google Drive.'
+              : 'El respaldo local quedó generado, pero no se confirmó la subida a Google Drive.';
+          setManualBackupPhase('error');
+          setError(message);
+          toast.error(message);
+          return;
+        }
+      }
+
+      setBackupResult({ local: true, partial: result.coverage?.complete === false,
+        remote: uploadResult?.uploadStatus === 'confirmed' ? 'Subida a Drive confirmada'
+          : uploadResult?.uploadStatus === 'verification_pending' ? 'Verificación pendiente'
+          : driveSessionExpired ? 'Requiere reconexión; no se subió una copia' : 'No se solicitó subida a Drive',
+        cleanupPending: uploadResult?.uploadStatus === 'confirmed' && uploadResult?.cleanupStatus === 'pending' });
+      const driveVerificationPending = shouldUploadToDrive
+        && uploadResult?.uploadStatus === 'verification_pending';
+      setManualBackupPhase(driveVerificationPending ? 'verification_pending' : 'completed');
+      const driveVerificationNotice = driveVerificationPending
+        ? getDriveVerificationNotice(uploadResult)
         : '';
-      const reauthNotice = driveSessionExpired ? ' Google Drive requiere reconexión; no se subió una copia.' : '';
-      toast(`Respaldo guardado ${destination} con cobertura parcial. Revisa las condiciones señaladas antes de continuar.${driveVerificationNotice}${cleanupNotice}${reauthNotice}`, { icon: '⚠️' });
-    } else if (driveVerificationPending) {
-      toast(`El respaldo local se guardó.${driveVerificationNotice}`, { icon: '⚠️' });
-    } else if (shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending') {
-      const message = uploadResult.cleanupReason === 'reauth_required'
-        ? 'Respaldo cifrado subido a Google Drive. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'
-        : 'Respaldo cifrado subido a Google Drive. La limpieza de copias anteriores quedó pendiente; se conservaron.';
-      toast(message, { icon: '⚠️' });
-    } else if (driveSessionExpired) {
-      toast('Respaldo local completado. Google Drive requiere reconexión; no se subió una copia.', { icon: '⚠️' });
-    } else {
-      toast.success(shouldUploadToDrive ? 'Respaldo cifrado subido a Google Drive.' : 'Respaldo completado.');
+      if (result.coverage?.complete === false) {
+        const destination = shouldUploadToDrive && !driveVerificationPending
+          ? 'local y subido a Google Drive'
+          : 'localmente';
+        const cleanupNotice = shouldUploadToDrive
+          && uploadResult?.uploadStatus === 'confirmed'
+          && uploadResult?.cleanupStatus === 'pending'
+          ? uploadResult.cleanupReason === 'reauth_required'
+            ? ' La sesión de Google expiró después de la subida; las copias anteriores se conservaron. Reconecta para reintentar la limpieza.'
+            : ' La limpieza de copias anteriores quedó pendiente; se conservaron.'
+          : '';
+        const reauthNotice = driveSessionExpired ? ' Google Drive requiere reconexión; no se subió una copia.' : '';
+        toast(`Respaldo guardado ${destination} con cobertura parcial. Revisa las condiciones señaladas antes de continuar.${driveVerificationNotice}${cleanupNotice}${reauthNotice}`, { icon: '⚠️' });
+      } else if (driveVerificationPending) {
+        toast(`El respaldo local se guardó.${driveVerificationNotice}`, { icon: '⚠️' });
+      } else if (shouldUploadToDrive && uploadResult?.cleanupStatus === 'pending') {
+        const message = uploadResult.cleanupReason === 'reauth_required'
+          ? 'Respaldo cifrado subido a Google Drive. La sesión expiró antes de limpiar copias anteriores; se conservaron. Reconecta para reintentar la limpieza.'
+          : 'Respaldo cifrado subido a Google Drive. La limpieza de copias anteriores quedó pendiente; se conservaron.';
+        toast(message, { icon: '⚠️' });
+      } else if (driveSessionExpired) {
+        toast('Respaldo local completado. Google Drive requiere reconexión; no se subió una copia.', { icon: '⚠️' });
+      } else {
+        toast.success(shouldUploadToDrive ? 'Respaldo cifrado subido a Google Drive.' : 'Respaldo completado.');
+      }
+    } finally {
+      manualActionRef.current = false;
+      onWriteBusyChange(false);
     }
   };
 
@@ -567,6 +606,28 @@ function LocalBackupSettings({
     }
   };
 
+  const connection = <GoogleDriveSettings mode="connection" disabled={status.busy || restoreActionPending || MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase)} />;
+  const recovery = isAdmin && (
+    <section className="backup-settings-card backup-recovery" aria-label="Recuperar información">
+      <CardHeading Icon={RotateCcw} title="Recuperar información" description="Elige una copia, introduce su PIN y revisa los datos antes de restaurar." />
+      <GoogleDriveSettings mode="recovery" disabled={status.busy || MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase)}
+        onBusyChange={onDriveBusyChange} onBackupDownloaded={(file) => clearRestore(file)} />
+      <RestoreBackupPanel
+          isAdmin={isAdmin}
+          status={restoreStatus}
+          restoreInputRef={restoreInputRef}
+          restorePinInputRef={restorePinInputRef}
+          restoreFile={restoreFile}
+          restorePin={restorePin}
+          restorePreview={restorePreview}
+          setRestorePin={setRestorePin}
+          clearRestore={clearRestore}
+          validateRestore={validateRestore}
+          executeRestore={executeRestore}
+        />
+    </section>
+  );
+
   if (!status.initialized) {
     return (
       <section className="backup-settings-card backup-settings-card--loading">
@@ -578,10 +639,11 @@ function LocalBackupSettings({
 
   if (!status.configured) {
     return (
-      <section className="backup-settings-card backup-settings-card--local">
+      <>
+      <section className="backup-settings-card backup-settings-card--local" aria-label="Crear y proteger copias">
         <CardHeading
           Icon={DatabaseBackup}
-          eyebrow="Copia local"
+          eyebrow="Crear y proteger copias"
           title={initialTitle}
           description={initialDescription}
         />
@@ -590,7 +652,7 @@ function LocalBackupSettings({
 
         {!status.supported && (
           <div className="backup-settings-notice">
-            Este navegador no admite escritura silenciosa en carpetas. Cada respaldo generara una descarga manual.
+            En este navegador, cada respaldo se descarga como un archivo .lzbk. Guárdalo en un lugar seguro.
           </div>
         )}
 
@@ -607,7 +669,7 @@ function LocalBackupSettings({
           </div>
 
           {status.supported && (
-            <button type="button" className="btn btn-secondary" onClick={chooseDirectory}>
+            <button type="button" className="btn btn-secondary" onClick={chooseDirectory} disabled={status.busy}>
               <FolderKey size={17} /> {selectedDirectory ? selectedDirectory.name : 'Seleccionar carpeta'}
             </button>
           )}
@@ -620,28 +682,20 @@ function LocalBackupSettings({
             {status.busy ? <><Loader2 size={17} className="animate-spin" /> Configurando...</> : status.legacyConfiguration?.available ? 'Configurar respaldo para este negocio' : configureButtonLabel}
           </button>
         </div>
-        <RestoreBackupPanel
-          isAdmin={isAdmin}
-          status={restoreStatus}
-          restoreInputRef={restoreInputRef}
-          restorePinInputRef={restorePinInputRef}
-          restoreFile={restoreFile}
-          restorePin={restorePin}
-          restorePreview={restorePreview}
-          setRestorePin={setRestorePin}
-          clearRestore={clearRestore}
-          validateRestore={validateRestore}
-          executeRestore={executeRestore}
-        />
+
+        {connection}
       </section>
+      {recovery}
+      </>
     );
   }
 
   return (
-    <section className="backup-settings-card backup-settings-card--local">
+    <>
+    <section className="backup-settings-card backup-settings-card--local" aria-label="Crear y proteger copias">
       <CardHeading
         Icon={DatabaseBackup}
-        eyebrow="Copia local"
+        eyebrow="Crear y proteger copias"
         title={configuredTitle}
         description={configuredDescription}
       />
@@ -650,23 +704,10 @@ function LocalBackupSettings({
 
       {!status.supported && (
         <div className="backup-settings-notice">
-          Tu navegador no permite volcados invisibles. El respaldo manual descargara un archivo <code>.lzbk</code>.
+          Cada respaldo se descargará como un archivo cifrado <code>.lzbk</code>.
         </div>
       )}
 
-      <dl className="backup-settings-status">
-        <div><dt>Último respaldo</dt><dd>{formatDate(status.settings.lastBackupAt)}</dd></div>
-        <div><dt>Automático</dt><dd>{status.settings.cronBlocked ? 'Revisa el error' : !status.supported ? 'Manual en este navegador' : status.unlocked && status.permission === 'granted' ? 'Cada 4 h con la app abierta' : 'Al desbloquear y autorizar'}</dd></div>
-        <div><dt>Destino</dt><dd>{status.settings.directoryName || 'Descargas del navegador'}</dd></div>
-      </dl>
-      <details className="backup-advanced-details">
-        <summary>Detalles técnicos de la copia</summary>
-        <dl className="backup-settings-status backup-settings-status--technical">
-          <div><dt>Permiso</dt><dd>{status.permission}</dd></div>
-          <div><dt>Sesión</dt><dd>{status.unlocked ? 'Desbloqueada' : 'Bloqueada'}</dd></div>
-          <div><dt>Archivo</dt><dd>{status.settings.lastBackupFile || 'Sin archivo'}</dd></div>
-        </dl>
-      </details>
       {status.settings.lastCoverage?.complete === false && (
         <div className="backup-settings-notice" role="status">
           El último archivo tiene cobertura parcial. Revisa las operaciones pendientes, las cajas abiertas y los estados temporales omitidos.
@@ -676,9 +717,17 @@ function LocalBackupSettings({
       {status.busy && !MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase) && (
         <div className="backup-settings-progress">
           <span>{status.phase || 'Procesando'}: {status.progress}%</span>
-          <progress max="100" value={status.progress} />
+          <progress aria-label="Progreso de la operación" max="100" value={status.progress} />
         </div>
       )}
+
+      {backupResult && <div className="backup-settings-notice" role="status">
+        <strong>Respaldo local generado.</strong>
+        <p>{backupResult.remote}.</p>
+        {backupResult.remote === 'Verificación pendiente' && <p>Conserva la copia local y consulta Drive antes de volver a intentarlo.</p>}
+        {backupResult.cleanupPending && <p>Limpieza pendiente: la copia nueva está confirmada; las copias anteriores se conservaron.</p>}
+        {backupResult.partial && <p>Cobertura parcial: revisa las operaciones pendientes, cajas abiertas y datos omitidos.</p>}
+      </div>}
 
       {manualBackupPhase !== 'idle'
         && !(manualBackupPhase === 'completed' && status.busy)
@@ -689,6 +738,7 @@ function LocalBackupSettings({
             {manualBackupPercent !== null && ` ${manualBackupPercent}%`}
           </span>
           <progress
+            aria-label="Progreso del respaldo cifrado"
             max="100"
             {...(manualBackupPercent === null ? {} : { value: manualBackupPercent })}
           />
@@ -705,7 +755,7 @@ function LocalBackupSettings({
             placeholder="PIN de respaldo"
             aria-label="PIN de respaldo para desbloquear"
           />
-          <button type="button" className="btn btn-primary" onClick={unlock} disabled={pin.length < 8}>
+          <button type="button" className="btn btn-primary" onClick={unlock} disabled={status.busy || restoreActionPending || pin.length < 8}>
             <KeyRound size={17} /> Desbloquear
           </button>
         </div>
@@ -718,7 +768,7 @@ function LocalBackupSettings({
           </button>
         )}
         {status.supported && status.permission !== 'granted' && (
-          <button type="button" className="btn btn-secondary" onClick={() => run(() => backupManager.requestPermission())}>
+          <button type="button" className="btn btn-secondary" onClick={() => run(() => backupManager.requestPermission())} disabled={status.busy}>
             Autorizar carpeta
           </button>
         )}
@@ -733,24 +783,24 @@ function LocalBackupSettings({
               ? <Loader2 size={17} className="animate-spin" />
               : <RefreshCw size={17} />}
           </span>
-          <span>{MANUAL_BACKUP_LABELS[manualBackupPhase] || manualBackupLabel}</span>
+          <span>{MANUAL_BACKUP_ACTIVE_PHASES.includes(manualBackupPhase) ? MANUAL_BACKUP_LABELS[manualBackupPhase] : manualBackupLabel}</span>
         </button>
       </div>
 
-      <RestoreBackupPanel
-        isAdmin={isAdmin}
-        status={restoreStatus}
-        restoreInputRef={restoreInputRef}
-        restorePinInputRef={restorePinInputRef}
-        restoreFile={restoreFile}
-        restorePin={restorePin}
-        restorePreview={restorePreview}
-        setRestorePin={setRestorePin}
-        clearRestore={clearRestore}
-        validateRestore={validateRestore}
-        executeRestore={executeRestore}
-      />
 
+
+      <dl className="backup-settings-status backup-settings-status--destination">
+        <div><dt>Automático</dt><dd>{status.settings.cronBlocked ? 'Revisa el error' : !status.supported ? 'Manual en este navegador' : status.unlocked && status.permission === 'granted' ? 'Cada 4 h con la app abierta' : 'Al desbloquear y autorizar'}</dd></div>
+        <div><dt>Destino</dt><dd>{status.settings.directoryName || 'Descargas del navegador'}</dd></div>
+      </dl>
+      <details className="backup-advanced-details">
+        <summary>Detalles técnicos de la copia</summary>
+        <dl className="backup-settings-status backup-settings-status--technical">
+          <div><dt>Permiso</dt><dd>{status.permission}</dd></div>
+          <div><dt>Sesión</dt><dd>{status.unlocked ? 'Desbloqueada' : 'Bloqueada'}</dd></div>
+          <div><dt>Archivo</dt><dd>{status.settings.lastBackupFile || 'Sin archivo'}</dd></div>
+        </dl>
+      </details>
       {status.supported && (
         <details className="backup-advanced-details">
           <summary><LockKeyhole size={16} aria-hidden="true" /> Cambiar PIN y recifrar archivos</summary>
@@ -771,7 +821,10 @@ function LocalBackupSettings({
       {(error || status.settings.lastError) && (
         <p className="backup-settings-error" role="alert">{error || status.settings.lastError}</p>
       )}
+      {connection}
     </section>
+    {recovery}
+    </>
   );
 }
 
@@ -786,6 +839,7 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
   const { status } = backupContext;
   const captureSettingsAction = useSettingsActionGuard();
   const [restoreState, setRestoreState] = useState({ file: null, pin: '', preview: null });
+  const [writeBusy, setWriteBusy] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [restoreActionPending, setRestoreActionPending] = useState(false);
   useEffect(() => {
@@ -799,7 +853,9 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
       <section className="backup-settings-layout" aria-label="Protección y recuperación">
         <div className="backup-local-column">
           <LocalBackupSettings
-            backupContext={backupContext}
+            backupContext={{ ...backupContext, status: { ...status, busy: status.busy || writeBusy } }}
+            onDriveBusyChange={setDriveBusy}
+            onWriteBusyChange={setWriteBusy}
             captureSettingsAction={captureSettingsAction}
             restoreState={restoreState}
             setRestoreState={setRestoreState}
@@ -810,17 +866,7 @@ function BackupSettingsContent({ isCloudLicense = false, settingsAccess }) {
             isAdmin={settingsAccess.isAdmin}
           />
         </div>
-        <aside className="backup-cloud-column">
-          <GoogleDriveSettings
-            disabled={status.busy || restoreActionPending}
-            onBusyChange={setDriveBusy}
-            onBackupDownloaded={(file) => setRestoreState({ file, pin: '', preview: null })}
-          />
-          <div className="backup-safety-note">
-            <ShieldCheck size={17} aria-hidden="true" />
-            <span>Las copias locales se guardan cifradas.</span>
-          </div>
-        </aside>
+
       </section>
       <DataPortabilitySettings
         isAdmin={settingsAccess.isAdmin}
