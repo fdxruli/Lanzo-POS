@@ -111,7 +111,7 @@
   align-items: center;
   justify-content: center;
   min-width: 44px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 4px;
   border: 0;
   border-radius: 6px;
@@ -120,6 +120,69 @@
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
+}
+
+.product-list-container .product-search-form {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.product-list-container .product-search-form .product-list-search {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
+.product-list-container .product-search-submit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--primary-color, #2563eb);
+  border-radius: 8px;
+  background: var(--primary-color, #2563eb);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.product-list-container .product-search-submit svg {
+  width: 16px;
+  height: 16px;
+}
+
+.product-list-container .product-search-submit:hover:not(:disabled) {
+  border-color: var(--primary-hover, #1d4ed8);
+  background: var(--primary-hover, #1d4ed8);
+}
+
+.product-list-container .product-search-submit:focus-visible {
+  outline: 2px solid var(--primary-color, #2563eb);
+  outline-offset: 2px;
+}
+
+.product-list-container .product-search-submit:disabled {
+  border-color: var(--border-color, #cbd5e1);
+  background: var(--bg-primary, #f1f5f9);
+  color: var(--text-light, #64748b);
+  cursor: not-allowed;
+}
+
+.product-list-container .product-search-edit-note {
+  margin: -8px 0 0;
+  color: var(--text-light, #64748b);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .product-list-container .product-search-clear:hover {
@@ -813,6 +876,17 @@
   .product-list-container .product-list-search {
     flex: 1 1 100%;
     width: 100%;
+    min-width: 0;
+  }
+
+  .product-list-container .product-search-form {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .product-list-container .product-search-form .product-list-search {
+    flex: 1 1 0;
+    width: auto;
     min-width: 0;
   }
 

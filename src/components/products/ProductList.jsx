@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { useDebounce } from '../../hooks/useDebounce';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { queryBatchesByProductIdsAndActive, searchProductsInDB } from '../../services/database';
 import {
@@ -65,13 +64,12 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const isGlobalLoading = useInventoryCatalogStore((state) => state.isLoading);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedTerm = useDebounce(searchTerm, 300);
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
   const normalizedSearchTerm = searchTerm.trim();
-  const normalizedDebouncedTerm = debouncedTerm.trim();
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearchError, setHasSearchError] = useState(false);
-  const [searchRetry, setSearchRetry] = useState(0);
+  const [searchExecution, setSearchExecution] = useState(0);
   const searchRequestId = useRef(0);
   const searchTimeout = useRef(null);
   const searchInput = useRef(null);
@@ -98,18 +96,12 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   useEffect(() => {
     let isActive = true;
     const requestId = ++searchRequestId.current;
-    const term = normalizedDebouncedTerm;
+    const term = appliedSearchTerm;
     let timeoutId = null;
 
     if (searchTimeout.current !== null) {
       window.clearTimeout(searchTimeout.current);
       searchTimeout.current = null;
-    }
-
-    if (normalizedSearchTerm !== term) {
-      return () => {
-        isActive = false;
-      };
     }
 
     if (!term) {
@@ -177,20 +169,22 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         if (searchTimeout.current === timeoutId) searchTimeout.current = null;
       }
     };
-  }, [categoryFilter, normalizedDebouncedTerm, normalizedSearchTerm, searchRetry, statusFilter]);
+  }, [appliedSearchTerm, categoryFilter, searchExecution, statusFilter]);
 
-  const isSearchMode = normalizedSearchTerm.length > 0;
-  const isSearchDebouncing = isSearchMode && normalizedSearchTerm !== normalizedDebouncedTerm;
-  const isSearchPending = isSearchMode && (isSearchDebouncing || isSearching);
-  const showSearchError = isSearchMode && !isSearchDebouncing && hasSearchError;
+  const isSearchMode = appliedSearchTerm.length > 0;
+  const isSearchEditPending = isSearchMode && normalizedSearchTerm !== appliedSearchTerm;
+  const isSearchPending = isSearchMode && isSearching;
+  const showSearchError = isSearchMode && hasSearchError;
   const isInitialCatalogLoading = !isSearchMode && (isLoading || isGlobalLoading) && products.length === 0;
-  const displayProducts = isSearchMode
-    ? searchResults.filter((product) => isInventoryCatalogEligible(product, {
-      status: statusFilter,
-      productType: 'sellable',
-      categoryId: categoryFilter
-    }))
-    : products;
+  const displayProducts = useMemo(() => (
+    isSearchMode
+      ? searchResults.filter((product) => isInventoryCatalogEligible(product, {
+        status: statusFilter,
+        productType: 'sellable',
+        categoryId: categoryFilter
+      }))
+      : products
+  ), [categoryFilter, isSearchMode, products, searchResults, statusFilter]);
   const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
 
   useEffect(() => {
@@ -221,19 +215,22 @@ export default function ProductList({ products, categories = [], isLoading, onEd
     return margin.toFixed(1);
   };
 
-  const handleSearchChange = (event) => {
-    const nextTerm = event.target.value;
-    if (nextTerm.trim() !== normalizedSearchTerm) {
-      searchRequestId.current += 1;
-      if (searchTimeout.current !== null) {
-        window.clearTimeout(searchTimeout.current);
-        searchTimeout.current = null;
-      }
-      setSearchResults([]);
-      setIsSearching(false);
-      setHasSearchError(false);
-    }
-    setSearchTerm(nextTerm);
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    if (!normalizedSearchTerm || (isSearching && normalizedSearchTerm === appliedSearchTerm)) return;
+
+    if (normalizedSearchTerm !== appliedSearchTerm) setSearchResults([]);
+    setAppliedSearchTerm(normalizedSearchTerm);
+    setIsSearching(true);
+    setHasSearchError(false);
+    setSearchExecution((execution) => execution + 1);
+  };
+
+  const handleRetrySearch = () => {
+    if (!appliedSearchTerm) return;
+    setIsSearching(true);
+    setHasSearchError(false);
+    setSearchExecution((execution) => execution + 1);
   };
 
   const handleClearSearch = () => {
@@ -243,6 +240,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       searchTimeout.current = null;
     }
     setSearchTerm('');
+    setAppliedSearchTerm('');
     setSearchResults([]);
     setIsSearching(false);
     setHasSearchError(false);
@@ -259,28 +257,44 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
 
         <div className="product-list-actions">
-          <div className="search-box product-list-search">
-            <span className="search-icon"><Icons.Search /></span>
-            <input
-              ref={searchInput}
-              type="text"
-              placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
-              aria-label="Buscar productos"
-              value={searchTerm}
-              onChange={handleSearchChange}
-            />
-            {searchTerm.length > 0 && (
-              <button
-                type="button"
-                className="product-search-clear"
-                aria-label="Limpiar búsqueda"
-                title="Limpiar búsqueda"
-                onClick={handleClearSearch}
-              >
-                Limpiar
-              </button>
-            )}
-          </div>
+          <form
+            className="product-search-form"
+            role="search"
+            aria-label="Buscar productos"
+            onSubmit={handleSearchSubmit}
+          >
+            <div className="search-box product-list-search">
+              <span className="search-icon"><Icons.Search /></span>
+              <input
+                ref={searchInput}
+                type="text"
+                placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
+                aria-label="Buscar productos"
+                enterKeyHint="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+              {(searchTerm.length > 0 || isSearchMode) && (
+                <button
+                  type="button"
+                  className="product-search-clear"
+                  aria-label="Limpiar búsqueda"
+                  title="Limpiar búsqueda"
+                  onClick={handleClearSearch}
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="product-search-submit"
+              disabled={!normalizedSearchTerm || (isSearching && normalizedSearchTerm === appliedSearchTerm)}
+            >
+              <Icons.Search />
+              Buscar
+            </button>
+          </form>
 
           <select
             value={statusFilter}
@@ -333,6 +347,12 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       </div>
 
+      {isSearchEditPending && (
+        <p className="product-search-edit-note">
+          Consulta aplicada: «{appliedSearchTerm}». Pulsa Buscar para aplicar el texto editado.
+        </p>
+      )}
+
       {isSearchPending && (
         <div className="product-search-feedback" role="status" aria-live="polite">
           <span className="ui-spinner ui-spinner--sm product-search-spinner" aria-hidden="true" />
@@ -346,7 +366,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
           <button
             type="button"
             className="ui-button ui-button--secondary ui-button--sm"
-            onClick={() => setSearchRetry((attempt) => attempt + 1)}
+            onClick={handleRetrySearch}
           >
             Reintentar
           </button>
