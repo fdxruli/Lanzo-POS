@@ -96,6 +96,7 @@ $rollback_preflight$;
 
 -- Exact canonical migration body begins here. Only its outer transaction
 -- delimiters are omitted; both original DO blocks and all pre/postchecks remain.
+
 do $patch_price_confirmation$
 declare
   v_function_oid oid := 'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure;
@@ -238,6 +239,7 @@ begin
   end if;
 end;
 $patch_public_error$;
+
 -- Validate both replacements before ending this transaction.
 DO $rollback_postflight$
 DECLARE
