@@ -205,6 +205,45 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('integrated owner onboarding', () => {
+  it('restores the Free/Local business wizard when interrupted before owner registration', async () => {
+    await start();
+    const originalLicense = useAppStore.getState().licenseDetails;
+    expect(screen.getByRole('heading', { name: 'Configura tu Negocio' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre del Negocio *')).toBeInTheDocument();
+
+    cleanup();
+    useAppStore.setState({
+      appStatus: 'loading',
+      ownerEnrollmentContext: null,
+      licenseDetails: originalLicense,
+      currentAdminUser: null,
+      currentDeviceRole: null,
+      currentStaffUser: null
+    });
+    mocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      code: 'ADMIN_ENROLLMENT_REQUIRED',
+      details: {
+        license_key: originalLicense.license_key,
+        device_role: 'admin',
+        plan_code: 'free_trial'
+      }
+    });
+
+    await useAppStore.getState().discoverAdminAccess(originalLicense.license_key);
+    render(<Flow />);
+
+    expect(useAppStore.getState().licenseDetails.license_key).toBe(originalLicense.license_key);
+    expect(useAppStore.getState().currentAdminUser).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Configura tu Negocio' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre del Negocio *')).toBeInTheDocument();
+    business();
+    expect(screen.getByLabelText('Nombre del propietario')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Crear cuenta propietaria' })).not.toBeInTheDocument();
+    expect(mocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
+  });
+
   it('keeps one support entry and preserves business and integrated owner drafts without mutations', async () => {
     await start();
     expect(screen.getAllByRole('button', { name: 'Soporte' })).toHaveLength(1);

@@ -670,10 +670,14 @@ export const createLicenseAdminActions = ({ set, get }) => {
       : mergedLicense;
 
     if (result.admin_enrollment_required) {
+      const confirmedFreeLocalSetup = result.details?.license_key === licenseKey
+        && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial';
       lockActorRuntime('admin_enrollment_required');
       set({
         appStatus: 'admin_enrollment_required',
-        ownerEnrollmentContext: 'existing_license',
+        // Restore only the onboarding surface from the server-bound license
+        // details. Owner enrollment authority still comes from the existing RPC.
+        ownerEnrollmentContext: confirmedFreeLocalSetup ? 'new_license_setup' : 'existing_license',
         // Preserve the bound local license and never return to device-only
         // authorization while the owner is completing enrollment.
         licenseDetails: { ...discoveredLicense, admin_identity_required: true },

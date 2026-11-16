@@ -414,7 +414,7 @@ describe('initializeApp coordinator', () => {
     expect(state._processOfflineMode).not.toHaveBeenCalled();
   });
 
-  it('uses existing owner enrollment with the original local license context', async () => {
+  it('restores integrated Free/Local setup after server-confirmed owner enrollment', async () => {
     const license = legacyFreeLicense();
     const state = createState({ licenseDetails: license });
     const set = (patch) => Object.assign(state, patch);
@@ -429,12 +429,38 @@ describe('initializeApp coordinator', () => {
     await expect(state.discoverAdminAccess(license.license_key))
       .resolves.toMatchObject({ enrollmentRequired: true });
     expect(state.appStatus).toBe('admin_enrollment_required');
-    expect(state.ownerEnrollmentContext).toBe('existing_license');
+    expect(state.ownerEnrollmentContext).toBe('new_license_setup');
     expect(state.licenseDetails).toMatchObject({
       license_key: license.license_key, admin_identity_required: true,
       max_devices: 1
     });
     expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a non-Free plan', { plan_code: 'pro' }],
+    ['a different license key', { license_key: 'OTHER-LICENSE', device_role: 'admin', plan_code: 'free_trial' }],
+    ['missing server details', null]
+  ])('keeps %s on the existing-license enrollment surface', async (_label, details) => {
+    const license = legacyFreeLicense();
+    const state = createState({ licenseDetails: license });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      code: 'ADMIN_ENROLLMENT_REQUIRED',
+      details: details ? {
+        license_key: license.license_key,
+        device_role: 'admin',
+        ...details
+      } : null
+    });
+
+    await state.discoverAdminAccess(license.license_key);
+
+    expect(state.appStatus).toBe('admin_enrollment_required');
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
   });
 
   it.each([
