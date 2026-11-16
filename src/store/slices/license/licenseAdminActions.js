@@ -53,6 +53,7 @@ import {
   hasModernAdminIdentityEvidence,
   requiresAdminIdentity
 } from './licenseGuards';
+import { hasFreeLocalSetupContinuity } from './freeLocalSetupContinuity';
 import {
   clearPendingAdminSession,
   clearPendingAdminSessionIfLicenseChanged,
@@ -671,12 +672,13 @@ export const createLicenseAdminActions = ({ set, get }) => {
 
     if (result.admin_enrollment_required) {
       const confirmedFreeLocalSetup = result.details?.license_key === licenseKey
-        && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial';
+        && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial'
+        && hasFreeLocalSetupContinuity(licenseKey);
       lockActorRuntime('admin_enrollment_required');
       set({
         appStatus: 'admin_enrollment_required',
-        // Restore only the onboarding surface from the server-bound license
-        // details. Owner enrollment authority still comes from the existing RPC.
+        // The local marker restores presentation only for a Free license whose
+        // creation began here. Owner authority still comes from the existing RPC.
         ownerEnrollmentContext: confirmedFreeLocalSetup ? 'new_license_setup' : 'existing_license',
         // Preserve the bound local license and never return to device-only
         // authorization while the owner is completing enrollment.

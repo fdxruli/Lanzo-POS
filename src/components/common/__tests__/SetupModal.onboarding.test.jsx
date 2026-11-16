@@ -57,6 +57,7 @@ vi.mock('../../../services/backup/backupManager', () => ({ backupManager: { conf
 vi.mock('../LazyImage', () => ({ default: () => null }));
 
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { hasFreeLocalSetupContinuity } from '../../../store/slices/license/freeLocalSetupContinuity';
 import { useAppStore } from '../../../store/useAppStore';
 import { createLicenseActivationActions } from '../../../store/slices/license/licenseActivationActions';
 import { createLicenseAdminActions } from '../../../store/slices/license/licenseAdminActions';
@@ -208,6 +209,7 @@ describe('integrated owner onboarding', () => {
   it('restores the Free/Local business wizard when interrupted before owner registration', async () => {
     await start();
     const originalLicense = useAppStore.getState().licenseDetails;
+    expect(hasFreeLocalSetupContinuity(originalLicense.license_key)).toBe(true);
     expect(screen.getByRole('heading', { name: 'Configura tu Negocio' })).toBeInTheDocument();
     expect(screen.getByLabelText('Nombre del Negocio *')).toBeInTheDocument();
 
@@ -389,6 +391,7 @@ describe('integrated owner onboarding', () => {
     await screen.findByText('ready');
     expect(mocks.acceptLegalTerms.mock.calls).toEqual(LEGAL_DOCUMENT_TYPES.map(({ type }) => ['FREE-ONBOARDING', `${type}-current`]));
     expect((await mocks.fetchLegalPolicyState()).pending_documents).toEqual([]);
+    expect(hasFreeLocalSetupContinuity('FREE-ONBOARDING')).toBe(false);
   });
 
   it('skips persisted acceptances after a partial failure', async () => {
@@ -565,6 +568,33 @@ describe('integrated owner onboarding', () => {
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(useAppStore.getState().companyProfile).toMatchObject({ name: 'Negocio existente' });
     expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
+  });
+
+  it('keeps a legacy Free business with a pending owner on standalone enrollment', async () => {
+    const licenseKey = 'LEGACY-FREE-WITH-PROFILE';
+    mocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      details: { license_key: licenseKey, plan_code: 'free_trial', features: { max_rubros: 1 } }
+    });
+    mocks.getBusinessProfile.mockResolvedValue({ success: true, data: {
+      license_key: licenseKey,
+      business_name: 'Negocio Free existente',
+      business_type: ['abarrotes']
+    } });
+
+    await useAppStore.getState().handleLogin(licenseKey);
+    render(<Flow />);
+
+    expect(useAppStore.getState().ownerEnrollmentContext).toBe('existing_license');
+    expect(screen.getByRole('heading', { name: 'Tu acceso como propietario' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nombre del Negocio *')).not.toBeInTheDocument();
+    submitStandaloneOwnerEnrollment();
+    await screen.findByText('ready');
+
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledWith(expect.objectContaining({ licenseKey }));
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(useAppStore.getState().companyProfile).toMatchObject({ name: 'Negocio Free existente' });
   });
 
   it('routes an existing license without a profile to the final setup review after one enrollment', async () => {

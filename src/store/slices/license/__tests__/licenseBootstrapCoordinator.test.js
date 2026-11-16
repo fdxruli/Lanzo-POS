@@ -63,6 +63,31 @@ import { createProfileSlice } from '../../createProfileSlice';
 import * as tenantGuard from '../../../../services/tenant/localTenantGuard';
 import * as tenantRouter from '../../../../services/db/tenantRuntimeRouter';
 import { actorRuntimeController } from '../../../../services/auth/actorRuntimeController';
+import {
+  hasFreeLocalSetupContinuity,
+  markFreeLocalSetupContinuity
+} from '../freeLocalSetupContinuity';
+
+const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const installContinuityWindow = () => {
+  const values = new Map();
+  const localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key)
+  };
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: { location: { origin: 'https://lanzo-preview.example' }, localStorage }
+  });
+  return localStorage;
+};
+
+afterEach(() => {
+  if (originalWindowDescriptor) Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+  else delete globalThis.window;
+});
 
 const deferred = () => {
   let resolve;
@@ -416,6 +441,8 @@ describe('initializeApp coordinator', () => {
 
   it('restores integrated Free/Local setup after server-confirmed owner enrollment', async () => {
     const license = legacyFreeLicense();
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity(license.license_key)).toBe(true);
     const state = createState({ licenseDetails: license });
     const set = (patch) => Object.assign(state, patch);
     state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
@@ -435,6 +462,63 @@ describe('initializeApp coordinator', () => {
       max_devices: 1
     });
     expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it('does not apply a Free setup marker to a different license', async () => {
+    const license = legacyFreeLicense();
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity('ANOTHER-FREE-LICENSE')).toBe(true);
+    const state = createState({ licenseDetails: license, ownerEnrollmentContext: null });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      code: 'ADMIN_ENROLLMENT_REQUIRED',
+      details: { license_key: license.license_key, device_role: 'admin', plan_code: 'free_trial' }
+    });
+
+    await state.discoverAdminAccess(license.license_key);
+
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
+    expect(state.currentAdminUser).toBeNull();
+  });
+
+  it('does not apply a matching Free setup marker when the device is not authorized', async () => {
+    const license = legacyFreeLicense();
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity(license.license_key)).toBe(true);
+    const state = createState({ licenseDetails: license, ownerEnrollmentContext: null });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue({
+      valid: false,
+      code: 'ADMIN_ENROLLMENT_NOT_ALLOWED',
+      details: { license_key: license.license_key, device_role: 'staff', plan_code: 'free_trial' }
+    });
+
+    await expect(state.discoverAdminAccess(license.license_key))
+      .resolves.toMatchObject({ supportRequired: true });
+
+    expect(state.ownerEnrollmentContext).not.toBe('new_license_setup');
+    expect(state.currentAdminUser).toBeFalsy();
+  });
+
+  it('keeps an inconclusive remote activation out of the integrated setup route', async () => {
+    const license = legacyFreeLicense();
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity(license.license_key)).toBe(true);
+    const state = createState({ licenseDetails: license, ownerEnrollmentContext: null });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue({ valid: false, message: 'Failed to fetch' });
+
+    await expect(state.discoverAdminAccess(license.license_key))
+      .resolves.toMatchObject({ success: false, recoverable: true });
+
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.ownerEnrollmentContext).toBeNull();
+    expect(state.currentAdminUser).toBeNull();
   });
 
   it.each([
@@ -904,7 +988,10 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
   });
 
   it('restores the existing owner, confirms absence, saves and reloads the same business', async () => {
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity(license.license_key)).toBe(true);
     await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'setup_required' });
+    expect(hasFreeLocalSetupContinuity(license.license_key)).toBe(true);
     expect(actorMocks.assertAuthenticatedActorSessionCurrent).toHaveBeenCalled();
     expect(supabaseMocks.getBusinessProfile).toHaveBeenCalledWith(license.license_key);
     expect(supabaseMocks.verifyAdminSession).toHaveBeenCalledWith(
@@ -927,6 +1014,7 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
     expect(supabaseMocks.adminLoginOnDevice).not.toHaveBeenCalled();
     await state.handleSetup({ name: 'Fixture business', business_type: ['abarrotes'], timezone: 'America/Merida' });
     expect(state.appStatus).toBe('ready');
+    expect(hasFreeLocalSetupContinuity(license.license_key)).toBe(false);
     expect(state.companyProfile.license_key).toBe(license.license_key);
     expect(supabaseMocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
     supabaseMocks.getBusinessProfile.mockResolvedValue({ success: true, data: state.companyProfile });
@@ -935,10 +1023,13 @@ describe('interrupted owner onboarding through real bootstrap and profile prepar
   });
 
   it('continues normally when the business already exists', async () => {
+    installContinuityWindow();
+    expect(markFreeLocalSetupContinuity(license.license_key)).toBe(true);
     supabaseMocks.getBusinessProfile.mockResolvedValue({ success: true, data: {
       license_key: license.license_key, name: 'Existing business', business_type: ['abarrotes']
     } });
     await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'ready' });
+    expect(hasFreeLocalSetupContinuity(license.license_key)).toBe(false);
   });
 
   it.each([
