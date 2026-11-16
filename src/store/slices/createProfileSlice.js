@@ -28,6 +28,7 @@ import {
 } from '../../services/auth/actorRuntimeController';
 import { readActorAccess } from '../../services/auth/actorAccessPolicy';
 import { evaluateSettingsAccess } from '../../services/auth/settingsAccessPolicy';
+import { clearFreeLocalSetupContinuity } from './license/freeLocalSetupContinuity';
 import {
   getTenantRuntimeReadiness,
   isTenantRuntimeError
@@ -297,6 +298,9 @@ export const createProfileSlice = (set, get) => {
     const publishPreparedProfile = (companyData, importCandidate) => {
       assertLoadContext();
       applyProfileState(set, get, companyData, importCandidate);
+      if (hasUsableProfile(companyData) && companyData?.license_key === licenseKey) {
+        clearFreeLocalSetupContinuity(licenseKey);
+      }
       const continuation = onPrepared?.(get().appStatus);
       if (continuation && typeof continuation.then === 'function') {
         // The callback may synchronously quiesce/invalidate its scope before
@@ -599,6 +603,7 @@ export const createProfileSlice = (set, get) => {
         ownerEnrollmentContext: null,
         appStatus: 'ready'
       });
+      clearFreeLocalSetupContinuity(licenseKey);
     } catch (error) {
       Logger.error('Error en setup:', error);
       throw error;

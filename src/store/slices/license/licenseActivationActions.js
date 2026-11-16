@@ -25,6 +25,7 @@ import {
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
+import { markFreeLocalSetupContinuity } from './freeLocalSetupContinuity';
 
 const readActivationValue = (source, key) => {
     if (source && source[key] !== undefined) return source[key];
@@ -342,6 +343,7 @@ export const createLicenseActivationActions = ({
                 };
 
                 await saveLicenseToStorage(licenseDataToSave, { required: true });
+                markFreeLocalSetupContinuity(licenseDataToSave.license_key);
 
                 set({
                     ownerEnrollmentContext: 'new_license_setup',
