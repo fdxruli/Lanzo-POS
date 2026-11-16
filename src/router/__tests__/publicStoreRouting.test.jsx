@@ -138,9 +138,12 @@ describe('public store routing', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole('heading', {
-      name: 'Todo lo que necesitas para vender, controlar y crecer.'
+      name: 'Emprender ya es difícil. Llevar tu negocio no debería serlo.'
     })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/mi-negocio');
+    screen.getAllByRole('link', { name: 'Comenzar gratis' }).forEach((link) => {
+      expect(link).toHaveAttribute('href', 'https://lanzo-pos.vercel.app/?welcome=1');
+    });
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
   });
 });
