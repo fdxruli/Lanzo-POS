@@ -343,10 +343,7 @@ export const createLicenseActivationActions = ({
                 };
 
                 await saveLicenseToStorage(licenseDataToSave, { required: true });
-
-                if (!markFreeLocalSetupContinuity(licenseDataToSave.license_key)) {
-                    throw new Error('No se pudo guardar la continuidad del alta Free/Local.');
-                }
+                markFreeLocalSetupContinuity(licenseDataToSave.license_key);
 
                 set({
                     ownerEnrollmentContext: 'new_license_setup',

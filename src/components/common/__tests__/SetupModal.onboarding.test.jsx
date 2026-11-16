@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   createFreeTrial: vi.fn(), activateLicense: vi.fn(), revalidateLicense: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(), adminLoginOnDevice: vi.fn(),
+  saveLicenseToStorage: vi.fn(),
   getBusinessProfile: vi.fn(), saveBusinessProfile: vi.fn(),
   loadData: vi.fn(), saveData: vi.fn(), configureBackup: vi.fn(),
   fetchLegalTerms: vi.fn(), acceptLegalTerms: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('../../../services/supabase', () => ({
 vi.mock('../../../services/database', () => ({
   loadData: mocks.loadData, saveData: mocks.saveData, STORES: { COMPANY: 'company' },
 }));
-vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: vi.fn() }));
+vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
 vi.mock('../../../services/db/databaseRuntime', () => ({ ensureLocalDatabaseReady: vi.fn() }));
 vi.mock('../../../services/db/tenantRuntimeRouter', () => ({
   getTenantRuntimeReadiness: () => ({ ready: true, runtime: { opaqueId: 'onboarding-fixture', databaseName: 'onboarding-fixture', generation: 1 } }),
@@ -56,7 +57,7 @@ vi.mock('../../../services/utils', () => ({ compressImage: vi.fn(), showMessageM
 vi.mock('../../../services/backup/backupManager', () => ({ backupManager: { configure: mocks.configureBackup } }));
 vi.mock('../LazyImage', () => ({ default: () => null }));
 
-import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { ACTOR_RUNTIME_STATUS, actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { hasFreeLocalSetupContinuity } from '../../../store/slices/license/freeLocalSetupContinuity';
 import { useAppStore } from '../../../store/useAppStore';
 import { createLicenseActivationActions } from '../../../store/slices/license/licenseActivationActions';
@@ -206,6 +207,45 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('integrated owner onboarding', () => {
+  it('continues the current Free setup when localStorage is unavailable after saving the license', async () => {
+    const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    mocks.saveLicenseToStorage.mockImplementationOnce(async () => {
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get() {
+          throw new DOMException('Storage is unavailable', 'SecurityError');
+        }
+      });
+    });
+
+    let result;
+    try {
+      result = await useAppStore.getState().handleFreeTrial();
+    } finally {
+      if (localStorageDescriptor) {
+        Object.defineProperty(window, 'localStorage', localStorageDescriptor);
+      } else {
+        delete window.localStorage;
+      }
+    }
+
+    expect(result).toEqual({ success: true, adminEnrollmentRequired: true });
+    expect(mocks.createFreeTrial).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+      license_key: 'FREE-ONBOARDING',
+      valid: true
+    }), { required: true });
+    expect(useAppStore.getState().ownerEnrollmentContext).toBe('new_license_setup');
+    expect(useAppStore.getState().currentAdminUser).toBeNull();
+    expect(actorRuntimeController.getState().status).toBe(ACTOR_RUNTIME_STATUS.LOCKED);
+    expect(mocks.grant).not.toHaveBeenCalled();
+
+    render(<Flow />);
+    expect(screen.getByRole('heading', { name: 'Configura tu Negocio' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Crear cuenta propietaria' })).not.toBeInTheDocument();
+  });
+
   it('restores the Free/Local business wizard when interrupted before owner registration', async () => {
     await start();
     const originalLicense = useAppStore.getState().licenseDetails;
