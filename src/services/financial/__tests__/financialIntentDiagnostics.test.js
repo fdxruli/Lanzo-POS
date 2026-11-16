@@ -4,6 +4,7 @@ import {
   FINANCIAL_DIAGNOSTIC_PENDING_THRESHOLD_MS,
   FINANCIAL_OPERATION_LABELS,
   buildFinancialDiagnosticText,
+  buildFinancialSupportTicketSummary,
   classifyFinancialIntentHealth,
   maskFinancialFingerprint,
   toFinancialIntentDiagnostic
@@ -98,5 +99,44 @@ describe('financial intent diagnostics', () => {
     expect(text).not.toContain('secret-token');
     expect(text).not.toContain(source.idempotencyKey);
     expect(text).not.toContain(source.requestHash);
+  });
+
+  it('builds a ticket summary from an allowlist and excludes financial payloads and credentials', () => {
+    const source = row({
+      id: 'financial:v1:0123456789abcdef0123456789abcdef01234567',
+      idempotencyKey: `financial:v1:${'b'.repeat(40)}`,
+      operationType: 'sale.cashier',
+      status: 'PENDING_RECEIPT',
+      projectionStatus: 'FAILED',
+      lastProtocolCode: 'IDEMPOTENCY_PROCESSING',
+      lastRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_PENDING',
+      projectionErrorCode: 'SALE_LOCAL_PROJECTION_FAILED'
+    });
+    const diagnostic = toFinancialIntentDiagnostic(source, { currentTime: NOW });
+    const summary = buildFinancialSupportTicketSummary(diagnostic, { appVersion: '4.0.1' });
+
+    expect(summary.subject).toContain(summary.correlationId);
+    expect(summary.message).toContain('Tipo de operación: sale.cashier');
+    expect(summary.message).toContain('Estado financiero: PENDING_RECEIPT');
+    expect(summary.message).toContain('Estado de proyección: FAILED');
+    expect(summary.message).toContain('IDEMPOTENCY_PROCESSING');
+    expect(summary.message).toContain('Versión de aplicación: 4.0.1');
+    expect(buildFinancialSupportTicketSummary({
+      ...diagnostic,
+      lastProtocolCode: 'JWT_SECRET_REFRESH_TOKEN'
+    }).message).not.toContain('JWT_SECRET_REFRESH_TOKEN');
+    expect(summary.message).not.toContain(source.idempotencyKey);
+    expect(summary.message).not.toContain(source.requestHash);
+    expect(summary.message).not.toContain('secret');
+    expect(summary.message).not.toContain('sensitive');
+    expect(summary.message).not.toContain('tenant-opaque');
+    expect(summary.message).not.toContain('admin:a');
+  });
+
+  it('refuses to create a support summary without the generated opaque correlation format', () => {
+    expect(buildFinancialSupportTicketSummary({
+      intentId: 'customer@email.test',
+      operationType: 'sale.cashier'
+    })).toBeNull();
   });
 });

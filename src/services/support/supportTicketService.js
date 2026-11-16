@@ -27,7 +27,7 @@ const SUPPORT_DISABLED = Object.freeze({
 
 const clampLimit = (limit) => Math.min(Math.max(Number(limit) || 20, 1), 100);
 const clampOffset = (offset) => Math.max(Number(offset) || 0, 0);
-const ALLOWED_TICKET_METADATA_SOURCES = new Set(['notification_center']);
+const ALLOWED_TICKET_METADATA_SOURCES = new Set(['notification_center', 'financial_diagnostics']);
 const SAFE_RPC_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,79}$/;
 const boundedString = (value, fallback = '', maxLength = 160) => (
   typeof value === 'string' ? value.slice(0, maxLength) : fallback

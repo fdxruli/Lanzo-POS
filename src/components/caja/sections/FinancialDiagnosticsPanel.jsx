@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { useActorRuntimeSnapshot } from '../../../services/auth/useActorRuntimeSnapshot';
 import { buildFinancialDiagnosticText } from '../../../services/financial/financialIntentDiagnostics';
-import { getFinancialDiagnosticSummary, listFinancialIntentDiagnostics } from '../../../services/financial/financialIntentObservability';
+import {
+  getFinancialDiagnosticSummary,
+  getFinancialIntentDiagnostic,
+  listFinancialIntentDiagnostics
+} from '../../../services/financial/financialIntentObservability';
 import { retryFinancialIntentProjection } from '../../../services/financial/financialProjectionRepair';
 import { refreshFinancialIntentReceipt } from '../../../services/financial/financialReceiptReconciliation';
 import { getCashMode } from '../../../services/cash/cashActor';
 import './FinancialDiagnosticsPanel.css';
+
+const FinancialSupportEscalation = lazy(() => import('./FinancialSupportEscalation'));
 
 const FILTERS = Object.freeze([
   ['attention', 'Requiere revisión'],
@@ -46,6 +54,61 @@ const matchesFilter = (diagnostic, filter) => {
   return true;
 };
 
+const FINANCIAL_UNCERTAIN_STATUSES = new Set(['DISPATCHING', 'PENDING_RECEIPT', 'CONFLICT', 'BLOCKED']);
+const UNCERTAIN_RECEIPT_OUTCOMES = new Set([
+  'receipt_processing', 'receipt_not_found_no_resend', 'receipt_unavailable', 'receipt_conflict', 'receipt_unrecognized'
+]);
+
+const isSupportUncertain = (diagnostic, feedback) => (
+  FINANCIAL_UNCERTAIN_STATUSES.has(String(diagnostic?.financialStatus || '').toUpperCase())
+  || (String(diagnostic?.financialStatus || '').toUpperCase() === 'PREPARED' && Number(diagnostic?.dispatchAttemptCount || 0) > 0)
+  || (feedback?.kind === 'receipt' && UNCERTAIN_RECEIPT_OUTCOMES.has(feedback.outcome))
+);
+
+const receiptFeedback = (result, diagnostic) => {
+  const outcome = result?.outcome;
+  switch (outcome) {
+    case 'receipt_completed': {
+      if (!diagnostic) {
+        return 'El recibo confirma la operación. No se pudo verificar la proyección local; actualiza el diagnóstico. No vuelvas a cobrar.';
+      }
+      const projectionStatus = String(diagnostic?.projectionStatus || '').toUpperCase();
+      if (projectionStatus === 'APPLIED' || projectionStatus === 'NOT_REQUIRED') {
+        return 'El recibo confirma la operación y la proyección local está aplicada. No se volvió a ejecutar el cobro.';
+      }
+      return `El recibo confirma la operación. La proyección local sigue ${projectionStatus || 'pendiente'}; usa solo la acción de actualización local si está habilitada. No vuelvas a cobrar.`;
+    }
+    case 'receipt_processing':
+      return 'El recibo indica que la operación continúa procesándose. No la vuelvas a enviar; consulta el recibo más tarde o solicita soporte.';
+    case 'receipt_not_found_no_resend':
+      return 'No se encontró recibo después del intento y el resultado sigue sin determinarse. No cobres nuevamente hasta conciliarlo; solicita soporte.';
+    case 'receipt_not_found_prepared_no_dispatch':
+      return 'No hay recibo y la operación no se había enviado. No se confirmó un cargo.';
+    case 'receipt_unavailable':
+      return 'No se pudo consultar el recibo. El resultado sigue pendiente; puedes volver a consultar de forma segura o solicitar soporte.';
+    case 'receipt_conflict':
+      return 'El recibo presenta un conflicto de idempotencia. Mantén la operación bloqueada y solicita revisión a soporte.';
+    case 'receipt_unrecognized':
+      return 'La respuesta del recibo no se pudo reconocer. El resultado no está confirmado; no reenvíes la operación y solicita revisión.';
+    case 'lease_held':
+      return 'Ya hay una consulta segura en curso. Espera y actualiza el diagnóstico.';
+    case 'terminal_skipped':
+      return 'La operación está bloqueada en un estado terminal y no se consultó el recibo. Solicita revisión.';
+    default:
+      return 'No se confirmó el resultado del recibo. No reenvíes la operación; vuelve a consultar o solicita soporte.';
+  }
+};
+
+const projectionFeedback = (result) => {
+  if (result?.outcome === 'projection_applied') {
+    return 'La proyección local se actualizó. No se ejecutó una operación financiera.';
+  }
+  if (result?.outcome === 'projection_failed') {
+    return 'La proyección local sigue pendiente. El resultado financiero no se volvió a ejecutar; revisa el código operativo y solicita ayuda si persiste.';
+  }
+  return 'No se confirmó la actualización local. El estado financiero no se reenvió; revisa el diagnóstico antes de continuar.';
+};
+
 const writeClipboard = async (text) => {
   if (globalThis.navigator?.clipboard?.writeText) {
     await globalThis.navigator.clipboard.writeText(text);
@@ -67,7 +130,19 @@ const writeClipboard = async (text) => {
 /** A presentation-only consumer of the sanitized financial DTO. */
 const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false }) => {
   const cashMode = getCashMode();
+  const runtimeSnapshot = useActorRuntimeSnapshot();
   const isStaff = Boolean(cashMode.actor?.isStaff);
+  const actionContextKey = [
+    cashMode.actor?.actorKey || 'unknown',
+    runtimeSnapshot.status || 'unknown',
+    runtimeSnapshot.actorType || 'unknown',
+    runtimeSnapshot.actorId || 'unknown',
+    runtimeSnapshot.generation ?? 'unknown',
+    runtimeSnapshot.sessionId || 'unknown',
+    runtimeSnapshot.tenant?.opaqueId || 'unknown',
+    runtimeSnapshot.tenant?.databaseName || 'unknown',
+    runtimeSnapshot.tenant?.generation ?? 'unknown'
+  ].join(':');
   const [filter, setFilter] = useState('attention');
   const [diagnostics, setDiagnostics] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -75,10 +150,13 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
   const [loading, setLoading] = useState(false);
   const [busyIntentId, setBusyIntentId] = useState(null);
   const [message, setMessage] = useState('');
+  const [actionFeedback, setActionFeedback] = useState({});
   const [expanded, setExpanded] = useState(() => Boolean(initiallyExpanded && !isStaff));
+  const actionLockRef = useRef(false);
+  const activeActionRef = useRef(null);
 
   const reload = useCallback(async () => {
-    if (!enabled || !getCashMode().cloudEnabled) return;
+    if (!enabled || !getCashMode().cloudEnabled) return [];
     setLoading(true);
     setMessage('');
     try {
@@ -87,12 +165,15 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
         listFinancialIntentDiagnostics({ ...options, limit: 50 }),
         getFinancialDiagnosticSummary({ limit: 50 })
       ]);
-      setDiagnostics(rows.filter((diagnostic) => matchesFilter(diagnostic, filter)));
+      const visible = rows.filter((diagnostic) => matchesFilter(diagnostic, filter));
+      setDiagnostics(visible);
       setSummary(nextSummary);
+      return visible;
     } catch (error) {
       setDiagnostics([]);
       setSummary(null);
       setMessage(error?.code || 'No se pudo leer el diagnóstico financiero.');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -105,29 +186,110 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
     setSelectedId(null);
   }, [cashMode.actor?.actorKey, initiallyExpanded, isStaff]);
 
+  useEffect(() => {
+    activeActionRef.current = null;
+    actionLockRef.current = false;
+    setBusyIntentId(null);
+    setActionFeedback({});
+    setMessage('');
+  }, [actionContextKey]);
+
   const selected = useMemo(() => diagnostics.find((diagnostic) => diagnostic.intentId === selectedId) || null, [diagnostics, selectedId]);
 
-  const withAction = async (diagnostic, action) => {
-    if (!diagnostic || busyIntentId) return;
+  const beginAction = (diagnostic) => {
+    if (!diagnostic || actionLockRef.current) return null;
+    actionLockRef.current = true;
+    const token = Symbol('financial-diagnostics-action');
+    activeActionRef.current = token;
     setBusyIntentId(diagnostic.intentId);
     setMessage('');
+    return token;
+  };
+
+  const finishAction = (token) => {
+    if (activeActionRef.current !== token) return;
+    activeActionRef.current = null;
+    actionLockRef.current = false;
+    setBusyIntentId(null);
+  };
+
+  const isActionCurrent = (token) => activeActionRef.current === token;
+
+  const captureActionHandle = () => {
     try {
-      await action();
-      await reload();
-      setMessage('Actualización segura completada.');
-    } catch (error) {
-      setMessage(error?.code || 'No se pudo completar la acción segura.');
-    } finally {
-      setBusyIntentId(null);
+      const actorHandle = actorRuntimeController.capture();
+      actorHandle.assertCurrent();
+      return actorHandle;
+    } catch {
+      return null;
     }
   };
 
-  const handleReceipt = (diagnostic) => withAction(diagnostic, () => refreshFinancialIntentReceipt({
+  const withFinancialAction = async (diagnostic, action, kind) => {
+    const token = beginAction(diagnostic);
+    if (!token) return;
+    const actorHandle = captureActionHandle();
+    if (!actorHandle) {
+      const text = 'La sesión autorizada cambió. No se consultó ni modificó la operación; vuelve a validar el actor de origen.';
+      setActionFeedback((current) => ({ ...current, [diagnostic.intentId]: { kind, outcome: 'actor_changed', text } }));
+      setMessage(text);
+      finishAction(token);
+      return;
+    }
+    try {
+      const result = await action();
+      actorHandle.assertCurrent();
+      const nextDiagnostics = await reload();
+      actorHandle.assertCurrent();
+      if (activeActionRef.current !== token) return;
+      let updated = nextDiagnostics.find((item) => item.intentId === diagnostic.intentId) || null;
+      if (kind === 'receipt') {
+        try {
+          updated = await getFinancialIntentDiagnostic({ intentId: diagnostic.intentId }) || updated;
+          actorHandle.assertCurrent();
+        } catch {
+          actorHandle.assertCurrent();
+          updated = null;
+        }
+      }
+      actorHandle.assertCurrent();
+      if (activeActionRef.current !== token) return;
+      const text = kind === 'receipt'
+        ? receiptFeedback(result, updated)
+        : projectionFeedback(result);
+      setActionFeedback((current) => ({ ...current, [diagnostic.intentId]: { kind, outcome: result?.outcome || null, text } }));
+      setMessage(nextDiagnostics.some((item) => item.intentId === diagnostic.intentId) ? '' : text);
+    } catch {
+      try {
+        actorHandle.assertCurrent();
+      } catch {
+        return;
+      }
+      if (activeActionRef.current === token) {
+        const text = kind === 'receipt'
+          ? 'No se pudo confirmar la consulta del recibo. No reenvíes la operación; vuelve a consultar de forma segura.'
+          : 'No se confirmó la actualización local. No se ejecutó otra operación financiera.';
+        setActionFeedback((current) => ({
+          ...current,
+          [diagnostic.intentId]: { kind, outcome: 'error', text }
+        }));
+        setMessage(text);
+      }
+    } finally {
+      finishAction(token);
+    }
+  };
+
+  const handleReceipt = (diagnostic) => withFinancialAction(diagnostic, () => refreshFinancialIntentReceipt({
     intentId: diagnostic.intentId,
     licenseKey: getCashMode().licenseKey
-  }));
+  }), 'receipt');
 
-  const handleProjection = (diagnostic) => withAction(diagnostic, () => retryFinancialIntentProjection({ intentId: diagnostic.intentId }));
+  const handleProjection = (diagnostic) => withFinancialAction(
+    diagnostic,
+    () => retryFinancialIntentProjection({ intentId: diagnostic.intentId }),
+    'projection'
+  );
 
   const handleCopy = async (diagnostic) => {
     const mode = getCashMode();
@@ -205,23 +367,40 @@ const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false 
       {loading && <p>Cargando diagnóstico financiero…</p>}
       {!loading && diagnostics.length === 0 && <p>No hay intents financieros relevantes en esta vista.</p>}
       <div className="financial-diagnostics__list">
-        {diagnostics.map((diagnostic) => (
-          <article key={diagnostic.intentId} className="financial-diagnostics__item">
-            <div>
-              <strong>{diagnostic.operationLabel}</strong>
-              <p>{HEALTH_LABELS[diagnostic.healthStatus] || diagnostic.healthStatus}</p>
-              <small>Financiero: {diagnostic.financialStatus} · Local: {diagnostic.projectionStatus}</small>
-              <small>Actor: {diagnostic.originActorKey} · Edad: {age(diagnostic.ageMs)}</small>
-            </div>
-            <div className="financial-diagnostics__actions">
-              <button type="button" onClick={() => setSelectedId(diagnostic.intentId)}>Ver detalle</button>
-              <button type="button" onClick={() => handleCopy(diagnostic)}>Copiar diagnóstico</button>
-              <button type="button" disabled={!diagnostic.allowedActions.refreshReceipt || Boolean(busyIntentId)} onClick={() => handleReceipt(diagnostic)}>Consultar recibo</button>
-              <button type="button" disabled={!diagnostic.allowedActions.retryProjection || Boolean(busyIntentId)} onClick={() => handleProjection(diagnostic)}>Reintentar actualización local</button>
-              {diagnostic.allowedActions.requiresOriginActorLogin && <small>Requiere iniciar sesión con el actor de origen.</small>}
-            </div>
-          </article>
-        ))}
+        {diagnostics.map((diagnostic) => {
+          const feedback = actionFeedback[diagnostic.intentId];
+          const needsSupport = isSupportUncertain(diagnostic, feedback);
+          return (
+            <article key={diagnostic.intentId} className="financial-diagnostics__item">
+              <div>
+                <strong>{diagnostic.operationLabel}</strong>
+                <p>{HEALTH_LABELS[diagnostic.healthStatus] || diagnostic.healthStatus}</p>
+                <small>Financiero: {diagnostic.financialStatus} · Local: {diagnostic.projectionStatus}</small>
+                <small>Actor: {diagnostic.originActorKey} · Edad: {age(diagnostic.ageMs)}</small>
+                {feedback?.text && feedback.text !== message && <p className="financial-diagnostics__item-feedback" role="status">{feedback.text}</p>}
+                {needsSupport && (
+                  <Suspense fallback={<p className="financial-diagnostics__message" role="status">Preparando opciones de soporte…</p>}>
+                    <FinancialSupportEscalation
+                      diagnostic={diagnostic}
+                      contextKey={actionContextKey}
+                      busy={Boolean(busyIntentId)}
+                      beginAction={beginAction}
+                      finishAction={finishAction}
+                      isActionCurrent={isActionCurrent}
+                    />
+                  </Suspense>
+                )}
+              </div>
+              <div className="financial-diagnostics__actions">
+                <button type="button" onClick={() => setSelectedId(diagnostic.intentId)}>Ver detalle</button>
+                <button type="button" onClick={() => handleCopy(diagnostic)}>Copiar diagnóstico</button>
+                <button type="button" disabled={!diagnostic.allowedActions.refreshReceipt || Boolean(busyIntentId)} onClick={() => handleReceipt(diagnostic)}>Consultar recibo</button>
+                <button type="button" disabled={!diagnostic.allowedActions.retryProjection || Boolean(busyIntentId)} onClick={() => handleProjection(diagnostic)}>Reintentar actualización local</button>
+                {diagnostic.allowedActions.requiresOriginActorLogin && <small>Requiere iniciar sesión con el actor de origen.</small>}
+              </div>
+            </article>
+          );
+        })}
       </div>
       {selected && (
         <section className="financial-diagnostics__detail" aria-label="Detalle de intent financiero">

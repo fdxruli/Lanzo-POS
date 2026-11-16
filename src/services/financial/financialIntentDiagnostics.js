@@ -25,6 +25,83 @@ export const FINANCIAL_OPERATION_LABELS = Object.freeze({
   'sale.cancel': 'Cancelación de venta'
 });
 
+const SUPPORT_FINANCIAL_STATUSES = new Set([
+  'PREPARED', 'DISPATCHING', 'PENDING_RECEIPT', 'COMPLETED', 'CONFLICT', 'BLOCKED'
+]);
+const SUPPORT_PROJECTION_STATUSES = new Set(['NOT_REQUIRED', 'PENDING', 'APPLIED', 'FAILED']);
+const SAFE_FINANCIAL_CORRELATION_ID = /^financial:v1:[a-f0-9]{40}$/i;
+const SAFE_OPERATIONAL_CODE = /^[A-Z][A-Z0-9_]{1,79}$/;
+const SUPPORT_OPERATIONAL_CODES = new Set([
+  'FINANCIAL_RECEIPT_REFRESH_COMPLETED',
+  'FINANCIAL_RECEIPT_REFRESH_PROCESSING',
+  'FINANCIAL_RECEIPT_REFRESH_CONFLICT',
+  'FINANCIAL_RECEIPT_REFRESH_NOT_FOUND_PREPARED',
+  'FINANCIAL_RECEIPT_REFRESH_NOT_FOUND_AFTER_ATTEMPT',
+  'FINANCIAL_RECEIPT_REFRESH_UNRECOGNIZED',
+  'FINANCIAL_RECEIPT_REFRESH_UNAVAILABLE',
+  'FINANCIAL_RECOVERY_RECEIPT_PENDING',
+  'FINANCIAL_RECOVERY_RECEIPT_NOT_FOUND_AFTER_ATTEMPT',
+  'FINANCIAL_RECOVERY_RECEIPT_UNAVAILABLE',
+  'FINANCIAL_RECOVERY_LEASE_HELD',
+  'FINANCIAL_RECOVERY_LEASE_LOST',
+  'FINANCIAL_RECOVERY_LEASE_EXPIRED',
+  'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED',
+  'FINANCIAL_RECOVERY_BLOCKED_REDISPATCH',
+  'FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE',
+  'IDEMPOTENCY_CONFLICT',
+  'IDEMPOTENCY_PROCESSING',
+  'IDEMPOTENCY_NOT_FOUND',
+  'SALE_LOCAL_PROJECTION_FAILED',
+  'CASH_TOTALS_CHANGED',
+  'VERSION_CONFLICT'
+]);
+const safeSupportDate = (value) => {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+};
+
+/**
+ * Builds the narrow allowlisted summary sent to the existing support ticket RPC.
+ * It intentionally excludes tenant/actor IDs, K/H fingerprints, and all payloads.
+ */
+export const buildFinancialSupportTicketSummary = (diagnostic, { appVersion = null } = {}) => {
+  const correlationId = typeof diagnostic?.intentId === 'string'
+    && SAFE_FINANCIAL_CORRELATION_ID.test(diagnostic.intentId)
+    ? diagnostic.intentId
+    : null;
+  const operationType = Object.prototype.hasOwnProperty.call(FINANCIAL_OPERATION_LABELS, diagnostic?.operationType)
+    ? diagnostic.operationType
+    : null;
+
+  if (!correlationId || !operationType) return null;
+
+  const financialStatus = String(diagnostic?.financialStatus || '').toUpperCase();
+  const projectionStatus = String(diagnostic?.projectionStatus || '').toUpperCase();
+  const codes = [diagnostic?.lastProtocolCode, diagnostic?.lastRecoveryCode, diagnostic?.projectionErrorCode]
+    .filter((code) => typeof code === 'string' && SAFE_OPERATIONAL_CODE.test(code) && SUPPORT_OPERATIONAL_CODES.has(code));
+  const safeVersion = typeof appVersion === 'string' && /^[A-Za-z0-9._+-]{1,32}$/.test(appVersion)
+    ? appVersion
+    : null;
+  const intentDate = safeSupportDate(diagnostic?.createdAt);
+  const latestCheck = safeSupportDate(diagnostic?.lastRecoveryAt);
+
+  return Object.freeze({
+    subject: `Revisión financiera ${correlationId}`,
+    correlationId,
+    message: [
+      'Solicitud de revisión de una operación financiera incierta.',
+      `Tipo de operación: ${operationType}`,
+      `Identificador de correlación: ${correlationId}`,
+      `Estado financiero: ${SUPPORT_FINANCIAL_STATUSES.has(financialStatus) ? financialStatus : 'UNKNOWN'}`,
+      `Estado de proyección: ${SUPPORT_PROJECTION_STATUSES.has(projectionStatus) ? projectionStatus : 'UNKNOWN'}`,
+      `Códigos operativos: ${codes.length ? [...new Set(codes)].join(', ') : 'No disponibles'}`,
+      `Fecha de operación: ${intentDate || 'No disponible'}`,
+      ...(latestCheck ? [`Última consulta: ${latestCheck}`] : []),
+      ...(safeVersion ? [`Versión de aplicación: ${safeVersion}`] : [])
+    ].join('\n')
+  });
+};
+
 const finiteDate = (value) => {
   const time = Date.parse(value || '');
   return Number.isFinite(time) ? time : null;
