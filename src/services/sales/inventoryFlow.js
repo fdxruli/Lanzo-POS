@@ -478,7 +478,8 @@ export const buildProcessedItemsAndDeductions = ({
             const rawBatches = targetProduct?.batchManagement?.enabled ? (batchesMap.get(targetId) || []) : [];
             const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
             const requiredStart = requiredQty;
-            const selectedVariantBatchId = targetId === realProductId && isCommercialVariantLine(orderItem)
+            const selectedVariantBatchId = targetId === realProductId
+                && isCommercialVariantLine(orderItem, product, batches)
                 ? String(orderItem.batchId ?? orderItem.batch_id)
                 : null;
             const selectedVariantBatch = selectedVariantBatchId

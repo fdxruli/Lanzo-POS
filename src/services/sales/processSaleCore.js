@@ -662,7 +662,9 @@ export const processSaleCore = async ({
                     processedItems,
                     paymentData: { ...safePaymentData, saleDiscount: saleDiscountAudit },
                     total: Money.toExactString(totalNum),
-                    restaurantOrder: restaurantCheckoutOrder
+                    restaurantOrder: restaurantCheckoutOrder,
+                    productCatalog: allProducts,
+                    batchCatalog: batchesMap
                 });
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);

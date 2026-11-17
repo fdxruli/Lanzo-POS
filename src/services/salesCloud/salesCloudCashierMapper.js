@@ -138,6 +138,24 @@ const getExplicitBatchesUsed = (item = {}, allowLocalBatches = true) => {
   return allowLocalBatches || hasManualBatchSelection(item) ? batchesUsed : null;
 };
 
+const getCatalogProduct = (catalog, productId) => {
+  if (!productId || !catalog) return null;
+  if (typeof catalog.get === 'function') return catalog.get(productId) || null;
+  if (Array.isArray(catalog)) {
+    return catalog.find((product) => String(product?.id || '') === String(productId)) || null;
+  }
+  return catalog[productId] || null;
+};
+
+const getCatalogBatches = (catalog, productId) => {
+  if (!productId || !catalog) return [];
+  if (typeof catalog.get === 'function') return catalog.get(productId) || [];
+  if (Array.isArray(catalog)) {
+    return catalog.find((entry) => String(entry?.productId || entry?.product_id || '') === String(productId))?.batches || [];
+  }
+  return catalog[productId] || [];
+};
+
 export const normalizeCloudCashierPaymentMethod = (method) => {
   const raw = String(method || '').trim().toLowerCase();
   return normalizeRestaurantSplitPaymentMethod(raw) || raw || 'unknown';
@@ -162,7 +180,9 @@ const mapItem = (item = {}, index = 0, options = {}) => {
   const productId = firstText(item.productId, item.parentId, item.id);
   const productIdSource = firstText(item.productId, item.parentId) ? 'explicit' : 'line_identity';
   const allowLocalBatches = options.allowLocalBatches !== false;
-  const isSelectedCommercialVariant = isCommercialVariantLine(item);
+  const catalogProduct = getCatalogProduct(options.productCatalog, productId);
+  const catalogBatches = getCatalogBatches(options.batchCatalog, productId);
+  const isSelectedCommercialVariant = isCommercialVariantLine(item, catalogProduct, catalogBatches);
   const explicitBatchesUsed = isSelectedCommercialVariant && !allowLocalBatches
     ? null
     : getExplicitBatchesUsed(item, allowLocalBatches);
@@ -370,7 +390,7 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
   };
 };
 
-export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], paymentData = {}, total, inventoryEnabled = false } = {}) => {
+export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], paymentData = {}, total, inventoryEnabled = false, productCatalog = [], batchCatalog = null } = {}) => {
   const now = new Date().toISOString();
   const soldAt = toIsoString(sale.timestamp || sale.soldAt || sale.sold_at, now);
   const saleTotal = roundMoney(total ?? sale.total);
@@ -387,7 +407,12 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
   const discountTotal = getSaleDiscountTotal(sale, paymentData, processedItems);
   const traceability = getSaleTraceability(sale);
 
-  const itemMapOptions = { allowLocalBatches: !inventoryEnabled, saleId: sale.id };
+  const itemMapOptions = {
+    allowLocalBatches: !inventoryEnabled,
+    saleId: sale.id,
+    productCatalog,
+    batchCatalog
+  };
   const payments = extractPayments({
     ...sale,
     ...paymentData,
@@ -442,7 +467,7 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
   return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, itemMapOptions)), payments, idempotencyKey: inventoryEnabled ? `sales.cloud_commit.inventory:${sale.id}` : `sales.cloud_commit:${sale.id}` };
 };
 
-export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = [], paymentData = {}, total, inventoryEnabled = false } = {}) => {
+export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = [], paymentData = {}, total, inventoryEnabled = false, productCatalog = [], batchCatalog = null } = {}) => {
   const now = new Date().toISOString();
   const soldAt = toIsoString(sale.timestamp || sale.soldAt || sale.sold_at, now);
   const saleTotal = roundMoney(total ?? sale.total);
@@ -484,7 +509,12 @@ export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = 
     metadata: buildSaleMetadata({ sale, paymentData, discount, discountTotal, inventoryEnabled, credit: true, origin: 'cloud_credit_checkout', phase: 'fase6d_cloud_sales_credit_ledger' })
   });
 
-  return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, { allowLocalBatches: !inventoryEnabled, saleId: sale.id })), payments: extractInitialCreditPayments({ sale, paymentData, amountPaid }), customerId, idempotencyKey: `sales.cloud_credit:${sale.id}` };
+  return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, {
+    allowLocalBatches: !inventoryEnabled,
+    saleId: sale.id,
+    productCatalog,
+    batchCatalog
+  })), payments: extractInitialCreditPayments({ sale, paymentData, amountPaid }), customerId, idempotencyKey: `sales.cloud_credit:${sale.id}` };
 };
 
 export default {

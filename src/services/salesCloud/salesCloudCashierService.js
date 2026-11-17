@@ -1179,7 +1179,7 @@ export const salesCloudCashierService = {
     }
   },
 
-  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null } = {}) {
+  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null, productCatalog = [], batchCatalog = null } = {}) {
     const actorHandle = actorRuntimeController.capture();
     actorHandle.assertCurrent('pos');
     const context = await getRuntimeContext();
@@ -1216,8 +1216,8 @@ export const salesCloudCashierService = {
     }
 
     const payload = creditSale
-      ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled })
-      : mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled });
+      ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled, productCatalog, batchCatalog })
+      : mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled, productCatalog, batchCatalog });
 
     const idempotencyKey = buildCloudSaleIdempotencyKey({
       sale,
