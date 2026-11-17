@@ -35,6 +35,7 @@ import SettingsPage from './pages/SettingsPage';
 import AboutPage from './pages/AboutPage';
 import { ADMIN_NOT_FOUND_ROUTE } from './router/adminNotFoundRoute';
 import { ADMIN_ROUTE_PATHS, isAdminNotFoundPath } from './router/adminRoutePaths';
+import { ADMIN_ROUTE_ALIASES, AdminRouteAlias } from './router/adminRouteAliases';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -364,6 +365,9 @@ function App() {
                   <Route path={ADMIN_ROUTE_PATHS.products} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/productos']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.customers} element={<PermissionRoute permission={ROUTE_PERMISSIONS['/clientes']}><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.sales} element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
+                  {Object.entries(ADMIN_ROUTE_ALIASES).map(([path, to]) => (
+                    <Route key={path} path={path} element={<AdminRouteAlias to={to} />} />
+                  ))}
                   <Route path={ADMIN_ROUTE_PATHS.aiAgents} element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.onlinePortal} element={<EcommercePortalRoute><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></EcommercePortalRoute>} />
                   <Route path={ADMIN_ROUTE_PATHS.settings} element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />

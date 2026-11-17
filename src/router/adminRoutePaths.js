@@ -6,6 +6,8 @@ export const ADMIN_ROUTE_PATHS = Object.freeze({
   products: 'productos',
   customers: 'clientes',
   sales: 'ventas',
+  reportsAlias: 'reportes',
+  layawaysAlias: 'apartados',
   aiAgents: 'agentes-ia',
   onlinePortal: 'portal-online',
   settings: 'configuracion',
