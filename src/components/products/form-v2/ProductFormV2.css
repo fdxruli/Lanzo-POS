@@ -48,6 +48,14 @@
 .product-form-v2__toggle-input:checked + .product-form-v2__toggle-control > span { background: var(--primary-color); }.product-form-v2__toggle-input:checked + .product-form-v2__toggle-control > span::after { transform: translateX(19px); }
 .product-form-v2__toggle-input:focus-visible + .product-form-v2__toggle-control > span { box-shadow: var(--ui-shadow-focus-primary); }
 .product-form-v2__toggle strong, .product-form-v2__toggle small { display: block; }.product-form-v2__toggle small { margin-top: 2px; color: var(--ui-text-muted, var(--text-light)); font-size: .8rem; line-height: 1.35; }.product-form-v2__toggle--compact { margin: var(--spacing-md) 0 0; }.product-form-v2__toggle-copy { min-width: 0; }.product-form-v2__toggle-copy strong { color: var(--ui-text-strong, var(--text-dark)); font-size: .9rem; }.product-form-v2__toggle-copy small { overflow-wrap: anywhere; }
+.product-form-v2--apparel .product-form-v2__toggle--compact { min-height: 44px; }
+.product-form-v2--apparel .product-form-v2__toggle-control { display: grid; place-items: center; width: 44px; min-width: 44px; height: 44px; padding: 0; flex-basis: 44px; }
+.product-form-v2--apparel .product-form-v2__button { min-height: 44px; }
+@media (max-width: 1023px) {
+  .app-layout:has(.products-page .product-form-v2--apparel) {
+    scroll-padding-bottom: var(--mobile-navigation-clearance);
+  }
+}
 .product-form-v2__inventory .product-form-v2__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
 .product-form-v2__inventory .product-form-v2__toggle-copy { flex: 1 1 auto; min-width: 0; }
 .product-form-v2__inventory .product-form-v2__toggle-control { width: 44px; height: 44px; min-width: 44px; flex-basis: 44px; padding: 10px 1px; }

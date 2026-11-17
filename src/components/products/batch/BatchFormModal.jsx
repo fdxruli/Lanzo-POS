@@ -17,7 +17,7 @@ import FruteriaBatchFields from './fieldsets/FruteriaBatchFields';
 import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
 import { getBatchStockInputProps } from './utils/batchStockInput';
 import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
-import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
+import { isApparelCommercialVariantProduct, isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 import { getPharmacyClassification } from '../../../utils/pharmacyClassification';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
@@ -75,6 +75,7 @@ export default function BatchFormModal({
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
   const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
   const isCommercialVariant = isCommercialVariantProduct(product);
+  const isApparelVariant = isApparelCommercialVariantProduct(product);
   const pharmacyClassification = getPharmacyClassification(product);
   const isPharmacyMedicine = pharmacyClassification.recorded && pharmacyClassification.kind === 'medicine';
   useEffect(() => {
@@ -92,8 +93,8 @@ export default function BatchFormModal({
     && requestedProductPrice !== currentProductPrice;
 
   return (
-    <div className="ui-modal ui-modal--high batch-form-modal-overlay" role="dialog" aria-modal="true" aria-label={isEditing ? 'Editar lote' : 'Registrar lote'}>
-      <div className="ui-modal__content ui-modal__content--xl batch-modal-wrapper">
+    <div className={`ui-modal ui-modal--high batch-form-modal-overlay${isApparelVariant ? ' batch-form-modal-overlay--apparel' : ''}`} role="dialog" aria-modal="true" aria-label={isApparelVariant ? `${isEditing ? 'Editar' : 'Registrar'} Variante` : isEditing ? 'Editar lote' : 'Registrar lote'}>
+      <div className={`ui-modal__content ui-modal__content--xl batch-modal-wrapper${isApparelVariant ? ' batch-modal-wrapper--apparel' : ''}`}>
 
         {/* ENCABEZADO */}
         <div className="batch-modal-header">

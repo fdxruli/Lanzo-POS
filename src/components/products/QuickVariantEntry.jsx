@@ -178,6 +178,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
             <input
               type="text"
               className="qv-color-input"
+              aria-label="Color para las nuevas tallas"
               placeholder="Ej: Negro"
               value={quickColor}
               onChange={(e) => setQuickColor(e.target.value)}
@@ -243,14 +244,24 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
         </div>
       </div>
 
+      <div className="qv-bulk-actions" role="group" aria-label="Aplicar valores base a todas las variantes">
+        <span>Aplicar valores base:</span>
+        <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('cost', baseCost)}>
+          Costo base
+        </button>
+        <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('price', basePrice)}>
+          Precio base
+        </button>
+      </div>
+
       {/* TABLA SCROLLEABLE */}
       <div className="qv-table-wrapper">
-        <table className="qv-table">
+        <table className="qv-table" aria-label="Variantes de talla y color">
           <thead>
             <tr>
-              <th>Color *</th>
-              <th>Talla *</th>
-              <th style={{ width: '80px' }}>Stock</th>
+              <th scope="col">Color *</th>
+              <th scope="col">Talla *</th>
+              <th scope="col" style={{ width: '80px' }}>Stock</th>
               <th style={{ minWidth: '100px' }}>
                 Costo
                 <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('cost', baseCost)} title="Aplicar Costo Base a todos">Base</button>
@@ -259,35 +270,37 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                 Precio
                 <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos">Base</button>
               </th>
-              <th>SKU (auto al guardar)</th>
-              <th style={{ width: '40px' }}></th>
+              <th scope="col">SKU (auto al guardar)</th>
+              <th scope="col" style={{ width: '40px' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {rows.map((row, rowIndex) => {
               const key = `${row.color ? row.color.trim().toLowerCase() : ''}-${row.talla ? row.talla.trim().toLowerCase() : ''}`;
               const isDuplicate = key !== '-' && rowAnalysis.duplicates.has(key);
 
               return (
                 <tr key={row.id} className={isDuplicate ? 'qv-row-duplicate' : ''}>
                   {/* COLOR */}
-                  <td className="qv-cell">
+                  <td className="qv-cell" data-label="Color">
                     <input
                       type="text"
                       className="qv-input"
+                      aria-label={`Color de la variante ${rowIndex + 1}`}
                       placeholder="Color"
                       value={row.color}
                       onChange={(e) => updateRow(row.id, 'color', e.target.value)}
                       style={!row.color ? { borderColor: 'var(--ui-border-danger)' } : {}}
                     />
-                    {isDuplicate && <div className="qv-inline-warning">Duplicado</div>}
+                    {isDuplicate && <div className="qv-inline-warning" role="alert">Combinación duplicada</div>}
                   </td>
 
                   {/* TALLA */}
-                  <td className="qv-cell">
+                  <td className="qv-cell" data-label="Talla">
                     <input
                       type="text"
                       className="qv-input"
+                      aria-label={`Talla de la variante ${rowIndex + 1}`}
                       placeholder="Talla"
                       value={row.talla}
                       onChange={(e) => updateRow(row.id, 'talla', e.target.value)}
@@ -296,10 +309,11 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   </td>
 
                   {/* STOCK */}
-                  <td className="qv-cell">
+                  <td className="qv-cell" data-label="Stock">
                     <input
                       type="number"
                       className="qv-input"
+                      aria-label={`Existencias de la variante ${rowIndex + 1}`}
                       placeholder="0"
                       value={row.stock}
                       min="0"
@@ -310,39 +324,36 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   </td>
 
                   {/* COSTO */}
-                  <td className="qv-cell">
+                  <td className="qv-cell" data-label="Costo">
                     <input
                       type="number"
                       className="qv-input"
+                      aria-label={`Costo de la variante ${rowIndex + 1}`}
                       value={row.cost}
                       onChange={(e) => updateRow(row.id, 'cost', e.target.value)}
                     />
                   </td>
 
                   {/* PRECIO CON INDICADOR DE MARGEN */}
-                  <td className="qv-cell" style={{ position: 'relative' }}>
+                  <td className="qv-cell" data-label="Precio" style={{ position: 'relative' }}>
                     <input
                       type="number"
                       className="qv-input"
+                      aria-label={`Precio de la variante ${rowIndex + 1}`}
                       value={row.price}
                       onChange={(e) => updateRow(row.id, 'price', e.target.value)}
                       style={{ fontWeight: 'bold' }}
                     />
-                    <div style={{
-                      position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                      width: '8px', height: '8px', borderRadius: '50%',
-                      backgroundColor: getMarginColor(row.cost, row.price),
-                      boxShadow: '0 0 0 2px var(--ui-bg-surface, var(--card-background-color))',
-                      pointerEvents: 'none'
-                    }}></div>
+                    <span className="qv-margin-indicator" aria-hidden="true" style={{ backgroundColor: getMarginColor(row.cost, row.price) }} />
                   </td>
 
                   {/* SKU */}
-                  <td className="qv-cell">
+                  <td className="qv-cell" data-label="SKU">
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                       <input
                         type="text"
                         className="qv-input"
+                        aria-label={`SKU de la variante ${rowIndex + 1}`}
                         placeholder="Auto al guardar"
                         value={row.sku}
                         onChange={(e) => updateRow(row.id, 'sku', e.target.value)}
@@ -352,8 +363,8 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   </td>
 
                   {/* DELETE */}
-                  <td className="qv-cell" style={{ textAlign: 'center' }}>
-                    <button type="button" className="qv-icon-button qv-icon-button--delete" onClick={() => removeRow(row.id)} aria-label="Eliminar variante">×</button>
+                  <td className="qv-cell" data-label="Acciones" style={{ textAlign: 'center' }}>
+                    <button type="button" className="qv-icon-button qv-icon-button--delete" onClick={() => removeRow(row.id)} aria-label={`Eliminar variante ${rowIndex + 1}`}>×</button>
                   </td>
                 </tr>
               );

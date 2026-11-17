@@ -96,7 +96,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     }
   };
 
-  return <form className="product-form-v2" noValidate onSubmit={(event) => { event.preventDefault(); form.submit(); }}>
+  return <form className={`product-form-v2${activeRubro === 'apparel' ? ' product-form-v2--apparel' : ''}`} noValidate onSubmit={(event) => { event.preventDefault(); form.submit(); }}>
     <header className="product-form-v2__header"><div><h2><PackagePlus size={23} aria-hidden="true" /> {isEditing ? 'Editar producto' : 'Nuevo producto'}</h2><p>Completa los datos principales; los ajustes avanzados son opcionales.</p></div></header>
     {!isEditing && rubros.length > 1 && <div className="product-form-v2__rubros" aria-label="Rubro del producto">{rubros.map((rubro) => <button type="button" key={rubro} className={activeRubro === rubro ? 'is-active' : ''} onClick={() => switchRubro(rubro)}>{getProductRubroConfig(rubro).label}</button>)}</div>}
     {saveAnotherNotice && <p className="product-form-v2__success" role="status">{saveAnotherNotice}</p>}

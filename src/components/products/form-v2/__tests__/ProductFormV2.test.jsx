@@ -100,6 +100,16 @@ describe('ProductFormV2', () => {
     expect(trackStock).not.toBeChecked();
   });
 
+  it('keeps the Apparel variants switch named and associated with its visible control', () => {
+    renderForm({ activeRubroContext: 'apparel', features: { hasVariants: true } });
+    fireEvent.click(screen.getByRole('button', { name: /Tallas, colores y variantes/i }));
+
+    const toggle = screen.getByRole('checkbox', { name: /producto tiene variantes/i });
+    expect(toggle.closest('.product-form-v2')).toHaveClass('product-form-v2--apparel');
+    expect(toggle).toHaveAttribute('aria-labelledby', 'product-v2-has-variants-label');
+    expect(toggle.nextElementSibling).toHaveAttribute('for', toggle.id);
+  });
+
   it('places grocery classification before the core product fields and avoids a duplicate lower selector', () => {
     renderForm();
     const selector = screen.getByRole('radiogroup', { name: /qué estás agregando/i });

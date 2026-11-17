@@ -215,6 +215,10 @@
   font-weight: 700;
 }
 
+.qv-bulk-actions {
+  display: none;
+}
+
 .qv-icon-button--generate {
   margin: 0;
   padding: 2px 4px;
@@ -282,7 +286,7 @@
 }
 
 /* Mobile Adjustments */
-@media (max-width: 600px) {
+@media (max-width: 680px) {
   .qv-toolbar {
     flex-direction: column;
     align-items: stretch;
@@ -299,5 +303,154 @@
   .qv-size-button {
     flex: 1;
     text-align: center;
+  }
+
+  .qv-title {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .qv-color-input {
+    min-width: 0;
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .qv-size-button {
+    min-width: 0;
+    min-height: 44px;
+    overflow-wrap: anywhere;
+  }
+
+  .qv-bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+    color: var(--ui-text-muted, var(--text-light));
+    font-size: .82rem;
+  }
+
+  .qv-bulk-actions .qv-icon-button--sync {
+    min-height: 44px;
+    padding: 8px 10px;
+    margin: 0;
+    border: 1px solid var(--ui-border-info);
+    border-radius: 6px;
+    background: var(--ui-bg-info-soft);
+  }
+
+  .qv-table-wrapper {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .qv-table,
+  .qv-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .qv-table {
+    table-layout: fixed;
+  }
+
+  .qv-table thead {
+    display: none;
+  }
+
+  .qv-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .qv-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "color actions"
+      "size size"
+      "stock cost"
+      "price sku";
+    gap: 10px 12px;
+    padding: 12px;
+    border: 1px solid var(--ui-border-color, var(--border-color));
+    border-radius: 8px;
+    background-color: var(--ui-bg-surface, var(--card-background-color));
+  }
+
+  .qv-table .qv-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .qv-cell::before {
+    content: attr(data-label);
+    color: var(--ui-text-muted, var(--text-light));
+    font-size: .76rem;
+    font-weight: 700;
+  }
+
+  .qv-cell[data-label="Color"] { grid-area: color; }
+  .qv-cell[data-label="Talla"] { grid-area: size; }
+  .qv-cell[data-label="Stock"] { grid-area: stock; }
+  .qv-cell[data-label="Costo"] { grid-area: cost; }
+  .qv-cell[data-label="Precio"] { grid-area: price; }
+  .qv-cell[data-label="SKU"] { grid-area: sku; }
+  .qv-cell[data-label="Acciones"] {
+    grid-area: actions;
+    align-items: flex-end;
+  }
+
+  .qv-cell .qv-input {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px;
+    font-size: 16px;
+  }
+
+  .qv-cell[data-label="SKU"] > div {
+    min-width: 0;
+  }
+
+  .qv-cell[data-label="Precio"] .qv-input {
+    padding-right: 26px;
+  }
+
+  .qv-margin-indicator {
+    position: absolute;
+    top: 40px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    transform: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--ui-bg-surface, var(--card-background-color));
+    pointer-events: none;
+  }
+
+  .qv-cell[data-label="Acciones"] .qv-icon-button--delete {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--ui-border-color, var(--border-color));
+    border-radius: 6px;
+  }
+
+  .qv-inline-warning {
+    font-size: .78rem;
+  }
+
+  .qv-add-row {
+    min-height: 48px;
+    padding: 10px 12px;
   }
 }
