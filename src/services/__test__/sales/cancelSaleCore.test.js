@@ -302,6 +302,36 @@ describe('cancelSaleCore', () => {
       });
   });
 
+  it('restaura la variante registrada una sola vez al reintentar una cancelación', async () => {
+    const sale = makeSale({
+      items: [{
+        id: 'shirt',
+        parentId: 'shirt',
+        lineId: 'shirt-m-black',
+        name: 'Playera básica (Negro M)',
+        isVariant: true,
+        batchId: 'm-black',
+        quantity: 2,
+        batchesUsed: [{ batchId: 'm-black', quantity: 2, cost: 4 }]
+      }]
+    });
+    const db = makeDb([sale]);
+    const restoreStockFromCancellation = vi.fn(async () => ({
+      restored: [{ type: 'batch', id: 'm-black', productId: 'shirt', restoredQuantity: 2 }],
+      warnings: [],
+      restoredInventoryValue: 8
+    }));
+    const input = { saleId: sale.id, currentSales: [sale], restoreStock: true };
+
+    const first = await cancelSaleCore(input, makeDeps(db, { restoreStockFromCancellation }));
+    const retry = await cancelSaleCore(input, makeDeps(db, { restoreStockFromCancellation }));
+
+    expect(first).toMatchObject({ success: true, restoreStock: true, restoredInventoryValue: 8 });
+    expect(retry).toMatchObject({ success: true, code: 'ALREADY_CANCELLED', alreadyCancelled: true });
+    expect(restoreStockFromCancellation).toHaveBeenCalledTimes(1);
+    expect(restoreStockFromCancellation).toHaveBeenCalledWith(sale.items);
+  });
+
   it('registra merma sin ejecutar otra mutacion de inventario', async () => {
     const sale = makeSale();
     const db = makeDb([sale]);

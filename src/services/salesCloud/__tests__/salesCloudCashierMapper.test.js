@@ -527,6 +527,96 @@ describe('salesCloudCashierMapper batch allocation compatibility', () => {
     expect(payload.items[0].metadata.batchSelectionSource).toBe('manual');
   });
 
+  it('sends the selected commercial variant to cloud and lets the RPC allocate that batch', () => {
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: 'shirt-1',
+      isVariant: true,
+      batchId: 'm-black',
+      batchesUsed: [{ batchId: 's-black', quantity: 1 }]
+    }, {
+      inventoryEnabled: true,
+      productCatalog: [{ id: 'shirt-1', rubroContext: 'apparel', hasVariants: true }]
+    });
+
+    expect(payload.items[0].batch_id).toBe('m-black');
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+  });
+
+  it('recognizes a historical Apparel parent from its persisted variant batch attributes', () => {
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: 'legacy-shirt',
+      isVariant: true,
+      batchId: 'legacy-m-black'
+    }, {
+      inventoryEnabled: true,
+      productCatalog: [{ id: 'legacy-shirt', rubroContext: 'Ropa / Calzado' }],
+      batchCatalog: new Map([['legacy-shirt', [
+        { id: 'legacy-m-black', attributes: { talla: 'M', color: 'Negro' } }
+      ]]])
+    });
+
+    expect(payload.items[0].batch_id).toBe('legacy-m-black');
+  });
+
+  it('does not trust cart rubro when the persisted product is an ordinary hardware SKU lot', () => {
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: 'hammer-1',
+      rubroContext: 'apparel',
+      isVariant: true,
+      batchId: 'hammer-sku-lot'
+    }, {
+      inventoryEnabled: true,
+      productCatalog: [{ id: 'hammer-1', rubroContext: 'hardware', hasVariants: true }],
+      batchCatalog: new Map([['hammer-1', [
+        { id: 'hammer-sku-lot', attributes: {} }
+      ]]])
+    });
+
+    expect(payload.items[0].batch_id).toBeNull();
+  });
+
+  it('does not infer Apparel from an item-only claim when no persisted product is supplied', () => {
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: 'unknown-parent',
+      rubroContext: 'apparel',
+      isVariant: true,
+      batchId: 'unknown-batch'
+    }, { inventoryEnabled: true });
+
+    expect(payload.items[0].batch_id).toBeNull();
+  });
+
+  it.each([
+    ['Abarrotes', 'abarrotes'],
+    ['Ferretería', 'hardware'],
+    ['Farmacia', 'farmacia'],
+    ['Restaurante', 'food_service']
+  ])('does not promote an isVariant-shaped %s line to an Apparel batch', (_label, persistedRubro) => {
+    const productId = `product-${persistedRubro}`;
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: productId,
+      rubroContext: 'apparel',
+      isVariant: true,
+      batchId: `ordinary-${persistedRubro}-batch`
+    }, {
+      inventoryEnabled: true,
+      productCatalog: [{ id: productId, rubroContext: persistedRubro, hasVariants: true }]
+    });
+
+    expect(payload.items[0].batch_id).toBeNull();
+  });
+
+  it('does not treat an ordinary batch ID as a commercial variant selection', () => {
+    const payload = mapCheckout({ ...baseItem, batchId: 'grocery-lot-1' }, { inventoryEnabled: true });
+
+    expect(payload.items[0].batch_id).toBeNull();
+  });
+
   it('applies the same null omission to credit-sale mapping', () => {
     const payload = mapLocalCreditCheckoutToCloudSale({
       sale: { ...baseSale, id: 'credit-batch-sale-1' },
@@ -537,6 +627,24 @@ describe('salesCloudCashierMapper batch allocation compatibility', () => {
 
     expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
     expect(JSON.stringify(payload.items[0])).not.toContain('"batchesUsed":null');
+  });
+
+  it('maps an Apparel batch explicitly on credit Cloud inventory only with catalog evidence', () => {
+    const payload = mapLocalCreditCheckoutToCloudSale({
+      sale: { ...baseSale, id: 'credit-apparel-batch-sale' },
+      processedItems: [{
+        ...baseItem,
+        parentId: 'shirt-1',
+        isVariant: true,
+        batchId: 'm-black'
+      }],
+      paymentData: { amountPaid: 0, saldoPendiente: 25 },
+      total: 25,
+      inventoryEnabled: true,
+      productCatalog: [{ id: 'shirt-1', rubroContext: 'apparel', hasVariants: true }]
+    });
+
+    expect(payload.items[0].batch_id).toBe('m-black');
   });
 });
 
