@@ -32,7 +32,7 @@ export default function NoPermission() {
   const isRestoringSession = [
     ACTOR_RUNTIME_STATUS.AUTHENTICATING,
     ACTOR_RUNTIME_STATUS.HANDOFF_CHECK
-  ].includes(runtimeSnapshot.status);
+  ].includes(runtimeSnapshot?.status);
 
   return (
     <section className="permission-blocker" role={isRestoringSession ? 'status' : 'alert'} aria-labelledby="permission-blocker-title">

@@ -2,13 +2,18 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const mocks = vi.hoisted(() => ({ runtimeSnapshot: null }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: (selector) => selector({}) }));
+vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => mocks.runtimeSnapshot
+}));
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import NoPermission from '../NoPermission';
 
 afterEach(() => {
   cleanup();
   actorRuntimeController.lock('test_cleanup');
+  mocks.runtimeSnapshot = null;
 });
 
 describe('NoPermission', () => {
@@ -31,6 +36,7 @@ describe('NoPermission', () => {
     act(() => {
       actorRuntimeController.lock('test_restore');
       actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+      mocks.runtimeSnapshot = actorRuntimeController.getState();
     });
 
     render(
