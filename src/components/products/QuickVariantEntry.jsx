@@ -129,15 +129,6 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     }
   };
 
-  const generateSKU = (id, talla, color) => {
-    if (!talla && !color) return;
-    const c = color ? color.substring(0, 3).toUpperCase() : 'GEN';
-    const t = talla ? talla.toUpperCase() : 'U';
-    const rnd = Date.now().toString().slice(-6);
-    const sku = `${c}-${t}-${rnd}`.toUpperCase().replace(/\s+/g, '');
-    updateRow(id, 'sku', sku);
-  };
-
   const syncColumn = async (field, value) => {
     const confirmed = await showConfirmModal(`¿Aplicar $${value} a todas las variantes?`, {
       title: 'Aplicar a variantes',
@@ -268,7 +259,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                 Precio
                 <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos">Base</button>
               </th>
-              <th>SKU / Auto</th>
+              <th>SKU (auto al guardar)</th>
               <th style={{ width: '40px' }}></th>
             </tr>
           </thead>
@@ -352,14 +343,11 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                       <input
                         type="text"
                         className="qv-input"
-                        placeholder="Auto"
+                        placeholder="Auto al guardar"
                         value={row.sku}
                         onChange={(e) => updateRow(row.id, 'sku', e.target.value)}
                         style={{ fontSize: '0.75rem', color: 'var(--ui-text-muted)' }}
                       />
-                      {(!row.sku && row.talla && row.color) && (
-                        <button type="button" className="qv-icon-button qv-icon-button--generate" onClick={() => generateSKU(row.id, row.talla, row.color)} title="Generar SKU">SKU</button>
-                      )}
                     </div>
                   </td>
 

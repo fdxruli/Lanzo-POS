@@ -1,6 +1,8 @@
 import { generateID } from '../../../../services/utils';
 import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy';
 import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
+import { resolveProductRubroContext } from '../../../../services/products/apparelSku';
+import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 
 /**
  * @param {Object} params
@@ -15,14 +17,18 @@ import { isCommercialVariantProduct } from '../../../../services/products/commer
  */
 export function buildBatchPayload({
   batchToEdit,
+  batchId,
   product,
   values,
   parsed,
   features,
   finalSku,
+  isApparelVariant = false,
   isProductPriceEditing = false
 }) {
   const isEditing = Boolean(batchToEdit);
+  const isApparel = isApparelVariant
+    || resolveProductRubroContext(product) === CANONICAL_BUSINESS_TYPES.APPAREL;
   const { nStock, nCost, nPrice } = parsed;
   const isCommercialVariant = isCommercialVariantProduct(product);
   const currentProductPrice = Number(product?.price ?? 0);
@@ -51,8 +57,18 @@ export function buildBatchPayload({
     }
   }
 
+  const attributes = features?.hasVariants
+    ? {
+      talla: values.attribute1,
+      color: values.attribute2,
+      ...(values.pao ? { pao: values.pao } : {})
+    }
+    : (isApparel && isEditing
+      ? (batchToEdit.attributes || (values.pao ? { pao: values.pao } : null))
+      : (values.pao ? { pao: values.pao } : null));
+
   return {
-    id: isEditing ? batchToEdit.id : generateID('batch'),
+    id: isEditing ? batchToEdit.id : (batchId || generateID('batch')),
     productId: product.id,
     cost: nCost,
     price: nPrice,
@@ -68,13 +84,7 @@ export function buildBatchPayload({
     sku: finalSku,
     supplier: values.supplier ? String(values.supplier).trim() : null,
     manufacturerBatchId: values.manufacturerBatchId ? String(values.manufacturerBatchId).trim() : null,
-    attributes: features?.hasVariants
-      ? {
-        talla: values.attribute1,
-        color: values.attribute2,
-        ...(values.pao ? { pao: values.pao } : {})
-      }
-      : values.pao ? { pao: values.pao } : null,
+    attributes,
     location: values.location || '',
     updateGlobalPrice: hasProductPriceChange
   };

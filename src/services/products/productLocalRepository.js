@@ -19,7 +19,8 @@ import {
   cloudCategoryToLocal,
   cloudProductToLocal,
   markProductSyncConflict,
-  normalizeNameKey
+  normalizeNameKey,
+  normalizeSkuKey
 } from './productMapper';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
@@ -123,6 +124,35 @@ const applySyncFields = async (storeName, id, sync = {}) => {
 };
 
 export const productLocalRepository = {
+  async findSkuConflicts(sku, { excludeBatchIds = [], excludeProductIds = [] } = {}) {
+    const skuKey = normalizeSkuKey(sku);
+    if (!skuKey) return [];
+
+    await ensureOpen();
+    const [products, batches] = await Promise.all([
+      db.table(STORES.MENU).toArray(),
+      db.table(STORES.PRODUCT_BATCHES).toArray()
+    ]);
+    const excludedBatchIds = new Set(excludeBatchIds);
+    const excludedProductIds = new Set(excludeProductIds);
+    const isDeleted = (record) => Boolean(
+      record?.deletedAt || record?.deleted_at || record?.deletedTimestamp || record?.deleted_timestamp
+    );
+
+    return [
+      ...products
+        .filter((product) => !isDeleted(product)
+          && !excludedProductIds.has(product.id)
+          && normalizeSkuKey(product.skuNormalized || product.sku_normalized || product.skuKey || product.sku) === skuKey)
+        .map((product) => ({ entityType: 'product', id: product.id })),
+      ...batches
+        .filter((batch) => !isDeleted(batch)
+          && !excludedBatchIds.has(batch.id)
+          && normalizeSkuKey(batch.skuKey || batch.sku_key || batch.sku) === skuKey)
+        .map((batch) => ({ entityType: 'batch', id: batch.id, productId: batch.productId || batch.product_id }))
+    ];
+  },
+
   async listProductsPage(options = {}) {
     return loadDataPaginated(STORES.MENU, options);
   },

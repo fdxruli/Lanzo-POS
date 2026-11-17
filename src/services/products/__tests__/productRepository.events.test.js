@@ -4,9 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   cloudEnabled: false,
+  businessTypes: ['abarrotes'],
   notify: vi.fn(),
   enqueue: vi.fn(),
   prepareProduct: vi.fn(),
+  findSkuConflicts: vi.fn(),
+  getBatchById: vi.fn(),
+  saveBatchLocal: vi.fn(),
   saveCategoryLocal: vi.fn(),
   savePreparedProductLocal: vi.fn(),
   deleteProductLocal: vi.fn(),
@@ -16,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   getProductById: vi.fn(),
   upsertCategory: vi.fn(),
   upsertProduct: vi.fn(),
+  pullCatalogSnapshot: vi.fn(),
   deleteProduct: vi.fn(),
   toggleProductStatus: vi.fn()
 }));
@@ -43,7 +48,9 @@ vi.mock('../../utils', () => ({ generateID: vi.fn(() => 'generated-id') }));vi.m
   }
 }));
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: { getState: () => ({ licenseDetails: {}, appStatus: 'active' }) }
+  useAppStore: { getState: () => ({
+    licenseDetails: {}, appStatus: 'active', companyProfile: { business_type: mocks.businessTypes }
+  }) }
 }));
 vi.mock('../../sync/idempotency', () => ({
   generateIdempotencyKey: vi.fn(() => 'operation-id')
@@ -63,17 +70,20 @@ vi.mock('../../sync/syncConstants', () => ({
     UPSERT: 'upsert',
     DELETE: 'delete',
     TOGGLE_STATUS: 'toggle_status'
-  }
+  },
+  SYNC_LIMITS: { MAX_PULL_LIMIT: 500 }
 }));
 vi.mock('../productMapper', () => ({
   batchToCloudPayload: (value) => value,
   categoryToCloudPayload: (value) => value,
-  productToCloudPayload: (value) => value
+  productToCloudPayload: (value) => value,
+  normalizeSkuKey: (value) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '')
 }));
 vi.mock('../productCloudRepository', () => ({
   productCloudRepository: {
     upsertCategory: mocks.upsertCategory,
     upsertProduct: mocks.upsertProduct,
+    pullCatalogSnapshot: mocks.pullCatalogSnapshot,
     deleteProduct: mocks.deleteProduct,
     toggleProductStatus: mocks.toggleProductStatus
   }
@@ -83,11 +93,14 @@ vi.mock('../productLocalRepository', () => ({
     saveCategoryLocal: mocks.saveCategoryLocal,
     prepareProduct: mocks.prepareProduct,
     savePreparedProductLocal: mocks.savePreparedProductLocal,
+    saveBatchLocal: mocks.saveBatchLocal,
     deleteProductLocal: mocks.deleteProductLocal,
     toggleProductStatusLocal: mocks.toggleProductStatusLocal,
     applyCloudCategory: mocks.applyCloudCategory,
     applyCloudCatalog: mocks.applyCloudCatalog,
-    getProductById: mocks.getProductById
+    getProductById: mocks.getProductById,
+    getBatchById: mocks.getBatchById,
+    findSkuConflicts: mocks.findSkuConflicts
   }
 }));
 vi.mock('../productConflictService', () => ({
@@ -132,19 +145,181 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
   mocks.cloudEnabled = false;
+  mocks.businessTypes = ['abarrotes'];
   mocks.prepareProduct.mockResolvedValue(preparedProduct(false));
+  mocks.findSkuConflicts.mockResolvedValue([]);
   mocks.saveCategoryLocal.mockResolvedValue({ success: true, id: 'category-local', name: 'Local' });
   mocks.savePreparedProductLocal.mockResolvedValue({ success: true, productId: 'product-1' });
+  mocks.saveBatchLocal.mockResolvedValue({ success: true, batchId: 'batch-1' });
+  mocks.getProductById.mockResolvedValue(null);
+  mocks.getBatchById.mockResolvedValue(null);
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
   mocks.toggleProductStatusLocal.mockResolvedValue({ success: true });
   mocks.applyCloudCatalog.mockResolvedValue({ products: 1, categories: 0, batches: 0 });
   mocks.applyCloudCategory.mockResolvedValue({ id: 'category-1', name: 'Category', serverVersion: 1 });
   mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'category-1', name: 'Category' } });
   mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1' } });
+  mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
+    success: true,
+    products: entityType === 'products' ? [] : undefined,
+    batches: entityType === 'batches' ? [] : undefined,
+    has_more: false
+  }));
   vi.stubGlobal('navigator', { onLine: true });
 });
 
 describe('productRepository directed catalog events', () => {
+  it('genera SKU Apparel antes de guardar cada variante y conserva el SKU manual', async () => {
+    const prepared = {
+      ...preparedProduct(false),
+      product: { id: 'product-1', name: 'Playera QA SKU', rubroContext: 'apparel' },
+      batches: [
+        { id: 'batch-s-black', productId: 'product-1', attributes: { talla: 'S', color: 'Negro' }, sku: null },
+        { id: 'batch-m-black', productId: 'product-1', attributes: { talla: 'M', color: 'Negro' }, sku: '' },
+        { id: 'batch-l-blue', productId: 'product-1', attributes: { talla: 'L', color: 'Azul' }, sku: 'PLAYERA-L-AZUL-QA' }
+      ]
+    };
+    mocks.prepareProduct.mockResolvedValueOnce(prepared);
+
+    await productRepository.saveProduct({ name: 'Playera QA SKU' });
+
+    const savedBatches = mocks.savePreparedProductLocal.mock.calls[0][0].batches;
+    expect(savedBatches).toHaveLength(3);
+    expect(savedBatches[0].sku).toBeTruthy();
+    expect(savedBatches[1].sku).toBeTruthy();
+    expect(savedBatches[0].sku).not.toBe(savedBatches[1].sku);
+    expect(savedBatches[2].sku).toBe('PLAYERA-L-AZUL-QA');
+  });
+
+  it('rechaza SKU manual duplicado antes de modificar el producto', async () => {
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(false),
+      product: { id: 'product-1', name: 'Playera QA SKU', rubroContext: 'apparel' },
+      batches: [
+        { id: 'batch-a', attributes: { talla: 'S', color: 'Negro' }, sku: 'SKU-IGUAL' },
+        { id: 'batch-b', attributes: { talla: 'M', color: 'Negro' }, sku: 'sku-igual' }
+      ]
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Playera QA SKU' });
+
+    expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
+    expect(mocks.savePreparedProductLocal).not.toHaveBeenCalled();
+  });
+
+  it('rechaza en PRO un SKU que ya aparece en el snapshot Cloud del tenant', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(false),
+      product: { id: 'product-1', name: 'Playera QA SKU', rubroContext: 'apparel' },
+      batches: [{ id: 'batch-a', attributes: { talla: 'S', color: 'Negro' }, sku: 'CLOUD-TAKEN' }]
+    });
+    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
+      success: true,
+      products: entityType === 'products' ? [] : undefined,
+      batches: entityType === 'batches' ? [{ id: 'existing-batch', sku: 'cloud-taken' }] : undefined,
+      has_more: false
+    }));
+
+    const result = await productRepository.saveProduct({ name: 'Playera QA SKU' });
+
+    expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+  });
+
+  it('deja el SKU histórico vacío al editar otros campos de una variante', async () => {
+    mocks.businessTypes = ['apparel'];
+    const prepared = apparelPreparedProduct({
+      updated: [{
+        id: 'historic-batch', talla: 'M', color: 'Negro', sku: '', cost: 11, price: 30,
+        existingBatch: { id: 'historic-batch', productId: 'product-1', sku: null, stock: 5, serverVersion: 2 }
+      }]
+    });
+    mocks.prepareProduct.mockResolvedValueOnce(prepared);
+    const saveBatch = vi.spyOn(productRepository, 'saveBatch').mockResolvedValue({ success: true });
+
+    const result = await productRepository.saveProduct({ name: 'Product' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.findSkuConflicts).not.toHaveBeenCalled();
+    expect(saveBatch).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'historic-batch', stock: 5, sku: null
+    }), expect.objectContaining({ apparelSkuAlreadyChecked: true }));
+  });
+
+  it('no interpreta talla/color de Restaurante como variante Apparel cuando falta rubroContext', async () => {
+    mocks.businessTypes = ['food_service'];
+    mocks.getProductById.mockResolvedValueOnce({ id: 'restaurant-item', name: 'Platillo' });
+
+    const result = await productRepository.saveBatch({
+      id: 'restaurant-batch',
+      productId: 'restaurant-item',
+      sku: 'PLATILLO-S-NEGRO',
+      attributes: { talla: 'S', color: 'Negro' }
+    });
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.findSkuConflicts).not.toHaveBeenCalled();
+    expect(mocks.saveBatchLocal).toHaveBeenCalledOnce();
+  });
+
+  it('no ejecuta reglas de SKU Apparel para un lote ordinario de Ferretería', async () => {
+    mocks.businessTypes = ['hardware'];
+    mocks.getProductById.mockResolvedValueOnce({ id: 'hammer', name: 'Tornillo', rubroContext: 'hardware' });
+
+    const result = await productRepository.saveBatch({
+      id: 'hardware-batch',
+      productId: 'hammer',
+      sku: 'TORNILLO-M12-LOT-1',
+      attributes: { modelo: 'M12', manufacturerBatchId: 'LOT-1' }
+    });
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.findSkuConflicts).not.toHaveBeenCalled();
+    expect(mocks.saveBatchLocal).toHaveBeenCalledOnce();
+  });
+
+  it('rechaza un SKU nuevo duplicado al editar una variante sin guardar el producto', async () => {
+    const prepared = apparelPreparedProduct({
+      updated: [{
+        id: 'batch-a', talla: 'M', color: 'Negro', sku: 'SKU-TAKEN', cost: 10, price: 30,
+        existingBatch: { id: 'batch-a', productId: 'product-1', sku: 'SKU-OLD', stock: 5, serverVersion: 2 }
+      }]
+    });
+    prepared.product.rubroContext = 'apparel';
+    mocks.prepareProduct.mockResolvedValueOnce(prepared);
+    mocks.findSkuConflicts.mockResolvedValueOnce([{ entityType: 'batch', id: 'other-batch' }]);
+
+    const result = await productRepository.saveProduct({ name: 'Product' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
+    expect(mocks.savePreparedProductLocal).not.toHaveBeenCalled();
+  });
+
+  it('aplica la comprobación Cloud a Apparel histórico por perfil único sin rubroContext', async () => {
+    mocks.cloudEnabled = true;
+    mocks.businessTypes = ['apparel'];
+    mocks.getProductById.mockResolvedValueOnce({ id: 'legacy-apparel', name: 'Playera heredada' });
+    mocks.getBatchById.mockResolvedValueOnce(null);
+    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
+      success: true,
+      products: entityType === 'products' ? [] : undefined,
+      batches: entityType === 'batches' ? [{ id: 'existing-batch', sku: 'LEGACY-TAKEN' }] : undefined,
+      has_more: false
+    }));
+
+    const result = await productRepository.saveBatch({
+      id: 'new-apparel-batch',
+      productId: 'legacy-apparel',
+      sku: 'LEGACY-TAKEN',
+      attributes: { talla: 'M', color: 'Negro' }
+    });
+
+    expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
+  });
+
   it.each([false, true])('propagates a rejected local category save without enqueue or success events (PRO=%s)', async (cloudEnabled) => {
     mocks.cloudEnabled = cloudEnabled;
     vi.stubGlobal('navigator', { onLine: false });

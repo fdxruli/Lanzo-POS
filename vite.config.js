@@ -28,6 +28,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/actorOperationalHandoff-*.js',
   'assets/actorRuntimeController-*.js',
   'assets/actorAccessPolicy-*.js',
+  'assets/useActorAccess-*.js',
   'assets/financialReceiptClassifier-*.js',
   'assets/PosApplicationBootstrap-*.{js,css}',
   'assets/vendor_react-*.js',

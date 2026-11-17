@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../../../../store/useAppStore';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import { useCaja } from '../../../../hooks/useCaja';
-import { showConfirmModal, showMessageModal } from '../../../../services/utils';
+import { generateID, showConfirmModal, showMessageModal } from '../../../../services/utils';
 import { buildBatchPayload } from '../utils/buildBatchPayload';
 import { validateBatchInput } from '../utils/validateBatchInput';
 import { productsRepository } from '../../../../services/db/products';
 import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
+import { productLocalRepository } from '../../../../services/products/productLocalRepository';
+import { createApparelSkuCandidate, resolveProductRubroContext } from '../../../../services/products/apparelSku';
+import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 
 const DEFAULT_FORM_VALUES = {
   cost: '',
@@ -51,8 +55,16 @@ export function useBatchFormController({
   const tallaInputRef = useRef(null);
   const { cajaActual } = useCaja();
   const adjustInventoryValue = useStatsStore((state) => state.adjustInventoryValue);
+  const businessTypes = useAppStore((state) => state.companyProfile?.business_type);
   const isEditing = Boolean(batchToEdit);
   const isCommercialVariant = isCommercialVariantProduct(product);
+  const productRubro = resolveProductRubroContext(product, businessTypes);
+  const hasApparelVariantAttributes = Boolean(
+    String(batchToEdit?.attributes?.talla ?? '').trim()
+    && String(batchToEdit?.attributes?.color ?? '').trim()
+  );
+  const isApparelVariant = productRubro === CANONICAL_BUSINESS_TYPES.APPAREL
+    && (isCommercialVariant || hasApparelVariantAttributes || features?.hasVariants === true);
 
   const setFieldValue = useCallback((field, value) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
@@ -126,9 +138,19 @@ export function useBatchFormController({
     setIsProductPriceEditing(false);
   }, [batchToEdit, buildCreateDefaults, isCommercialVariant, isEditing, product]);
 
-  const generateAutoSku = useCallback(() => {
+  const generateAutoSku = useCallback((variantId, attempt = 0) => {
     const currentSku = String(formValues.sku || '').trim();
     if (currentSku) return currentSku;
+
+    if (isApparelVariant) {
+      return createApparelSkuCandidate({
+        productName: product?.name,
+        color: formValues.attribute2 || batchToEdit?.attributes?.color,
+        size: formValues.attribute1 || batchToEdit?.attributes?.talla,
+        variantId,
+        attempt
+      });
+    }
 
     const cleanName = String(product?.name || '')
       .replace(/\s+/g, '')
@@ -144,7 +166,7 @@ export function useBatchFormController({
     const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
 
     return `${cleanName}-${attr2Code}-${attr1Code}-${randomSuffix}`;
-  }, [formValues.attribute1, formValues.attribute2, formValues.sku, product?.name]);
+  }, [batchToEdit?.attributes?.color, batchToEdit?.attributes?.talla, formValues.attribute1, formValues.attribute2, formValues.sku, isApparelVariant, product?.name]);
 
   const handleProcessSave = useCallback(async (shouldClose) => {
     const validation = validateBatchInput(formValues, product);
@@ -154,6 +176,7 @@ export function useBatchFormController({
     }
 
     const { nStock, nCost } = validation.parsed;
+    const batchId = isEditing ? batchToEdit.id : generateID('batch');
     const totalCosto = nCost * nStock;
     const currentProductPrice = Number(product?.price ?? 0);
     const requestedPrice = Number(formValues.price);
@@ -197,8 +220,21 @@ export function useBatchFormController({
     // 2. VALIDAR SKU DUPLICADO
     const userSku = String(formValues.sku || '').trim();
     if (userSku) {
-      const existingProduct = await productsRepository.searchProductBySKU(userSku);
-      const isDuplicate = existingProduct && (!isEditing || existingProduct.batchId !== batchToEdit.id);
+      let isDuplicate = false;
+      if (isApparelVariant) {
+        try {
+          const conflicts = await productLocalRepository.findSkuConflicts(userSku, {
+            excludeBatchIds: isEditing ? [batchId] : []
+          });
+          isDuplicate = conflicts.length > 0;
+        } catch {
+          showMessageModal('No se pudo comprobar si el SKU está en uso. Inténtalo de nuevo.');
+          return false;
+        }
+      } else {
+        const existingProduct = await productsRepository.searchProductBySKU(userSku);
+        isDuplicate = Boolean(existingProduct && (!isEditing || existingProduct.batchId !== batchToEdit.id));
+      }
 
       if (isDuplicate) {
         showMessageModal(`El SKU "${userSku}" ya está en uso.`);
@@ -207,14 +243,43 @@ export function useBatchFormController({
     }
 
     // 3. PREPARAR EL PAYLOAD
-    const finalSku = features?.hasVariants ? generateAutoSku() : null;
+    let finalSku = null;
+    if (isApparelVariant && !isEditing && !userSku) {
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const candidate = generateAutoSku(batchId, attempt);
+        try {
+          const conflicts = await productLocalRepository.findSkuConflicts(candidate, {
+            excludeBatchIds: isEditing ? [batchId] : []
+          });
+          if (!conflicts.length) {
+            finalSku = candidate;
+            break;
+          }
+        } catch {
+          showMessageModal('No se pudo comprobar si el SKU está en uso. Inténtalo de nuevo.');
+          return false;
+        }
+      }
+      if (!finalSku) {
+        showMessageModal('No se pudo generar un SKU único para esta variante. Inténtalo de nuevo.');
+        return false;
+      }
+    } else if (userSku) {
+      finalSku = userSku;
+    } else if (isEditing) {
+      finalSku = batchToEdit?.sku || null;
+    } else if (features?.hasVariants) {
+      finalSku = generateAutoSku(batchId);
+    }
     const batchData = buildBatchPayload({
       batchToEdit,
+      batchId,
       product,
       values: formValues,
       parsed: validation.parsed,
       features,
       finalSku,
+      isApparelVariant,
       isProductPriceEditing
     });
 
@@ -273,6 +338,7 @@ export function useBatchFormController({
     cajaActual,
     features,
     formValues,
+    isApparelVariant,
     generateAutoSku,
     isEditing,
     isCommercialVariant,
