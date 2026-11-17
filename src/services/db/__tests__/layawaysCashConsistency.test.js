@@ -56,7 +56,7 @@ describe('layaway cash consistency in Free', () => {
       id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0'
     });
 
-    const created = await layawayRepository.create(baseLayaway(), 75, 'cash-1', {
+    const created = await layawayRepository.create({ ...baseLayaway(), totalAmount: 499 }, 50, 'cash-1', {
       payment: { id: 'payment-1', paymentType: 'initial_deposit' },
       cashMovement: {
         idempotencyKey: 'layaway:layaway-1:payment:payment-1',
@@ -78,17 +78,83 @@ describe('layaway cash consistency in Free', () => {
     expect(created.layaway.payments[0]).toMatchObject({
       id: 'payment-1',
       paymentType: 'initial_deposit',
+      amount: 50,
       cashMovementId: expect.any(String),
       cashSessionId: 'cash-1',
       cash_session_id: 'cash-1',
       cajaId: 'cash-1'
     });
-    expect(layaway.paidAmount).toBe(175);
+    expect(layaway.paidAmount).toBe(150);
     expect(layaway.payments).toHaveLength(2);
     expect(movements).toHaveLength(2);
-    expect(movements.map((movement) => movement.monto).sort()).toEqual(['100', '75']);
+    expect(movements.map((movement) => movement.monto).sort()).toEqual(['100', '50']);
     expect(movements.every((movement) => movement.cash_session_id === 'cash-1')).toBe(true);
-    expect(cash.entradas_efectivo).toBe('175');
+    expect(cash.entradas_efectivo).toBe('150');
+    expect(layaway.totalAmount - layaway.paidAmount).toBe(349);
+  });
+
+  it('reproduces the $899 historical installment sequence without a corrective peso', async () => {
+    await db.table(STORES.CAJAS).put({
+      id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0'
+    });
+    await layawayRepository.create({ ...baseLayaway('ana'), totalAmount: 899 }, 200, 'cash-1', {
+      payment: { id: 'ana-deposit', paymentType: 'initial_deposit' },
+      cashMovement: { idempotencyKey: 'layaway:ana:payment:ana-deposit' }
+    });
+
+    const addPayment = (id, amount) => layawayRepository.addPaymentWithCash(
+      'ana', { id, amount, paymentType: 'installment' }, 'cash-1',
+      { idempotencyKey: `layaway:ana:payment:${id}` }
+    );
+    await addPayment('ana-300', 300);
+    await addPayment('ana-399', 399);
+    const replay = await addPayment('ana-399', 399);
+
+    const layaway = await layawayRepository.getById('ana');
+    const cash = await db.table(STORES.CAJAS).get('cash-1');
+    const movements = await db.table(STORES.MOVIMIENTOS_CAJA).toArray();
+
+    expect(replay).toMatchObject({ success: true, duplicate: true, newPaidAmount: 899 });
+    expect(layaway.payments.map((payment) => payment.amount)).toEqual([200, 300, 399]);
+    expect(layaway.paidAmount).toBe(899);
+    expect(layaway.totalAmount - layaway.paidAmount).toBe(0);
+    expect(layaway.status).toBe('ready');
+    expect(movements.map((movement) => movement.monto).sort()).toEqual(['200', '300', '399']);
+    expect(movements).toHaveLength(3);
+    expect(cash.entradas_efectivo).toBe('899');
+  });
+
+  it('persists small and decimal installment amounts exactly and replays only once', async () => {
+    await db.table(STORES.CAJAS).put({
+      id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0'
+    });
+    await db.table(STORES.LAYAWAYS).put({
+      ...baseLayaway('precision'), totalAmount: 1000, status: 'active', paidAmount: 0, payments: []
+    });
+    const amounts = [0.01, 0.1, 1, 2, 10, 25.5, 199.99, 300.25];
+    for (const [index, amount] of amounts.entries()) {
+      const id = `precision-${index + 1}`;
+      await layawayRepository.addPaymentWithCash('precision', { id, amount }, 'cash-1', {
+        idempotencyKey: `layaway:precision:payment:${id}`
+      });
+    }
+    const replay = await layawayRepository.addPaymentWithCash('precision', {
+      id: 'precision-8', amount: 300.25
+    }, 'cash-1', { idempotencyKey: 'layaway:precision:payment:precision-8' });
+
+    const layaway = await layawayRepository.getById('precision');
+    const cash = await db.table(STORES.CAJAS).get('cash-1');
+    const movements = await db.table(STORES.MOVIMIENTOS_CAJA).toArray();
+
+    expect(replay).toMatchObject({ success: true, duplicate: true, newPaidAmount: 538.85 });
+    expect(layaway.payments.map((payment) => payment.amount)).toEqual(amounts);
+    expect(layaway.paidAmount).toBe(538.85);
+    expect(layaway.totalAmount - layaway.paidAmount).toBe(461.15);
+    expect(movements).toHaveLength(amounts.length);
+    expect(movements.map((movement) => movement.monto)).toEqual(expect.arrayContaining([
+      '0.01', '0.1', '1', '2', '10', '25.5', '199.99', '300.25'
+    ]));
+    expect(cash.entradas_efectivo).toBe('538.85');
   });
 
   it('replays the same installment identity without duplicating payment or movement', async () => {

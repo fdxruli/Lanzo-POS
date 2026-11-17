@@ -17,6 +17,8 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { showMessage } from '../../store/useMessageStore';
 import Logger from '../../services/Logger';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { Money } from '../../utils/moneyMath';
+import { isMoneyInputDraft, parseMoneyInputDraft } from '../../utils/moneyInputDraft';
 import {
     buildHistoricalLayawayFolios,
     isActionableLayaway,
@@ -181,10 +183,13 @@ export default function LayawayModal({
             return;
         }
 
-        const amount = parseFloat(paymentAmount);
+        const parsedAmount = parseMoneyInputDraft(paymentAmount);
+        if (parsedAmount.status !== 'valid' || parsedAmount.cents <= 0) {
+            return showMessageModal('Ingresa un monto válido.', null, { type: 'warning' });
+        }
+        const amount = Money.toNumber(Money.fromCents(parsedAmount.cents));
         const deudaPendiente = layaway.totalAmount - layaway.paidAmount;
 
-        if (!amount || amount <= 0) return showMessageModal('Ingresa un monto válido.', null, { type: 'warning' });
         // Permitimos un pequeño margen de error por decimales (0.01)
         if (amount > deudaPendiente + 0.1) return showMessageModal('El monto excede la deuda pendiente.', null, { type: 'warning' });
 
@@ -641,12 +646,15 @@ export default function LayawayModal({
                                                         <span className="customer-layaway-payment__currency">$</span>
                                                         <input 
                                                             id={paymentInputId}
-                                                            type="number" 
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             className="customer-layaway-payment__input"
                                                             placeholder="0.00"
                                                             autoFocus
                                                             value={paymentAmount}
-                                                            onChange={(e) => setPaymentAmount(e.target.value)}
+                                                            onChange={(e) => {
+                                                                if (isMoneyInputDraft(e.target.value)) setPaymentAmount(e.target.value);
+                                                            }}
                                                             onKeyDown={(e) => e.key === 'Enter' && handleAddPayment(layaway)}
                                                         />
                                                     </div>

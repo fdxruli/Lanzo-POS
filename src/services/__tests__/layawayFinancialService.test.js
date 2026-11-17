@@ -451,7 +451,7 @@ describe('layawayFinancialService', () => {
 
     await layawayFinancialService.addPayment({
       layawayId: 'layaway-1',
-      amount: 75,
+      amount: 300.25,
       paymentId: 'payment-cloud-2',
       expectedCashSessionId: 'cash-1'
     });
@@ -460,7 +460,7 @@ describe('layawayFinancialService', () => {
       layawayId: 'layaway-1',
       cashSessionId: 'cash-1',
       licenseDetails,
-      payment: expect.objectContaining({ id: 'payment-cloud-2', amount: 75 })
+      payment: expect.objectContaining({ id: 'payment-cloud-2', amount: 300.25 })
     }));
     expect(mocks.getById).not.toHaveBeenCalled();
     expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
@@ -540,14 +540,14 @@ describe('layawayFinancialService', () => {
   it('registers a subsequent payment only against the resolved current session', async () => {
     await layawayFinancialService.addPayment({
       layawayId: 'layaway-1',
-      amount: 75,
+      amount: 300.25,
       paymentId: 'payment-installment',
       expectedCashSessionId: 'cash-1'
     });
 
     expect(mocks.addPaymentWithCash).toHaveBeenCalledWith(
       'layaway-1',
-      expect.objectContaining({ id: 'payment-installment', amount: 75 }),
+      expect.objectContaining({ id: 'payment-installment', amount: 300.25 }),
       'cash-1',
       expect.objectContaining({ idempotencyKey: 'layaway:layaway-1:payment:payment-installment' })
     );
