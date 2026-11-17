@@ -348,6 +348,25 @@ describe('LayawayModal history and cancellation', () => {
     }));
   });
 
+  it('blocks repeated Enter and Confirmar clicks while the first payment is pending', async () => {
+    mocks.layaways = [layaway({ deadline: '2030-12-31', totalAmount: 1000, paidAmount: 200 })];
+    mocks.addPayment.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal();
+    const user = userEvent.setup();
+    const startPayment = await screen.findByRole('button', { name: /Registrar nuevo abono/i });
+    await waitFor(() => expect(startPayment).toBeEnabled());
+    await user.click(startPayment);
+    const input = screen.getByRole('textbox');
+    await user.type(input, '300.25');
+    await user.keyboard('{Enter}{Enter}');
+    await user.dblClick(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(mocks.addPayment).toHaveBeenCalledTimes(1);
+    expect(mocks.addPayment).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active', amount: 300.25, expectedCashSessionId: 'cash-a'
+    }));
+  });
+
   it('blocks new Free installments without timezone and keeps cancellation accessible', async () => {
     mocks.timezone = null;
     mocks.layaways = [layaway({ deadline: '2030-12-31' })];
