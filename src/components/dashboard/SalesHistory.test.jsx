@@ -121,6 +121,7 @@ describe('SalesHistory visible-page export', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'CSV · página' }));
     expect(createdBlob).toBeTruthy();
+    expect(screen.getByRole('status')).toHaveTextContent('Se solicitó la descarga CSV de esta página.');
     const csv = createdBlob.content;
     const exportedRows = parseCsv(csv);
     const exportedIds = exportedRows.map((row) => row.venta_id);
@@ -147,8 +148,8 @@ describe('SalesHistory visible-page export', () => {
     render(
       <SalesHistory
         sales={[
-          { id: 'sale-end-of-day', folio: 'F-001', timestamp: '2026-11-07T23:59:59.999Z', total: 10 },
-          { id: 'sale-next-day', folio: 'F-002', timestamp: '2026-11-08T00:00:00.000Z', total: 20 },
+          { id: 'sale-end-of-day', folio: 'F-001', timestamp: new Date('2026-11-07T23:59:59.999').toISOString(), total: 10 },
+          { id: 'sale-next-day', folio: 'F-002', timestamp: new Date('2026-11-08T00:00:00.000').toISOString(), total: 20 },
           { id: 'sale-no-date', folio: 'F-003', timestamp: null, total: 30 }
         ]}
         source={{ mode: 'local', local: ['sales'] }}
