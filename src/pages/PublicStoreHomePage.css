@@ -926,37 +926,35 @@ body:has(.public-store-home) {
 }
 
 @media (max-width: 61.99rem) {
+  /* Keep a single compact header row on mobile and tablet.
+     The registration CTA remains available in the hero. */
   .public-store-home-nav__inner {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.55rem 0.7rem;
+    gap: 0.7rem;
     padding-top: 0.55rem;
-    padding-bottom: 0.6rem;
+    padding-bottom: 0.55rem;
   }
 
   .public-store-home-nav__links {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 0.75rem;
-    justify-content: start;
+    grid-column: 2;
+    justify-content: flex-end;
+    gap: 0;
   }
 
   .public-store-home-nav__links a {
-    min-height: 2.75rem;
-    padding: 0.35rem 0;
-    font-size: 0.8rem;
+    display: none;
   }
 
-  .public-store-home-nav__links a:nth-child(2n) {
-    justify-content: flex-start;
+  .public-store-home-nav__links a:last-child {
+    display: inline-flex;
+    min-height: 2.75rem;
+    padding: 0.4rem 0;
+    font-size: 0.82rem;
   }
 
   .public-store-home-nav__cta {
-    justify-self: end;
-    padding-right: 0.8rem;
-    padding-left: 0.8rem;
+    display: none;
   }
-
 }
 
 @media (max-width: 30rem) {
