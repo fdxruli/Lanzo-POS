@@ -53,7 +53,7 @@ body:has(.public-store-home) {
 .public-store-home-nav__inner {
   display: grid;
   min-height: 4.75rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
 }
@@ -106,7 +106,8 @@ body:has(.public-store-home) {
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: center;
+  grid-column: 2;
+  justify-content: flex-end;
   gap: clamp(0.5rem, 1.4vw, 1.2rem);
 }
 
@@ -127,12 +128,6 @@ body:has(.public-store-home) {
   color: var(--ui-text-brand);
   text-decoration: underline;
   text-underline-offset: 0.2rem;
-}
-
-.public-store-home-nav__cta {
-  min-height: 2.8rem;
-  padding: 0.6rem 0.85rem;
-  font-size: 0.84rem;
 }
 
 .public-store-home-hero,
@@ -952,9 +947,6 @@ body:has(.public-store-home) {
     font-size: 0.82rem;
   }
 
-  .public-store-home-nav__cta {
-    display: none;
-  }
 }
 
 @media (max-width: 30rem) {
