@@ -120,7 +120,7 @@ describe('salesCloudRepository projection callback transport', () => {
         ? {
           licenseKey: 'license-1',
           layawayId: 'layaway-1',
-          payment: { id: 'payment-2', amount: 25, method: 'cash' },
+          payment: { id: 'payment-2', amount: 300.25, method: 'cash' },
           cashSessionId: 'session-1',
           idempotencyKey: 'layaway-payment-key',
           actorHandle: { actorKey: 'actor-1' },
@@ -149,6 +149,15 @@ describe('salesCloudRepository projection callback transport', () => {
       project,
       request: expect.not.objectContaining({ cash_station_id: expect.anything() })
     }));
+    if (method === 'addCloudLayawayPayment') {
+      expect(mocks.executeNewFinancialIntent).toHaveBeenCalledWith(expect.objectContaining({
+        request: expect.objectContaining({
+          layaway_id: 'layaway-1',
+          payment: expect.objectContaining({ id: 'payment-2', amount: 300.25 }),
+          cash_session_id: 'session-1'
+        })
+      }));
+    }
     expect(result).toMatchObject({
       financialIntentId: 'intent-1',
       success: true,

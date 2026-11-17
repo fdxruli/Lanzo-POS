@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
@@ -311,13 +311,60 @@ describe('LayawayModal history and cancellation', () => {
     const button = await screen.findByRole('button', { name: /Registrar nuevo abono/i });
     expect(button).toBeEnabled();
     await user.click(button);
-    await user.type(screen.getByRole('spinbutton'), '5');
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+    await user.type(input, '5,25');
+    fireEvent.wheel(input, { deltaY: 120 });
+    expect(input).toHaveValue('5,25');
     await user.click(screen.getByRole('button', { name: 'Confirmar' }));
     await waitFor(() => expect(mocks.addPayment).toHaveBeenCalledWith(expect.objectContaining({
-      layawayId: 'layaway-active', amount: 5, expectedCashSessionId: 'cash-a'
+      layawayId: 'layaway-active', amount: 5.25, expectedCashSessionId: 'cash-a'
     })));
     expect(mocks.showMessageModal).not.toHaveBeenCalledWith(expect.stringContaining('zona horaria'),
       null, expect.anything());
+  });
+
+  it.each([false, true])('preserves $300.25 through scroll and confirmation (%s plan)', async (cloud) => {
+    mocks.cloud = cloud;
+    mocks.layaways = [layaway({ deadline: '2030-12-31', totalAmount: 1000, paidAmount: 200 })];
+    mocks.addPayment.mockResolvedValue({ isFullyPaid: false });
+    renderModal();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Registrar nuevo abono/i }));
+
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+    await user.type(input, '300');
+    fireEvent.wheel(input, { deltaY: 120 });
+    expect(input).toHaveValue('300');
+    expect(input).toHaveFocus();
+    await user.type(input, '.25');
+    expect(input).toHaveValue('300.25');
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(mocks.addPayment).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active', amount: 300.25, expectedCashSessionId: 'cash-a'
+    }));
+  });
+
+  it('blocks repeated Enter and Confirmar clicks while the first payment is pending', async () => {
+    mocks.layaways = [layaway({ deadline: '2030-12-31', totalAmount: 1000, paidAmount: 200 })];
+    mocks.addPayment.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal();
+    const user = userEvent.setup();
+    const startPayment = await screen.findByRole('button', { name: /Registrar nuevo abono/i });
+    await waitFor(() => expect(startPayment).toBeEnabled());
+    await user.click(startPayment);
+    const input = screen.getByRole('textbox');
+    await user.type(input, '300.25');
+    await user.keyboard('{Enter}{Enter}');
+    await user.dblClick(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(mocks.addPayment).toHaveBeenCalledTimes(1);
+    expect(mocks.addPayment).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-active', amount: 300.25, expectedCashSessionId: 'cash-a'
+    }));
   });
 
   it('blocks new Free installments without timezone and keeps cancellation accessible', async () => {
