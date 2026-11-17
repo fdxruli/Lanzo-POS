@@ -82,7 +82,8 @@ vi.mock('../../sync/syncMetaService', () => ({
 vi.mock('../productMapper', () => ({
   batchToCloudPayload: (value) => value,
   categoryToCloudPayload: (value) => value,
-  productToCloudPayload: (value) => value
+  productToCloudPayload: (value) => value,
+  normalizeSkuKey: (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, '')
 }));
 
 vi.mock('../productCloudRepository', () => ({

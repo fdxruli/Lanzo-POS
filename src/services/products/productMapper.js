@@ -1,6 +1,7 @@
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
 import { normalizeModifierGroups } from '../../utils/restaurantModifiers';
 import { getPharmacyClassification, pharmacyLegacyIndicators } from '../../utils/pharmacyClassification';
+import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../utils/businessType';
 
 const nowIso = () => new Date().toISOString();
 const text = (value) => String(value ?? '').trim();
@@ -58,6 +59,11 @@ const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => {
   };
   const supplier = text(product.supplier);
   if (supplier) metadata.primary_supplier = supplier;
+  // Cloud pulls need this discriminator to keep Apparel-only batch rules scoped
+  // when the product is opened on a different device.
+  if (normalizeBusinessType(product.rubroContext ?? product.rubro_context, null) === CANONICAL_BUSINESS_TYPES.APPAREL) {
+    metadata.rubro_context = CANONICAL_BUSINESS_TYPES.APPAREL;
+  }
   if (product.pharmacy && typeof product.pharmacy === 'object') metadata.pharmacy = product.pharmacy;
   return metadata;
 };
@@ -190,6 +196,10 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     wholesaleTiers: resolveComplexField(product, existing, 'wholesale_tiers', 'wholesaleTiers')
   });
   const metadata = { ...(existing?.metadata || {}), ...(product.metadata || {}) };
+  const cloudRubroContext = normalizeBusinessType(
+    product.rubro_context ?? product.rubroContext ?? metadata.rubro_context ?? existing?.rubroContext,
+    null
+  );
   const pharmacy = getPharmacyClassification({ metadata, pharmacy: product.pharmacy || existing?.pharmacy });
   const compatible = pharmacyLegacyIndicators({ ...product, metadata, pharmacy });
 
@@ -222,6 +232,9 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? true),
     productType: product.product_type || product.productType || 'sellable',
     saleType: product.sale_type || product.saleType || 'unit',
+    rubroContext: cloudRubroContext === CANONICAL_BUSINESS_TYPES.APPAREL
+      ? CANONICAL_BUSINESS_TYPES.APPAREL
+      : existing?.rubroContext,
     ...complexFields,
     prescriptionType: compatible.prescriptionType,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,

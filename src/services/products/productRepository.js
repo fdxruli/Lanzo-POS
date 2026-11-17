@@ -6,20 +6,24 @@ import { syncOutboxService } from '../sync/syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudProductsSyncEnabled,
+  SYNC_LIMITS,
   SYNC_ENTITY_TYPES,
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
 import {
   batchToCloudPayload,
   categoryToCloudPayload,
-  productToCloudPayload
+  productToCloudPayload,
+  normalizeSkuKey
 } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
+import { createApparelSkuCandidate } from './apparelSku';
 import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
+import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../utils/businessType';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { notifyProductsChanged } from './productEvents';
 import {
@@ -31,6 +35,179 @@ import {
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const nowIso = () => new Date().toISOString();
+const isApparelProduct = (product) => normalizeBusinessType(
+  product?.rubroContext ?? product?.rubro_context,
+  null
+) === CANONICAL_BUSINESS_TYPES.APPAREL;
+const hasApparelVariantAttributes = (batch) => Boolean(
+  String(batch?.attributes?.talla ?? '').trim()
+  && String(batch?.attributes?.color ?? '').trim()
+);
+const isApparelVariantBatch = (product, batch) => {
+  const rubro = normalizeBusinessType(product?.rubroContext ?? product?.rubro_context, null);
+  return rubro
+    ? rubro === CANONICAL_BUSINESS_TYPES.APPAREL
+    : hasApparelVariantAttributes(batch);
+};
+
+const loadCloudSkuRecords = async (licenseKey) => {
+  const records = [];
+  const pageSize = SYNC_LIMITS.MAX_PULL_LIMIT;
+
+  for (const entityType of ['products', 'batches']) {
+    let offset = 0;
+    while (true) {
+      const response = await productCloudRepository.pullCatalogSnapshot({
+        licenseKey,
+        entityType,
+        limit: pageSize,
+        offset,
+        includeDeleted: false,
+        force: true
+      });
+      if (!response || response.success === false) {
+        throw new Error(response?.message || 'APPAREL_SKU_CATALOG_READ_FAILED');
+      }
+
+      const page = entityType === 'products' ? response.products : response.batches;
+      if (!Array.isArray(page)) throw new Error('APPAREL_SKU_CATALOG_READ_INVALID');
+      records.push(...page.map((record) => ({ ...record, skuEntityType: entityType })));
+
+      if (response.has_more !== true && response.hasMore !== true) break;
+      if (page.length === 0) throw new Error('APPAREL_SKU_CATALOG_READ_INCOMPLETE');
+      offset += page.length;
+    }
+  }
+  return records;
+};
+
+const remoteSkuConflicts = (sku, records, excludedBatchId = null) => {
+  const skuKey = normalizeSkuKey(sku);
+  if (!skuKey) return false;
+  return records.some((record) => {
+    if (record.skuEntityType === 'batches' && excludedBatchId
+      && String(record.id) === String(excludedBatchId)) return false;
+    return normalizeSkuKey(record.sku_key || record.skuKey || record.sku_normalized || record.sku) === skuKey;
+  });
+};
+
+const findApparelSkuConflict = async (sku, { cloudRecords = null, excludeBatchId = null } = {}) => {
+  const localConflicts = await productLocalRepository.findSkuConflicts(sku, {
+    excludeBatchIds: excludeBatchId ? [excludeBatchId] : []
+  });
+  if (localConflicts.length) return true;
+  return Array.isArray(cloudRecords)
+    ? remoteSkuConflicts(sku, cloudRecords, excludeBatchId)
+    : false;
+};
+
+const apparelSkuError = (code, sku = '') => ({
+  success: false,
+  code,
+  field: 'quickVariants',
+  message: code === 'APPAREL_DUPLICATE_SKU'
+    ? `El SKU "${sku}" ya está asignado a otro producto o variante de este negocio.`
+    : 'No se pudo comprobar que el SKU sea único. No se guardó la variante. Inténtalo de nuevo.',
+  error: new Error(code === 'APPAREL_DUPLICATE_SKU'
+    ? `El SKU "${sku}" ya está asignado a otro producto o variante de este negocio.`
+    : 'No se pudo comprobar que el SKU sea único. No se guardó la variante. Inténtalo de nuevo.')
+});
+
+const prepareApparelVariantSkus = async (prepared, mode) => {
+  if (!isApparelProduct(prepared.product)) return { success: true };
+
+  const changes = [];
+  const hasVariantAttributes = (variant) => Boolean(
+    String(variant?.attributes?.talla ?? variant?.talla ?? '').trim()
+    && String(variant?.attributes?.color ?? variant?.color ?? '').trim()
+  );
+
+  if (prepared.editing) {
+    const delta = prepared.apparelVariantDelta || {};
+    for (const variant of delta.created || []) {
+      changes.push({ variant, auto: true, excludeBatchId: null });
+    }
+    for (const variant of delta.updated || []) {
+      const existingBatch = variant.existingBatch || {};
+      const previousSku = String(existingBatch.sku ?? existingBatch.sku_key ?? existingBatch.skuKey ?? '');
+      const nextSku = String(variant.sku ?? '');
+      if (previousSku === nextSku) continue;
+      changes.push({
+        variant,
+        auto: !normalizeSkuKey(nextSku),
+        excludeBatchId: existingBatch.id || variant.id
+      });
+    }
+  } else {
+    for (const variant of prepared.batches.filter(hasVariantAttributes)) {
+      changes.push({ variant, auto: true, excludeBatchId: null });
+    }
+  }
+
+  if (!changes.length) return { success: true };
+
+  let cloudRecords = null;
+  if (mode.cloudEnabled && isOnline()) {
+    try {
+      cloudRecords = await loadCloudSkuRecords(mode.licenseKey);
+    } catch (error) {
+      Logger.warn('[Products] No se pudo comprobar el catálogo Cloud para SKU Apparel:', error);
+      return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+    }
+  }
+
+  const productSkuKey = normalizeSkuKey(
+    prepared.product.skuNormalized || prepared.product.sku_normalized || prepared.product.skuKey || prepared.product.sku
+  );
+  const reserved = new Set(productSkuKey ? [productSkuKey] : []);
+  for (const change of changes) {
+    const variant = change.variant;
+    const requestedSku = String(variant.sku ?? '');
+    const hasRequestedSku = Boolean(requestedSku.trim());
+    let finalSku = hasRequestedSku ? requestedSku : '';
+
+    if (!hasRequestedSku && change.auto) {
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const candidate = createApparelSkuCandidate({
+          productName: prepared.product.name,
+          color: variant.attributes?.color ?? variant.color,
+          size: variant.attributes?.talla ?? variant.talla,
+          variantId: variant.id,
+          attempt
+        });
+        const key = normalizeSkuKey(candidate);
+        if (reserved.has(key)) continue;
+        try {
+          if (await findApparelSkuConflict(candidate, { cloudRecords, excludeBatchId: change.excludeBatchId })) continue;
+        } catch (error) {
+          Logger.warn('[Products] No se pudo comprobar SKU Apparel en Dexie:', error);
+          return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+        }
+        finalSku = candidate;
+        break;
+      }
+      if (!finalSku) return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+    }
+
+    if (!finalSku) continue;
+    const key = normalizeSkuKey(finalSku);
+    if (reserved.has(key)) return apparelSkuError('APPAREL_DUPLICATE_SKU', finalSku);
+    if (hasRequestedSku) {
+      try {
+        if (await findApparelSkuConflict(finalSku, { cloudRecords, excludeBatchId: change.excludeBatchId })) {
+          return apparelSkuError('APPAREL_DUPLICATE_SKU', finalSku);
+        }
+      } catch (error) {
+        Logger.warn('[Products] No se pudo comprobar SKU Apparel en Dexie:', error);
+        return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+      }
+    }
+    variant.sku = finalSku;
+    reserved.add(key);
+  }
+
+  return { success: true };
+};
 
 const stringifyCloudError = (error) => {
   const values = [
@@ -184,7 +361,7 @@ const saveApparelVariantDelta = async (prepared) => {
       price: variant.price,
       sku: variant.sku || null,
       attributes: { talla: variant.talla || '', color: variant.color || '' }
-    }, { existingBatch, expectedVersion: existingBatch.serverVersion });
+    }, { existingBatch, expectedVersion: existingBatch.serverVersion, apparelSkuAlreadyChecked: true });
     if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
     latestProduct = result?.response?.product || latestProduct;
     applied.updated.push({ variant, result });
@@ -204,7 +381,7 @@ const saveApparelVariantDelta = async (prepared) => {
       trackStock: true,
       createdAt: variant.createdAt || nowIso(),
       notes: 'Ingreso rapido'
-    }, { expectedVersion: null });
+    }, { expectedVersion: null, apparelSkuAlreadyChecked: true });
     if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
     latestProduct = result?.response?.product || latestProduct;
     applied.created.push({ variant, result });
@@ -412,6 +589,9 @@ export const productRepository = {
 
   async saveProduct(productData, { existingProduct = null, ...options } = {}) {
     const prepared = await productLocalRepository.prepareProduct(productData, existingProduct);
+    const mode = getMode();
+    const skuValidation = await prepareApparelVariantSkus(prepared, mode);
+    if (!skuValidation.success) return skuValidation;
     const pharmacy = getPharmacyClassification(prepared.product);
     if (!prepared.editing && pharmacy.recorded && pharmacy.kind === 'medicine' && (
       Number(prepared.product.stock || 0) > 0 ||
@@ -423,8 +603,6 @@ export const productRepository = {
         message: 'Guarda el medicamento con existencia cero y registra la recepción con comprobante.'
       };
     }
-    const mode = getMode();
-
     const operation = prepared.editing ? 'updated' : 'created';
     const productMutationPayload = {
       product: productToCloudPayload(prepared.product),
@@ -449,17 +627,19 @@ export const productRepository = {
         prepared,
         { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
       );
+      let appliedVariants = null;
       if (result?.success) {
         assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
         const variants = await saveApparelVariantDelta(prepared);
         if (!variants?.success) return variants;
+        appliedVariants = variants.appliedVariants;
         notifyProductMutation({
           productId: prepared.productId,
           operation,
           source: 'productRepository.saveProduct.local'
         });
       }
-      return result;
+      return appliedVariants ? { ...result, appliedVariants } : result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -490,7 +670,7 @@ export const productRepository = {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const variants = await saveApparelVariantDelta(prepared);
       if (!variants?.success) return variants;
-      return { ...result, pending: true, message };
+      return { ...result, pending: true, message, appliedVariants: variants.appliedVariants };
     };
 
     if (!isOnline()) {
@@ -535,9 +715,18 @@ export const productRepository = {
           message: variants.message || 'El producto se guardó, pero no se pudieron sincronizar todas sus variantes. Conservamos tus cambios para que puedas recuperarlos.'
         };
       }
-      return { success: true, productId: prepared.productId, inventoryValue: prepared.inventoryValue, response };
+      return {
+        success: true,
+        productId: prepared.productId,
+        inventoryValue: prepared.inventoryValue,
+        response,
+        appliedVariants: variants.appliedVariants
+      };
     } catch (error) {
       Logger.warn('[Products] Upsert product cloud fallo:', error);
+      if (isApparelProduct(prepared.product) && String(error?.code || '') === '23505') {
+        return apparelSkuError('APPAREL_DUPLICATE_SKU');
+      }
       if (isRetryableCloudError(error)) {
         return savePending('Producto guardado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.');
       }
@@ -734,8 +923,9 @@ export const productRepository = {
     }
   },
 
-  async saveBatch(batchData, { existingBatch = null, ...options } = {}) {
+  async saveBatch(batchData, { existingBatch = null, apparelSkuAlreadyChecked = false, ...options } = {}) {
     const parent = await productLocalRepository.getProductById(batchData.productId);
+    const currentBatch = existingBatch || (batchData.id ? await productLocalRepository.getBatchById(batchData.id) : null);
     const pharmacy = getPharmacyClassification(parent || {});
     if (pharmacy.recorded && pharmacy.kind === 'medicine') {
       const original = existingBatch || (batchData.id ? await productLocalRepository.getBatchById(batchData.id) : null);
@@ -748,6 +938,28 @@ export const productRepository = {
       }
     }
     const mode = getMode();
+    const skuKey = normalizeSkuKey(batchData.sku);
+    const skuChanged = skuKey !== normalizeSkuKey(currentBatch?.skuKey || currentBatch?.sku_key || currentBatch?.sku);
+    if (isApparelVariantBatch(parent, currentBatch || batchData) && skuKey && skuChanged && !apparelSkuAlreadyChecked) {
+      let cloudRecords = null;
+      if (mode.cloudEnabled && isOnline()) {
+        try {
+          cloudRecords = await loadCloudSkuRecords(mode.licenseKey);
+        } catch (error) {
+          Logger.warn('[Products] No se pudo comprobar el catálogo Cloud para SKU Apparel:', error);
+          return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+        }
+      }
+      try {
+        if (await findApparelSkuConflict(batchData.sku, {
+          cloudRecords,
+          excludeBatchId: currentBatch?.id || batchData.id
+        })) return apparelSkuError('APPAREL_DUPLICATE_SKU', batchData.sku);
+      } catch (error) {
+        Logger.warn('[Products] No se pudo comprobar SKU Apparel en Dexie:', error);
+        return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
+      }
+    }
     const actorHandle = captureProductInventoryMutation({ inventory: true });
 
     if (!mode.cloudEnabled) {
@@ -828,6 +1040,9 @@ export const productRepository = {
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
+      if (isApparelVariantBatch(parent, batchData) && String(error?.code || '') === '23505') {
+        return apparelSkuError('APPAREL_DUPLICATE_SKU', batchData.sku);
+      }
       if (isRetryableCloudError(error)) {
         return enqueuePending('Lote guardado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.');
       }

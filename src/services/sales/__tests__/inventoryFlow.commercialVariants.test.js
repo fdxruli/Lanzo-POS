@@ -4,6 +4,8 @@ import { collectBatchRestorations, restoreBatchStock } from '../batchRestoration
 import { buildProcessedItemsAndDeductions, loadRelevantBatches } from '../inventoryFlow';
 import { db, STORES } from '../../db/dexie';
 import { productsRepository } from '../../db/products';
+import { productLocalRepository } from '../../products/productLocalRepository';
+import { createApparelSkuCandidate } from '../../products/apparelSku';
 import { salesRepository } from '../../db/sales';
 import { cancelSaleCore } from '../cancelSaleCore';
 import { processSaleCore } from '../processSaleCore';
@@ -12,6 +14,7 @@ import { mapLocalCheckoutToCloudSale } from '../../salesCloud/salesCloudCashierM
 import { salesCloudCashierService } from '../../salesCloud/salesCloudCashierService';
 import { salesCloudShadowService } from '../../salesCloud/salesCloudShadowService';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
+import { openTenantRuntime } from '../../db/tenantRuntimeRouter';
 
 const roundCurrency = (value) => Number(Number(value || 0).toFixed(2));
 
@@ -423,5 +426,82 @@ describe('Apparel sale and cancellation through processSaleCore and Dexie', () =
       batchCatalog: new Map([['hammer', await db.table(STORES.PRODUCT_BATCHES).where('productId').equals('hammer').toArray()]])
     });
     expect(cloudPayload.items[0].batch_id).toBeNull();
+  });
+});
+
+describe('Apparel variant SKU persistence in Dexie', () => {
+  beforeEach(async () => {
+    await openTestTenantRuntime();
+  });
+
+  afterEach(async () => {
+    await closeTestTenantRuntime();
+  });
+
+  it('persists SKU on each batch, finds it after reopening Dexie, and preserves it through stock and price edits', async () => {
+    const productId = 'apparel-sku-persistence';
+    const variants = [
+      { id: 'batch-qa-s-black', talla: 'S', color: 'Negro', sku: '', stock: 3, cost: 10, price: 30 },
+      { id: 'batch-qa-m-black', talla: 'M', color: 'Negro', sku: '', stock: 5, cost: 10, price: 30 },
+      { id: 'batch-qa-l-blue', talla: 'L', color: 'Azul', sku: 'PLAYERA-L-AZUL-QA', stock: 4, cost: 10, price: 30 }
+    ].map((variant) => ({
+      ...variant,
+      sku: variant.sku || createApparelSkuCandidate({
+        productName: 'Playera QA SKU',
+        color: variant.color,
+        size: variant.talla,
+        variantId: variant.id
+      })
+    }));
+    const prepared = await productLocalRepository.prepareProduct({
+      id: productId,
+      name: 'Playera QA SKU',
+      rubroContext: 'apparel',
+      hasVariants: true,
+      productType: 'sellable',
+      price: 30,
+      cost: 10,
+      stock: 0,
+      trackStock: true,
+      batchManagement: { enabled: true, selectionStrategy: 'fifo' },
+      expirationMode: 'NONE',
+      quickVariants: variants
+    });
+
+    await productLocalRepository.savePreparedProductLocal(prepared, { syncStatus: 'local' });
+
+    let batches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(productId).toArray();
+    expect(batches).toHaveLength(3);
+    expect(new Set(batches.map((batch) => batch.id)).size).toBe(3);
+    expect(new Set(batches.map((batch) => batch.sku)).size).toBe(3);
+    expect(batches.find((batch) => batch.id === 'batch-qa-l-blue').sku).toBe('PLAYERA-L-AZUL-QA');
+
+    await closeTestTenantRuntime();
+    await openTenantRuntime({
+      aliases: ['license-key-sha256:test-tenant-runtime-a'],
+      primary: 'license-key-sha256:test-tenant-runtime-a',
+      authority: 'license_key_sha256'
+    });
+
+    for (const variant of variants) {
+      const found = await productsRepository.searchProductBySKU(variant.sku);
+      expect(found).toMatchObject({ id: productId, isVariant: true, batchId: variant.id, skuDetected: variant.sku });
+    }
+
+    const medium = batches.find((batch) => batch.id === 'batch-qa-m-black');
+    const small = batches.find((batch) => batch.id === 'batch-qa-s-black');
+    const large = batches.find((batch) => batch.id === 'batch-qa-l-blue');
+    await productsRepository.saveBatchAndSyncProduct({ ...medium, stock: 7 });
+    await productsRepository.saveBatchAndSyncProduct({ ...small, price: 35 });
+    await productsRepository.saveBatchAndSyncProduct({ ...large, cost: 12 });
+
+    batches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(productId).toArray();
+    expect(batches).toHaveLength(3);
+    expect(batches.find((batch) => batch.id === medium.id)).toMatchObject({ stock: 7, sku: medium.sku });
+    expect(batches.find((batch) => batch.id === small.id)).toMatchObject({ price: 35, sku: small.sku });
+    expect(batches.find((batch) => batch.id === large.id)).toMatchObject({ cost: 12, sku: large.sku });
+    expect(await productLocalRepository.findSkuConflicts(medium.sku)).toEqual([
+      expect.objectContaining({ entityType: 'batch', id: medium.id, productId })
+    ]);
   });
 });

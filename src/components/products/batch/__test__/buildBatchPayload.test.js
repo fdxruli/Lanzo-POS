@@ -48,6 +48,27 @@ describe('buildBatchPayload', () => {
     expect(payload).toMatchObject({ price: 220, updateGlobalPrice: false });
   });
 
+  it('conserva talla/color histórico de Apparel al editar con la función de variantes bloqueada', () => {
+    const payload = buildBatchPayload({
+      batchToEdit: {
+        id: 'batch-historic',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        attributes: { talla: 'M', color: 'Negro', pao: '12M' }
+      },
+      product: { id: 'prod-apparel', rubroContext: 'apparel', hasVariants: true },
+      values: { notes: '', expiryDate: '', attribute1: '', attribute2: '', location: '' },
+      parsed: { nStock: 5, nCost: 10, nPrice: 20 },
+      features: { hasVariants: false },
+      finalSku: 'PLAYERA-M-NEGRO-QA'
+    });
+
+    expect(payload).toMatchObject({
+      id: 'batch-historic',
+      sku: 'PLAYERA-M-NEGRO-QA',
+      attributes: { talla: 'M', color: 'Negro', pao: '12M' }
+    });
+  });
+
   it('crea payload con variantes para lote nuevo', () => {
     const payload = buildBatchPayload({
       batchToEdit: null,

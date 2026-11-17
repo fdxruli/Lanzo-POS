@@ -27,11 +27,12 @@ const responseBatch = (applied = {}) => (
 );
 
 const serverVersion = (batch = {}) => {
-  const value = batch.serverVersion ?? batch.server_version;
+  const value = batch?.serverVersion ?? batch?.server_version;
+  if (value === null || value === undefined || value === '') return null;
   return Number.isFinite(Number(value)) ? Number(value) : null;
 };
 
-/** Rebuilds the form baseline from cloud-confirmed apparel operations. */
+/** Rebuilds the form baseline from persisted Apparel variant operations. */
 export function rebaseApparelVariantSnapshot(originalBatches = [], nextVariants = [], applied = {}) {
   const rebased = new Map(
     originalBatches.filter((batch) => batch?.id).map((batch) => [batch.id, { ...batch }])
@@ -45,13 +46,19 @@ export function rebaseApparelVariantSnapshot(originalBatches = [], nextVariants 
   for (const operation of ['updated', 'created']) {
     for (const appliedVariant of applied[operation] || []) {
       const batch = responseBatch(appliedVariant);
-      const variant = nextById.get(batch?.id || appliedVariant.variant?.id) || appliedVariant.variant;
+      const variantId = batch?.id || appliedVariant.variant?.id;
+      const variant = {
+        ...(nextById.get(variantId) || {}),
+        ...(appliedVariant.variant || {})
+      };
       const version = serverVersion(batch);
-      if (!variant?.id || version === null) continue;
+      if (!variant?.id) continue;
+      const savedVariant = { ...variant };
+      delete savedVariant.existingBatch;
 
       rebased.set(variant.id, {
-        ...variant,
-        serverVersion: version,
+        ...savedVariant,
+        ...(version === null ? {} : { serverVersion: version }),
         createdAt: batch?.createdAt || batch?.created_at || variant.createdAt,
         talla: batch?.attributes?.talla ?? variant.talla ?? '',
         color: batch?.attributes?.color ?? variant.color ?? '',

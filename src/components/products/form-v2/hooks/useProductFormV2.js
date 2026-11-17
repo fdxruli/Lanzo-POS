@@ -229,7 +229,26 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       try {
         const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
         const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
+        if (result?.success === false && ['APPAREL_DUPLICATE_SKU', 'APPAREL_SKU_CHECK_FAILED', 'DUPLICATE_SKU'].includes(result.code)) {
+          setErrors((previous) => ({
+            ...previous,
+            fieldErrors: { ...previous.fieldErrors, quickVariants: result.message || 'No se pudo guardar el SKU de la variante.' }
+          }));
+          return false;
+        }
         if (result?.success === false && ['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result.code || result.error?.code)) {
+          const code = result.code || result.error?.code;
+          if (code === 'DUPLICATE_PRODUCT_KEY' && normalizedRubro === 'apparel' && values.hasVariants) {
+            setErrors((previous) => ({
+              ...previous,
+              fieldErrors: {
+                ...previous.fieldErrors,
+                ...(payload.barcode ? { barcode: 'Cloud detectó un código de barras o SKU duplicado.' } : {}),
+                quickVariants: result.message || 'Cloud detectó un SKU duplicado entre las variantes.'
+              }
+            }));
+            return false;
+          }
           const matches = await findLocalBarcodeConflicts(payload.barcode, productToEdit?.id || null).catch(() => []);
           setBarcodeMatches(matches);
           setCloudBarcodeConflict(matches.length === 0);
@@ -251,6 +270,18 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
           if (cloudVersion !== null && cloudVersion !== undefined) {
             setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
           }
+          return result;
+        }
+        if (result !== false && normalizedRubro === 'apparel' && effectiveProductToEdit?.id && result?.appliedVariants) {
+          const rebasedVariants = rebaseApparelVariantSnapshot(
+            originalApparelBatchesRef.current,
+            values.quickVariants,
+            result.appliedVariants
+          );
+          originalApparelBatchesRef.current = rebasedVariants.map((variant) => ({ ...variant }));
+          const nextValues = { ...values, quickVariants: rebasedVariants };
+          setValues(nextValues);
+          markClean(nextValues);
           return result;
         }
         if (result !== false && resetAfterSave && !productToEdit) {

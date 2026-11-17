@@ -80,11 +80,18 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
   if (values.hasVariants) {
     const active = values.quickVariants.filter((variant) => variant.talla || variant.color || variant.sku);
     const seen = new Set();
+    const seenSkus = new Set();
     active.forEach((variant) => {
       if (!variant.talla || !variant.color) fieldErrors.quickVariants = 'Cada variante debe tener talla y color.';
       const key = variantKey(variant);
       if (variant.talla && variant.color && seen.has(key)) fieldErrors.quickVariants = 'No puede haber combinaciones de variantes duplicadas.';
       seen.add(key);
+      if (activeRubro === CANONICAL_BUSINESS_TYPES.APPAREL) {
+        const skuValue = String(variant.sku || '').trim();
+        const skuKey = skuValue.toLowerCase().replace(/\s+/g, '');
+        if (skuKey && seenSkus.has(skuKey)) fieldErrors.quickVariants = `El SKU "${skuValue}" está repetido entre estas variantes.`;
+        if (skuKey) seenSkus.add(skuKey);
+      }
     });
   }
   if (values.restaurantType === 'dish' && values.recipe.length > 0 && !values.recipe.every((item) => (item?.ingredientId || item?.productId) && toNumber(item.quantity) > 0)) fieldErrors.recipe = 'La receta contiene ingredientes incompletos.';
