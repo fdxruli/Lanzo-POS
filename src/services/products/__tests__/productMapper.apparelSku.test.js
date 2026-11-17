@@ -5,6 +5,7 @@ import {
   cloudProductToLocal,
   productToCloudPayload
 } from '../productMapper';
+import { resolveProductRubroContext } from '../apparelSku';
 
 describe('Apparel variant SKU cloud mapping', () => {
   it('sends and restores the persisted variant SKU and its normalized uniqueness key', () => {
@@ -48,5 +49,19 @@ describe('Apparel variant SKU cloud mapping', () => {
     });
     expect(hardwarePayload.metadata).not.toHaveProperty('rubro_context');
     expect(cloudProductToLocal(hardwarePayload).rubroContext).toBeUndefined();
+
+    expect(cloudProductToLocal({
+      id: 'historic-apparel-product',
+      metadata: { rubroContext: 'Ropa' }
+    }).rubroContext).toBe('apparel');
+  });
+
+  it('resolves historical context from persisted metadata or a single-rubro business profile only', () => {
+    expect(resolveProductRubroContext({ metadata: { rubroContext: 'ropa' } }, ['food_service']))
+      .toBe('apparel');
+    expect(resolveProductRubroContext({}, ['apparel'])).toBe('apparel');
+    expect(resolveProductRubroContext({ attributes: { talla: 'M', color: 'Negro' } }, ['food_service']))
+      .toBe('food_service');
+    expect(resolveProductRubroContext({}, ['apparel', 'food_service'])).toBeNull();
   });
 });

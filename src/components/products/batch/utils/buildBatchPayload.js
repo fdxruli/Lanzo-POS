@@ -1,7 +1,8 @@
 import { generateID } from '../../../../services/utils';
 import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy';
 import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
-import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../../../utils/businessType';
+import { resolveProductRubroContext } from '../../../../services/products/apparelSku';
+import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 
 /**
  * @param {Object} params
@@ -22,16 +23,12 @@ export function buildBatchPayload({
   parsed,
   features,
   finalSku,
+  isApparelVariant = false,
   isProductPriceEditing = false
 }) {
   const isEditing = Boolean(batchToEdit);
-  const productRubro = normalizeBusinessType(product?.rubroContext ?? product?.rubro_context, null);
-  const hasApparelVariantAttributes = Boolean(
-    String(batchToEdit?.attributes?.talla ?? '').trim()
-    && String(batchToEdit?.attributes?.color ?? '').trim()
-  );
-  const isApparel = productRubro === CANONICAL_BUSINESS_TYPES.APPAREL
-    || (!productRubro && hasApparelVariantAttributes);
+  const isApparel = isApparelVariant
+    || resolveProductRubroContext(product) === CANONICAL_BUSINESS_TYPES.APPAREL;
   const { nStock, nCost, nPrice } = parsed;
   const isCommercialVariant = isCommercialVariantProduct(product);
   const currentProductPrice = Number(product?.price ?? 0);

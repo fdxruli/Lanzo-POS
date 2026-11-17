@@ -1,3 +1,5 @@
+import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType, normalizeBusinessTypes } from '../../utils/businessType';
+
 const toSkuPart = (value, maxLength) => String(value ?? '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -14,4 +16,22 @@ export const createApparelSkuCandidate = ({ productName, color, size, variantId,
   const attemptPart = Number(attempt) > 0 ? `-${Number(attempt).toString(36).toUpperCase()}` : '';
 
   return `${productPart}-${colorPart}-${sizePart}-${idPart}${attemptPart}`;
+};
+
+/**
+ * Resolve the product's persisted rubric, with a single-rubric business profile
+ * fallback for old catalogs that predate Cloud rubric metadata.
+ */
+export const resolveProductRubroContext = (product = {}, businessTypes = null) => {
+  const persistedRubro = product.rubroContext
+    ?? product.rubro_context
+    ?? product.metadata?.rubro_context
+    ?? product.metadata?.rubroContext;
+
+  if (String(persistedRubro ?? '').trim()) {
+    return normalizeBusinessType(persistedRubro, CANONICAL_BUSINESS_TYPES.OTRO);
+  }
+
+  const businessRubros = normalizeBusinessTypes(businessTypes, null).filter(Boolean);
+  return businessRubros.length === 1 ? businessRubros[0] : null;
 };

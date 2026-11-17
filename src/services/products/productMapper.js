@@ -61,7 +61,10 @@ const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => {
   if (supplier) metadata.primary_supplier = supplier;
   // Cloud pulls need this discriminator to keep Apparel-only batch rules scoped
   // when the product is opened on a different device.
-  if (normalizeBusinessType(product.rubroContext ?? product.rubro_context, null) === CANONICAL_BUSINESS_TYPES.APPAREL) {
+  if (normalizeBusinessType(
+    product.rubroContext ?? product.rubro_context ?? product.metadata?.rubro_context ?? product.metadata?.rubroContext,
+    null
+  ) === CANONICAL_BUSINESS_TYPES.APPAREL) {
     metadata.rubro_context = CANONICAL_BUSINESS_TYPES.APPAREL;
   }
   if (product.pharmacy && typeof product.pharmacy === 'object') metadata.pharmacy = product.pharmacy;
@@ -197,7 +200,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
   });
   const metadata = { ...(existing?.metadata || {}), ...(product.metadata || {}) };
   const cloudRubroContext = normalizeBusinessType(
-    product.rubro_context ?? product.rubroContext ?? metadata.rubro_context ?? existing?.rubroContext,
+    product.rubro_context ?? product.rubroContext ?? metadata.rubro_context ?? metadata.rubroContext ?? existing?.rubroContext,
     null
   );
   const pharmacy = getPharmacyClassification({ metadata, pharmacy: product.pharmacy || existing?.pharmacy });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../../../../store/useAppStore';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import { useCaja } from '../../../../hooks/useCaja';
 import { generateID, showConfirmModal, showMessageModal } from '../../../../services/utils';
@@ -7,8 +8,8 @@ import { validateBatchInput } from '../utils/validateBatchInput';
 import { productsRepository } from '../../../../services/db/products';
 import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
 import { productLocalRepository } from '../../../../services/products/productLocalRepository';
-import { createApparelSkuCandidate } from '../../../../services/products/apparelSku';
-import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../../../utils/businessType';
+import { createApparelSkuCandidate, resolveProductRubroContext } from '../../../../services/products/apparelSku';
+import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 
 const DEFAULT_FORM_VALUES = {
   cost: '',
@@ -54,16 +55,16 @@ export function useBatchFormController({
   const tallaInputRef = useRef(null);
   const { cajaActual } = useCaja();
   const adjustInventoryValue = useStatsStore((state) => state.adjustInventoryValue);
+  const businessTypes = useAppStore((state) => state.companyProfile?.business_type);
   const isEditing = Boolean(batchToEdit);
   const isCommercialVariant = isCommercialVariantProduct(product);
-  const productRubro = normalizeBusinessType(product?.rubroContext ?? product?.rubro_context, null);
+  const productRubro = resolveProductRubroContext(product, businessTypes);
   const hasApparelVariantAttributes = Boolean(
     String(batchToEdit?.attributes?.talla ?? '').trim()
     && String(batchToEdit?.attributes?.color ?? '').trim()
   );
   const isApparelVariant = productRubro === CANONICAL_BUSINESS_TYPES.APPAREL
-    ? (isCommercialVariant || hasApparelVariantAttributes)
-    : (!productRubro && (hasApparelVariantAttributes || (features?.hasVariants && isCommercialVariant)));
+    && (isCommercialVariant || hasApparelVariantAttributes || features?.hasVariants === true);
 
   const setFieldValue = useCallback((field, value) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
@@ -243,7 +244,7 @@ export function useBatchFormController({
 
     // 3. PREPARAR EL PAYLOAD
     let finalSku = null;
-    if (isApparelVariant && !userSku) {
+    if (isApparelVariant && !isEditing && !userSku) {
       for (let attempt = 0; attempt < 16; attempt += 1) {
         const candidate = generateAutoSku(batchId, attempt);
         try {
@@ -265,6 +266,8 @@ export function useBatchFormController({
       }
     } else if (userSku) {
       finalSku = userSku;
+    } else if (isEditing) {
+      finalSku = batchToEdit?.sku || null;
     } else if (features?.hasVariants) {
       finalSku = generateAutoSku(batchId);
     }
@@ -276,6 +279,7 @@ export function useBatchFormController({
       parsed: validation.parsed,
       features,
       finalSku,
+      isApparelVariant,
       isProductPriceEditing
     });
 
@@ -334,8 +338,8 @@ export function useBatchFormController({
     cajaActual,
     features,
     formValues,
-    generateAutoSku,
     isApparelVariant,
+    generateAutoSku,
     isEditing,
     isCommercialVariant,
     isProductPriceEditing,

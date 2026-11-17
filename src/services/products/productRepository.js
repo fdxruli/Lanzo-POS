@@ -18,12 +18,12 @@ import {
 } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
-import { createApparelSkuCandidate } from './apparelSku';
+import { createApparelSkuCandidate, resolveProductRubroContext } from './apparelSku';
 import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
-import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../utils/businessType';
+import { CANONICAL_BUSINESS_TYPES } from '../../utils/businessType';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { notifyProductsChanged } from './productEvents';
 import {
@@ -35,20 +35,15 @@ import {
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const nowIso = () => new Date().toISOString();
-const isApparelProduct = (product) => normalizeBusinessType(
-  product?.rubroContext ?? product?.rubro_context,
-  null
-) === CANONICAL_BUSINESS_TYPES.APPAREL;
+const isApparelProduct = (product, businessTypes) => resolveProductRubroContext(product, businessTypes)
+  === CANONICAL_BUSINESS_TYPES.APPAREL;
 const hasApparelVariantAttributes = (batch) => Boolean(
   String(batch?.attributes?.talla ?? '').trim()
   && String(batch?.attributes?.color ?? '').trim()
 );
-const isApparelVariantBatch = (product, batch) => {
-  const rubro = normalizeBusinessType(product?.rubroContext ?? product?.rubro_context, null);
-  return rubro
-    ? rubro === CANONICAL_BUSINESS_TYPES.APPAREL
-    : hasApparelVariantAttributes(batch);
-};
+const isApparelVariantBatch = (product, batch, businessTypes) => (
+  isApparelProduct(product, businessTypes) && hasApparelVariantAttributes(batch)
+);
 
 const loadCloudSkuRecords = async (licenseKey) => {
   const records = [];
@@ -114,7 +109,7 @@ const apparelSkuError = (code, sku = '') => ({
 });
 
 const prepareApparelVariantSkus = async (prepared, mode) => {
-  if (!isApparelProduct(prepared.product)) return { success: true };
+  if (!isApparelProduct(prepared.product, mode.businessTypes)) return { success: true };
 
   const changes = [];
   const hasVariantAttributes = (variant) => Boolean(
@@ -264,6 +259,7 @@ const getMode = () => {
     appStatus: state?.appStatus,
     licenseDetails,
     licenseKey,
+    businessTypes: state?.companyProfile?.business_type,
     cloudEnabled: Boolean(licenseKey && isCloudProductsSyncEnabled(licenseDetails))
   };
 };
@@ -724,7 +720,7 @@ export const productRepository = {
       };
     } catch (error) {
       Logger.warn('[Products] Upsert product cloud fallo:', error);
-      if (isApparelProduct(prepared.product) && String(error?.code || '') === '23505') {
+      if (isApparelProduct(prepared.product, mode.businessTypes) && String(error?.code || '') === '23505') {
         return apparelSkuError('APPAREL_DUPLICATE_SKU');
       }
       if (isRetryableCloudError(error)) {
@@ -940,7 +936,7 @@ export const productRepository = {
     const mode = getMode();
     const skuKey = normalizeSkuKey(batchData.sku);
     const skuChanged = skuKey !== normalizeSkuKey(currentBatch?.skuKey || currentBatch?.sku_key || currentBatch?.sku);
-    if (isApparelVariantBatch(parent, currentBatch || batchData) && skuKey && skuChanged && !apparelSkuAlreadyChecked) {
+    if (isApparelVariantBatch(parent, currentBatch || batchData, mode.businessTypes) && skuKey && skuChanged && !apparelSkuAlreadyChecked) {
       let cloudRecords = null;
       if (mode.cloudEnabled && isOnline()) {
         try {
@@ -1040,7 +1036,7 @@ export const productRepository = {
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
-      if (isApparelVariantBatch(parent, batchData) && String(error?.code || '') === '23505') {
+      if (isApparelVariantBatch(parent, batchData, mode.businessTypes) && String(error?.code || '') === '23505') {
         return apparelSkuError('APPAREL_DUPLICATE_SKU', batchData.sku);
       }
       if (isRetryableCloudError(error)) {
