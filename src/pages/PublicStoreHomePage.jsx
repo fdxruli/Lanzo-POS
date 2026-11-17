@@ -191,7 +191,7 @@ function PublicStoreHomePage() {
         <div className="public-store-home-nav__inner">
           <a className="public-store-home-brand" href="/" aria-label="LANZO Tienda Online, inicio">
             <span className="public-store-home-brand__mark" aria-hidden="true"><LogoMark /></span>
-            <span className="public-store-home-brand__copy"><strong>LANZO</strong><small>Tienda Online</small></span>
+            <span className="public-store-home-brand__copy"><strong>LANZO</strong><small>Controla hoy. Crece mañana.</small></span>
           </a>
 
           <nav className="public-store-home-nav__links" aria-label="Navegación principal">
@@ -201,9 +201,6 @@ function PublicStoreHomePage() {
             <a href="/conoce-lanzo">Conoce LANZO</a>
           </nav>
 
-          <a className="ui-button ui-button--primary public-store-home-nav__cta" href={buildAdminWelcomeUrl()}>
-            Crear mi tienda gratis
-          </a>
         </div>
       </header>
 
