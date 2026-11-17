@@ -161,7 +161,10 @@ export const calculateSessionTotals = (sales = []) => {
     const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
     if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
-    const method = sale.paymentMethod?.toLowerCase();
+    const method = String(sale.paymentMethod || sale.payment_method || '').toLowerCase();
+    // A delivered layaway is a commercial sale recognition, not another cash
+    // receipt. Its advances were already recorded when they were paid.
+    if (sale.isLayawayConversion === true || method === 'layaway_completed') continue;
     const paymentAmount = sale.paymentData?.amount;
     const explicitPayments = getExplicitSalePaymentRows(sale);
     if (explicitPayments !== null) {
@@ -328,7 +331,11 @@ export const normalizeSaleMovements = (sales = []) => {
     const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
     if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
-    const method = sale.paymentMethod?.toLowerCase();
+    const method = String(sale.paymentMethod || sale.payment_method || '').toLowerCase();
+    // A delivered layaway is a commercial sale recognition. Its advances were
+    // already recorded as cash movements when paid, so do not synthesize a
+    // cash, card, or transfer movement for the conversion itself.
+    if (sale.isLayawayConversion === true || method === 'layaway_completed') continue;
     const paymentAmount = sale.paymentData?.amount;
     const explicitPayments = getExplicitSalePaymentRows(sale);
     const isCash = method === 'efectivo' || method === 'cash' ||

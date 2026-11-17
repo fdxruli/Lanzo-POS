@@ -216,6 +216,30 @@ describe('loadCashSessionProjection', () => {
     ]);
   });
 
+  it('does not synthesize a card or transfer movement for a delivered layaway', () => {
+    const deliveredLayaways = [
+      {
+        id: 'sale-layaway-completed-method',
+        status: 'closed',
+        paymentMethod: 'layaway_completed',
+        total: '899'
+      },
+      {
+        id: 'sale-layaway-completed-legacy',
+        status: 'closed',
+        paymentMethod: 'efectivo',
+        total: '899',
+        isLayawayConversion: true
+      }
+    ];
+
+    expect(normalizeSaleMovements(deliveredLayaways)).toEqual([]);
+    expect(calculateSessionTotals(deliveredLayaways)).toEqual({
+      ventasContado: '0',
+      abonosFiado: '0'
+    });
+  });
+
   it('ignora movimientos null al construir una proyección real', async () => {
     const movementTable = testDb.table('movimientos_caja');
     vi.spyOn(movementTable, 'where').mockReturnValue({
