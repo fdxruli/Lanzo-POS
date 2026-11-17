@@ -30,6 +30,7 @@ import './ProductsPage.css';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
+import { useActorAccess } from '../services/auth/useActorAccess';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
 const PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX = 'lanzo:product-image-migration:';
@@ -81,7 +82,10 @@ export default function ProductsPage() {
     const companyProfile = useAppStore(state => state.companyProfile);
     const licenseDetails = useAppStore(state => state.licenseDetails);
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
-    const canAccess = useAppStore(state => state.canAccess);
+    // Subscribe to the actor runtime so a legitimate session restore/regrant
+    // refreshes both the visible tab and its click-time permission check.
+    const actorAccess = useActorAccess();
+    const canAccess = actorAccess.canAccessPermission;
     const canManageProducts = canAccess('products');
     const canManageInventory = canAccess('inventory');
     const canDeleteProducts = canManageProducts && canManageInventory;

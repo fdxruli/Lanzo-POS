@@ -543,7 +543,7 @@ export default function DashboardPage() {
         actorIdentity: salesActorIdentity
       });
     } catch {
-      showMessageModal('No tienes permiso vigente para cancelar o reembolsar ventas.', null, { type: 'error' });
+      showMessageModal('No se pudo confirmar tu sesión y permiso actuales. La venta no se canceló; espera a que termine la verificación y vuelve a intentarlo.', null, { type: 'warning' });
     }
   };
 

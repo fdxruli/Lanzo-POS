@@ -8,10 +8,13 @@ import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
+import { ACTOR_RUNTIME_STATUS } from '../../services/auth/actorRuntimeController';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import './NoPermission.css';
 
 export default function NoPermission() {
   const access = useActorAccess();
+  const runtimeSnapshot = useActorRuntimeSnapshot();
   const settingsAccess = useSettingsAccess();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const { pathname } = useLocation();
@@ -26,15 +29,23 @@ export default function NoPermission() {
   const destination = getAccessDeniedDestination(access, pathname)
     || (alternative && { to: alternative[1], label: alternative[2] })
     || { to: '/acerca-de', label: 'Ir a Acerca de' };
+  const isRestoringSession = [
+    ACTOR_RUNTIME_STATUS.AUTHENTICATING,
+    ACTOR_RUNTIME_STATUS.HANDOFF_CHECK
+  ].includes(runtimeSnapshot.status);
 
   return (
-    <section className="permission-blocker" role="alert" aria-labelledby="permission-blocker-title">
+    <section className="permission-blocker" role={isRestoringSession ? 'status' : 'alert'} aria-labelledby="permission-blocker-title">
       <div className="permission-blocker__card">
         <div className="permission-blocker__icon" aria-hidden="true">
           <ShieldX size={28} />
         </div>
-        <h2 id="permission-blocker-title">No tienes acceso a esta sección</h2>
-        <p>{access.isAuthorizedActor
+        <h2 id="permission-blocker-title">
+          {isRestoringSession ? 'Verificando acceso a tu sesión' : 'No tienes acceso a esta sección'}
+        </h2>
+        <p>{isRestoringSession
+          ? 'Estamos confirmando tu sesión y sus permisos. Esta sección seguirá protegida hasta terminar la verificación.'
+          : access.isAuthorizedActor
           ? 'Tu perfil no tiene permiso para utilizar este módulo. Si necesitas acceso, solicítalo al administrador del negocio.'
           : 'No pudimos confirmar el acceso de tu sesión. Vuelve a identificarte para utilizar los módulos del negocio.'}</p>
         <Link to={destination.to} replace className="btn btn-primary permission-blocker__action">

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const shared = vi.hoisted(() => ({
   app: null,
+  actorAccess: null,
   catalog: null,
   stats: null,
   repository: {
@@ -20,6 +21,9 @@ const shared = vi.hoisted(() => ({
 
 vi.mock('../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(shared.app)
+}));
+vi.mock('../../services/auth/useActorAccess', () => ({
+  useActorAccess: () => shared.actorAccess
 }));
 vi.mock('../../store/useInventoryCatalogStore', () => ({
   useInventoryCatalogStore: (selector) => selector(shared.catalog)
@@ -123,6 +127,9 @@ describe('ProductsPage category save flow', () => {
       licenseDetails: null,
       canAccess: vi.fn(() => true)
     };
+    shared.actorAccess = {
+      canAccessPermission: (permission) => shared.app?.canAccess(permission) ?? false
+    };
     shared.catalog = {
       categories: [makeCategory()],
       menu: [],
@@ -141,6 +148,19 @@ describe('ProductsPage category save flow', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('opens Categories from the tab using the current actor permission without a false denial', async () => {
+    renderPage('/productos');
+
+    fireEvent.click(await screen.findByRole('button', { name: /categorias/i }));
+
+    await screen.findByRole('heading', { name: 'Categorías' });
+    expect(shared.showMessageModal).not.toHaveBeenCalledWith(
+      'No tienes permiso para gestionar productos.',
+      expect.anything(),
+      expect.anything()
+    );
+  });
 
   it('does not assign a delayed category from product A to product B', async () => {
     const pendingSave = createDeferred();

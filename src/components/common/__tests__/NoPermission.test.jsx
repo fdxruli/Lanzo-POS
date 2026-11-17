@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: (selector) => selector({}) }));
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import NoPermission from '../NoPermission';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  actorRuntimeController.lock('test_cleanup');
+});
 
 describe('NoPermission', () => {
   it('uses actor-neutral copy when runtime authority is unavailable', () => {
@@ -21,5 +25,22 @@ describe('NoPermission', () => {
       .toBeInTheDocument();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/acerca-de');
     expect(screen.queryByText(/tu usuario staff/i)).not.toBeInTheDocument();
+  });
+
+  it('shows session restoration progress while continuing to block protected content', () => {
+    act(() => {
+      actorRuntimeController.lock('test_restore');
+      actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+    });
+
+    render(
+      <MemoryRouter>
+        <NoPermission />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Verificando acceso a tu sesión/);
+    expect(screen.getByText(/seguirá protegida hasta terminar la verificación/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
