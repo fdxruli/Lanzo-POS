@@ -31,42 +31,14 @@ import {
 } from '../../services/support/supportContact';
 import { getSafeIncidentCode, INCIDENT_CATEGORY } from '../../services/diagnostics/incidentDiagnostics';
 import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
+import { isAdminNotFoundPath } from '../../router/adminRoutePaths';
 
 let initialPreparationPromise = null;
 let readyRuntimePromise = null;
 let readyRuntimeActivated = false;
 
-const ADMIN_DEBUG_CONSOLE_VALID_PATHS = Object.freeze([
-  '/',
-  '/renovacion-urgente',
-  '/caja',
-  '/pedidos',
-  '/pedidos-online',
-  '/productos',
-  '/clientes',
-  '/ventas',
-  '/agentes-ia',
-  '/portal-online',
-  '/configuracion',
-  '/acerca-de',
-]);
-
-const normalizeAdminDebugPath = (pathname) => {
-  const rawPath = typeof pathname === 'string' ? pathname : '/';
-  let decodedPath = rawPath.split(/[?#]/, 1)[0] || '/';
-
-  try {
-    decodedPath = decodeURIComponent(decodedPath);
-  } catch {
-    // Treat malformed encoded paths as unmatched.
-  }
-
-  return decodedPath.replace(/\/+$/, '').toLowerCase() || '/';
-};
-
-// Keep this list in sync with ADMIN_VALID_ROUTE_PATHS in adminRoutePaths.js.
 export const isAdminNotFoundPathForDebugConsole = (pathname) => (
-  !ADMIN_DEBUG_CONSOLE_VALID_PATHS.includes(normalizeAdminDebugPath(pathname))
+  isAdminNotFoundPath(pathname)
 );
 
 

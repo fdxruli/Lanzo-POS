@@ -3,7 +3,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ADMIN_ROUTE_ALIASES, AdminRouteAlias } from '../adminRouteAliases';
+import { ADMIN_ROUTE_ALIASES } from '../adminRoutePaths';
+import { AdminRouteAlias } from '../adminRouteAliases';
 import { isAdminNotFoundPath } from '../adminRoutePaths';
 
 afterEach(cleanup);
