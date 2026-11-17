@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,6 +76,9 @@ describe('public store routing', () => {
     expect(screen.getByRole('heading', {
       name: 'Tu negocio también merece un lugar en internet.'
     })).toBeInTheDocument();
+    const header = screen.getByRole('banner');
+    expect(within(header).getByText('Controla hoy. Crece mañana.')).toBeInTheDocument();
+    expect(within(header).queryByRole('link', { name: 'Crear mi tienda gratis' })).not.toBeInTheDocument();
     const acquisitionLinks = screen.getAllByRole('link', { name: 'Crear mi tienda gratis' });
     expect(acquisitionLinks.length).toBeGreaterThan(1);
     acquisitionLinks.forEach((link) => {
