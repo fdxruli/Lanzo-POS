@@ -15,7 +15,7 @@ const values = {
   updateGlobalPrice: false, manufacturerBatchId: '', pao: ''
 };
 
-const renderModal = (product, controller = {}) => {
+const renderModal = (product, controller = {}, batchToEdit = null) => {
   const setFieldValue = vi.fn();
   const startProductPriceEditing = vi.fn();
   const cancelProductPriceEditing = vi.fn();
@@ -31,7 +31,7 @@ const renderModal = (product, controller = {}) => {
     handleProcessSave: vi.fn(),
     ...controller
   });
-  render(<BatchFormModal product={product} batchToEdit={null} onClose={() => {}} onSave={() => {}} features={{ hasVariants: product.hasVariants === true }} menu={[]} rubroGroup="retail" />);
+  render(<BatchFormModal product={product} batchToEdit={batchToEdit} onClose={() => {}} onSave={() => {}} features={{ hasVariants: product.hasVariants === true }} menu={[]} rubroGroup="retail" />);
   return { setFieldValue, startProductPriceEditing, cancelProductPriceEditing };
 };
 
@@ -68,5 +68,32 @@ describe('BatchFormModal commercial pricing UX', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: /Precio de Venta$/i }), { target: { value: '220' } });
     expect(screen.getByLabelText(/Costo unitario/i)).toBeInTheDocument();
     expect(setFieldValue).toHaveBeenCalledWith('price', '220');
+  });
+
+  it('scopes the safe-area modal treatment and accessible title to Apparel variants', () => {
+    renderModal({ id: 'shirt-1', name: 'Playera', price: 200, hasVariants: true, rubroContext: 'apparel' });
+
+    const dialog = screen.getByRole('dialog', { name: 'Registrar Variante' });
+    expect(dialog).toHaveClass('batch-form-modal-overlay--apparel');
+    expect(dialog.querySelector('.batch-modal-wrapper')).toHaveClass('batch-modal-wrapper--apparel');
+  });
+
+  it('keeps the shared lot dialog presentation for other rubros', () => {
+    renderModal({ id: 'grocery-1', name: 'Arroz', price: 30, batchManagement: { enabled: true } });
+
+    const dialog = screen.getByRole('dialog', { name: 'Registrar lote' });
+    expect(dialog).not.toHaveClass('batch-form-modal-overlay--apparel');
+    expect(dialog.querySelector('.batch-modal-wrapper')).not.toHaveClass('batch-modal-wrapper--apparel');
+  });
+
+  it('uses the Apparel edit title while preserving the existing edit action', () => {
+    renderModal(
+      { id: 'shirt-1', name: 'Playera', price: 200, hasVariants: true, rubroContext: 'apparel' },
+      { isEditing: true },
+      { id: 'variant-1' }
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Editar Variante' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Actualizar/i })).toBeInTheDocument();
   });
 });

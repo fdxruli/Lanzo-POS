@@ -454,3 +454,133 @@
   border-left: 3px solid var(--ui-color-primary);
   background: var(--ui-bg-info-soft);
 }
+
+/* Apparel-only sizing: keep the dialog inside the overlay's safe-area box. */
+.ui-modal.batch-form-modal-overlay--apparel {
+  --apparel-modal-inset-top: max(var(--ui-space-md, 24px), var(--safe-area-top, 0px));
+  --apparel-modal-inset-right: max(var(--ui-space-md, 24px), var(--safe-area-right, 0px));
+  --apparel-modal-inset-bottom: max(var(--ui-space-md, 24px), var(--safe-area-bottom, 0px));
+  --apparel-modal-inset-left: max(var(--ui-space-md, 24px), var(--safe-area-left, 0px));
+  align-items: center;
+  padding: var(--apparel-modal-inset-top) var(--apparel-modal-inset-right)
+    var(--apparel-modal-inset-bottom) var(--apparel-modal-inset-left);
+}
+
+.batch-form-modal-overlay--apparel .batch-modal-wrapper--apparel {
+  min-height: 0;
+  max-height: calc(100dvh - var(--apparel-modal-inset-top) - var(--apparel-modal-inset-bottom));
+}
+
+.batch-form-modal-overlay--apparel .batch-modal-header-info {
+  min-width: 0;
+}
+
+.batch-form-modal-overlay--apparel .batch-modal-header h2 {
+  min-width: 0;
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+.batch-form-modal-overlay--apparel .btn-close-modal {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.batch-form-modal-overlay--apparel .batch-form-scroll-area {
+  overscroll-behavior: contain;
+  scroll-padding-block: 12px;
+}
+
+.batch-form-modal-overlay--apparel .batch-form-scroll-area input:not([type="checkbox"]),
+.batch-form-modal-overlay--apparel .batch-form-scroll-area select,
+.batch-form-modal-overlay--apparel .batch-form-scroll-area textarea {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.batch-form-modal-overlay--apparel .batch-footer-fixed {
+  padding-bottom: 16px;
+}
+
+.batch-form-modal-overlay--apparel .batch-footer-actions .btn {
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .ui-modal.batch-form-modal-overlay--apparel {
+    --apparel-modal-inset-top: max(var(--ui-space-sm, 12px), var(--safe-area-top, 0px));
+    --apparel-modal-inset-right: max(var(--ui-space-sm, 12px), var(--safe-area-right, 0px));
+    --apparel-modal-inset-bottom: max(var(--ui-space-sm, 12px), var(--safe-area-bottom, 0px));
+    --apparel-modal-inset-left: max(var(--ui-space-sm, 12px), var(--safe-area-left, 0px));
+  }
+
+  .batch-form-modal-overlay--apparel .batch-modal-wrapper--apparel {
+    width: min(100%, calc(100vw - 1rem));
+  }
+
+  .batch-form-modal-overlay--apparel .batch-modal-header {
+    padding: 12px 16px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-form-scroll-area {
+    padding: 16px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-footer-fixed {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-height: 520px) {
+  .batch-form-modal-overlay--apparel .batch-modal-header {
+    padding-block: 8px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-modal-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-modal-header h2 svg {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-modal-subtitle {
+    font-size: .8rem;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-form-scroll-area {
+    padding-block: 10px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-form-grid {
+    gap: 12px;
+  }
+
+  .batch-form-modal-overlay--apparel .price-cost-group {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-footer-fixed {
+    padding-block: 8px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-footer-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .batch-form-modal-overlay--apparel .batch-footer-actions .btn {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 95px;
+    padding: 7px 8px;
+    font-size: .8rem;
+    white-space: normal;
+  }
+}
