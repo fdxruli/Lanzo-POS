@@ -1,18 +1,17 @@
 import { useEffect } from 'react';
 import {
   ArrowRight,
-  BarChart3,
   Boxes,
   Check,
-  CircleCheck,
   Cloud,
+  ExternalLink,
+  MessageCircle,
   MonitorSmartphone,
   PackageCheck,
   Search,
   ShoppingBag,
-  Smartphone,
   Store,
-  Users,
+  Wifi,
 } from 'lucide-react';
 import LogoMark from '../components/common/LogoMark';
 import {
@@ -21,40 +20,77 @@ import {
 } from '../config/publicOrigins';
 import './PublicStoreHomePage.css';
 
+const STORE_HOME_TITLE = 'Tienda Online LANZO | Publica tus productos gratis';
+const STORE_HOME_DESCRIPTION = 'Crea gratis tu tienda online con LANZO Free. Publica hasta 10 productos en internet, comparte tu catálogo y recibe pedidos. Tu catálogo interno del POS no cambia.';
+
+const MERCHANT_BENEFITS = [
+  ['Elige qué mostrar', 'Publica una selección de productos con sus precios e información disponible.', Boxes],
+  ['Comparte tu enlace', 'Cada negocio tiene su propia dirección para compartir con sus clientes.', ExternalLink],
+  ['Revisa los pedidos', 'Gestiona los pedidos enviados desde la tienda en la bandeja disponible en tu licencia.', PackageCheck],
+  ['Crece a tu ritmo', 'Free conserva las herramientas esenciales. Nube suma capacidades conectadas cuando las necesitas.', Cloud],
+];
+
+const CUSTOMER_BENEFITS = [
+  ['Busca y explora', 'Encuentra productos y navega por las categorías disponibles.', Search],
+  ['Consulta detalles', 'Revisa precios e información que el negocio haya publicado.', Store],
+  ['Arma su pedido', 'Agrega artículos al carrito y completa la información solicitada.', ShoppingBag],
+  ['Envía una solicitud', 'Cuando la tienda acepta pedidos, el cliente puede enviarlo al negocio.', MessageCircle],
+];
+
+const STEPS = [
+  ['Comienza con LANZO', 'Crea tu licencia gratuita y configura la información básica de tu negocio.'],
+  ['Prepara tu tienda', 'Elige los productos que quieres publicar, añade su información y configura las opciones disponibles.'],
+  ['Comparte tu enlace', 'Publica la tienda cuando esté lista y comparte su enlace con tus clientes.'],
+];
+
 const FREE_FEATURES = [
-  'Tienda online incluida',
-  'Hasta 10 productos publicados',
-  'Catálogo para compartir con tus clientes',
-  'Recepción de pedidos desde la tienda',
+  'Tienda online incluida en LANZO Free',
+  'Hasta 10 productos publicados en internet',
+  'Catálogo público para compartir',
+  'Bandeja para revisar los pedidos recibidos',
 ];
 
 const PRO_FEATURES = [
-  'Publicación de productos sin límite',
-  'Lanzo Nube y operación conectada',
-  'Múltiples dispositivos según tu licencia',
-  'Capacidades avanzadas de ecommerce y operación',
+  'Publicación sin límite numérico definido por la licencia',
+  'Catálogo conectado y opciones de existencias según licencia',
+  'Actualizaciones en tiempo real de pedidos cuando estén habilitadas',
+  'Colaboración y operación en dispositivos según el plan',
 ];
 
-const CUSTOMER_FEATURES = [
-  ['Busca lo que necesita', 'Búsqueda y categorías ayudan a recorrer el catálogo.', Search],
-  ['Arma su pedido', 'Productos, cantidades y carrito mantienen el pedido organizado.', ShoppingBag],
-  ['Confirma desde la tienda', 'El checkout valida el pedido y las opciones disponibles del negocio.', CircleCheck],
+const FAQS = [
+  {
+    question: '¿Puedo crear una tienda online sin pagar?',
+    answer: 'Sí. LANZO Free incluye una tienda online y es gratuito para siempre; no es una prueba temporal de PRO. Puedes publicar hasta 10 productos en internet.',
+  },
+  {
+    question: '¿Qué significa el límite de diez productos?',
+    answer: 'Limita los productos publicados en tu tienda online con Free. No limita la cantidad de productos que puedes guardar en el catálogo interno de tu punto de venta.',
+  },
+  {
+    question: '¿Necesito internet para utilizar la tienda?',
+    answer: 'Sí. Publicar la tienda, consultar el catálogo público y enviar pedidos requiere internet y que la tienda esté configurada. Los módulos locales compatibles del punto de venta pueden seguir operando en el dispositivo sin conexión.',
+  },
+  {
+    question: '¿Cómo recibo los pedidos de mis clientes?',
+    answer: 'En Free, la tienda registra el pedido y puedes revisarlo en la bandeja incluida. Si WhatsApp está configurado, el cliente también puede abrirlo para enviar el resumen. PRO/Nube puede actualizar la bandeja en tiempo real cuando esa función está habilitada. El negocio confirma el pedido; enviarlo no significa que esté pagado.',
+  },
+  {
+    question: '¿Mis clientes pueden pagar directamente en la página?',
+    answer: 'No. El checkout registra una solicitud de pedido, pero no procesa un cobro en línea. El negocio confirma los detalles y acuerda el pago con el cliente.',
+  },
+  {
+    question: '¿Necesito contratar PRO?',
+    answer: 'No. Puedes seguir utilizando LANZO Free sin contratar PRO. Nube es un servicio opcional para quienes necesitan más capacidad y herramientas conectadas.',
+  },
 ];
 
-const INTEGRATION_ITEMS = [
-  ['Catálogo', 'Publica desde Lanzo los productos que quieres mostrar en tu tienda.', Boxes],
-  ['Pedidos', 'Los pedidos creados en la tienda entran al flujo de ecommerce de Lanzo.', PackageCheck],
-  ['Operación', 'Punto de venta, inventario, clientes y reportes viven dentro del mismo ecosistema.', BarChart3],
-  ['Lanzo Nube', 'Las capacidades cloud, de equipo y sincronización dependen del plan y la configuración.', Cloud],
-];
-
-const useStoreHomeMetadata = () => {
+function useStoreHomeMetadata() {
   useEffect(() => {
     const previousTitle = document.title;
     const restore = [];
 
     const setMeta = (attribute, name, content) => {
-      const selector = `meta[${attribute}="${name}"]`;
+      const selector = 'meta[' + attribute + '="' + name + '"]';
       const existing = document.head.querySelector(selector);
       const element = existing || document.createElement('meta');
       const previousContent = existing?.getAttribute('content') ?? null;
@@ -94,59 +130,46 @@ const useStoreHomeMetadata = () => {
       else existingCanonical.setAttribute('href', previousCanonicalHref);
     });
 
-    document.title = 'Lanzo Tienda Online | Vende por internet con Lanzo';
-    setMeta(
-      'name',
-      'description',
-      'Crea tu tienda en línea con Lanzo, publica tus productos y recibe pedidos conectados con la operación de tu negocio.'
-    );
+    document.title = STORE_HOME_TITLE;
+    setMeta('name', 'description', STORE_HOME_DESCRIPTION);
     setMeta('property', 'og:type', 'website');
-    setMeta('property', 'og:title', 'Lanzo Tienda Online | Vende por internet con Lanzo');
-    setMeta(
-      'property',
-      'og:description',
-      'Publica tus productos, comparte tu tienda y recibe pedidos desde el mismo ecosistema de Lanzo.'
-    );
+    setMeta('property', 'og:title', STORE_HOME_TITLE);
+    setMeta('property', 'og:description', STORE_HOME_DESCRIPTION);
     setMeta('property', 'og:url', canonicalUrl);
     setMeta('name', 'twitter:card', 'summary');
-    setMeta('name', 'twitter:title', 'Lanzo Tienda Online | Vende por internet con Lanzo');
-    setMeta(
-      'name',
-      'twitter:description',
-      'Una tienda en línea lista para compartir y conectada con la operación de tu negocio.'
-    );
+    setMeta('name', 'twitter:title', STORE_HOME_TITLE);
+    setMeta('name', 'twitter:description', STORE_HOME_DESCRIPTION);
 
     return () => {
       document.title = previousTitle;
       restore.reverse().forEach((restoreMetadata) => restoreMetadata());
     };
   }, []);
-};
+}
 
 function ProductPreviewCard({ name, price, badge }) {
   return (
     <article className="public-store-home-product">
-      <div className="public-store-home-product__image" aria-hidden="true">
+      <div className="public-store-home-product__image">
         <span>{badge}</span>
       </div>
       <div className="public-store-home-product__content">
         <p>{name}</p>
         <strong>{price}</strong>
-        <span>Agregar</span>
       </div>
     </article>
   );
 }
 
-function PlanCard({ label, title, description, features, featured = false }) {
+function PlanCard({ label, title, subtitle, description, features }) {
   return (
-    <article className={`public-store-home-plan${featured ? ' public-store-home-plan--featured' : ''}`}>
+    <article className="public-store-home-plan">
       <div className="public-store-home-plan__top">
         <span>{label}</span>
-        {featured ? <small>Para crecer</small> : null}
+        <small>{subtitle}</small>
       </div>
       <h3>{title}</h3>
-      <p>{description}</p>
+      <p className="public-store-home-plan__description">{description}</p>
       <ul>
         {features.map((feature) => (
           <li key={feature}>
@@ -155,12 +178,6 @@ function PlanCard({ label, title, description, features, featured = false }) {
           </li>
         ))}
       </ul>
-      <a
-        className={`ui-button ${featured ? 'ui-button--secondary' : 'ui-button--primary'}`}
-        href={buildAdminWelcomeUrl()}
-      >
-        Crear mi tienda con Lanzo <ArrowRight aria-hidden="true" size={17} />
-      </a>
     </article>
   );
 }
@@ -169,200 +186,225 @@ function PublicStoreHomePage() {
   useStoreHomeMetadata();
 
   return (
-    <main className="public-store-home">
+    <div className="public-store-home">
       <header className="public-store-home-nav">
-        <a className="public-store-home-brand" href="/" aria-label="Lanzo Tienda Online, inicio">
-          <span className="public-store-home-brand__mark" aria-hidden="true"><LogoMark /></span>
-          <span><strong>Lanzo</strong><small>Tienda Online</small></span>
-        </a>
+        <div className="public-store-home-nav__inner">
+          <a className="public-store-home-brand" href="/" aria-label="LANZO Tienda Online, inicio">
+            <span className="public-store-home-brand__mark" aria-hidden="true"><LogoMark /></span>
+            <span className="public-store-home-brand__copy"><strong>LANZO</strong><small>Tienda Online</small></span>
+          </a>
 
-        <nav className="public-store-home-nav__links" aria-label="Navegación principal">
-          <a href="#como-funciona">Cómo funciona</a>
-          <a href="#ventajas">Ventajas</a>
-          <a href="#planes">FREE y PRO</a>
-        </nav>
+          <nav className="public-store-home-nav__links" aria-label="Navegación principal">
+            <a href="#como-funciona">Cómo funciona</a>
+            <a href="#beneficios">Beneficios</a>
+            <a href="#planes">Free y PRO</a>
+            <a href="/conoce-lanzo">Conoce LANZO</a>
+          </nav>
 
-        <a className="ui-button ui-button--primary public-store-home-nav__cta" href={buildAdminWelcomeUrl()}>
-          Crear mi tienda
-        </a>
+          <a className="ui-button ui-button--primary public-store-home-nav__cta" href={buildAdminWelcomeUrl()}>
+            Crear mi tienda gratis
+          </a>
+        </div>
       </header>
 
-      <section className="public-store-home-hero" aria-labelledby="public-store-home-title">
-        <div className="public-store-home-hero__content">
-          <p className="public-store-home-eyebrow"><Store aria-hidden="true" size={16} /> Lanzo Tienda Online</p>
-          <h1 id="public-store-home-title">Una tienda en línea lista para compartir, conectada a tu negocio.</h1>
-          <p className="public-store-home-hero__lead">
-            Publica tus productos, recibe pedidos por internet y adminístralos desde el mismo ecosistema de Lanzo,
-            sin tener que construir una tienda desde cero.
-          </p>
-          <div className="public-store-home-hero__actions">
-            <a className="ui-button ui-button--secondary" href={buildAdminWelcomeUrl()}>
-              Crear mi tienda con Lanzo <ArrowRight aria-hidden="true" size={18} />
-            </a>
-            <a className="ui-button ui-button--neutral" href="#como-funciona">Ver cómo funciona</a>
-          </div>
-          <div className="public-store-home-hero__proof" aria-label="Ventajas principales">
-            <span><Smartphone aria-hidden="true" size={17} />Lista para móvil</span>
-            <span><ShoppingBag aria-hidden="true" size={17} />Carrito y pedidos</span>
-            <span><Boxes aria-hidden="true" size={17} />Catálogo publicado desde Lanzo</span>
-          </div>
-        </div>
-
-        <div className="public-store-home-demo" aria-label="Ejemplo visual de una tienda Lanzo">
-          <div className="public-store-home-demo__desktop">
-            <div className="public-store-home-demo__chrome" aria-hidden="true">
-              <span /><span /><span />
-              <small>lanzo-store.vercel.app/dulce-momento</small>
-            </div>
-            <div className="public-store-home-demo__store-head">
-              <div>
-                <span className="public-store-home-demo__logo">DM</span>
-                <div><strong>Dulce Momento</strong><small>Repostería artesanal</small></div>
-              </div>
-              <span className="public-store-home-demo__cart"><ShoppingBag aria-hidden="true" size={16} /> 2</span>
-            </div>
-            <div className="public-store-home-demo__search"><Search aria-hidden="true" size={16} /> Buscar productos</div>
-            <div className="public-store-home-demo__chips" aria-hidden="true">
-              <span>Todos</span><span>Cupcakes</span><span>Pasteles</span><span>Galletas</span>
-            </div>
-            <div className="public-store-home-demo__products">
-              <ProductPreviewCard name="Cupcake de chocolate" price="$38" badge="🍫" />
-              <ProductPreviewCard name="Cupcake de vainilla" price="$36" badge="🧁" />
-              <ProductPreviewCard name="Pastel de fresas" price="$320" badge="🍓" />
-              <ProductPreviewCard name="Galletas" price="$55" badge="🍪" />
-            </div>
-          </div>
-
-          <div className="public-store-home-demo__phone" aria-hidden="true">
-            <div className="public-store-home-demo__phone-top" />
-            <span className="public-store-home-demo__phone-brand">Dulce Momento</span>
-            <div className="public-store-home-demo__phone-product">🍓</div>
-            <strong>Pastel de fresas</strong>
-            <small>$320</small>
-            <span className="public-store-home-demo__phone-button">Agregar al carrito</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="public-store-home-section" id="como-funciona" aria-labelledby="store-steps-title">
-        <div className="public-store-home-section__heading">
-          <p className="public-store-home-eyebrow">Empieza sin complicaciones</p>
-          <h2 id="store-steps-title">Tu tienda en línea en 3 simples pasos</h2>
-          <p>Configura lo esencial en Lanzo, decide qué publicar y comparte tu enlace con tus clientes.</p>
-        </div>
-        <div className="public-store-home-steps">
-          <article><span>01</span><h3>Crea tu negocio</h3><p>Regístrate en Lanzo y configura la información básica de tu negocio.</p></article>
-          <article><span>02</span><h3>Publica tus productos</h3><p>Elige los productos que quieres mostrar y prepara su información pública.</p></article>
-          <article><span>03</span><h3>Comparte tu tienda</h3><p>Usa una dirección como <code>lanzo-store.vercel.app/tu-negocio</code> y compártela con tus clientes.</p></article>
-        </div>
-      </section>
-
-      <section className="public-store-home-section" id="ventajas" aria-labelledby="customer-experience-title">
-        <div className="public-store-home-split">
-          <div className="public-store-home-section__heading">
-            <p className="public-store-home-eyebrow">Experiencia del cliente</p>
-            <h2 id="customer-experience-title">Una tienda pensada para tus clientes</h2>
-            <p>
-              El catálogo público actual permite buscar productos, navegar por categorías, agregar al carrito y
-              continuar al checkout cuando el negocio está aceptando pedidos.
+      <main className="public-store-home__main">
+        <section className="public-store-home-hero" aria-labelledby="public-store-home-title">
+          <div className="public-store-home-hero__content">
+            <p className="public-store-home-eyebrow"><Store aria-hidden="true" size={16} /> LANZO Tienda Online</p>
+            <h1 id="public-store-home-title">Tu negocio también merece un lugar en internet.</h1>
+            <p className="public-store-home-hero__lead">
+              Comparte tus productos, recibe pedidos y facilita que tus clientes conozcan tu negocio.
+              Con LANZO puedes comenzar con una tienda en línea gratuita y ampliar sus capacidades cuando lo necesites.
             </p>
+            <div className="public-store-home-hero__actions">
+              <a className="ui-button ui-button--primary" href={buildAdminWelcomeUrl()}>
+                Crear mi tienda gratis <ArrowRight aria-hidden="true" size={18} />
+              </a>
+              <a className="public-store-home-hero__secondary" href="#como-funciona">Ver cómo funciona</a>
+            </div>
+            <ul className="public-store-home-hero__proof" aria-label="Características de LANZO Tienda Online">
+              <li><Check aria-hidden="true" size={16} /> Gratis para siempre</li>
+              <li><Boxes aria-hidden="true" size={17} /> Catálogo para compartir</li>
+              <li><MonitorSmartphone aria-hidden="true" size={17} /> Móvil y escritorio</li>
+            </ul>
+            <aside className="public-store-home-limit" aria-label="Límite de publicación de LANZO Free">
+              <span><Store aria-hidden="true" size={19} /></span>
+              <p><strong>En LANZO Free puedes publicar hasta 10 productos en tu tienda online.</strong> Este límite no afecta el catálogo interno de tu punto de venta.</p>
+            </aside>
           </div>
-          <div className="public-store-home-feature-list">
-            {CUSTOMER_FEATURES.map(([title, description, Icon]) => (
-              <article key={title}>
-                <span><Icon aria-hidden="true" size={20} /></span>
+
+          <figure className="public-store-home-demo" aria-labelledby="store-demo-caption">
+            <div className="public-store-home-demo__composition" aria-hidden="true">
+              <div className="public-store-home-demo__desktop">
+                <div className="public-store-home-demo__chrome">
+                  <span /><span /><span />
+                  <small>Tu tienda online</small>
+                </div>
+                <div className="public-store-home-demo__store-head">
+                  <div>
+                    <span className="public-store-home-demo__logo">DM</span>
+                    <span className="public-store-home-demo__store-copy"><strong>Dulce Momento</strong><small>Repostería artesanal</small></span>
+                  </div>
+                  <span className="public-store-home-demo__cart"><ShoppingBag size={16} /> 2</span>
+                </div>
+                <div className="public-store-home-demo__search"><Search size={15} /> Buscar productos</div>
+                <div className="public-store-home-demo__chips">
+                  <span>Todos</span><span>Cupcakes</span><span>Pasteles</span><span>Galletas</span>
+                </div>
+                <div className="public-store-home-demo__products">
+                  <ProductPreviewCard name="Cupcake de chocolate" price="$38" badge="🍫" />
+                  <ProductPreviewCard name="Cupcake de vainilla" price="$36" badge="🧁" />
+                  <ProductPreviewCard name="Pastel de fresas" price="$320" badge="🍓" />
+                  <ProductPreviewCard name="Galletas" price="$55" badge="🍪" />
+                </div>
+              </div>
+
+              <div className="public-store-home-demo__phone">
+                <span className="public-store-home-demo__phone-camera" />
+                <span className="public-store-home-demo__phone-brand">Dulce Momento</span>
+                <span className="public-store-home-demo__phone-product">🍓</span>
+                <strong>Pastel de fresas</strong>
+                <small>$320</small>
+                <span className="public-store-home-demo__phone-note">Disponible en la tienda</span>
+              </div>
+            </div>
+            <figcaption id="store-demo-caption">
+              <strong>Demostración visual.</strong> Dulce Momento y sus productos son ejemplos; los controles de la ilustración no son interactivos.
+            </figcaption>
+          </figure>
+        </section>
+
+        <section className="public-store-home-section" id="beneficios" aria-labelledby="store-benefits-title">
+          <div className="public-store-home-section__heading">
+            <p className="public-store-home-eyebrow">Una herramienta para compartir</p>
+            <h2 id="store-benefits-title">Una tienda útil para quien vende y para quien compra.</h2>
+            <p>LANZO reúne una vitrina sencilla para tus clientes y herramientas para que organices los pedidos de tu negocio.</p>
+          </div>
+          <div className="public-store-home-benefits">
+            <article className="public-store-home-benefit">
+              <p className="public-store-home-benefit__label">Para el comerciante</p>
+              <h3>Tu catálogo, listo para mostrar.</h3>
+              <ul>
+                {MERCHANT_BENEFITS.map(([title, description, Icon]) => (
+                  <li key={title}>
+                    <span><Icon aria-hidden="true" size={19} /></span>
+                    <div><strong>{title}</strong><p>{description}</p></div>
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className="public-store-home-benefit">
+              <p className="public-store-home-benefit__label">Para sus clientes</p>
+              <h3>Una forma clara de conocer tu oferta.</h3>
+              <ul>
+                {CUSTOMER_BENEFITS.map(([title, description, Icon]) => (
+                  <li key={title}>
+                    <span><Icon aria-hidden="true" size={19} /></span>
+                    <div><strong>{title}</strong><p>{description}</p></div>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
+          <p className="public-store-home-note">
+            <Wifi aria-hidden="true" size={18} />
+            Publicar la tienda y recibir pedidos requiere internet y completar la configuración correspondiente.
+            LANZO Free incluye una bandeja de pedidos; las actualizaciones en tiempo real dependen del plan y la configuración.
+          </p>
+        </section>
+
+        <section className="public-store-home-section" id="como-funciona" aria-labelledby="store-steps-title">
+          <div className="public-store-home-section__heading">
+            <p className="public-store-home-eyebrow">Empieza a tu ritmo</p>
+            <h2 id="store-steps-title">Cómo funciona</h2>
+            <p>Prepara lo esencial, elige qué compartir y publica la tienda cuando esté lista.</p>
+          </div>
+          <ol className="public-store-home-steps">
+            {STEPS.map(([title, description], index) => (
+              <li key={title}>
+                <span className="public-store-home-steps__number">0{index + 1}</span>
                 <div><h3>{title}</h3><p>{description}</p></div>
-              </article>
+              </li>
+            ))}
+          </ol>
+          <p className="public-store-home-steps__note">
+            <Wifi aria-hidden="true" size={17} />
+            La publicación y recepción de pedidos necesitan internet y la configuración correspondiente en tu tienda.
+          </p>
+        </section>
+
+        <section className="public-store-home-section public-store-home-plans-section" id="planes" aria-labelledby="plans-title">
+          <div className="public-store-home-section__heading">
+            <p className="public-store-home-eyebrow">Tú decides cuándo crecer</p>
+            <h2 id="plans-title">Empieza con Free. PRO es opcional.</h2>
+            <p>Ambos planes forman parte de LANZO. Elige la capacidad que necesita tu negocio hoy.</p>
+          </div>
+          <div className="public-store-home-plans">
+            <PlanCard
+              label="LANZO FREE"
+              title="Tu primera vitrina online"
+              subtitle="Gratis para siempre · sin mensualidad"
+              description="Publica una selección de productos y recibe pedidos sin contratar PRO."
+              features={FREE_FEATURES}
+            />
+            <PlanCard
+              label="LANZO PRO / NUBE"
+              title="Más capacidad para crecer"
+              subtitle="Servicio opcional"
+              description="Suma herramientas conectadas cuando tu forma de trabajar lo requiera."
+              features={PRO_FEATURES}
+            />
+          </div>
+          <div className="public-store-home-plans__note">
+            <p>Puedes seguir usando LANZO Free sin contratar PRO. El límite de diez productos se aplica a la publicación online, no al catálogo interno del punto de venta.</p>
+            <a className="ui-button ui-button--primary" href={buildAdminWelcomeUrl()}>
+              Crear mi tienda gratis <ArrowRight aria-hidden="true" size={17} />
+            </a>
+          </div>
+        </section>
+
+        <section className="public-store-home-section public-store-home-faq" id="preguntas-frecuentes" aria-labelledby="faq-title">
+          <div className="public-store-home-section__heading">
+            <p className="public-store-home-eyebrow">Respuestas claras</p>
+            <h2 id="faq-title">Preguntas frecuentes</h2>
+          </div>
+          <div className="public-store-home-faq__list">
+            {FAQS.map(({ question, answer }) => (
+              <details key={question}>
+                <summary>{question}</summary>
+                <p>{answer}</p>
+              </details>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="public-store-home-device-strip" aria-label="Diseño adaptable">
-          <span><MonitorSmartphone aria-hidden="true" size={22} />Diseño adaptable</span>
-          <span><Smartphone aria-hidden="true" size={22} />Móvil y escritorio</span>
-          <span><ShoppingBag aria-hidden="true" size={22} />Carrito de compras</span>
-          <span><PackageCheck aria-hidden="true" size={22} />Recepción de pedidos</span>
-        </div>
-      </section>
+        <section className="public-store-home-looking" aria-labelledby="looking-store-title">
+          <div>
+            <p className="public-store-home-eyebrow">Acceso a tiendas</p>
+            <h2 id="looking-store-title">¿Buscas la tienda de un negocio?</h2>
+            <p>Cada negocio comparte su propio enlace. Pídeselo directamente para encontrar su tienda.</p>
+          </div>
+          <div className="public-store-home-looking__example">
+            <code>lanzo-store.vercel.app/tu-negocio</code>
+            <span>Esta página no es un directorio público de comercios.</span>
+          </div>
+        </section>
 
-      <section className="public-store-home-section public-store-home-integration" aria-labelledby="integration-title">
-        <div className="public-store-home-section__heading">
-          <p className="public-store-home-eyebrow">El diferencial de Lanzo</p>
-          <h2 id="integration-title">No es una tienda aislada. Es parte de Lanzo.</h2>
-          <p>
-            Tu presencia online vive dentro del mismo producto con el que administras la operación. Las capacidades
-            exactas dependen del plan, del rubro y de la configuración activa de cada negocio.
-          </p>
-        </div>
-        <div className="public-store-home-integration__grid">
-          {INTEGRATION_ITEMS.map(([title, description, Icon]) => (
-            <article key={title}>
-              <span><Icon aria-hidden="true" size={21} /></span>
-              <h3>{title}</h3>
-              <p>{description}</p>
-            </article>
-          ))}
-        </div>
-        <div className="public-store-home-integration__note">
-          <Users aria-hidden="true" size={19} />
-          <p>
-            Lanzo también incluye herramientas de clientes y reportes. No todas las funciones requieren ni ofrecen
-            el mismo nivel de sincronización: PRO y Lanzo Nube habilitan las capacidades conectadas que correspondan.
-          </p>
-        </div>
-      </section>
-
-      <section className="public-store-home-section" id="planes" aria-labelledby="plans-title">
-        <div className="public-store-home-section__heading">
-          <p className="public-store-home-eyebrow">Empieza y crece a tu ritmo</p>
-          <h2 id="plans-title">Tienda Online en FREE y más capacidad con PRO</h2>
-          <p>Empieza con FREE y activa PRO cuando necesites más capacidad y una operación conectada.</p>
-        </div>
-        <div className="public-store-home-plans">
-          <PlanCard
-            label="FREE"
-            title="Empieza con tu catálogo online"
-            description="Una forma sencilla de publicar una selección de productos y recibir pedidos."
-            features={FREE_FEATURES}
-          />
-          <PlanCard
-            label="PRO"
-            title="Conecta una operación que está creciendo"
-            description="Más capacidad de publicación y herramientas cloud para trabajar en equipo."
-            features={PRO_FEATURES}
-            featured
-          />
-        </div>
-      </section>
-
-      <section className="public-store-home-looking" aria-labelledby="looking-store-title">
-        <div>
-          <p className="public-store-home-eyebrow">Acceso a tiendas</p>
-          <h2 id="looking-store-title">¿Buscas la tienda de un negocio?</h2>
-          <p>Las tiendas creadas con Lanzo utilizan una dirección como:</p>
-          <code>lanzo-store.vercel.app/nombre-del-negocio</code>
-          <p>Solicita al negocio su enlace completo para acceder a su tienda.</p>
-        </div>
-        <div className="public-store-home-looking__privacy">
-          <Store aria-hidden="true" size={22} />
-          <div><strong>Sin directorio público</strong><span>Lanzo no muestra ni enumera negocios desde esta página.</span></div>
-        </div>
-      </section>
-
-      <section className="public-store-home-final" aria-labelledby="store-final-title">
-        <div>
-          <p className="public-store-home-eyebrow">Tu negocio también puede vender en línea</p>
-          <h2 id="store-final-title">Convierte tu catálogo en un enlace listo para compartir.</h2>
-          <p>Crea tu negocio en Lanzo y configura tu Tienda Online desde el mismo sistema.</p>
-        </div>
-        <div className="public-store-home-final__actions">
-          <a className="ui-button ui-button--secondary" href={buildAdminWelcomeUrl()}>
-            Crear mi tienda con Lanzo <ArrowRight aria-hidden="true" size={18} />
-          </a>
-          <a className="public-store-home-final__learn" href="/conoce-lanzo">Conocer todo Lanzo</a>
-        </div>
-      </section>
-    </main>
+        <section className="public-store-home-final" aria-labelledby="store-final-title">
+          <div>
+            <p className="public-store-home-eyebrow">Desde el primer producto</p>
+            <h2 id="store-final-title">Empieza a mostrar lo que haces.</h2>
+            <p>No necesitas comenzar con una tienda enorme. Publica tus primeros productos, comparte tu enlace y permite que tus clientes conozcan tu negocio. LANZO puede acompañarte desde el principio.</p>
+          </div>
+          <div className="public-store-home-final__actions">
+            <a className="ui-button ui-button--primary" href={buildAdminWelcomeUrl()}>
+              Crear mi tienda gratis <ArrowRight aria-hidden="true" size={18} />
+            </a>
+            <a className="public-store-home-final__learn" href="/conoce-lanzo">Conoce por qué nació LANZO</a>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 

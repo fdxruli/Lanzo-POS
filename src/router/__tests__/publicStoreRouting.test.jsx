@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -74,21 +74,48 @@ describe('public store routing', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole('heading', {
-      name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
+      name: 'Tu negocio también merece un lugar en internet.'
     })).toBeInTheDocument();
-    const acquisitionLinks = screen.getAllByRole('link', { name: 'Crear mi tienda con Lanzo' });
+    const acquisitionLinks = screen.getAllByRole('link', { name: 'Crear mi tienda gratis' });
     expect(acquisitionLinks.length).toBeGreaterThan(1);
     acquisitionLinks.forEach((link) => {
       expect(link).toHaveAttribute('href', 'https://lanzo-pos.vercel.app/?welcome=1');
     });
     expect(screen.getByRole('link', { name: 'Ver cómo funciona' }))
       .toHaveAttribute('href', '#como-funciona');
-    expect(document.title).toBe('Lanzo Tienda Online | Vende por internet con Lanzo');
+    expect(screen.getByRole('link', { name: 'Conoce LANZO' }))
+      .toHaveAttribute('href', '/conoce-lanzo');
+    expect(document.title).toBe('Tienda Online LANZO | Publica tus productos gratis');
     expect(document.querySelector('link[rel="canonical"]'))
       .toHaveAttribute('href', 'https://lanzo-store.vercel.app/');
+    expect(document.querySelector('meta[name="description"]'))
+      .toHaveAttribute('content', expect.stringContaining('10 productos'));
     expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
     expect(screen.queryByText('StaffLoginModal')).not.toBeInTheDocument();
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
+  });
+
+  it('explains the Free product limit, separates it from the POS catalog, and uses a native FAQ', () => {
+    const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/'] });
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByText(/publicar hasta 10 productos en tu tienda online/i)).toBeInTheDocument();
+    expect(screen.getByText(/no afecta el catálogo interno de tu punto de venta/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tu primera vitrina online' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Más capacidad para crecer' })).toBeInTheDocument();
+    expect(screen.getByText(/actualizar la bandeja en tiempo real/i)).toBeInTheDocument();
+    expect(screen.getByText(/no procesa un cobro en línea/i)).toBeInTheDocument();
+
+    const figure = screen.getByRole('figure', { name: /demostración visual/i });
+    expect(figure.querySelector('button')).not.toBeInTheDocument();
+
+    const summary = screen.getByText('¿Mis clientes pueden pagar directamente en la página?');
+    const details = summary.closest('details');
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(details).not.toHaveAttribute('open');
   });
 
   it('mounts the public page for /tienda/:slug without POS shell UI', async () => {
@@ -129,7 +156,7 @@ describe('public store routing', () => {
 
     expect(await screen.findByRole('heading', { name: 'No se pudo cargar la tienda' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', {
-      name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
+      name: 'Tu negocio también merece un lugar en internet.'
     })).not.toBeInTheDocument();
   });
 

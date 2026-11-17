@@ -59,7 +59,7 @@ describe('store/vercel.json', () => {
   });
 
   it('aísla la metadata comercial de la raíz del shell público compartido', () => {
-    expect(homeHtml).toContain('<title>Lanzo Tienda Online | Vende por internet con Lanzo</title>');
+    expect(homeHtml).toContain('<title>Tienda Online LANZO | Publica tus productos gratis</title>');
     expect(homeHtml).toContain('<link rel="canonical" href="https://lanzo-store.vercel.app/" />');
     expect(homeHtml).toContain('<meta property="og:url" content="https://lanzo-store.vercel.app/" />');
     expect(indexHtml).toContain('<title>Tienda en línea | Lanzo</title>');
