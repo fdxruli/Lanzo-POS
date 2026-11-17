@@ -2,6 +2,7 @@ import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/util
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
 import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { getDirectPartialRecipeSnapshot } from './directPartialAuthorization';
+import { isCommercialVariantLine } from '../products/commercialVariants';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 const EPSILON = 0.00001;
@@ -477,8 +478,20 @@ export const buildProcessedItemsAndDeductions = ({
             const rawBatches = targetProduct?.batchManagement?.enabled ? (batchesMap.get(targetId) || []) : [];
             const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
             const requiredStart = requiredQty;
+            const selectedVariantBatchId = targetId === realProductId && isCommercialVariantLine(orderItem)
+                ? String(orderItem.batchId ?? orderItem.batch_id)
+                : null;
+            const selectedVariantBatch = selectedVariantBatchId
+                ? batches.find((batch) => (
+                    String(batch.id) === selectedVariantBatchId
+                    && String(batch.productId || '') === String(targetId)
+                ))
+                : null;
+            const batchesForAllocation = selectedVariantBatchId
+                ? (selectedVariantBatch ? [selectedVariantBatch] : [])
+                : batches;
 
-            for (const batch of batches) {
+            for (const batch of batchesForAllocation) {
                 if (requiredQty <= 0) break;
 
                 const alreadyConsumed = virtualConsumptionTracker.get(batch.id) || 0;
@@ -533,14 +546,14 @@ export const buildProcessedItemsAndDeductions = ({
                     throw createExpiryBlockedError({
                         product: targetProduct,
                         requestedQuantity: requiredStart,
-                        availableQuantity: sumAvailable(batches),
+                        availableQuantity: sumAvailable(batchesForAllocation),
                         expiredAvailableQuantity
                     });
                 }
 
                 throw new Error(
                     `CRITICAL_STOCK_COMMIT_FAILED: Stock disponible insuficiente para ${targetProduct?.name || targetId}. ` +
-                    `Disponible ${sumAvailable(batches)}, requerido ${requiredStart}.`
+                    `Disponible ${sumAvailable(batchesForAllocation)}, requerido ${requiredStart}.`
                 );
             }
 

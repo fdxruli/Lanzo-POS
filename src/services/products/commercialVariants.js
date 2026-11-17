@@ -17,3 +17,15 @@ export const isCommercialVariantProduct = (product = {}) => {
       Boolean(batch?.attributes?.talla) || Boolean(batch?.attributes?.color)
     ));
 };
+
+/**
+ * The POS marks an explicitly selected apparel size/color with isVariant and
+ * its batchId. A batchId by itself still means an ordinary inventory lot.
+ */
+export const isCommercialVariantLine = (item = {}) => {
+  const batchId = item.batchId ?? item.batch_id;
+  return item.isVariant === true
+    && batchId !== null
+    && batchId !== undefined
+    && String(batchId).trim() !== '';
+};

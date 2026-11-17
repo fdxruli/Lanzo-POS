@@ -1,4 +1,5 @@
 import { getExplicitSalePaymentRows, normalizeRestaurantSplitPaymentMethod } from '../sales/paymentMethodContract';
+import { isCommercialVariantLine } from '../products/commercialVariants';
 
 const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
 
@@ -161,8 +162,13 @@ const mapItem = (item = {}, index = 0, options = {}) => {
   const productId = firstText(item.productId, item.parentId, item.id);
   const productIdSource = firstText(item.productId, item.parentId) ? 'explicit' : 'line_identity';
   const allowLocalBatches = options.allowLocalBatches !== false;
-  const explicitBatchesUsed = getExplicitBatchesUsed(item, allowLocalBatches);
-  const explicitBatchId = hasManualBatchSelection(item)
+  const isSelectedCommercialVariant = isCommercialVariantLine(item);
+  const explicitBatchesUsed = isSelectedCommercialVariant && !allowLocalBatches
+    ? null
+    : getExplicitBatchesUsed(item, allowLocalBatches);
+  const explicitBatchId = isSelectedCommercialVariant
+    ? firstText(item.batchId, item.batch_id)
+    : hasManualBatchSelection(item)
     ? firstText(item.batchId, item.batch_id)
     : (allowLocalBatches ? firstText(item.batchId, item.batch_id) : null);
   const discount = getDiscountObject(item);

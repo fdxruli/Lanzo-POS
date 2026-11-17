@@ -527,6 +527,25 @@ describe('salesCloudCashierMapper batch allocation compatibility', () => {
     expect(payload.items[0].metadata.batchSelectionSource).toBe('manual');
   });
 
+  it('sends the selected commercial variant to cloud and lets the RPC allocate that batch', () => {
+    const payload = mapCheckout({
+      ...baseItem,
+      parentId: 'shirt-1',
+      isVariant: true,
+      batchId: 'm-black',
+      batchesUsed: [{ batchId: 's-black', quantity: 1 }]
+    }, { inventoryEnabled: true });
+
+    expect(payload.items[0].batch_id).toBe('m-black');
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+  });
+
+  it('does not treat an ordinary batch ID as a commercial variant selection', () => {
+    const payload = mapCheckout({ ...baseItem, batchId: 'grocery-lot-1' }, { inventoryEnabled: true });
+
+    expect(payload.items[0].batch_id).toBeNull();
+  });
+
   it('applies the same null omission to credit-sale mapping', () => {
     const payload = mapLocalCreditCheckoutToCloudSale({
       sale: { ...baseSale, id: 'credit-batch-sale-1' },
