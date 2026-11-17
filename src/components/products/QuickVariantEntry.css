@@ -184,6 +184,18 @@
   opacity: 0.75;
 }
 
+.qv-margin-indicator {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ui-bg-surface, var(--card-background-color));
+  pointer-events: none;
+}
+
 .qv-inline-warning {
   margin-top: 2px;
   color: var(--ui-text-warning);
@@ -425,15 +437,9 @@
   }
 
   .qv-margin-indicator {
-    position: absolute;
     top: 40px;
     right: 10px;
-    width: 8px;
-    height: 8px;
     transform: none;
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px var(--ui-bg-surface, var(--card-background-color));
-    pointer-events: none;
   }
 
   .qv-cell[data-label="Acciones"] .qv-icon-button--delete {
