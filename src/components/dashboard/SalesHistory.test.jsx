@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SalesHistory from './SalesHistory';
+import { formatBusinessInstant } from '../../utils/businessTime';
 
 const parseCsv = (value) => {
   const input = value.replace(/^\uFEFF/, '');
@@ -191,5 +192,22 @@ describe('SalesHistory visible-page export', () => {
       origen_datos: 'Local',
       cobertura: 'Solo página 1: 1 de 1 registro(s) cargado(s) tras los filtros locales'
     });
+  });
+
+  it('displays and exports the transaction instant in the business timezone', () => {
+    const timestamp = '2026-11-18T09:30:00.000Z';
+    const expected = formatBusinessInstant(timestamp, 'America/Merida');
+    const { container } = render(
+      <SalesHistory
+        sales={[{ id: 'sale-merida-time', timestamp, status: 'closed', total: 50, paymentStatus: 'paid' }]}
+        source={{ mode: 'local', local: ['sales'] }}
+        businessTimezone="America/Merida"
+      />
+    );
+
+    expect(container).toHaveTextContent(expected);
+    fireEvent.click(screen.getByRole('button', { name: 'CSV · página' }));
+    expect(createdBlob.content).toContain(expected.replace(',', ''));
+    expect(createdBlob.content).toContain('America/Merida');
   });
 });

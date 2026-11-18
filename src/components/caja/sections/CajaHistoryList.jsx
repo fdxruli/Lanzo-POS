@@ -10,13 +10,15 @@ import {
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
+import { formatBusinessInstant } from '../../../utils/businessTime';
 
 const CajaHistoryList = ({
   historial,
   itemsPerPage = 10,
   title = 'Historial de cortes',
   eyebrow = 'Turnos anteriores',
-  isCloudCash = false
+  isCloudCash = false,
+  businessTimezone = null
 }) => {
   const [paginaActual, setPaginaActual] = useState(1);
 
@@ -52,9 +54,15 @@ const CajaHistoryList = ({
 
       return {
         id: c.id,
-        fecha: opened && !Number.isNaN(opened.getTime()) ? opened.toLocaleDateString() : 'Sin fecha',
-        hora: opened && !Number.isNaN(opened.getTime()) ? opened.toLocaleTimeString() : '',
-        cierreFecha: closed && !Number.isNaN(closed.getTime()) ? closed.toLocaleString() : null,
+        fecha: opened && !Number.isNaN(opened.getTime())
+          ? formatBusinessInstant(opened, businessTimezone, { year: 'numeric', month: '2-digit', day: '2-digit' })
+          : 'Sin fecha',
+        hora: opened && !Number.isNaN(opened.getTime())
+          ? formatBusinessInstant(opened, businessTimezone, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          : '',
+        cierreFecha: closed && !Number.isNaN(closed.getTime())
+          ? formatBusinessInstant(closed, businessTimezone)
+          : null,
         estado: c.estado || c.status || 'cerrada',
         station: getCashSessionStationLabel(c),
         responsible,
@@ -79,7 +87,7 @@ const CajaHistoryList = ({
         comentarios: c.comentarios_auditoria || c.audit_comments || ''
       };
     });
-  }, [historial, paginaActual, itemsPerPage, isCloudCash]);
+  }, [historial, paginaActual, itemsPerPage, isCloudCash, businessTimezone]);
 
   const totalPaginas = Math.ceil(historial.length / itemsPerPage);
 

@@ -1,6 +1,12 @@
 import { formatCurrencyMXN } from '../../utils/formatCurrencyMXN';
 import { normalizeFinancialNumber } from '../sales/financialPolicy';
 import {
+  getExplicitSalePaymentRows,
+  getExplicitSalePaymentSource,
+  normalizeRestaurantSplitPaymentMethod
+} from '../sales/paymentMethodContract';
+import { formatBusinessDateKey, formatBusinessInstant } from '../../utils/businessTime';
+import {
   getSaleEcommerceOrderCode,
   getSaleFinancialFolio,
   getSaleOperationalFolio,
@@ -36,6 +42,42 @@ const isCancelledSale = (sale = {}) => (
   || ['cancelled', 'canceled'].includes(normalized(sale.fulfillmentStatus || sale.fulfillment_status))
 );
 
+const isClosedSale = (sale = {}) => ['closed', 'completed'].includes(normalized(sale.status || sale.sale_status));
+const saleTotal = (sale = {}) => normalizeFinancialNumber(
+  firstValue(sale, ['total', 'net_total', 'net_sales_total']), Number.NaN
+);
+const initialPaidAmount = (sale = {}) => normalizeFinancialNumber(firstValue(sale, [
+  'initialAmountPaid', 'initial_amount_paid', 'amountPaid', 'amount_paid', 'abono'
+]), Number.NaN);
+
+const getPaymentBreakdownEvidence = (sale = {}) => {
+  const source = getExplicitSalePaymentSource(sale);
+  if (!source) return null;
+  const rows = getExplicitSalePaymentRows(sale) || [];
+  if (!rows.length || rows.length !== source.length) return { valid: false };
+
+  let paid = 0;
+  let credit = 0;
+  for (const row of rows) {
+    const status = normalized(row.status || row.paymentStatus || row.payment_status);
+    if (['pending', 'failed', 'rejected', 'cancelled'].includes(status)) return { valid: false };
+    const amount = normalizeFinancialNumber(row.amount ?? row.total, Number.NaN);
+    const method = normalizeRestaurantSplitPaymentMethod(row.method || row.paymentMethod || row.payment_method);
+    if (!Number.isFinite(amount) || amount <= 0 || !method) return { valid: false };
+    if (method === 'credit') credit += amount;
+    else if (['cash', 'card', 'transfer'].includes(method)) paid += amount;
+    else return { valid: false };
+  }
+  return { valid: true, paid, credit, total: paid + credit };
+};
+
+const hasExplicitCreditBalance = (sale = {}) => {
+  const amount = normalizeFinancialNumber(firstValue(sale, [
+    'initialCreditAmount', 'initial_credit_amount', 'originalBalanceDue', 'original_balance_due'
+  ]), Number.NaN);
+  return Number.isFinite(amount) && amount > 0;
+};
+
 export const getSalePaymentStatusCategory = (sale = {}) => {
   if (isCancelledSale(sale)) return 'cancelled';
 
@@ -45,14 +87,37 @@ export const getSalePaymentStatusCategory = (sale = {}) => {
   if (PAID_PAYMENT_STATUSES.has(status)) return 'paid';
   if (CREDIT_PAYMENT_STATUSES.has(status)) return 'credit';
   if (PARTIAL_PAYMENT_STATUSES.has(status)) {
-    const paidInitially = normalizeFinancialNumber(firstValue(sale, [
-      'initialAmountPaid', 'initial_amount_paid', 'amountPaid', 'amount_paid', 'abono'
-    ]), Number.NaN);
-    if (Number.isFinite(paidInitially) && paidInitially === 0) return 'credit';
-    if ((Number.isFinite(paidInitially) && paidInitially > 0) || MIXED_CREDIT_METHODS.has(method)) return 'mixed_credit';
+    const paidInitially = initialPaidAmount(sale);
+    if (Number.isFinite(paidInitially) && paidInitially <= 0.01 && hasExplicitCreditBalance(sale)) return 'credit';
+    if ((Number.isFinite(paidInitially) && paidInitially > 0
+      && (normalizeRestaurantSplitPaymentMethod(method) === 'credit' || hasExplicitCreditBalance(sale)))
+      || MIXED_CREDIT_METHODS.has(method)) return 'mixed_credit';
     return 'partial';
   }
   if (status === 'unpaid' && ['credit', 'fiado'].includes(method)) return 'credit';
+
+  if (!isClosedSale(sale)) return 'unknown';
+
+  const total = saleTotal(sale);
+  const breakdown = getPaymentBreakdownEvidence(sale);
+  if (breakdown?.valid && Number.isFinite(total) && Math.abs(breakdown.total - total) <= 0.01) {
+    if (breakdown.credit <= 0.01 && Math.abs(breakdown.paid - total) <= 0.01) return 'paid';
+    if (breakdown.credit > 0.01 && breakdown.paid > 0.01) return 'mixed_credit';
+    if (breakdown.credit > 0.01 && breakdown.paid <= 0.01) return 'credit';
+  }
+
+  const paidInitially = initialPaidAmount(sale);
+  const canonicalMethod = normalizeRestaurantSplitPaymentMethod(method);
+  const explicitCreditStatus = normalized(sale.creditStatus || sale.credit_status);
+  const explicitCredit = hasExplicitCreditBalance(sale)
+    || ['vigente', 'pending', 'credit_pending', 'unpaid'].includes(explicitCreditStatus);
+  if (Number.isFinite(total) && Number.isFinite(paidInitially) && paidInitially >= 0
+    && paidInitially <= total + 0.01 && canonicalMethod) {
+    if (Math.abs(paidInitially - total) <= 0.01 && !explicitCredit) return 'paid';
+    if (paidInitially <= 0.01 && canonicalMethod === 'credit' && explicitCredit) return 'credit';
+    if (paidInitially > 0.01 && paidInitially < total - 0.01
+      && canonicalMethod === 'credit' && explicitCredit) return 'mixed_credit';
+  }
 
   return 'unknown';
 };
@@ -62,19 +127,28 @@ export const getSalePaymentStatusLabel = (sale = {}) => (
 );
 
 export const getSaleInitialFinancialAmounts = (sale = {}) => {
-  const paidInitially = normalizeFinancialNumber(firstValue(sale, [
-    'initialAmountPaid', 'initial_amount_paid', 'amountPaid', 'amount_paid', 'abono'
-  ]), Number.NaN);
-  const normalizedPaidInitially = Number.isFinite(paidInitially) && paidInitially >= 0
+  const explicitSource = getExplicitSalePaymentSource(sale);
+  const breakdown = getPaymentBreakdownEvidence(sale);
+  const paidInitially = initialPaidAmount(sale);
+  const explicitPaid = Number.isFinite(paidInitially) && paidInitially >= 0
     ? paidInitially
+    : explicitSource && breakdown?.valid ? breakdown.paid : Number.NaN;
+  const normalizedPaidInitially = Number.isFinite(explicitPaid) && explicitPaid >= 0
+    ? explicitPaid
     : null;
 
   const explicitInitialCredit = normalizeFinancialNumber(firstValue(sale, [
-    'initialCreditAmount', 'initial_credit_amount', 'original_balance_due'
+    'initialCreditAmount', 'initial_credit_amount', 'originalBalanceDue', 'original_balance_due'
   ]), Number.NaN);
+  const method = normalizeRestaurantSplitPaymentMethod(sale.paymentMethod || sale.payment_method);
+  const total = saleTotal(sale);
+  const derivedCredit = isClosedSale(sale) && method === 'credit' && Number.isFinite(total)
+    && normalizedPaidInitially !== null
+      ? Math.max(total - normalizedPaidInitially, 0)
+      : isClosedSale(sale) && breakdown?.valid && breakdown.credit > 0 ? breakdown.credit : Number.NaN;
   const initialCredit = Number.isFinite(explicitInitialCredit)
     ? explicitInitialCredit
-    : Number.NaN;
+    : derivedCredit;
 
   return {
     paidInitially: normalizedPaidInitially,
@@ -94,25 +168,35 @@ export const dedupeSalesByStableId = (sales = []) => {
   });
 };
 
-const formatSaleDate = (value) => {
+const formatSaleDate = (value, timeZone = null) => {
   if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat('es-MX', {
+  const formatted = formatBusinessInstant(value, timeZone, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit'
-  }).format(date);
+  });
+  return formatted || String(value);
 };
 
-export const formatSalesHistoryDateRange = (range = {}) => {
+export const formatSalesHistoryDateRange = (range = {}, timeZone = null) => {
   const normalizedRange = range && typeof range === 'object' ? range : {};
   const from = normalizedRange.date_from || normalizedRange.start || normalizedRange.from || normalizedRange.dateFrom || null;
   const to = normalizedRange.date_to || normalizedRange.end || normalizedRange.to || normalizedRange.dateTo || null;
-  if (!from && !to) return 'Rango de consulta no informado';
-  return `Desde ${from ? formatSaleDate(from) : 'sin inicio'} hasta ${to ? formatSaleDate(to) : 'sin fin'}`;
+  if (!from && !to) return `Rango de consulta no informado${timeZone ? ` · ${timeZone}` : ''}`;
+  const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+  const toIsDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(String(to || ''));
+  const toInclusive = to && !toIsDateOnly && Number.isFinite(Date.parse(to))
+    ? new Date(Date.parse(to) - 1)
+    : to;
+  const formatEndpoint = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+    ? formatBusinessDateKey(value, timeZone, options)
+    : formatBusinessInstant(value, timeZone, options);
+  const fromLabel = from ? formatEndpoint(from) : 'sin inicio';
+  const toLabel = toInclusive ? formatEndpoint(toInclusive) : 'sin fin';
+  const zoneLabel = timeZone ? ` · ${timeZone}` : '';
+  return `Desde ${fromLabel || 'sin inicio'} hasta ${toLabel || 'sin fin'}${zoneLabel}`;
 };
 
 const escapeCsvCell = (value) => {
@@ -187,7 +271,7 @@ const saleRowValues = (sale = {}, metadata = {}) => {
     getSaleFinancialFolio(sale) || '',
     getSaleEcommerceOrderCode(sale) || '',
     getSaleOriginLabel(sale) || '',
-    formatSaleDate(getSaleValue(sale, ['timestamp', 'soldAt', 'sold_at', 'createdAt', 'created_at'])),
+    formatSaleDate(getSaleValue(sale, ['timestamp', 'soldAt', 'sold_at', 'createdAt', 'created_at']), metadata.businessTimezone),
     getSaleValue(sale, ['customerName', 'customer_name']) || sale.customer?.name || sale.customerSnapshot?.name || '',
     getProductSummary(sale),
     getSaleTotal(sale),
@@ -197,7 +281,7 @@ const saleRowValues = (sale = {}, metadata = {}) => {
     getSaleValue(sale, ['sourceMode', 'source_mode']) || 'Desconocido',
     getInitialAmountLabel(initialAmounts.paidInitially),
     getInitialAmountLabel(initialAmounts.initialCredit),
-    metadata.period || formatSalesHistoryDateRange(metadata.dateRange),
+    metadata.period || formatSalesHistoryDateRange(metadata.dateRange, metadata.businessTimezone),
     formatFilters(metadata.activeFilters),
     metadata.scopeLabel || 'Alcance no informado',
     metadata.sourceLabel || 'Origen no informado',
@@ -228,11 +312,11 @@ export const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch
   "'": '&#39;'
 })[character]);
 
-const printRow = (sale = {}) => {
+const printRow = (sale = {}, metadata = {}) => {
   const initialAmounts = getSaleInitialFinancialAmounts(sale);
   const fields = [
     getSaleFinancialFolio(sale) || getSaleOperationalFolio(sale) || getSaleValue(sale, ['id']) || '',
-    formatSaleDate(getSaleValue(sale, ['timestamp', 'soldAt', 'sold_at', 'createdAt', 'created_at'])),
+    formatSaleDate(getSaleValue(sale, ['timestamp', 'soldAt', 'sold_at', 'createdAt', 'created_at']), metadata.businessTimezone),
     getSaleValue(sale, ['customerName', 'customer_name']) || sale.customer?.name || sale.customerSnapshot?.name || '',
     getProductSummary(sale),
     getSaleTotal(sale),
@@ -249,9 +333,9 @@ export const buildSalesHistoryPrintHtml = (sales = [], metadata = {}) => {
   const uniqueSales = dedupeSalesByStableId(sales);
   const pageNumber = (Number(metadata.pageIndex) || 0) + 1;
   const coverage = metadata.coverageLabel || `Solo página ${pageNumber}: ${uniqueSales.length} registro(s) filtrado(s)`;
-  const range = metadata.period || formatSalesHistoryDateRange(metadata.dateRange);
+  const range = metadata.period || formatSalesHistoryDateRange(metadata.dateRange, metadata.businessTimezone);
   const filters = formatFilters(metadata.activeFilters);
-  const rows = uniqueSales.map(printRow).join('');
+  const rows = uniqueSales.map((sale) => printRow(sale, metadata)).join('');
 
   return `<!doctype html>
 <html lang="es-MX">

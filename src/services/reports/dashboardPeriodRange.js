@@ -1,4 +1,11 @@
-// Períodos Cloud en días de calendario del dispositivo. Supabase usa fin exclusivo.
+import {
+  addBusinessCalendarDays,
+  formatBusinessInstant,
+  startOfBusinessDay,
+  startOfBusinessMonth
+} from '../../utils/businessTime';
+
+// Períodos Cloud en días de calendario del negocio. Supabase usa fin exclusivo.
 export const CLOUD_STATS_PERIODS = Object.freeze([
   { key: 'today', label: 'Hoy' },
   { key: 'last7', label: '7 días' },
@@ -6,15 +13,20 @@ export const CLOUD_STATS_PERIODS = Object.freeze([
   { key: 'thisMonth', label: 'Este mes' }
 ]);
 
-export const buildCloudStatsRange = (key, now = new Date()) => {
+export const buildCloudStatsRange = (key, now = new Date(), timeZone = null) => {
   if (!CLOUD_STATS_PERIODS.some((period) => period.key === key)) {
     throw new Error('DASHBOARD_PERIOD_UNSUPPORTED');
   }
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (key === 'last7') start.setDate(start.getDate() - 6);
-  if (key === 'last15') start.setDate(start.getDate() - 14);
-  if (key === 'thisMonth') start.setDate(1);
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const today = startOfBusinessDay(now, timeZone);
+  const start = key === 'thisMonth'
+    ? startOfBusinessMonth(now, 0, timeZone)
+    : key === 'last7'
+      ? addBusinessCalendarDays(today, -6, timeZone)
+      : key === 'last15'
+        ? addBusinessCalendarDays(today, -14, timeZone)
+        : today;
+  const end = addBusinessCalendarDays(today, 1, timeZone);
+  if (!start || !end) throw new Error('DASHBOARD_PERIOD_TIMEZONE_INVALID');
   return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
 };
 
@@ -28,10 +40,12 @@ export const cloudReportMatchesRange = (report, requestedRange) => {
     && Date.parse(to) === Date.parse(requestedRange.dateTo);
 };
 
-export const describeCloudStatsRange = (requestedRange) => {
+export const describeCloudStatsRange = (requestedRange, timeZone = null) => {
   if (!requestedRange) return 'Rango no disponible';
   const from = new Date(requestedRange.dateFrom);
   const endInclusive = new Date(Date.parse(requestedRange.dateTo) - 1);
-  const formatter = new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  return `${formatter.format(from)} – ${formatter.format(endInclusive)}`;
+  const options = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const fromLabel = formatBusinessInstant(from, timeZone, options);
+  const endLabel = formatBusinessInstant(endInclusive, timeZone, options);
+  return `${fromLabel} – ${endLabel}`;
 };

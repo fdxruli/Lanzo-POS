@@ -3,6 +3,7 @@ import {
   buildSalesHistoryCsv,
   buildSalesHistoryPrintHtml,
   dedupeSalesByStableId,
+  formatSalesHistoryDateRange,
   getSaleInitialFinancialAmounts,
   getSalePaymentStatusCategory,
   getSalePaymentStatusLabel
@@ -12,8 +13,8 @@ describe('sales history export helpers', () => {
   it.each([
     [{ status: 'closed', payment_status: 'paid', payment_method: 'cash' }, 'paid', 'Pagada'],
     [{ status: 'closed', payment_status: 'credit_pending', payment_method: 'cash' }, 'credit', 'Fiada'],
-    [{ status: 'closed', payment_status: 'partial', payment_method: 'mixed', amount_paid: 10 }, 'mixed_credit', 'Pago mixto con crédito'],
-    [{ status: 'closed', payment_status: 'partial', payment_method: 'cash', amount_paid: 0 }, 'credit', 'Fiada'],
+    [{ status: 'closed', payment_status: 'partial', payment_method: 'mixed', amount_paid: 10 }, 'partial', 'Parcialmente pagada'],
+    [{ status: 'closed', payment_status: 'partial', payment_method: 'cash', amount_paid: 0 }, 'partial', 'Parcialmente pagada'],
     [{ status: 'closed', payment_status: 'partial', payment_method: 'mixed' }, 'partial', 'Parcialmente pagada'],
     [{ status: 'closed', payment_status: 'partial', payment_method: 'cash' }, 'partial', 'Parcialmente pagada'],
     [{ status: 'cancelled', payment_status: 'paid', payment_method: 'cash' }, 'cancelled', 'Cancelada'],
@@ -21,6 +22,58 @@ describe('sales history export helpers', () => {
   ])('maps payment status independently from method: %j', (sale, category, label) => {
     expect(getSalePaymentStatusCategory(sale)).toBe(category);
     expect(getSalePaymentStatusLabel(sale)).toBe(label);
+  });
+
+  it('reconstructs the confirmed local $50 cash sale from its persisted payment snapshot', () => {
+    const sale = {
+      id: 'local-cash-50', status: 'closed', paymentMethod: 'efectivo', total: '50',
+      abono: '50', saldoPendiente: '0', payments: [{ method: 'cash', amount: '50' }]
+    };
+    expect(getSalePaymentStatusCategory(sale)).toBe('paid');
+    expect(getSalePaymentStatusLabel(sale)).toBe('Pagada');
+    expect(getSaleInitialFinancialAmounts(sale)).toEqual({ paidInitially: 50, initialCredit: null });
+  });
+
+  it('keeps the confirmed $120 fiado sale pending without attributing any cash', () => {
+    const sale = {
+      id: 'local-credit-120', status: 'closed', paymentMethod: 'fiado', paymentStatus: 'credit_pending',
+      creditStatus: 'VIGENTE', total: '120', abono: '0', saldoPendiente: '120', payments: []
+    };
+    expect(getSalePaymentStatusLabel(sale)).toBe('Fiada');
+    expect(getSaleInitialFinancialAmounts(sale)).toEqual({ paidInitially: 0, initialCredit: 120 });
+  });
+
+  it('labels a credited sale with an initial payment as mixed credit', () => {
+    expect(getSalePaymentStatusCategory({
+      status: 'closed', paymentStatus: 'partial', paymentMethod: 'fiado',
+      total: '120', abono: '50', saldoPendiente: '70',
+      payments: [{ method: 'cash', amount: '50' }, { method: 'credit', amount: '70' }]
+    })).toBe('mixed_credit');
+  });
+
+  it('keeps the initial credit separate from collections applied later', () => {
+    const sale = {
+      status: 'closed', paymentStatus: 'partial', paymentMethod: 'fiado',
+      total: '120', abono: '50', saldoPendiente: '50', creditStatus: 'PARCIAL',
+      paymentCollections: [{ method: 'cash', amount: '20', timestamp: '2026-11-18T10:00:00.000Z' }]
+    };
+    expect(getSaleInitialFinancialAmounts(sale)).toEqual({ paidInitially: 50, initialCredit: 70 });
+    expect(getSalePaymentStatusCategory(sale)).toBe('mixed_credit');
+  });
+
+  it('reads the cloud original credit amount instead of its mutable current balance', () => {
+    expect(getSaleInitialFinancialAmounts({
+      status: 'closed', source_mode: 'cloud_committed', total: 120,
+      amount_paid: 50, originalBalanceDue: 70,
+      balance_due: 70, current_balance_due: 40
+    })).toEqual({ paidInitially: 50, initialCredit: 70 });
+  });
+
+  it('does not label a mutable current balance as initial credit without initial payment evidence', () => {
+    expect(getSaleInitialFinancialAmounts({
+      status: 'closed', paymentMethod: 'fiado', total: 120, saldoPendiente: 100,
+      paymentCollections: [{ method: 'cash', amount: '20' }]
+    })).toEqual({ paidInitially: null, initialCredit: null });
   });
 
   it('reports recorded initial amounts without deriving current debt from the sale total', () => {
@@ -44,6 +97,23 @@ describe('sales history export helpers', () => {
       payment_method: 'credit',
       saldoPendiente: 20
     })).toEqual({ paidInitially: null, initialCredit: null });
+  });
+
+  it('does not infer a cash payment from the method and sale total alone', () => {
+    expect(getSalePaymentStatusCategory({
+      status: 'closed', payment_method: 'cash', total: 50
+    })).toBe('unknown');
+    expect(getSaleInitialFinancialAmounts({
+      status: 'closed', payment_method: 'cash', total: 50
+    })).toEqual({ paidInitially: null, initialCredit: null });
+  });
+
+  it('keeps date-only report bounds as business calendar dates', () => {
+    expect(formatSalesHistoryDateRange({ date_from: '2026-11-18', date_to: '2026-11-18' }, 'America/Merida'))
+      .toBe('Desde 18/11/2026 hasta 18/11/2026 · America/Merida');
+    expect(formatSalesHistoryDateRange({
+      date_from: '2026-11-18T06:00:00.000Z', date_to: '2026-11-19T06:00:00.000Z'
+    }, 'America/Merida')).toBe('Desde 18/11/2026 hasta 18/11/2026 · America/Merida');
   });
 
   it('writes one row per stable sale ID and records the actual page, scope, filters and source', () => {

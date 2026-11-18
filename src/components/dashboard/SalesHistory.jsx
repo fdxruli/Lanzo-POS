@@ -4,6 +4,11 @@ import { salesRepository } from '../../services/db/sales';
 import { getReportSourceLabel, REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 import { formatCurrencyMXN } from '../../utils/formatCurrencyMXN';
 import {
+  addBusinessCalendarDays,
+  businessDateKeyToStart,
+  formatBusinessInstant
+} from '../../utils/businessTime';
+import {
   buildSalesHistoryCsv,
   buildSalesHistoryPrintHtml,
   dedupeSalesByStableId,
@@ -76,11 +81,9 @@ const getSaleStatus = (sale = {}) => {
   return status || fulfillmentStatus || 'completed';
 };
 
-const formatDateForDisplay = (value) => {
+const formatDateForDisplay = (value, timeZone) => {
   if (!value) return 'Fecha no disponible';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
-  return date.toLocaleString('es-MX');
+  return formatBusinessInstant(value, timeZone) || 'Fecha no disponible';
 };
 
 const getPaymentMethodFilterLabel = (sale = {}) => String(
@@ -227,7 +230,8 @@ export default function SalesHistory({
   queryScope = null,
   dateRange = null,
   error = null,
-  businessName = ''
+  businessName = '',
+  businessTimezone = null
 }) {
   const [expandedSplits, setExpandedSplits] = useState({});
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -262,8 +266,11 @@ export default function SalesHistory({
 
   const filteredSales = useMemo(() => {
     const query = toText(filters.query);
-    const fromMs = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`).getTime() : null;
-    const toMs = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59.999`).getTime() : null;
+    const from = filters.dateFrom ? businessDateKeyToStart(filters.dateFrom, businessTimezone) : null;
+    const toStart = filters.dateTo ? businessDateKeyToStart(filters.dateTo, businessTimezone) : null;
+    const toExclusive = toStart ? addBusinessCalendarDays(toStart, 1, businessTimezone) : null;
+    const fromMs = from?.getTime() ?? null;
+    const toExclusiveMs = toExclusive?.getTime() ?? null;
 
     return mainSales.filter((sale) => {
       const saleTime = Date.parse(getSaleTimestamp(sale));
@@ -282,9 +289,9 @@ export default function SalesHistory({
       ].map(toText).join(' ');
 
       if (query && !haystack.includes(query) && !saleMatchesReference(sale, query)) return false;
-      if ((fromMs !== null || toMs !== null) && !Number.isFinite(saleTime)) return false;
+      if ((fromMs !== null || toExclusiveMs !== null) && !Number.isFinite(saleTime)) return false;
       if (fromMs !== null && saleTime < fromMs) return false;
-      if (toMs !== null && saleTime > toMs) return false;
+      if (toExclusiveMs !== null && saleTime >= toExclusiveMs) return false;
       if (filters.paymentMethod !== 'all' && getPaymentMethodFilterLabel(sale) !== filters.paymentMethod) return false;
       if (filters.paymentStatus !== 'all' && getSalePaymentStatusCategory(sale) !== filters.paymentStatus) return false;
       if (filters.status !== 'all' && status !== filters.status) return false;
@@ -293,7 +300,7 @@ export default function SalesHistory({
 
       return true;
     });
-  }, [filters, mainSales]);
+  }, [businessTimezone, filters, mainSales]);
 
   const activeFilters = useMemo(() => {
     const active = [];
@@ -321,7 +328,7 @@ export default function SalesHistory({
     ? `${getReportSourceLabel(effectiveSource)}${effectiveSource.stale ? ' (snapshot desactualizado)' : ''}`
     : (isLoading ? 'Esperando consulta' : 'Origen no informado');
   const pageNumber = currentPageIndex + 1;
-  const periodLabel = formatSalesHistoryDateRange(dateRange);
+  const periodLabel = formatSalesHistoryDateRange(dateRange, businessTimezone);
   const coverageLabel = `Solo página ${pageNumber}: ${filteredSales.length} de ${mainSales.length} registro(s) cargado(s) tras los filtros locales`;
   const exportMetadata = {
     pageIndex: currentPageIndex,
@@ -334,6 +341,7 @@ export default function SalesHistory({
     scopeLabel,
     sourceLabel,
     businessName,
+    businessTimezone,
     coverageLabel
   };
 
@@ -421,6 +429,7 @@ export default function SalesHistory({
             {!isLoading && normalizedTotalCount !== null && ` · ${normalizedTotalCount} disponibles en la consulta`}
             {!isLoading && normalizedTotalCount === null && (hasMore ? ' · Hay más páginas' : ' · Total disponible no informado')}
           </p>
+          {businessTimezone && <small className="text-muted">Fechas y horas en la zona del negocio: {businessTimezone}.</small>}
         </div>
         <div className="history-export-actions">
           <button type="button" className="history-secondary-btn" onClick={exportCsv} disabled={isLoading || filteredSales.length === 0}>
@@ -575,7 +584,7 @@ export default function SalesHistory({
                         {ecommerce && <span className="sale-reference-secondary">{getSaleSecondaryReference(sale)}</span>}
                       </span>
                       {ecommerce && <span className="ui-badge ui-badge--info ui-badge--sm">Ecommerce</span>}
-                      {formatDateForDisplay(getSaleTimestamp(sale))}
+                      {formatDateForDisplay(getSaleTimestamp(sale), businessTimezone)}
                       {isSplitParent && (
                         <span className="split-badge">Cuentas Separadas</span>
                       )}

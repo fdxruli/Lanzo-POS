@@ -28,6 +28,7 @@ import {
     restaurantCloudTableTerminalBlockedResult
 } from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
+import { normalizeRestaurantSplitPaymentMethod } from './paymentMethodContract';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import {
   createFinancialNotificationResult,
@@ -121,19 +122,25 @@ const resolveStableSaleTimestamp = async ({
     Logger,
     persistedSale = undefined
 }) => {
+    let durableSale = persistedSale;
     if (activeOrderId && STORES?.SALES && typeof loadData === 'function') {
         try {
-            const durableSale = persistedSale === undefined
+            durableSale = persistedSale === undefined
                 ? await loadData(STORES.SALES, activeOrderId) : persistedSale;
-            const stablePersistedTimestamp = normalizeStableSaleTimestamp(durableSale?.timestamp)
-                || normalizeStableSaleTimestamp(durableSale?.createdAt);
-            if (stablePersistedTimestamp) return stablePersistedTimestamp;
+            const durableStatus = String(durableSale?.status || '').trim().toLowerCase();
+            if (durableStatus === SALE_STATUS.CLOSED || durableStatus === 'completed') {
+                const committedTimestamp = normalizeStableSaleTimestamp(durableSale?.timestamp)
+                    || normalizeStableSaleTimestamp(durableSale?.createdAt);
+                if (committedTimestamp) return committedTimestamp;
+            }
+            const checkoutTimestamp = normalizeStableSaleTimestamp(durableSale?.checkoutSaleTimestamp);
+            if (checkoutTimestamp) return checkoutTimestamp;
         } catch (error) {
             Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
         }
     }
 
-    const explicitTimestamp = [saleTimestamp, activeOrderCreatedAt, createdAt]
+    const explicitTimestamp = [saleTimestamp, ...(!activeOrderId ? [activeOrderCreatedAt, createdAt] : [])]
         .map(normalizeStableSaleTimestamp)
         .find(Boolean);
     if (explicitTimestamp) return explicitTimestamp;
@@ -144,6 +151,49 @@ const resolveStableSaleTimestamp = async ({
     }
 
     throw stableSaleTimestampRequiredError();
+};
+
+const deriveLocalPaymentStatus = ({ total, amountPaid, balanceDue, paymentMethod, payments = [] } = {}) => {
+    const totalAmount = Money.toNumber(Money.init(total));
+    const paidAmount = Money.toNumber(Money.init(amountPaid));
+    const creditAmount = Money.toNumber(Money.init(balanceDue));
+    const method = normalizeRestaurantSplitPaymentMethod(paymentMethod);
+    if (Math.abs(totalAmount - paidAmount - creditAmount) > 0.01) return null;
+
+    if (Array.isArray(payments) && payments.length > 0) {
+        let paymentTotal = 0;
+        let paidTenderTotal = 0;
+        let hasCredit = false;
+        let hasPaidTender = false;
+        for (const payment of payments) {
+            const paymentMethodCanonical = normalizeRestaurantSplitPaymentMethod(payment?.method);
+            const amount = Number(payment?.amount);
+            if (!paymentMethodCanonical || !Number.isFinite(amount) || amount <= 0) return null;
+            paymentTotal += amount;
+            if (paymentMethodCanonical === 'credit') {
+                hasCredit = true;
+            } else if (['cash', 'card', 'transfer'].includes(paymentMethodCanonical)) {
+                hasPaidTender = true;
+                paidTenderTotal += amount;
+            }
+            else return null;
+        }
+        if (Math.abs(paidTenderTotal - paidAmount) > 0.01) return null;
+        if (hasCredit && Math.abs(paymentTotal - totalAmount) > 0.01) return null;
+        if (!hasCredit && Math.abs(paymentTotal - paidAmount) > 0.01) return null;
+        if (!hasCredit && Math.abs(creditAmount) <= 0.01
+            && Math.abs(paidAmount - totalAmount) <= 0.01) return 'paid';
+        if (hasCredit && !hasPaidTender && paidAmount <= 0.01) return 'credit_pending';
+        if ((hasCredit || (method === 'credit' && creditAmount > 0.01)) && hasPaidTender) return 'partial';
+        return null;
+    }
+
+    if (Math.abs(creditAmount) <= 0.01 && Math.abs(paidAmount - totalAmount) <= 0.01
+        && ['cash', 'card', 'transfer'].includes(method)) return 'paid';
+    if (creditAmount > 0.01 && method === 'credit') {
+        return paidAmount > 0.01 ? 'partial' : 'credit_pending';
+    }
+    return null;
 };
 
 const getEcommerceCheckout = (paymentData = {}) => {
@@ -603,6 +653,20 @@ export const processSaleCore = async ({
             ? null
             : suppliedCashStationId;
         const saleId = activeOrderId || generateID('sal');
+        const localPaymentSnapshot = cloudCashierDecision?.useCloud ? null : buildSalePaymentSnapshot({
+            paymentData: safePaymentData,
+            paymentMethod: safePaymentData.paymentMethod,
+            total: Money.toExactString(totalNum),
+            initialPaid: Money.toExactString(abonoSeguro),
+            saleId
+        });
+        const localPaymentStatus = deriveLocalPaymentStatus({
+            total: totalNum,
+            amountPaid: abonoSeguro,
+            balanceDue: saldoSeguro,
+            paymentMethod: safePaymentData.paymentMethod,
+            payments: localPaymentSnapshot || []
+        });
 
         const sale = {
             id: saleId,
@@ -625,13 +689,8 @@ export const processSaleCore = async ({
                     || safePaymentData.creditPaymentMethod
                     || safePaymentData.partialPaymentMethod
                     || null,
-                payments: buildSalePaymentSnapshot({
-                    paymentData: safePaymentData,
-                    paymentMethod: safePaymentData.paymentMethod,
-                    total: Money.toExactString(totalNum),
-                    initialPaid: Money.toExactString(abonoSeguro),
-                    saleId
-                })
+                payments: localPaymentSnapshot,
+                ...(localPaymentStatus ? { paymentStatus: localPaymentStatus } : {})
             }),
             cash_session_id: safePaymentData.cashSessionId || safePaymentData.cash_session_id || null,
             cashStationId,

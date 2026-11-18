@@ -255,6 +255,7 @@ export default function CajaPage() {
   // ESTADO GLOBAL (useAppStore)
   // ============================================================
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
+  const businessTimezone = useAppStore((state) => state.companyProfile?.timezone || null);
   const setBackupLoading = useAppStore((state) => state.setBackupLoading);
   const driveAuthValue = useAppStore((state) => state[['drive', 'Access', 'Token'].join('')]);
   const driveExpiryValue = useAppStore((state) => state[['drive', 'Token', 'ExpiresAt'].join('')]);
@@ -887,14 +888,15 @@ export default function CajaPage() {
               <p>La caja permanece protegida. Conéctate o completa la recuperación administrativa antes de realizar operaciones de efectivo.</p>
             </div>
           )}
-          <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+          <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
           <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
           {showBusinessCashSummary && (
-            <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} attentionSessionId={attentionSessionId} />
+            <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} attentionSessionId={attentionSessionId} businessTimezone={businessTimezone} />
           )}
           <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
           {showAdminAuditPanel && (
             <CajaStaffAuditPanel
+                businessTimezone={businessTimezone}
               adminCashSessions={adminCashSessions}
               listCashSessionsForAudit={listCashSessionsForAudit}
               isReadOnly={isCloudCashReadOnly}
@@ -933,10 +935,11 @@ export default function CajaPage() {
           isCloudCash={isCloudCash}
           isReadOnly={isCloudCashReadOnly}
         />
-        <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+        <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
         <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
         {showBusinessCashSummary && (
           <CajaBusinessCashSummary
+            businessTimezone={businessTimezone}
             adminOpenSessions={adminCashSessions}
             cajaActual={cajaActual}
             onReviewSession={(session) => setReviewCashSessionId(session.id)}
@@ -947,6 +950,7 @@ export default function CajaPage() {
         <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
         {showAdminAuditPanel && (
           <CajaStaffAuditPanel
+            businessTimezone={businessTimezone}
             adminCashSessions={adminCashSessions}
             listCashSessionsForAudit={listCashSessionsForAudit}
             isReadOnly={isCloudCashReadOnly}
@@ -1003,6 +1007,7 @@ export default function CajaPage() {
               attentionSessionId={attentionSessionId}
             />
             <CajaStatusCard
+              businessTimezone={businessTimezone}
               cajaActual={cajaActual}
               totalesTurno={totalesTurno}
               excesoLiquidez={excesoLiquidez}
@@ -1057,7 +1062,7 @@ export default function CajaPage() {
           className="caja-section-panel caja-section-panel--list"
         >
           {visibleVisitedSections.has('movimientos') && (
-            <CajaMovementsList movimientos={movimientosCaja} isCloudCash={isCloudCash} />
+            <CajaMovementsList movimientos={movimientosCaja} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
           )}
         </div>
 
@@ -1069,7 +1074,7 @@ export default function CajaPage() {
           className="caja-section-panel caja-section-panel--list"
         >
           {visibleVisitedSections.has('historial') && (
-            <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+            <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
           )}
         </div>
 
@@ -1084,6 +1089,7 @@ export default function CajaPage() {
             {visibleVisitedSections.has('negocio') && (
               <div className="caja-business-layout">
                 <CajaBusinessCashSummary
+                  businessTimezone={businessTimezone}
                   adminOpenSessions={adminCashSessions}
                   cajaActual={cajaActual}
                   onReviewSession={(session) => setReviewCashSessionId(session.id)}
@@ -1101,6 +1107,7 @@ export default function CajaPage() {
                     <summary>Auditoría de cajas</summary>
                     {hasOpenedStaffAudit && (
                       <CajaStaffAuditPanel
+                        businessTimezone={businessTimezone}
                         adminCashSessions={adminCashSessions}
                         listCashSessionsForAudit={listCashSessionsForAudit}
                         isReadOnly={isCloudCashReadOnly}

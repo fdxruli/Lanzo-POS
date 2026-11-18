@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import CajaMovementsList from '../CajaMovementsList';
+import { formatBusinessInstant } from '../../../../utils/businessTime';
 
 afterEach(cleanup);
 
@@ -58,5 +59,19 @@ describe('CajaMovementsList cash movement semantics', () => {
     expect(screen.getByText('Tarjeta/Transf.')).toBeVisible();
     expect(screen.getAllByText('Venta eliminada')).toHaveLength(2);
     expect(screen.getByText('Merma')).toBeVisible();
+  });
+
+  it('shows a sale movement in the business timezone', () => {
+    const timestamp = '2026-11-18T09:30:00.000Z';
+    const timeZone = 'America/Merida';
+    const expectedTime = formatBusinessInstant(timestamp, timeZone, {
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    render(<CajaMovementsList
+      movimientos={[{ id: 'cash-sale-time', tipo: 'venta', monto: '50', fecha: timestamp, concepto: 'FM-01-000013' }]}
+      businessTimezone={timeZone}
+    />);
+
+    expect(screen.getByText(expectedTime)).toBeVisible();
   });
 });
