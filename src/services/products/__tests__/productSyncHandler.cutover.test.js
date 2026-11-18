@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   runMigration: vi.fn(),
   runRecovery: vi.fn(),
   upsertProduct: vi.fn(),
+  addInventoryEntry: vi.fn(),
+  markReceiptSynced: vi.fn(),
+  markReceiptRejected: vi.fn(),
   upsertCategory: vi.fn(),
   upsertProductBatch: vi.fn(),
   deleteProduct: vi.fn(),
@@ -49,6 +52,7 @@ vi.mock('../productLocalCatalogRecovery', () => ({ productLocalCatalogRecovery: 
 } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   upsertProduct: mocks.upsertProduct,
+  addInventoryEntry: mocks.addInventoryEntry,
   upsertCategory: mocks.upsertCategory,
   upsertProductBatch: mocks.upsertProductBatch,
   deleteProduct: mocks.deleteProduct,
@@ -65,7 +69,10 @@ vi.mock('../productConflictService', () => ({ productConflictService: {
   saveConflict: mocks.saveConflict
 } }));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
-vi.mock('../../inventory/inventoryEntryService', () => ({ markInventoryEntrySynced: vi.fn() }));
+vi.mock('../../inventory/inventoryEntryService', () => ({
+  markInventoryEntrySynced: mocks.markReceiptSynced,
+  markCloudPharmacyReceiptRejected: mocks.markReceiptRejected
+}));
 vi.mock('../../Logger', () => ({ default: {
   log: vi.fn(),
   warn: vi.fn()
@@ -90,6 +97,56 @@ describe('product sync repeated cutover safety', () => {
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
     mocks.getCatalogRecordForSync.mockResolvedValue(null);
     mocks.getMeta.mockResolvedValue(12);
+  });
+
+  const receiptOperation = {
+    licenseKey: 'CUTOVER-HANDLER', entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
+    entityId: 'medicine-1', idempotencyKey: 'original-receipt',
+    payload: { cloudPharmacyReceipt: true, entry: {
+      productId: 'medicine-1', batchId: 'batch-1', metadata: { pharmacyReceipt: { version: 1 } }
+    } }
+  };
+
+  it('preserves an uncertain receipt and applies only a confirmed retry of the same key', async () => {
+    const response = { success: true, idempotency_key: 'original-receipt', inventory_movement: { id: 'movement-1' },
+      product: { id: 'medicine-1' }, batch: { id: 'batch-1', product_id: 'medicine-1' } };
+    mocks.addInventoryEntry.mockRejectedValueOnce(new Error('Network timeout')).mockResolvedValueOnce(response);
+
+    await expect(productSyncHandler.pushOperation(receiptOperation)).rejects.toThrow('Network timeout');
+    expect(mocks.markReceiptSynced).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+
+    await expect(productSyncHandler.pushOperation(receiptOperation)).resolves.toEqual(response);
+    expect(mocks.addInventoryEntry.mock.calls.map(([entry]) => entry.idempotencyKey))
+      .toEqual(['original-receipt', 'original-receipt']);
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(response, { requireInventoryProjection: true });
+    expect(mocks.markReceiptSynced).toHaveBeenCalledWith('original-receipt', response);
+    expect(mocks.setMeta).not.toHaveBeenCalled();
+  });
+
+  it('records a definitive validation rejection without applying a stock projection', async () => {
+    mocks.addInventoryEntry.mockRejectedValueOnce({ code: 'P0001', message: 'BATCH_NOT_FOUND' });
+    await expect(productSyncHandler.pushOperation(receiptOperation)).resolves.toMatchObject({
+      success: false, code: 'BATCH_NOT_FOUND'
+    });
+    expect(mocks.markReceiptRejected).toHaveBeenCalledWith('original-receipt', 'BATCH_NOT_FOUND');
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('recovers a rejected legacy receipt using the original operation and current server catalog', async () => {
+    const response = { success: true, idempotency_key: 'original-receipt', receipt_outcome: 'rejected',
+      product: { id: 'medicine-1', stock: 8, server_version: 9 }, batches: [] };
+    mocks.addInventoryEntry.mockResolvedValueOnce(response);
+    await expect(productSyncHandler.pushOperation({
+      ...receiptOperation, payload: { entry: receiptOperation.payload.entry }
+    })).resolves.toEqual(response);
+    expect(mocks.addInventoryEntry).toHaveBeenCalledWith(expect.objectContaining({
+      verifyLegacyPharmacyReceipt: true, idempotencyKey: 'original-receipt'
+    }));
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(response, {
+      legacyReceipt: { productId: 'medicine-1', batchId: 'batch-1' }
+    });
+    expect(mocks.markReceiptSynced).toHaveBeenCalledWith('original-receipt', response);
   });
 
   it('does not advance the catalog cursor after deferring a pending pharmacy receipt', async () => {

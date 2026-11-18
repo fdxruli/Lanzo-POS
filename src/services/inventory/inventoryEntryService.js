@@ -2,7 +2,7 @@ import { db, STORES } from '../db/dexie';
 import { generateIdempotencyKey } from '../sync/idempotency';
 import { buildSyncOutboxRecord } from '../sync/syncOutboxService';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
-import { getLicenseKeyFromDetails } from '../sync/syncConstants';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAuthorityRequired, OUTBOX_STATUS } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
 import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
@@ -161,6 +161,8 @@ export const addInventoryEntry = async ({
 
   if (!productId) throw domainError('PRODUCT_NOT_FOUND');
   const actorHandle = captureProductInventoryMutation({ inventory: true });
+  const licenseDetails = useAppStore.getState()?.licenseDetails;
+  const cloudProducts = isPharmacyCloudAuthorityRequired(licenseDetails);
   const localOnly = isLegacyLocalOwnerProductInventoryAuthority(actorHandle);
   assertInventoryMutationCurrent(actorHandle);
   if (!db.isOpen()) await db.open();
@@ -174,7 +176,19 @@ export const addInventoryEntry = async ({
     const existingEvent = await eventTable.get(eventId);
     if (existingEvent) {
       if (existingEvent.requestHash !== requestHash) throw domainError('IDEMPOTENCY_PAYLOAD_MISMATCH');
-      return { ...existingEvent.result, duplicate: true, operationId: resolvedOperationId };
+      if (existingEvent.rejectionCode) throw domainError(existingEvent.rejectionCode);
+      if (cloudProducts && existingEvent.metadata?.pharmacyReceipt
+        && (existingEvent.syncDisposition === 'local_only'
+          || (existingEvent.syncDisposition !== 'cloud_authoritative' && !existingEvent.synced))) {
+        throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
+      }
+      return {
+        ...existingEvent.result,
+        pending: existingEvent.syncDisposition === 'cloud_authoritative'
+          ? !existingEvent.synced : existingEvent.result?.pending,
+        duplicate: true,
+        operationId: resolvedOperationId
+      };
     }
 
     const productTable = db.table(STORES.MENU);
@@ -198,6 +212,30 @@ export const addInventoryEntry = async ({
           !Number.isFinite(Date.parse(entry.occurredAt))) {
         throw domainError('PHARMACY_PROVENANCE_REQUIRED');
       }
+    }
+
+    const cloudReceipt = pharmacyMedicine && cloudProducts;
+    if (cloudReceipt) {
+      if (!resolvedLicenseKey || resolvedLicenseKey !== getLicenseKeyFromDetails(licenseDetails)
+        || localOnly || !isCloudProductsSyncEnabled(licenseDetails)) {
+        throw domainError('PHARMACY_CLOUD_SESSION_REQUIRED');
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw domainError('PHARMACY_CLOUD_OFFLINE');
+      }
+      const pending = await db.table(POS_SYNC_STORES.OUTBOX)
+        .where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
+        .filter((row) => row.licenseKey === resolvedLicenseKey && row.entityId === productId
+          && row.status !== OUTBOX_STATUS.SYNCED).first();
+      const localHistory = await eventTable.where('productId').equals(productId)
+        .filter((event) => event.type === 'INVENTORY_ENTRY'
+          && (!event.licenseKey || event.licenseKey === resolvedLicenseKey)
+          && (event.syncDisposition === 'local_only'
+            || (event.syncDisposition !== 'cloud_authoritative' && !event.synced))).first();
+      if (localHistory || (pending && !pending.payload?.cloudPharmacyReceipt)) {
+        throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
+      }
+      if (pending) throw domainError('PHARMACY_RECEIPT_PENDING');
     }
 
     const timestamp = nowIso();
@@ -224,18 +262,19 @@ export const addInventoryEntry = async ({
           const manufacturer = String(entry.manufacturerBatchId || '').trim().toLowerCase();
           if (!manufacturer || !expiryDay(entry.expiryDate)) throw domainError('PHARMACY_BATCH_IDENTITY_REQUIRED');
           const matchingManufacturer = batches.find((batch) =>
-            !batch?.deletedAt && !batch?.deleted_at &&
-            String(batch.manufacturerBatchId || '').trim().toLowerCase() === manufacturer
+            !(cloudReceipt && batch.rejectedLegacyInventory)
+            && String(batch.manufacturerBatchId || '').trim().toLowerCase() === manufacturer
           );
           if (matchingManufacturer) throw domainError(
             matchingManufacturer.isActive === false || matchingManufacturer.status === 'archived'
+              || matchingManufacturer.deletedAt || matchingManufacturer.deleted_at
               ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED'
           );
         }
         target = makeNewBatch({ product, operationId: resolvedOperationId, entry, timestamp });
       }
       if (pharmacyMedicine) {
-        if (target.isActive === false || target.status === 'archived' || target.deletedAt) {
+        if (target.isActive === false || target.status === 'archived' || target.deletedAt || target.deleted_at) {
           throw domainError('BATCH_NOT_FOUND');
         }
         const expiry = expiryDay(target.expiryDate);
@@ -258,16 +297,18 @@ export const addInventoryEntry = async ({
         status: 'active',
         updatedAt: timestamp
       };
-      assertInventoryMutationCurrent(actorHandle);
-      await batchTable.put(updatedBatch);
+      if (!cloudReceipt) {
+        assertInventoryMutationCurrent(actorHandle);
+        await batchTable.put(updatedBatch);
+      }
       const projected = buildProjection({ product, batches: [...batches.filter((batch) => batch.id !== updatedBatch.id), updatedBatch], timestamp });
       assertInventoryMutationCurrent(actorHandle);
-      await productTable.put(projected);
+      if (!cloudReceipt) await productTable.put(projected);
       parent = projected;
       previousStock = asNumber(product.stock, 0);
       newStock = projected.stock;
       batchResult = { id: updatedBatch.id, previousStock: previousBatchStock, newStock: updatedBatch.stock };
-      entry.batchId = updatedBatch.id;
+      if (!cloudReceipt) entry.batchId = updatedBatch.id;
     } else {
       const updatedProduct = { ...product, stock: newStock, updatedAt: timestamp };
       assertInventoryMutationCurrent(actorHandle);
@@ -278,16 +319,16 @@ export const addInventoryEntry = async ({
     const result = {
       success: true,
       operationId: resolvedOperationId,
-      product: parent,
-      batch: batchResult,
+      product: cloudReceipt ? product : parent,
+      batch: cloudReceipt ? null : batchResult,
       previousStock,
-      newStock,
+      newStock: cloudReceipt ? previousStock : newStock,
       pending: !localOnly
     };
     assertInventoryMutationCurrent(actorHandle);
     await eventTable.put({
       id: eventId, type: 'INVENTORY_ENTRY', operationId: resolvedOperationId, productId: product.id,
-      batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock,
+      batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock: result.newStock,
       timestamp, occurredAt: entry.occurredAt, entryKind, metadata: entry.metadata,
       supplier: entry.supplier, manufacturerBatchId: target?.manufacturerBatchId || null,
       expiryDate: target?.expiryDate || null, licenseKey: resolvedLicenseKey,
@@ -295,7 +336,7 @@ export const addInventoryEntry = async ({
       requestHash,
       synced: localOnly,
       syncedAt: localOnly ? timestamp : null,
-      syncDisposition: localOnly ? 'local_only' : 'actor_bound',
+      syncDisposition: cloudReceipt ? 'cloud_authoritative' : localOnly ? 'local_only' : 'actor_bound',
       result
     });
 
@@ -304,7 +345,7 @@ export const addInventoryEntry = async ({
       await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
         licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
         operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
-        payload: { entry }, idempotencyKey: resolvedOperationId,
+        payload: cloudReceipt ? { entry, cloudPharmacyReceipt: true } : { entry }, idempotencyKey: resolvedOperationId,
         actorSensitive: true,
         originActor: actorOriginFromHandle(actorHandle),
         metadata: { source: 'inventoryEntryService', operationId: resolvedOperationId }
@@ -326,10 +367,56 @@ export const listLocalOnlyInventoryEntriesForRecovery = async ({ licenseKey } = 
     && (!event.licenseKey || event.licenseKey === licenseKey));
 };
 
+export const assertCloudPharmacyInventoryReconciled = async (productIds) => {
+  const details = useAppStore.getState()?.licenseDetails;
+  if (!isPharmacyCloudAuthorityRequired(details) || !productIds.length) return;
+  const licenseKey = getLicenseKeyFromDetails(details);
+  if (!db.isOpen()) await db.open();
+  const products = await db.table(STORES.MENU).bulkGet(productIds);
+  const medicineIds = products.filter(isPharmacyMedicine).map((product) => product.id);
+  if (!medicineIds.length) return;
+  const unresolved = await db.table(STORES.INVENTORY_EVENTS).where('productId').anyOf(medicineIds)
+    .filter((event) => event.type === 'INVENTORY_ENTRY'
+      && (!event.licenseKey || event.licenseKey === licenseKey)
+      && (event.syncDisposition === 'local_only'
+        || (event.syncDisposition !== 'cloud_authoritative' && !event.synced))).first();
+  if (unresolved) throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED',
+    inventoryEntryErrors.PHARMACY_INVENTORY_REVIEW_REQUIRED);
+};
+
+export const retryCloudPharmacyReceipt = async (operationId) => {
+  const licenseKey = getRuntimeLicenseKey();
+  const handle = captureProductInventoryMutation({ inventory: true });
+  await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'pharmacy_receipt_retry' });
+  const outbox = db.table(POS_SYNC_STORES.OUTBOX);
+  await db.transaction('rw', outbox, async () => {
+    assertInventoryMutationCurrent(handle);
+    const row = await outbox.where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
+      .filter((record) => record.licenseKey === licenseKey && record.idempotencyKey === operationId
+        && (record.payload?.cloudPharmacyReceipt === true || record.payload?.entry?.metadata?.pharmacyReceipt)).first();
+    if (!row) throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
+    const staleActorConflict = row.status === OUTBOX_STATUS.CONFLICT
+      && row.conflictPayload?.code === 'ACTOR_CONTEXT_STALE';
+    if ([OUTBOX_STATUS.FAILED, OUTBOX_STATUS.PENDING].includes(row.status) || staleActorConflict) {
+      if (row.originActorKey !== handle.actorKey) throw domainError('PHARMACY_CLOUD_SESSION_REQUIRED');
+      await outbox.update(row.id, { status: OUTBOX_STATUS.PENDING, nextRetryAt: null, attempts: 0, updatedAt: nowIso() });
+    }
+  });
+};
+
+export const markCloudPharmacyReceiptRejected = async (operationId, code) => {
+  await db.table(STORES.INVENTORY_EVENTS).update(`inventory-entry:${operationId}`, {
+    rejectionCode: code
+  });
+};
+
 export const markInventoryEntrySynced = async (operationId, response = null) => {
   if (!operationId || !db.isOpen()) return;
   const eventId = `inventory-entry:${operationId}`;
-  await db.table(STORES.INVENTORY_EVENTS).update(eventId, { synced: true, syncedAt: nowIso(), cloudResult: response });
+  await db.table(STORES.INVENTORY_EVENTS).update(eventId, {
+    synced: true, syncedAt: nowIso(), cloudResult: response,
+    ...(response?.receipt_outcome === 'rejected' ? { rejectionCode: 'PHARMACY_LEGACY_RECEIPT_REJECTED' } : {})
+  });
 };
 
 export const inventoryEntryErrors = Object.freeze({
@@ -350,5 +437,9 @@ export const inventoryEntryErrors = Object.freeze({
   PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe este lote de fabricante: selecciónalo para registrar otra recepción.',
   PHARMACY_ARCHIVED_BATCH_EXISTS: 'Este lote de fabricante ya existe archivado. Revisa su estado en Lotes / historial antes de registrar una recepción; no crees otro lote con la misma identidad.',
   PHARMACY_EXPIRED_BATCH: 'No se pueden recibir lotes vencidos como existencia vendible.',
+  PHARMACY_CLOUD_SESSION_REQUIRED: 'Inicia una sesión autorizada para recibir medicamentos en Nube.',
+  PHARMACY_CLOUD_OFFLINE: 'Conéctate a internet para confirmar la recepción.',
+  PHARMACY_INVENTORY_REVIEW_REQUIRED: 'El inventario de este medicamento requiere revisión. Hay recepciones anteriores sin conciliar.',
+  PHARMACY_RECEIPT_PENDING: 'Hay una recepción pendiente de verificar. Consulta su estado antes de confirmar otra.',
   BATCH_NOT_FOUND: 'El lote seleccionado no está disponible.'
 });

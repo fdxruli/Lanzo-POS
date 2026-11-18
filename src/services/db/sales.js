@@ -1,3 +1,5 @@
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
+import { isPharmacyCloudAuthorityRequired } from '../sync/syncConstants';
 import { db, STORES } from './dexie';
 import { validateLocalPharmacyDispensations } from '../pharmacy/pharmacyDispensation';
 import {
@@ -638,7 +640,8 @@ const processSaleWithinTransaction = async ({
     deductions = [],
     tables,
     logType = 'SALE',
-    extraLogFields = {}
+    extraLogFields = {},
+    pharmacyCloudAuthority = false
 }) => {
     // ─ Verificar idempotencia: sale ya procesada
     const existingSale = await tables.sales.get(sale.id);
@@ -648,6 +651,17 @@ const processSaleWithinTransaction = async ({
                 DB_ERROR_CODES.CONSTRAINT_VIOLATION,
                 'La venta ya fue procesada anteriormente.'
             );
+        }
+    }
+
+    if (pharmacyCloudAuthority) {
+        const ids = (sale.items || []).map(item => item.parentId || item.productId || item.product_id || item.id);
+        const products = await tables.menu.bulkGet(ids.filter(Boolean));
+        if (products.some(product => {
+            const classification = getPharmacyClassification(product);
+            return classification.recorded && classification.kind === 'medicine';
+        })) {
+            throw new Error('PHARMACY_CLOUD_AUTHORITY_REQUIRED');
         }
     }
 
@@ -864,6 +878,8 @@ export const salesRepository = {
 
     async executeSaleTransaction(sale, deductions, { assertAuthorized = null, subscribeAuthority = null } = {}) {
         try {
+            const { useAppStore } = await import('../../store/useAppStore');
+            const pharmacyCloudAuthority = isPharmacyCloudAuthorityRequired(useAppStore.getState().licenseDetails);
             const lockedStoreNames = resolveRequiredStoreNames(sale);
             const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
 
@@ -889,7 +905,7 @@ export const salesRepository = {
                     throw new Error('LOCAL_CHECKOUT_ATTEMPT_MISMATCH');
                 }
                 await validateLocalPharmacyDispensations(sale, tables.sales);
-                const result = await processSaleWithinTransaction({ sale, deductions, tables, logType: 'SALE' });
+                const result = await processSaleWithinTransaction({ sale, deductions, tables, pharmacyCloudAuthority });
                 // Still inside Dexie's transaction: a failed check rolls back
                 // the sale, stock, ledger, folio and log together.
                 assertAuthorized?.();
@@ -937,6 +953,8 @@ export const salesRepository = {
                 throw new Error('SPLIT_ORDER_INVALID: Se requieren al menos dos tickets hijos.');
             }
 
+            const { useAppStore } = await import('../../store/useAppStore');
+            const pharmacyCloudAuthority = isPharmacyCloudAuthorityRequired(useAppStore.getState().licenseDetails);
             const salesToEvaluate = childPayloads.map(p => p.sale);
             const lockedStoreNames = resolveRequiredStoreNames(salesToEvaluate);
             const dexieTablesToLock = lockedStoreNames.map(name => db.table(name));
@@ -992,6 +1010,7 @@ export const salesRepository = {
                         sale: childSale,
                         deductions: childDeductions,
                         tables,
+                        pharmacyCloudAuthority,
                         logType: 'SPLIT_CHILD',
                         extraLogFields: {
                             splitGroupId,

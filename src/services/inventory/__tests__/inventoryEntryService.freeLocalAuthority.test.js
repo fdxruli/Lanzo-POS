@@ -30,6 +30,7 @@ vi.mock('../../auth/actorRuntimeController', () => ({
   ActorRuntimeError: mocks.TestActorRuntimeError,
   actorRuntimeController: {
     capture: mocks.actorCapture,
+    subscribe: vi.fn(),
     assertGranted: vi.fn(() => { throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED'); })
   }
 }));
@@ -46,9 +47,11 @@ vi.mock('../../db/tenantRuntimeRouter', async (importOriginal) => {
   };
 });
 
+import { getActiveTenantDatabase } from '../../db/tenantRuntimeRouter';
 import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
+import { salesRepository } from '../../db/sales';
 import { addInventoryEntry } from '../inventoryEntryService';
 
 const freeLicense = () => ({
@@ -93,6 +96,7 @@ describe('inventoryEntryService FREE/local authority', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     closeTestTenantRuntime();
   });
 
@@ -134,7 +138,8 @@ describe('inventoryEntryService FREE/local authority', () => {
     expect(mocks.actorCapture).not.toHaveBeenCalled();
   });
 
-  it('receives a fraction VI medicine once with documentary evidence in FREE/local', async () => {
+  it('receives 10 and sells 2 units offline, preserving the documented batch and sale on reopen', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
     await db.table(STORES.MENU).put({ ...strictProduct(), id: 'medicine-vi',
       metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
     });
@@ -155,5 +160,26 @@ describe('inventoryEntryService FREE/local authority', () => {
     expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(10);
     expect((await db.table(STORES.INVENTORY_EVENTS).where('productId').equals('medicine-vi').toArray())).toHaveLength(1);
     expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(0);
+
+    const sale = {
+      id: 'free-pharmacy-sale', status: 'closed', timestamp: new Date().toISOString(),
+      paymentMethod: 'tarjeta', total: 50, abono: 50, saldoPendiente: 0,
+      items: [{ id: 'medicine-vi', productId: 'medicine-vi', batchId: first.batch.id, quantity: 2, price: 25 }]
+    };
+    const result = await salesRepository.executeSaleTransaction(sale, [
+      { batchId: first.batch.id, productId: 'medicine-vi', quantity: 2 }
+    ]);
+    expect(result.success).toBe(true);
+    const database = getActiveTenantDatabase();
+    database.close();
+    await database.open();
+    expect((await db.table(STORES.MENU).get('medicine-vi')).stock).toBe(8);
+    expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(8);
+    expect((await db.table(STORES.SALES).get(sale.id)).items[0].quantity).toBe(2);
+    const history = await db.table(STORES.INVENTORY_EVENTS).get('inventory-entry:free-pharmacy-vi');
+    expect(history.metadata.pharmacyReceipt).toMatchObject({
+      supplier: 'Proveedor QA', documentReference: 'F-QA-001', manufacturerBatchId: 'VI-QA-001',
+      expiryDate: '2027-12-31'
+    });
   });
 });

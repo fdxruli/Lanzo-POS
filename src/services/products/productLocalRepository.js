@@ -567,7 +567,7 @@ export const productLocalRepository = {
     });
   },
 
-  async applyCloudCatalog(response = {}) {
+  async applyCloudCatalog(response = {}, { legacyReceipt = null, requireInventoryProjection = false } = {}) {
     const applied = { categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
     const collections = [
       ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
@@ -584,6 +584,15 @@ export const productLocalRepository = {
     await ensureOpen();
     try {
       await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), db.table(STORES.INVENTORY_EVENTS), db.table(POS_SYNC_STORES.OUTBOX), async () => {
+        let optimisticBatch = null;
+        if (legacyReceipt?.batchId && !response.batches.some(({ id }) => id === legacyReceipt.batchId)) {
+          optimisticBatch = await db.table(STORES.PRODUCT_BATCHES).get(legacyReceipt.batchId);
+          if (optimisticBatch && (optimisticBatch.productId !== legacyReceipt.productId
+            || Number(optimisticBatch.serverVersion || 0) > 0)) {
+            applied.deferredInventory += 1;
+            return;
+          }
+        }
         for (const [entityType, store, records, mapper] of collections) {
           for (let index = 0; index < records.length; index += 1) {
             const record = records[index];
@@ -608,6 +617,10 @@ export const productLocalRepository = {
                   ? (existing || record)
                   : await db.table(STORES.MENU).get(productId);
                 if (isProtectedMedicine(parent)) {
+                  if (Number(existing?.serverVersion || 0) > Number(record.server_version ?? record.serverVersion ?? 0)) {
+                    if (legacyReceipt) applied.deferredInventory += 1;
+                    continue;
+                  }
                   const licenseKey = getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
                   const responseKey = response.idempotency_key || response.idempotencyKey;
                   const otherReceipt = await db.table(POS_SYNC_STORES.OUTBOX)
@@ -616,9 +629,10 @@ export const productLocalRepository = {
                       (!licenseKey || row.licenseKey === licenseKey)
                       && (row.entityId === productId || row.payload?.entry?.productId === productId)
                       && row.status !== OUTBOX_STATUS.SYNCED
+                      && row.payload?.cloudPharmacyReceipt !== true
                       && (!responseKey || !row.idempotencyKey || row.idempotencyKey !== responseKey)
                     ).first();
-                  if (otherReceipt) {
+                  if (otherReceipt && legacyReceipt?.productId !== productId) {
                     applied.deferredInventory += 1;
                     continue;
                   }
@@ -648,6 +662,16 @@ export const productLocalRepository = {
               applied.rejected.push({ entityType, entityId, index, code: cause?.code || 'PRODUCT_CATALOG_RECORD_APPLY_FAILED' });
             }
           }
+        }
+        if ((legacyReceipt || requireInventoryProjection) && (applied.rejected.length || applied.deferredInventory)) {
+          throw createProductCatalogSyncError('Se requiere revisión del inventario del medicamento.', {
+            code: 'PHARMACY_INVENTORY_REVIEW_REQUIRED', phase: 'pharmacy_receipt_projection'
+          });
+        }
+        if (optimisticBatch) {
+          await db.table(STORES.PRODUCT_BATCHES).update(optimisticBatch.id, {
+            stock: 0, isActive: false, status: 'archived', rejectedLegacyInventory: true
+          });
         }
         await reconcileActiveTableReservations({ db, STORES });
       });

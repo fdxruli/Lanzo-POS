@@ -156,6 +156,13 @@ export const isCloudPosSyncEnabled = (licenseDetails = {}) => {
   return isFeatureEnabled(features, 'cloud_pos_sync');
 };
 
+export const isPharmacyCloudAuthorityRequired = (licenseDetails = {}) => {
+  const plan = String(licenseDetails?.plan_code || licenseDetails?.plan?.code || licenseDetails?.plan
+    || licenseDetails?.subscription_plan || licenseDetails?.product_code || licenseDetails?.details?.plan_code || '')
+    .toLowerCase();
+  return plan.includes('pro') || plan.includes('nube') || isCloudPosSyncEnabled(licenseDetails || {});
+};
+
 export const isCloudProductsSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_products_sync');

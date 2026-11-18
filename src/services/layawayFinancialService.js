@@ -586,6 +586,11 @@ export const layawayFinancialService = {
                 throw new Error('El apartado debe estar liquidado para entregar.');
             }
 
+            const productIds = (snapshot.items || layaway.items || []).map(getCartProductId).filter(Boolean);
+            if (productIds.length) {
+                const { assertCloudPharmacyInventoryReconciled } = await import('./inventory/inventoryEntryService');
+                await assertCloudPharmacyInventoryReconciled(productIds);
+            }
             const request = buildCloudLayawayCompletionRequest(layaway);
             return salesCloudCashierService.processCloudLayawayCompletion({
                 request,

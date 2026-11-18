@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
+import { useAppStore } from '../../../store/useAppStore';
 import { addInventoryEntry } from '../inventoryEntryService';
 vi.mock('../../auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_STATUS: {
@@ -223,5 +224,46 @@ describe('pharmacy stage 2 - local reception', () => {
     ]);
     expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(18);
     expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(18);
+  });
+});
+
+describe('pharmacy Cloud receipt authority', () => {
+  const licenseDetails = {
+    license_key: 'test-cloud-pharmacy',
+    features: { cloud_pos_sync: true, cloud_products_sync: true }
+  };
+  let previousLicenseDetails;
+
+  beforeEach(async () => {
+    await openTestTenantRuntime();
+    previousLicenseDetails = useAppStore.getState().licenseDetails;
+    useAppStore.setState({ licenseDetails });
+    await db.table(STORES.MENU).put(medicine());
+  });
+
+  afterEach(() => {
+    useAppStore.setState({ licenseDetails: previousLicenseDetails });
+    closeTestTenantRuntime();
+  });
+
+  it('stages a single immutable operation without exposing stock or creating a local batch', async () => {
+    const request = pharmacyEntry({
+      operationId: 'cloud-vi-receipt', quantity: 10, invoice: 'FAC-1',
+      manufacturerBatchId: 'LOT-1', expiryDate: '2099-10-31'
+    });
+    const [receipt, retry] = await Promise.all([addInventoryEntry(request), addInventoryEntry(request)]);
+
+    expect(receipt).toMatchObject({ pending: true, newStock: 0, batch: null });
+    expect(retry).toMatchObject({ duplicate: true, pending: true });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(1);
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX).toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({ cloudPharmacyReceipt: true, entry: { batchId: null, quantity: 10 } });
+    await expect(addInventoryEntry({ ...request, operationId: 'another-receipt' }))
+      .rejects.toMatchObject({ code: 'PHARMACY_RECEIPT_PENDING' });
+    await expect(addInventoryEntry({ ...request, quantity: 9, baseQuantity: 9 }))
+      .rejects.toMatchObject({ code: 'IDEMPOTENCY_PAYLOAD_MISMATCH' });
   });
 });

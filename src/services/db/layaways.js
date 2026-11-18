@@ -1,4 +1,6 @@
 import { db, STORES } from './dexie';
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
+import { isPharmacyCloudAuthorityRequired } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
 import { assertLayawayPaymentAllowed, isLayawayDeadlineOverdue, requireLayawayTimezone } from '../../utils/layawayCalendar';
 import { handleDexieError, getCommittedStock, normalizeStock } from './utils';
@@ -647,6 +649,17 @@ export const layawayRepository = {
             }
             if (!['active', 'ready'].includes(layaway.status)) throw new Error('Solo se puede entregar un apartado activo o listo.');
             if (Number(layaway.totalAmount) - Number(layaway.paidAmount || 0) > 0.05) throw new Error('El apartado debe estar liquidado para entregar.');
+
+            if (isPharmacyCloudAuthorityRequired(useAppStore.getState().licenseDetails)) {
+                const products = await db.table(STORES.MENU).bulkGet(layaway.items.map(getItemProductId));
+                if (products.some(product => {
+                    const classification = getPharmacyClassification(product);
+                    return classification.recorded && classification.kind === 'medicine';
+                })) {
+                    throw inventoryError('PHARMACY_CLOUD_AUTHORITY_REQUIRED',
+                        'Conéctate a la caja Nube para entregar este medicamento.');
+                }
+            }
 
             const deliveredAt = nowIso();
             const physicalBefore = new Map();
