@@ -112,8 +112,11 @@ begin
   );
   if p_pharmacy_receipt then
     v_request := v_request || jsonb_build_object('pharmacy_receipt_protocol', 1);
+    v_request_hash := encode(sha256(convert_to(v_request::text, 'UTF8')), 'hex');
+  else
+    -- Historical operation keys retain the exact digest of the installed RPC.
+    v_request_hash := md5(v_request::text);
   end if;
-  v_request_hash := md5(v_request::text);
   if p_legacy_status then
     if not private.pharmacy_stage2_protected_product(v_license_id, p_product_id) then
       raise exception 'PHARMACY_CLASSIFICATION_REQUIRED' using errcode = 'P0001';
@@ -309,6 +312,52 @@ $rpc$;
 revoke all on function public.pos_verify_legacy_pharmacy_receipt_v1(text,text,text,text,text,text,numeric,text,numeric,text,numeric,text,text,timestamptz,timestamptz,text,jsonb,text) from public, anon, authenticated, service_role;
 grant execute on function public.pos_verify_legacy_pharmacy_receipt_v1(text,text,text,text,text,text,numeric,text,numeric,text,numeric,text,text,timestamptz,timestamptz,text,jsonb,text) to anon, authenticated, service_role;
 
+-- The recorded medication classification survives later changes to the
+-- business profile. Legacy prescription flags are scoped to pharmacy tenants.
+create function private.far_001_requires_inventory_authority(p_license_id uuid, p_product_id text)
+returns boolean language sql stable set search_path to ''
+as $authority$
+  select exists (
+    select 1 from public.pos_products p
+    where p.license_id = p_license_id and p.id = p_product_id
+      and (
+        p.metadata->'pharmacy'->>'kind' = 'medicine'
+        or (private.pharmacy_stage2_business(p_license_id)
+          and (p.requires_prescription is true or p.prescription_type in ('controlled', 'antibiotic', 'prescription')))
+      )
+  );
+$authority$;
+
+revoke all on function private.far_001_requires_inventory_authority(uuid,text)
+  from public, anon, authenticated, service_role;
+
+create function private.far_001_guard_pharmacy_classification_stock()
+returns trigger language plpgsql security definer set search_path to ''
+as $classification_stock$
+begin
+  if ((new.metadata->'pharmacy'->>'kind' = 'medicine') is true
+      or (private.pharmacy_stage2_business(new.license_id) and (
+        new.requires_prescription is true or new.prescription_type in ('controlled', 'antibiotic', 'prescription')
+      )))
+     and not private.far_001_requires_inventory_authority(new.license_id, new.id)
+     and (coalesce(new.stock, 0) > 0 or coalesce(new.committed_stock, 0) > 0 or exists (
+       select 1 from public.pos_product_batches b
+       where b.license_id = new.license_id and b.product_id = new.id and b.deleted_at is null
+         and (b.stock > 0 or b.committed_stock > 0)
+     )) then
+    raise exception 'PHARMACY_INVENTORY_REVIEW_REQUIRED' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$classification_stock$;
+
+revoke all on function private.far_001_guard_pharmacy_classification_stock()
+  from public, anon, authenticated, service_role;
+
+create trigger trg_far_001_pharmacy_classification_stock
+before insert or update of metadata, requires_prescription, prescription_type on public.pos_products
+for each row execute function private.far_001_guard_pharmacy_classification_stock();
+
 -- Financial RPCs link the server-side stock effect after inserting the sale
 -- line. Validate the final state in the same transaction, including layaways.
 create function private.far_001_require_pharmacy_sale_inventory()
@@ -316,8 +365,7 @@ returns trigger
 language plpgsql security definer set search_path to ''
 as $sale_guard$
 begin
-  if not private.pharmacy_stage2_business(new.license_id)
-     or not private.pharmacy_stage2_protected_product(new.license_id, new.product_id) then
+  if not private.far_001_requires_inventory_authority(new.license_id, new.product_id) then
     return null;
   end if;
 
@@ -368,8 +416,7 @@ declare
 begin
   if tg_op = 'UPDATE' then v_previous := coalesce(old.stock, 0); end if;
   if coalesce(new.stock, 0) <= v_previous
-     or not private.pharmacy_stage2_business(new.license_id)
-     or not private.pharmacy_stage2_protected_product(new.license_id, new.product_id) then
+     or not private.far_001_requires_inventory_authority(new.license_id, new.product_id) then
     return null;
   end if;
 
@@ -408,8 +455,7 @@ as $batch_identity$
 declare
   v_manufacturer text := nullif(lower(btrim(new.manufacturer_batch_id)), '');
 begin
-  if not private.pharmacy_stage2_business(new.license_id)
-     or not private.pharmacy_stage2_protected_product(new.license_id, new.product_id) then
+  if not private.far_001_requires_inventory_authority(new.license_id, new.product_id) then
     return new;
   end if;
 

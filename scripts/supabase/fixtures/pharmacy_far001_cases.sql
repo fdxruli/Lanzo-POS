@@ -5,6 +5,7 @@ values
  ('vi','00000000-0000-0000-0000-000000000001',true,true,
   '{"pharmacy":{"kind":"medicine","status":"confirmed","fraction":"VI"}}','{"enabled":true}','STRICT',0,1),
  ('general','00000000-0000-0000-0000-000000000001',true,true,'{}','{}',null,0,1),
+ ('legacy-general','00000000-0000-0000-0000-000000000001',true,true,'{}','{}',null,10,1),
  ('ii','00000000-0000-0000-0000-000000000001',true,true,
   '{"pharmacy":{"kind":"medicine","status":"confirmed","fraction":"II"}}','{"enabled":true}','STRICT',0,1);
 
@@ -135,3 +136,9 @@ begin
   end if;
 end
 $$;
+
+select private.far001_expect_error(
+ $cmd$update public.pos_products set metadata='{"pharmacy":{"kind":"medicine","status":"confirmed","fraction":"VI"}}'
+   where id='legacy-general'$cmd$,
+ 'PHARMACY_INVENTORY_REVIEW_REQUIRED'
+);

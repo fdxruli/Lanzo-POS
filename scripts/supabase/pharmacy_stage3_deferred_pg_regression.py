@@ -8,7 +8,8 @@ Evidence: work/pharmacy-stage3[-current]-results.json. Container removed on exit
 """
 import subprocess, json, datetime, sys, time, uuid
 from pathlib import Path
-CURRENT_FINANCIAL = sys.argv[1:] == ['--isolated-fixture', '--current-financial']
+FAR_001 = sys.argv[1:] == ['--isolated-fixture', '--current-financial', '--far-001']
+CURRENT_FINANCIAL = FAR_001 or sys.argv[1:] == ['--isolated-fixture', '--current-financial']
 if sys.argv[1:] != ['--isolated-fixture'] and not CURRENT_FINANCIAL:
     raise SystemExit('Explicit --isolated-fixture required')
 C = 'lanzo-pharmacy-p0-' + uuid.uuid4().hex[:10]
@@ -96,7 +97,8 @@ try:
 
     def call(req,role='anon',op='sale.cashier_inventory'):
      j=lit(json.dumps(req))+'::jsonb';name=req['sale']['id']
-     request_hash=scalar("SELECT private.financial_operation_hash("+lit(op)+",private.canonical_financial_request_v1("+lit(op)+","+j+"),'admin:00000000-0000-0000-0000-0000000000aa','lab-cash-a','lab-station-a')")
+     cash_binding = "NULL,'lab-station-a'" if op=='sale.layaway_complete' else "'lab-cash-a','lab-station-a'"
+     request_hash=scalar("SELECT private.financial_operation_hash("+lit(op)+",private.canonical_financial_request_v1("+lit(op)+","+j+"),'admin:00000000-0000-0000-0000-0000000000aa',"+cash_binding+")")
      s="BEGIN; SET LOCAL ROLE "+role+"; SELECT public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',"+lit(name+'-key')+","+lit(request_hash)+","+lit(op)+","+j+")->>'success'; SELECT session_user,current_user; COMMIT;"
      return sql(s,False,user='authenticator')
 
@@ -107,11 +109,50 @@ try:
      cases=[(label,'service' if label=='ordinary_6b' else ('unbatched_iv' if label=='missing_batch' else pid),pharmacy,kind,batch,error) for label,pid,pharmacy,kind,batch,error in cases]
      cases += [('legacy_stock_guard','common',False,None,None,'CLOUD_LEGACY_INVENTORY_UPDATE_REQUIRED'),('pharmacy_credit','iv',True,'valid','iv-batch',None)]
     results=[]
+    if FAR_001:
+     sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,is_active,batch_management,expiration_mode,requires_prescription,prescription_type) VALUES ('far001-vi',"+lit(L)+",'FAR001 VI','far001 vi',10,4,0,true,'{\"pharmacy\":{\"kind\":\"medicine\",\"status\":\"confirmed\",\"fraction\":\"VI\"}}',true,'{\"enabled\":true}','STRICT',false,'otc');")
+     result_path = Path('work/pharmacy-far001-current-financial-results.json')
+    else:
+     result_path = Path('work/pharmacy-stage3-current-results.json' if CURRENT_FINANCIAL else 'work/pharmacy-stage3-results.json')
 
-    for phase in ['before','after']:
+    for phase in (['after'] if FAR_001 else ['before','after']):
      if phase=='after':
       migration=next(Path('supabase/migrations').glob('*_pharmacy_stage3_deferred_batch_security.sql')).read_text()
       sql(migration);sql(migration)
+      if FAR_001:
+       far_migration = next(Path('supabase/migrations').glob('*_far_001_pharmacy_receipt_authority.sql'))
+       sql((current_fixture/'far001-receipt-helpers.sql').read_text())
+       sql(far_migration.read_text())
+       sql("UPDATE public.business_profiles SET business_type=ARRAY['farmacia'::public.business_category] WHERE license_id="+lit(L))
+       receipt_data = {
+           'version': 1, 'supplier': 'Synthetic Supplier', 'documentType': 'factura',
+           'documentReference': 'FAR001-QA', 'receivedAt': '2026-11-18T00:00:00Z',
+           'manufacturerBatchId': 'FAR001-LOT', 'expiryDate': '2099-01-01'
+       }
+       params = """
+            'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
+            p_product_id=>'far001-vi', p_quantity=>10, p_base_quantity=>10,
+            p_supplier=>'Synthetic Supplier', p_manufacturer_batch_id=>'FAR001-LOT',
+            p_expiry_date=>'2099-01-01', p_occurred_at=>'2026-11-18T00:00:00Z',
+            p_idempotency_key=>'far001-qa', p_metadata=>""" + lit(json.dumps({'pharmacyReceipt': receipt_data})) + "::jsonb"
+       denied = sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_receive_pharmacy_inventory_v1("
+                    +params.replace('lab-admin-session', 'lab-staff-session')
+                    .replace('lab-device-a', 'lab-device-b').replace('lab-device-token-a', 'lab-device-token-b')+"); COMMIT;",
+                    check=False, user='authenticator')
+       assert denied.returncode != 0 and 'POS_PERMISSION_DENIED:inventory.write' in denied.stderr, denied.stderr
+       legacy = sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_add_inventory_entry("+params+"); COMMIT;",
+                    check=False, user='authenticator')
+       assert legacy.returncode != 0 and 'PHARMACY_RECEIPT_CLIENT_UPDATE_REQUIRED' in legacy.stderr, legacy.stderr
+       assert scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'") == '0'
+       for role in ['anon', 'authenticated']:
+        confirmed = sql("BEGIN; SET LOCAL ROLE "+role+"; SELECT public.pos_receive_pharmacy_inventory_v1("+params+")->>'success'; COMMIT;",
+                        user='authenticator')
+        assert 'true' in confirmed.stdout, confirmed.stdout
+       assert scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'") in ['10','10.00','10.0000']
+       cases += [('far001_stock', 'far001-vi', True, None, 'batch-entry-far001-qa', None)]
+       cases = [(label,pid,pharmacy,kind,batch,
+                 'PHARMACY_CLOUD_AUTHORITY_REQUIRED' if label in ['otc','missing_batch'] else error)
+                for label,pid,pharmacy,kind,batch,error in cases]
      for label,pid,pharmacy,kind,batch,error in cases:
       name=phase+'-'+label; data=rx(name) if kind else None
       if kind=='excess':data['prescribedQuantity']=1
@@ -126,6 +167,9 @@ try:
        op='sale.credit';req['customer_id']='lab-p0-customer'
        req['sale'].update(customer_id='lab-p0-customer',payment_method='mixed_credit',amount_paid=5,balance_due=15,change_amount=0,metadata={'cloudInventoryEffects':True})
        req['payments'][0].update(amount=5,received_amount=5,change_amount=0)
+      if label=='far001_stock':
+       req['sale'].update(payment_method='card',change_amount=0)
+       req['payments'][0].update(method='card',received_amount=20,change_amount=0)
       before=state(name,pid);r=call(req,role='authenticated' if label=='ordinary_6b' else 'anon',op=op);after=state(name,pid)
       expected=error or (None if phase=='after' else '42501')
       # Before fix missing final batch is masked by the schema privilege error.
@@ -133,10 +177,16 @@ try:
       if phase=='before' and label in ['pharmacy_other','pharmacy_null_flags']:expected='PHARMACY_PRESCRIPTION_REQUIRED'
       passed=(r.returncode==0 and 'true' in r.stdout) if expected is None else (r.returncode!=0 and expected in r.stderr)
       if r.returncode:passed=passed and before==after
-      else:passed=passed and after['sales']==1 and after['items']==1 and after['cash']==1 and after['inventory']==(0 if op=='sale.cashier' else 1) and after['stock']==before['stock']-(0 if op=='sale.cashier' else 2) and after['cash_amount']==(5 if op=='sale.credit' else 20) and after['receipts']==1
+      else:
+       expected_cash = 0 if label=='far001_stock' else (5 if op=='sale.credit' else 20)
+       passed = (passed and after['sales']==1 and after['items']==1 and after['payments']==1
+                 and after['cash']==int(expected_cash > 0) and after['cash_amount']==expected_cash
+                 and after['inventory']==(0 if op=='sale.cashier' else 1)
+                 and after['stock']==before['stock']-(0 if op=='sale.cashier' else 2)
+                 and after['receipts']==1)
       row={'phase':phase,'case':label,'role':'authenticated' if label=='ordinary_6b' else 'anon','business':'pharmacy' if pharmacy else 'ordinary','operation':op,'passed':passed,'stdout':r.stdout,'error':r.stderr,'before':before,'after':after};results.append(row)
       print(phase,label,'PASS' if passed else 'FAIL',r.stderr.splitlines()[0] if r.stderr else '')
-      if phase=='after' and label in ['common_batch','antibiotic','pharmacy_credit'] and r.returncode==0:
+      if phase=='after' and label in ['common_batch','antibiotic','pharmacy_credit','far001_stock'] and r.returncode==0:
        rr=call(req,op=op); replay=state(name,pid);results.append({'phase':phase,'case':label+'_replay','role':'anon','operation':op,'passed':rr.returncode==0 and replay==after,'state':replay,'error':rr.stderr})
     # Security, retained prescriptions and confirmed-dispensation integrity.
     sql("UPDATE public.business_profiles SET business_type=ARRAY['farmacia'::public.business_category] WHERE license_id="+lit(L))
@@ -157,7 +207,7 @@ try:
     j=lit(json.dumps(req))+'::jsonb'
     integrity_sql="BEGIN; SELECT private.financial_operation_hash('sale.cashier_inventory',private.canonical_financial_request_v1('sale.cashier_inventory',"+j+"),'admin:00000000-0000-0000-0000-0000000000aa','lab-cash-a','lab-station-a') AS hash \\gset\nSET LOCAL ROLE anon; SELECT public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session','after-batch-integrity-key',:'hash','sale.cashier_inventory',"+j+"); RESET ROLE; UPDATE public.pos_product_batches SET product_id='iv' WHERE id='ab-batch'; SET LOCAL ROLE anon; COMMIT;"
     rejection=sql(integrity_sql,False)
-    results.append({'case':'final_batch_wrong_product','role':'anon at COMMIT; owner mutation within synthetic transaction','passed':rejection.returncode!=0 and 'PHARMACY_DISPENSATION_BATCH_REQUIRED' in rejection.stderr,'error':rejection.stderr})
+    results.append({'case':'final_batch_wrong_product','role':'anon at COMMIT; owner mutation within synthetic transaction','passed':rejection.returncode!=0 and ('PHARMACY_BATCH_IDENTITY_IMMUTABLE' if FAR_001 else 'PHARMACY_DISPENSATION_BATCH_REQUIRED') in rejection.stderr,'error':rejection.stderr})
     if CURRENT_FINANCIAL:
      # Preserve the existing v2 pilot gate; never simulate an admission witness.
      sql("INSERT INTO private.pos_fin01_qa_pilots_v2(license_id,creation_xid,protocol) VALUES ("+lit(L)+",pg_current_xact_id(),2);")
@@ -166,7 +216,43 @@ try:
      results.append({'case':'v1_pilot_gate_preserved','role':'anon','passed':rejection.returncode!=0 and 'CLOUD_CLIENT_UPDATE_REQUIRED' in rejection.stderr and state('after-pilot-rejected','common')==initial,'error':rejection.stderr})
      sql("DELETE FROM private.pos_fin01_qa_pilots_v2 WHERE license_id="+lit(L))
     assert scalar("SELECT count(*) FROM private.pharmacy_dispensations_v1 d JOIN public.pos_sale_items si ON si.id=d.sale_item_id JOIN public.pos_product_batches b ON b.id=d.batch_id WHERE d.batch_id IS DISTINCT FROM si.batch_id OR b.product_id<>d.product_id OR b.license_id<>d.license_id")=='0'
-    assert scalar("SELECT count(*) FROM public.pos_sale_payments WHERE sale_id LIKE 'after-%' AND sale_id NOT IN ('after-ordinary_credit','after-pharmacy_credit') AND (received_amount<>100 OR change_amount<>80 OR amount<>20)")=='0'
+    if FAR_001:
+     assert scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'") in ['8','8.00','8.0000']
+     assert scalar("SELECT count(*) FROM public.pos_inventory_movements WHERE product_id='far001-vi'") == '2'
+     sql("UPDATE public.plans SET features=features || '{\"cloud_layaways\":true}'::jsonb WHERE code='qa_real_lab';")
+     for layaway_id, reserved in [('far001-layaway', True), ('far001-layaway-unconfirmed', False)]:
+      item = {'product_id':'far001-vi','product_name':'FAR001 VI','batch_id':'batch-entry-far001-qa',
+              'quantity':2,'unit_price':10,'unit_cost':4,'line_subtotal':20,'line_total':20}
+      normalized = scalar("SELECT private.normalize_layaway_items_v1("+lit(json.dumps([item]))+"::jsonb,20)->'items'")
+      sql("INSERT INTO public.pos_layaways(id,license_id,total_amount,paid_amount,deadline,status,items,actor_key,actor_name)"
+          " VALUES ("+lit(layaway_id)+","+lit(L)+",20,20,now()+interval '1 day','ready',"
+          +lit(normalized)+"::jsonb,'admin:00000000-0000-0000-0000-0000000000aa','Synthetic cashier');"
+          " INSERT INTO public.pos_layaway_payments(id,license_id,layaway_id,payment_method,amount,actor_key,actor_name)"
+          " VALUES ("+lit(layaway_id+'-payment')+","+lit(L)+","+lit(layaway_id)
+          +",'cash',20,'admin:00000000-0000-0000-0000-0000000000aa','Synthetic cashier');")
+      if reserved:
+       sql("UPDATE public.pos_products SET committed_stock=2 WHERE id='far001-vi';"
+           " UPDATE public.pos_product_batches SET committed_stock=2 WHERE id='batch-entry-far001-qa';"
+           " INSERT INTO public.pos_layaway_inventory_reservations"
+           " (id,license_id,layaway_id,item_index,product_id,batch_id,quantity,unit_cost,actor_key,actor_name)"
+           " VALUES ('far001-reservation',"+lit(L)+","+lit(layaway_id)+",1,'far001-vi','batch-entry-far001-qa',2,4,"
+           "'admin:00000000-0000-0000-0000-0000000000aa','Synthetic cashier');")
+      sale_id = layaway_id+'-sale'
+      layaway_req = {'layaway_id':layaway_id,'sale':{'id':sale_id,'total':20},
+                     'items':[item],'payments':[{'id':sale_id+'-payment','method':'layaway_completed','amount':20}]}
+      before = state(sale_id,'far001-vi')
+      response = call(layaway_req, op='sale.layaway_complete')
+      after = state(sale_id,'far001-vi')
+      if reserved:
+       valid = (response.returncode==0 and 'true' in response.stdout and after['stock']==6
+                and after['sales']==1 and after['inventory']==1 and after['cash']==0)
+      else:
+       valid = (response.returncode!=0 and 'PHARMACY_CLOUD_AUTHORITY_REQUIRED' in response.stderr
+                and before==after)
+      results.append({'case':layaway_id,'operation':'sale.layaway_complete','passed':valid,
+                      'stdout':response.stdout,'error':response.stderr,'before':before,'after':after})
+      print(layaway_id,'PASS' if valid else 'FAIL',response.stderr.splitlines()[0] if response.stderr else '')
+    assert scalar("SELECT count(*) FROM public.pos_sale_payments WHERE sale_id LIKE 'after-%' AND sale_id NOT IN ('after-ordinary_credit','after-pharmacy_credit','after-far001_stock') AND (received_amount<>100 OR change_amount<>80 OR amount<>20)")=='0'
     assert scalar("SELECT count(*) FROM public.pos_financial_operations WHERE status<>'completed'")=='0'
     roles=scalar("SELECT string_agg(rolname||':'||rolsuper||':'||rolbypassrls,',' ORDER BY rolname) FROM pg_roles WHERE rolname IN ('postgres','anon','authenticated')")
     print('ROLES',roles)
@@ -174,8 +260,8 @@ try:
     assert scalar("SELECT count(*) FROM private.pharmacy_prescription_items_v1 WHERE dispensed_quantity<>2")=='0'
     assert scalar("SELECT debt FROM public.pos_customers WHERE id='lab-p0-customer'") in (['30','30.00'] if CURRENT_FINANCIAL else ['15','15.00'])
     Path('work').mkdir(exist_ok=True)
-    Path('work/pharmacy-stage3-current-results.json' if CURRENT_FINANCIAL else 'work/pharmacy-stage3-results.json').write_text(json.dumps(results,indent=2))
+    result_path.write_text(json.dumps(results,indent=2))
     print('TOTAL',len(results),'PASS',sum(x['passed'] for x in results))
-    if not all(x['passed'] for x in results): raise SystemExit('REGRESSION_FAILED: see work/pharmacy-stage3'+('-current' if CURRENT_FINANCIAL else '')+'-results.json')
+    if not all(x['passed'] for x in results): raise SystemExit('REGRESSION_FAILED: see '+str(result_path))
 finally:
     subprocess.run(['docker','rm','-f','-v',C],capture_output=True)

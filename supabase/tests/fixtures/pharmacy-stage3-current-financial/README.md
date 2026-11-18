@@ -93,3 +93,20 @@ The corrective SQL remains byte-for-byte unchanged, SHA-256:
 `269585fd54688b6e821682df9138eeb36875b68d110867d810ce2e2772989e7c`.
 Merge and installation require separate user authorization; production recovery
 requires the subsequent manual QA.
+
+## FAR-001
+
+Pass `--far-001` after `--current-financial` to install the forward migration in
+the same disposable fixture. `far001-receipt-helpers.sql` adds nine installed
+receipt dependencies obtained from the Production catalog by read-only SELECT.
+No tenant rows or credentials are copied. The extra scenario rejects a staff
+session without inventory permission and rejects the legacy receipt call. It
+then commits a documented receipt of 10 units and runs a card sale of 2 through
+the financial dispatcher. The test verifies 8 units, one receipt movement, one
+sale movement, one payment and zero cash movements for the card sale.
+
+The same run settles a paid layaway with a valid batch reservation through
+`sale.layaway_complete` and verifies delivery with no new cash movement. A
+separate paid layaway without a reservation must roll back at the FAR-001
+sale-line guard. The published ecommerce variants table is empty in this
+fixture so it can run the existing committed-stock projection trigger.
