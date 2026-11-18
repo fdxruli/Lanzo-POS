@@ -29,6 +29,13 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
+const pharmacyExpiryTimestamp = (value) => {
+  if (!value) return null;
+  const calendarDate = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(calendarDate)) return value;
+  return `${calendarDate}T00:00:00.000Z`;
+};
+
 const buildBaseRpcArgs = async (licenseKey) => {
   const context = await buildPosSyncAuthContext({ licenseKey });
 
@@ -182,7 +189,7 @@ export const productCloudRepository = {
       p_unit_cost: entry.unitCost,
       p_supplier: entry.supplier || null,
       p_manufacturer_batch_id: entry.manufacturerBatchId || null,
-      p_expiry_date: entry.expiryDate || null,
+      p_expiry_date: cloudPharmacyReceipt ? pharmacyExpiryTimestamp(entry.expiryDate) : (entry.expiryDate || null),
       p_occurred_at: entry.occurredAt || null,
       p_entry_kind: entry.entryKind || 'restock',
       p_metadata: entry.metadata || {},

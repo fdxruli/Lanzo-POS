@@ -39,6 +39,7 @@ export default function PharmacyProductFields({
           <select id="product-v2-pharmacyKind" value={values.pharmacyKind}
             aria-invalid={Boolean(errors.pharmacyKind)}
             onChange={(event) => onFieldChange('pharmacyKind', event.target.value)}>
+            <option value="">Selecciona el tipo de artículo</option>
             <option value="medicine">Medicamento</option>
             <option value="other">Otro producto de farmacia</option>
           </select>

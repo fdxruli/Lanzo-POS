@@ -51,6 +51,9 @@ vi.mock('../../../services/products/productCatalogQueryService', () => ({
 vi.mock('../../../services/utils', () => ({ getProductAlerts: () => ({ isLowStock: false }) }));
 vi.mock('../../common/LazyImage', () => ({ default: () => <div /> }));
 vi.mock('../WasteModal', () => ({ default: () => null }));
+vi.mock('../InventoryEntryModal', () => ({ default: ({ product }) => (
+  <div role="dialog" aria-label="Recepción de medicamento">Formulario para {product.name}</div>
+) }));
 vi.mock('../ProductCloudSyncIndicators', () => ({ default: () => null }));
 
 afterEach(() => {
@@ -347,6 +350,69 @@ describe('ProductList batch-backed grocery details', () => {
     expect(screen.getByText('Producto paginado')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cargar más productos' }));
     expect(mocks.catalogState.fetchPage).toHaveBeenCalledWith('next');
+  });
+});
+
+describe('ProductList inventory entry availability', () => {
+  const medicine = (overrides = {}) => ({
+    id: 'medicine-vi', name: 'Medicamento VI', trackStock: true, isActive: true,
+    recipe: [], batchManagement: { enabled: true },
+    metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } },
+    ...overrides
+  });
+
+  it.each(['Free/Local', 'PRO/Nube'])('offers and opens the medicine receipt form for %s', async () => {
+    render(<ProductList products={[medicine()]} categories={[]} isLoading={false} />);
+
+    const receive = screen.getByRole('button', { name: '＋ Recibir medicamento' });
+    expect(receive).toBeEnabled();
+    fireEvent.click(receive);
+    expect(await screen.findByRole('dialog', { name: 'Recepción de medicamento' }))
+      .toHaveTextContent('Medicamento VI');
+  });
+
+  it.each([
+    ['recipe: []', { recipe: [] }, true],
+    ['recipe: null', { recipe: null }, true],
+    ['recipe ausente', { recipe: undefined }, true],
+    ['recipe con ingredientes', { recipe: [{ ingredientId: 'ingredient-1', quantity: 1 }] }, false]
+  ])('matches service recipe semantics for %s', (_label, recipe, visible) => {
+    const product = medicine(recipe);
+    if (recipe.recipe === undefined) delete product.recipe;
+    render(<ProductList products={[product]} categories={[]} isLoading={false} />);
+
+    const button = screen.queryByRole('button', { name: '＋ Recibir medicamento' });
+    expect(Boolean(button)).toBe(visible);
+  });
+
+  it.each(['I', 'II', 'III'])('keeps controlled fraction %s inactive and its receipt action disabled', (fraction) => {
+    render(<ProductList products={[medicine({
+      isActive: false,
+      metadata: { pharmacy: { kind: 'medicine', fraction, status: 'confirmed' } }
+    })]} categories={[]} isLoading={false} />);
+    expect(screen.getByRole('button', { name: '＋ Recibir medicamento' })).toBeDisabled();
+  });
+
+  it('keeps pending and inactive products disabled, and offers regular stock to a pharmacy other item', () => {
+    const pending = medicine({ isActive: false, metadata: { pharmacy: { kind: 'medicine', status: 'pending' } } });
+    const other = medicine({ id: 'thermometer', name: 'Termómetro', metadata: { pharmacy: { kind: 'other', status: 'confirmed' } } });
+    render(<ProductList products={[pending, other]} categories={[]} isLoading={false} />);
+
+    expect(screen.getByRole('button', { name: '＋ Recibir medicamento' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '＋ Agregar existencia' })).toBeEnabled();
+  });
+
+  it('does not offer stock entries without tracking, for recipe dishes, or without inventory permission', () => {
+    const products = [
+      medicine({ id: 'not-tracked', trackStock: false }),
+      medicine({ id: 'recipe-dish', recipe: [{ ingredientId: 'rice', quantity: 1 }] }),
+      medicine({ id: 'general', metadata: {} })
+    ];
+    const { rerender } = render(<ProductList products={products} categories={[]} isLoading={false} canManageInventory={true} />);
+    expect(screen.queryByRole('button', { name: '＋ Recibir medicamento' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '＋ Agregar existencia' })).toBeEnabled();
+    rerender(<ProductList products={[medicine()]} categories={[]} isLoading={false} canManageInventory={false} />);
+    expect(screen.queryByRole('button', { name: '＋ Recibir medicamento' })).not.toBeInTheDocument();
   });
 });
 

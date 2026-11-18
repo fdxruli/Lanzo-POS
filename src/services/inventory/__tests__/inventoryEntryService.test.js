@@ -88,6 +88,19 @@ describe('inventoryEntryService', () => {
     })).rejects.toMatchObject({ code: 'STOCK_TRACKING_DISABLED' });
   });
 
+  it('allows a normalized empty recipe but blocks a product with recipe ingredients', async () => {
+    await db.table(STORES.MENU).put(product({ recipe: [] }));
+    const received = await addInventoryEntry({
+      operationId: 'entry-empty-recipe', productId: 'product-1', quantity: 1, baseQuantity: 1
+    });
+    expect(received.newStock).toBe(11);
+
+    await db.table(STORES.MENU).put(product({ id: 'recipe-dish', recipe: [{ ingredientId: 'rice', quantity: 1 }] }));
+    await expect(addInventoryEntry({
+      operationId: 'entry-recipe-dish', productId: 'recipe-dish', quantity: 1, baseQuantity: 1
+    })).rejects.toMatchObject({ code: 'RECIPE_INVENTORY_ENTRY_NOT_ALLOWED' });
+  });
+
   it.each([0, -1])('rejects an invalid positive-only quantity: %s', async (quantity) => {
     await db.table(STORES.MENU).put(product());
     await expect(addInventoryEntry({ productId: 'product-1', quantity, baseQuantity: quantity }))
@@ -97,7 +110,7 @@ describe('inventoryEntryService', () => {
 
 
 const medicine = (overrides = {}) => product({
-  stock: 0, expirationMode: 'STRICT', batchManagement: { enabled: true },
+  stock: 0, expirationMode: 'STRICT', recipe: [], batchManagement: { enabled: true },
   metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'IV', status: 'confirmed', antibiotic: true } },
   ...overrides
 });
@@ -191,6 +204,30 @@ describe('pharmacy stage 2 - local reception', () => {
     expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
     expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
     expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+  });
+
+  it('blocks a medicine whose sanitary classification is pending', async () => {
+    await db.table(STORES.MENU).put(medicine({ metadata: { pharmacy: {
+      kind: 'medicine', fraction: null, status: 'pending'
+    } } }));
+    await expect(addInventoryEntry(pharmacyEntry({
+      operationId: 'pharma-pending-classification', quantity: 1, invoice: 'FAC-PENDING',
+      manufacturerBatchId: 'PENDING-LOT', expiryDate: '2027-10-31'
+    }))).rejects.toMatchObject({ code: 'PHARMACY_CLASSIFICATION_REQUIRED' });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
+  });
+
+  it.each(['I', 'II', 'III'])('blocks ordinary receipt for controlled fraction %s', async (fraction) => {
+    await db.table(STORES.MENU).put(medicine({ metadata: { pharmacy: {
+      kind: 'medicine', fraction, status: 'confirmed', antibiotic: false
+    } } }));
+    await expect(addInventoryEntry(pharmacyEntry({
+      operationId: `pharma-controlled-${fraction}`, quantity: 1, invoice: `FAC-${fraction}`,
+      manufacturerBatchId: `CONTROLLED-${fraction}`, expiryDate: '2027-10-31'
+    }))).rejects.toMatchObject({ code: 'PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE' });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
   });
 
   it('rejects unsupported special fractions and medicine without batch management', async () => {

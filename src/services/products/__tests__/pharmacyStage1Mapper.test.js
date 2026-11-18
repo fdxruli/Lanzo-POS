@@ -6,6 +6,7 @@ import { cloudProductToLocal, productToCloudPayload } from '../productMapper';
 const newMedication = () => ({
   ...getProductFormDefaults({ activeRubro: 'farmacia' }),
   id: 'med-qa', name: 'Amoxicilina QA 500 mg', price: 40, cost: 15,
+  pharmacyKind: 'medicine',
   activeSubstance: 'Amoxicilina', concentration: '500 mg',
   dosageForm: 'capsule', presentation: 'Caja con 12 cápsulas',
   laboratory: 'Laboratorio QA', sanitaryFraction: 'IV', isAntibiotic: true

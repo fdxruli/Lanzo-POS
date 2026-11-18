@@ -6,6 +6,7 @@ import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAu
 import { useAppStore } from '../../store/useAppStore';
 import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import { canAddInventoryEntry, hasInventoryRecipe } from './inventoryEntryEligibility';
 import {
   actorOriginFromHandle,
   assertProductInventoryMutationCurrent,
@@ -32,7 +33,6 @@ const normalizeQuantity = (value, code = 'INVALID_QUANTITY') => {
   return quantity;
 };
 
-const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
 const usesBatches = (product) => product?.batchManagement?.enabled === true;
 const hasVariantAttributes = (batch) => batch?.attributes && Object.keys(batch.attributes).length > 0;
 const isStrict = (product) => String(product?.expirationMode || '').toUpperCase() === 'STRICT';
@@ -55,9 +55,7 @@ const assertInventoryMutationCurrent = (actorHandle) => (
   assertProductInventoryMutationCurrent(actorHandle, { inventory: true })
 );
 
-export const canAddInventoryEntry = (product) => Boolean(
-  product?.id && product.trackStock !== false && !hasRecipe(product)
-);
+export { canAddInventoryEntry };
 
 const buildProjection = ({ product, batches, timestamp }) => {
   const activeBatches = batches.filter((batch) => (
@@ -196,7 +194,7 @@ export const addInventoryEntry = async ({
     const product = await productTable.get(productId);
     if (!product) throw domainError('PRODUCT_NOT_FOUND');
     if (product.trackStock === false) throw domainError('STOCK_TRACKING_DISABLED');
-    if (hasRecipe(product)) throw domainError('RECIPE_INVENTORY_ENTRY_NOT_ALLOWED');
+    if (hasInventoryRecipe(product)) throw domainError('RECIPE_INVENTORY_ENTRY_NOT_ALLOWED');
 
     const pharmacyMedicine = isPharmacyMedicine(product);
     if (pharmacyMedicine) {

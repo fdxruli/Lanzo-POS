@@ -17,6 +17,7 @@ import { searchProductsInTable } from './productSearch';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { findBarcodeConflictsInTable } from './barcodeDuplicates';
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 
 const validateInitialBatchForProduct = (batch, product) => {
     if (!batch?.id) {
@@ -574,6 +575,49 @@ export const productsRepository = {
                     ...batchData,
                     committedStock: batchData?.committedStock ?? existingBatch?.committedStock ?? 0
                 };
+                const productStore = db.table(STORES.MENU);
+                const product = await productStore.get(normalizedBatchData.productId);
+                const pharmacy = getPharmacyClassification(product || {});
+                if (pharmacy.recorded && pharmacy.kind === 'medicine') {
+                    const normalizeManufacturer = (value) => String(value || '').trim().toLowerCase();
+                    const originalManufacturer = normalizeManufacturer(
+                        existingBatch?.manufacturerBatchId || existingBatch?.manufacturer_batch_id
+                    );
+                    const nextManufacturer = normalizeManufacturer(
+                        normalizedBatchData.manufacturerBatchId || normalizedBatchData.manufacturer_batch_id
+                    );
+                    const wasArchived = Boolean(existingBatch?.deletedAt || existingBatch?.deleted_at
+                        || existingBatch?.isActive === false || existingBatch?.status === 'archived');
+                    const isReactivated = !normalizedBatchData.deletedAt && !normalizedBatchData.deleted_at
+                        && normalizedBatchData.isActive !== false && normalizedBatchData.status !== 'archived';
+                    if (wasArchived && isReactivated) {
+                        throw new DatabaseError('PHARMACY_ARCHIVED_BATCH_EXISTS',
+                            'Este lote ya está archivado. Revisa Lotes / historial; no se puede reactivar ni duplicar su identidad.');
+                    }
+                    if (existingBatch && originalManufacturer && originalManufacturer !== nextManufacturer) {
+                        throw new DatabaseError('PHARMACY_BATCH_IDENTITY_IMMUTABLE',
+                            'La identidad del lote de fabricante no se puede cambiar después de registrarla.');
+                    }
+                    if (normalizedBatchData.stock > Number(existingBatch?.stock || 0)) {
+                        throw new DatabaseError('PHARMACY_BATCH_STOCK_INCREASE_REQUIRES_DOCUMENTED_RECEIPT',
+                            'El lote se crea con cero unidades. Para aumentar existencias usa la recepción con comprobante.');
+                    }
+                    if (nextManufacturer) {
+                        const duplicate = await db.table(STORES.PRODUCT_BATCHES)
+                            .where('productId').equals(normalizedBatchData.productId).toArray();
+                        const conflict = duplicate.find((batch) => batch.id !== normalizedBatchData.id
+                            && normalizeManufacturer(batch.manufacturerBatchId || batch.manufacturer_batch_id) === nextManufacturer);
+                        if (conflict) {
+                            const archived = Boolean(conflict.deletedAt || conflict.deleted_at
+                                || conflict.isActive === false || conflict.status === 'archived');
+                            const code = archived ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED';
+                            const message = archived
+                                ? 'Este lote ya está archivado. Revisa Lotes / historial; no se puede reactivar ni duplicar su identidad.'
+                                : 'Ya existe un lote con este código de fabricante. Consulta Lotes / historial y selecciona el lote existente.';
+                            throw new DatabaseError(code, message);
+                        }
+                    }
+                }
 
                 // 1. Guardar el lote (Upsert)
                 // Nota: Aquí podrías agregar validación Zod para batchData si creas un batchSchema
@@ -610,9 +654,6 @@ export const productsRepository = {
                 }
 
                 // 4. Actualizar el Producto Padre
-                const productStore = db.table(STORES.MENU);
-                const product = await productStore.get(normalizedBatchData.productId);
-
                 if (product) {
                     let newCost = product.cost;
                     let newPrice = product.price;

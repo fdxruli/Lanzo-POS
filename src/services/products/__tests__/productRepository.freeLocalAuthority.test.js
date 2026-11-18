@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     getProductById: vi.fn(),
     getCategoryProductCounts: vi.fn(),
     syncMetaGetMeta: vi.fn(),
+    getBatchesByProductId: vi.fn(),
     saveCategoryLocal: vi.fn(),
     deleteCategoryLocal: vi.fn(),
     savePreparedProductLocal: vi.fn(),
@@ -107,6 +108,7 @@ vi.mock('../productLocalRepository', () => ({
     saveBatchLocal: mocks.saveBatchLocal,
     deleteBatchLocal: mocks.deleteBatchLocal,
     getBatchById: vi.fn(),
+    getBatchesByProductId: mocks.getBatchesByProductId,
     applyCloudCatalog: vi.fn()
   }
 }));
@@ -161,6 +163,7 @@ beforeEach(() => {
   mocks.saveCategoryLocal.mockResolvedValue({ success: true });
   mocks.getCategoryProductCounts.mockResolvedValue({ 'cat-free': 2 });
   mocks.syncMetaGetMeta.mockResolvedValue(null);
+  mocks.getBatchesByProductId.mockResolvedValue([]);
   mocks.deleteCategoryLocal.mockResolvedValue({ success: true });
   mocks.savePreparedProductLocal.mockResolvedValue({ success: true, productId: 'product-free' });
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
@@ -294,5 +297,91 @@ describe('productRepository FREE/local authority', () => {
     expect(mocks.cloud.deleteProduct).not.toHaveBeenCalled();
     expect(mocks.enqueue).not.toHaveBeenCalled();
     expect(mocks.actorCapture).not.toHaveBeenCalled();
+  });
+
+  it('rejects a duplicate pharmacy manufacturer batch locally with a useful message', async () => {
+    const pharmacyProduct = {
+      id: 'medicine-vi', metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    };
+    mocks.getProductById.mockResolvedValue(pharmacyProduct);
+    mocks.getBatchesByProductId.mockResolvedValue([{
+      id: 'batch-existing', productId: pharmacyProduct.id, manufacturerBatchId: 'VI-LOT-001', stock: 0
+    }]);
+
+    await expect(productRepository.saveBatch({
+      id: 'batch-duplicate', productId: pharmacyProduct.id, manufacturerBatchId: ' vi-lot-001 ', stock: 0
+    })).resolves.toMatchObject({
+      success: false, code: 'PHARMACY_EXISTING_BATCH_REQUIRED',
+      message: 'Ya existe un lote con este código de fabricante. Consulta Lotes / historial y selecciona el lote existente.'
+    });
+    expect(mocks.saveBatchLocal).not.toHaveBeenCalled();
+    expect(mocks.cloud.upsertProductBatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['archived batch reactivation', {
+      original: { id: 'batch-old', productId: 'medicine-vi', manufacturerBatchId: 'VI-LOT-001',
+        stock: 0, isActive: false, status: 'archived' },
+      update: { isActive: true, status: 'active' }, code: 'PHARMACY_ARCHIVED_BATCH_EXISTS'
+    }],
+    ['manufacturer identity change', {
+      original: { id: 'batch-old', productId: 'medicine-vi', manufacturerBatchId: 'VI-LOT-001', stock: 0 },
+      update: { manufacturerBatchId: 'VI-LOT-002' }, code: 'PHARMACY_BATCH_IDENTITY_IMMUTABLE'
+    }]
+  ])('preserves pharmacy lot identity protections for %s', async (_label, scenario) => {
+    mocks.getProductById.mockResolvedValue({
+      id: 'medicine-vi', metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    });
+
+    await expect(productRepository.saveBatch({
+      id: scenario.original.id, productId: 'medicine-vi', ...scenario.original, ...scenario.update
+    }, { existingBatch: scenario.original })).resolves.toMatchObject({ success: false, code: scenario.code });
+    expect(mocks.saveBatchLocal).not.toHaveBeenCalled();
+    expect(mocks.cloud.upsertProductBatch).not.toHaveBeenCalled();
+  });
+
+  it('translates an authoritative Cloud duplicate batch rejection into a useful message', async () => {
+    mocks.state.licenseDetails = {
+      license_key: 'LANZO-PRO-REPOSITORY', plan_code: 'pro',
+      features: { cloud_pos_sync: true, cloud_products_sync: true }
+    };
+    mocks.actorCapture.mockReturnValue({ actorType: 'admin', actorId: 'admin', actorKey: 'admin:admin', generation: 1,
+      assertCurrent: vi.fn() });
+    mocks.cloud.upsertProductBatch.mockResolvedValueOnce({
+      success: false, code: 'PHARMACY_EXISTING_BATCH_REQUIRED', message: 'PHARMACY_EXISTING_BATCH_REQUIRED'
+    });
+    mocks.getProductById.mockResolvedValue({
+      id: 'medicine-vi', metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    });
+
+    await expect(productRepository.saveBatch({
+      id: 'batch-cloud-duplicate', productId: 'medicine-vi', manufacturerBatchId: 'VI-LOT-001', stock: 0
+    })).resolves.toMatchObject({
+      success: false, code: 'PHARMACY_EXISTING_BATCH_REQUIRED',
+      message: 'Ya existe un lote con este código de fabricante. Consulta Lotes / historial y selecciona el lote existente.'
+    });
+    expect(mocks.cloud.upsertProductBatch).toHaveBeenCalledOnce();
+  });
+
+  it('translates a raised PostgreSQL pharmacy identity exception into a useful message', async () => {
+    mocks.state.licenseDetails = {
+      license_key: 'LANZO-PRO-REPOSITORY', plan_code: 'pro',
+      features: { cloud_pos_sync: true, cloud_products_sync: true }
+    };
+    mocks.actorCapture.mockReturnValue({ actorType: 'admin', actorId: 'admin', actorKey: 'admin:admin', generation: 1,
+      assertCurrent: vi.fn() });
+    mocks.cloud.upsertProductBatch.mockRejectedValueOnce({
+      code: 'P0001', message: 'PHARMACY_EXISTING_BATCH_REQUIRED'
+    });
+    mocks.getProductById.mockResolvedValue({
+      id: 'medicine-vi', metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    });
+
+    await expect(productRepository.saveBatch({
+      id: 'batch-cloud-duplicate', productId: 'medicine-vi', manufacturerBatchId: 'VI-LOT-001', stock: 0
+    })).resolves.toMatchObject({
+      success: false, code: 'PHARMACY_EXISTING_BATCH_REQUIRED',
+      message: 'Ya existe un lote con este código de fabricante. Consulta Lotes / historial y selecciona el lote existente.'
+    });
   });
 });

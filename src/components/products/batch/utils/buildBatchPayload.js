@@ -3,6 +3,17 @@ import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy
 import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
 import { resolveProductRubroContext } from '../../../../services/products/apparelSku';
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
+import { parseStrictCalendarDate } from '../../../../utils/dateUtils';
+
+const normalizeExpiryInput = (value) => {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const normalized = parseStrictCalendarDate(value);
+    if (normalized.slice(0, 10) !== value) throw new Error('La fecha ingresada no es válida.');
+    return normalized;
+  }
+  return new Date(value).toISOString();
+};
 
 /**
  * @param {Object} params
@@ -36,9 +47,7 @@ export function buildBatchPayload({
     && isProductPriceEditing
     && nPrice !== currentProductPrice;
 
-  const explicitExpiryDate = values.expiryDate
-    ? new Date(values.expiryDate).toISOString()
-    : null;
+  const explicitExpiryDate = normalizeExpiryInput(values.expiryDate);
   const shelfLifeGeneratedExpiryDate = !explicitExpiryDate && product?.expirationMode === 'SHELF_LIFE'
     ? calculateShelfLifeTargetDate({
       baseDate: new Date(),

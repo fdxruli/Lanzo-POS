@@ -96,4 +96,17 @@ describe('BatchFormModal commercial pricing UX', () => {
     expect(screen.getByRole('dialog', { name: 'Editar Variante' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Actualizar/i })).toBeInTheDocument();
   });
+
+  it('keeps new medicine lots at zero and warns that expired identity is unavailable for sale', () => {
+    renderModal({
+      id: 'medicine-vi', name: 'Medicamento VI', price: 20, expirationMode: 'STRICT',
+      batchManagement: { enabled: true },
+      metadata: { pharmacy: { kind: 'medicine', status: 'confirmed', fraction: 'VI' } }
+    }, { formValues: { ...values, stock: '0', expiryDate: '2000-01-01', manufacturerBatchId: 'VI-HIST-001' } });
+
+    expect(screen.getByRole('spinbutton', { name: /Existencia del lote/i })).toHaveValue(0);
+    expect(screen.getByRole('spinbutton', { name: /Existencia del lote/i })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/solo puede conservarse como identidad histórica con cero unidades/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/No estará disponible para venta/i);
+  });
 });

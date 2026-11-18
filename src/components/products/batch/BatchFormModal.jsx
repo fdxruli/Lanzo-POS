@@ -19,6 +19,7 @@ import { getBatchStockInputProps } from './utils/batchStockInput';
 import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
 import { isApparelCommercialVariantProduct, isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 import { getPharmacyClassification } from '../../../utils/pharmacyClassification';
+import { getBatchExpiryStatus } from '../../../utils/dateUtils';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -78,6 +79,7 @@ export default function BatchFormModal({
   const isApparelVariant = isApparelCommercialVariantProduct(product);
   const pharmacyClassification = getPharmacyClassification(product);
   const isPharmacyMedicine = pharmacyClassification.recorded && pharmacyClassification.kind === 'medicine';
+  const pharmacyBatchExpired = isPharmacyMedicine && getBatchExpiryStatus(formValues.expiryDate) === 'expired';
   useEffect(() => {
     if (isPharmacyMedicine && !isEditing && Number(formValues.stock || 0) !== 0) {
       setFieldValue('stock', '0');
@@ -130,6 +132,11 @@ export default function BatchFormModal({
                   product={product}
                 />
               </div>
+              {pharmacyBatchExpired && !isEditing && (
+                <div className="col-span-full ui-alert ui-alert--info" role="status">
+                  Este lote vencido solo puede conservarse como identidad histórica con cero unidades. No estará disponible para venta ni para recepción de existencias.
+                </div>
+              )}
 
               {/* SECCIÓN PRECIOS/COSTOS (Fondo resaltado) */}
               <div className="col-span-full price-cost-group">

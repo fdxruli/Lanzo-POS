@@ -103,6 +103,20 @@ describe('productLocalRepository.prepareProduct', () => {
     expect(prepared.batches[0].supplier).toBe('Distribuidora Centro');
   });
 
+  it('lists all local batches for the selected product', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const batches = [{ id: 'lot-a', productId: 'medicine-vi' }];
+    const toArray = vi.fn().mockResolvedValue(batches);
+    const equals = vi.fn().mockReturnValue({ toArray });
+    const where = vi.fn().mockReturnValue({ equals });
+    db.table.mockReturnValue({ where });
+
+    await expect(productLocalRepository.getBatchesByProductId('medicine-vi')).resolves.toEqual(batches);
+    expect(db.table).toHaveBeenCalledWith('productBatches');
+    expect(where).toHaveBeenCalledWith('productId');
+    expect(equals).toHaveBeenCalledWith('medicine-vi');
+  });
+
   it('keeps existing apparel variants out of initial batches while editing', async () => {
     const { productLocalRepository } = await import('../productLocalRepository');
     const existing = { id: 'shirt-1', name: 'Playera', createdAt: '2026-01-01T00:00:00.000Z', stock: 4 };

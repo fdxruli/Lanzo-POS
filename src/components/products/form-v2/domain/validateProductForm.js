@@ -34,6 +34,9 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
   }
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) {
     const fractions = SANITARY_FRACTIONS.map(({ value }) => value);
+    if (!isEditing && !['medicine', 'other'].includes(values.pharmacyKind)) {
+      fieldErrors.pharmacyKind = 'Selecciona si se trata de un medicamento u otro producto de farmacia.';
+    }
     if (values.pharmacyKind === 'medicine') {
       if (values.sanitaryFraction && !fractions.includes(values.sanitaryFraction)) {
         fieldErrors.sanitaryFraction = 'Selecciona una fracción sanitaria válida.';
