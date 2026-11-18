@@ -320,9 +320,35 @@ const saveConflictIfNeeded = async ({ operation, response, localPayload }) => {
   });
 };
 
-const normalizeCloudFailure = (response, fallback = 'PRODUCT_CLOUD_ERROR') => (
-  productConflictService.normalizeFailure(response, fallback)
-);
+const PHARMACY_BATCH_ERROR_MESSAGES = Object.freeze({
+  PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe un lote con este código de fabricante. Consulta Lotes / historial y selecciona el lote existente.',
+  PHARMACY_ARCHIVED_BATCH_EXISTS: 'Este lote ya está archivado. Revisa Lotes / historial; no se puede reactivar ni duplicar su identidad.',
+  PHARMACY_BATCH_IDENTITY_IMMUTABLE: 'La identidad del lote de fabricante no se puede cambiar después de registrarla.'
+});
+
+const getPharmacyBatchErrorCode = (error) => {
+  const candidates = [error?.code, error?.message, error?.details, error?.hint, error?.response?.code]
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => String(value));
+  return Object.keys(PHARMACY_BATCH_ERROR_MESSAGES).find((code) => (
+    candidates.some((value) => value.includes(code))
+  )) || null;
+};
+
+const pharmacyBatchFailure = (code) => ({
+  success: false,
+  code,
+  message: PHARMACY_BATCH_ERROR_MESSAGES[code],
+  error: { code, message: PHARMACY_BATCH_ERROR_MESSAGES[code] }
+});
+
+const normalizeCloudFailure = (response, fallback = 'PRODUCT_CLOUD_ERROR') => {
+  const normalized = productConflictService.normalizeFailure(response, fallback);
+  const code = getPharmacyBatchErrorCode(response);
+  if (!code) return normalized;
+  const message = PHARMACY_BATCH_ERROR_MESSAGES[code];
+  return { ...normalized, code, message, error: { ...normalized.error, code, message } };
+};
 
 const applyResponseAndNotify = async (response, event) => {
   await productLocalRepository.applyCloudCatalog(response);
@@ -924,7 +950,27 @@ export const productRepository = {
     const currentBatch = existingBatch || (batchData.id ? await productLocalRepository.getBatchById(batchData.id) : null);
     const pharmacy = getPharmacyClassification(parent || {});
     if (pharmacy.recorded && pharmacy.kind === 'medicine') {
-      const original = existingBatch || (batchData.id ? await productLocalRepository.getBatchById(batchData.id) : null);
+      const original = currentBatch;
+      const originalManufacturer = String(original?.manufacturerBatchId || '').trim().toLowerCase();
+      const nextManufacturer = String(batchData.manufacturerBatchId || '').trim().toLowerCase();
+      const wasArchived = Boolean(original?.deletedAt || original?.deleted_at
+        || original?.isActive === false || original?.status === 'archived');
+      const isReactivated = (batchData.deletedAt === undefined || batchData.deletedAt === null)
+        && (batchData.deleted_at === undefined || batchData.deleted_at === null)
+        && batchData.isActive !== false && batchData.status !== 'archived';
+      if (wasArchived && isReactivated) return pharmacyBatchFailure('PHARMACY_ARCHIVED_BATCH_EXISTS');
+      if (original && originalManufacturer && originalManufacturer !== nextManufacturer) {
+        return pharmacyBatchFailure('PHARMACY_BATCH_IDENTITY_IMMUTABLE');
+      }
+      if (nextManufacturer) {
+        const batches = await productLocalRepository.getBatchesByProductId(parent.id);
+        const duplicate = batches.find((batch) => batch.id !== batchData.id
+          && String(batch.manufacturerBatchId || '').trim().toLowerCase() === nextManufacturer);
+        if (duplicate) return pharmacyBatchFailure(
+          duplicate.deletedAt || duplicate.deleted_at || duplicate.isActive === false || duplicate.status === 'archived'
+            ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED'
+        );
+      }
       if (Number(batchData.stock || 0) > Number(original?.stock || 0)) {
         return {
           success: false,
@@ -1036,6 +1082,8 @@ export const productRepository = {
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
+      const pharmacyBatchCode = getPharmacyBatchErrorCode(error);
+      if (pharmacyBatchCode) return pharmacyBatchFailure(pharmacyBatchCode);
       if (isApparelVariantBatch(parent, batchData, mode.businessTypes) && String(error?.code || '') === '23505') {
         return apparelSkuError('APPAREL_DUPLICATE_SKU', batchData.sku);
       }

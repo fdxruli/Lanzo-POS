@@ -67,10 +67,17 @@ describe('Product Form V2 validation', () => {
   });
 
   it('requires pharmacy initial lot and expiry only when stock is positive', () => {
-    expect(validateProductForm(base({ stock: 0, expirationMode: 'STRICT' }), { activeRubro: 'farmacia' }).fieldErrors.manufacturerBatchId).toBeUndefined();
-    const result = validateProductForm(base({ stock: 1, expirationMode: 'STRICT' }), { activeRubro: 'farmacia' });
+    expect(validateProductForm(base({ stock: 0, expirationMode: 'STRICT', pharmacyKind: 'medicine' }), { activeRubro: 'farmacia' }).fieldErrors.manufacturerBatchId).toBeUndefined();
+    const result = validateProductForm(base({ stock: 1, expirationMode: 'STRICT', pharmacyKind: 'medicine' }), { activeRubro: 'farmacia' });
     expect(result.fieldErrors.manufacturerBatchId).toBeTruthy();
     expect(result.fieldErrors.expiryDate).toBeTruthy();
+  });
+
+  it('requires an explicit medicine or other pharmacy article type for new records', () => {
+    expect(validateProductForm(base({ stock: 0, pharmacyKind: '' }), { activeRubro: 'farmacia' }).fieldErrors.pharmacyKind)
+      .toMatch(/Selecciona si se trata de un medicamento u otro producto/);
+    expect(validateProductForm(base({ stock: 0, pharmacyKind: 'other' }), { activeRubro: 'farmacia' }).fieldErrors.pharmacyKind)
+      .toBeUndefined();
   });
 
   it('rejects incomplete and duplicate variants', () => {

@@ -1,3 +1,5 @@
+import { parseStrictCalendarDate } from '../../../../utils/dateUtils';
+
 /**
  * @typedef {Object} BatchFormValues
  * @property {string | number} cost
@@ -67,8 +69,13 @@ export function validateBatchInput(values, product = {}) {
     }
 
     if (rawDate) {
-      const parsedDate = new Date(rawDate);
-      if (Number.isNaN(parsedDate.getTime())) {
+      try {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+          const normalized = parseStrictCalendarDate(rawDate);
+          if (normalized.slice(0, 10) !== rawDate) throw new Error('Invalid calendar date');
+        }
+        else if (Number.isNaN(new Date(rawDate).getTime())) throw new Error('Invalid date');
+      } catch {
         return {
           valid: false,
           message: 'La fecha ingresada no es válida.'

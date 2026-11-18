@@ -21,6 +21,7 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Amoxicilina QA 500 mg' } });
     fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '40' } });
     openSanitary();
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
     fireEvent.change(screen.getByLabelText('Sustancia activa'), { target: { value: 'Amoxicilina' } });
     fireEvent.change(screen.getByLabelText('Concentración'), { target: { value: '500 mg' } });
     fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'Cápsula' } });
@@ -49,6 +50,7 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Medicamento II QA' } });
     fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '60' } });
     openSanitary();
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
     fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'II' } });
     expect(screen.getByText(/No habilita dispensación/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
@@ -70,5 +72,25 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     const saved = onSave.mock.calls[0][0];
     expect(saved).toMatchObject({ prescriptionType: 'antibiotic', requiresPrescription: true, stock: 3 });
     expect(saved.metadata).not.toHaveProperty('pharmacy');
+  });
+
+  it('exige clasificar artículos nuevos y permite activar los marcados como otro producto', async () => {
+    const onSave = vi.fn(() => true);
+    show({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Termómetro QA' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '120' } });
+    openSanitary();
+    expect(screen.getByLabelText('Tipo de artículo')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    expect(await screen.findByText(/Selecciona si se trata de un medicamento u otro producto de farmacia/i)).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'other' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      isActive: true, requiresPrescription: false, prescriptionType: 'otc',
+      metadata: { pharmacy: { kind: 'other', status: 'confirmed' } }
+    });
   });
 });

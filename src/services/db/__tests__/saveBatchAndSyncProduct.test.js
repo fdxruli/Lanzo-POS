@@ -117,4 +117,46 @@ describe('productsRepository.saveBatchAndSyncProduct', () => {
     expect(state.batches).toEqual(before.batches);
     expect(state.product).toEqual({ ...before.product, name: '' });
   });
+
+  it('rejects duplicate pharmacy manufacturer identities atomically in Free/Local', async () => {
+    const { productsRepository } = await import('../products');
+    state.product.metadata.pharmacy = { kind: 'medicine', fraction: 'VI', status: 'confirmed' };
+    state.batches = [{ id: 'lot-a', productId: 'product_legacy', manufacturerBatchId: 'VI-LOT-A', stock: 0,
+      isActive: true, status: 'active' }];
+
+    await expect(productsRepository.saveBatchAndSyncProduct({
+      id: 'lot-b', productId: 'product_legacy', manufacturerBatchId: ' vi-lot-a ', stock: 0,
+      isActive: true, status: 'active'
+    })).rejects.toMatchObject({ code: 'PHARMACY_EXISTING_BATCH_REQUIRED' });
+    expect(state.batches).toHaveLength(1);
+    expect(state.batches[0].manufacturerBatchId).toBe('VI-LOT-A');
+  });
+
+  it.each([
+    ['archived lot reactivation', {
+      stored: { id: 'lot-a', productId: 'product_legacy', manufacturerBatchId: 'VI-LOT-A', stock: 0,
+        isActive: false, status: 'archived', deletedAt: '2026-11-18T00:00:00.000Z' },
+      update: { isActive: true, status: 'active', deletedAt: null }, code: 'PHARMACY_ARCHIVED_BATCH_EXISTS'
+    }],
+    ['manufacturer identity mutation', {
+      stored: { id: 'lot-a', productId: 'product_legacy', manufacturerBatchId: 'VI-LOT-A', stock: 0,
+        isActive: true, status: 'active' },
+      update: { manufacturerBatchId: 'VI-LOT-B' }, code: 'PHARMACY_BATCH_IDENTITY_IMMUTABLE'
+    }],
+    ['undocumented stock increase', {
+      stored: null,
+      update: { id: 'lot-a', manufacturerBatchId: 'VI-LOT-A', stock: 1, isActive: true, status: 'active' },
+      code: 'PHARMACY_BATCH_STOCK_INCREASE_REQUIRES_DOCUMENTED_RECEIPT'
+    }]
+  ])('protects pharmacy batch invariants for %s', async (_label, scenario) => {
+    const { productsRepository } = await import('../products');
+    state.product.metadata.pharmacy = { kind: 'medicine', fraction: 'VI', status: 'confirmed' };
+    state.batches = scenario.stored ? [scenario.stored] : [];
+
+    await expect(productsRepository.saveBatchAndSyncProduct({
+      id: scenario.stored?.id || 'lot-a', productId: 'product_legacy', stock: 0,
+      ...scenario.stored, ...scenario.update
+    })).rejects.toMatchObject({ code: scenario.code });
+    expect(state.batches).toEqual(scenario.stored ? [scenario.stored] : []);
+  });
 });

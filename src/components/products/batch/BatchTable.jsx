@@ -4,11 +4,21 @@ import {
 import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
 import { getBatchManagerStatus } from '../../../services/products/batchManagerQueries';
 import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
+import { isBatchExpiredForSale } from '../../../services/products/fefoUtils';
+import { extractCalendarDate } from '../../../utils/dateUtils';
+import { getPharmacyClassification } from '../../../utils/pharmacyClassification';
 
 const formatDate = (isoDate) => {
   if (!isoDate) return 'Sin fecha';
   const date = new Date(isoDate);
   return Number.isNaN(date.getTime()) ? 'Sin fecha' : date.toLocaleDateString('es-MX');
+};
+
+export const formatBatchCalendarDate = (value) => {
+  const calendarDate = extractCalendarDate(value);
+  if (!calendarDate) return 'Sin fecha';
+  const [year, month, day] = calendarDate.split('-');
+  return `${day}/${month}/${year}`;
 };
 
 const formatMoney = (amount) => Number(amount || 0).toLocaleString('es-MX', {
@@ -106,6 +116,9 @@ export default function BatchTable({
         <div className="batch-entry-list" role="list" aria-label="Lotes registrados">
           {productBatches.map((batch) => {
             const archived = getBatchManagerStatus(batch) === 'archived';
+            const pharmacy = getPharmacyClassification(product);
+            const pharmacyMedicine = pharmacy.recorded && pharmacy.kind === 'medicine';
+            const expiredForSale = pharmacyMedicine && isBatchExpiredForSale(batch, product);
             const available = getAvailableStock(batch);
             const committed = getCommittedStock(batch);
             const primaryLabel = showVariants
@@ -123,10 +136,11 @@ export default function BatchTable({
                 <div className="batch-entry-header">
                   <div className="batch-entry-identity">
                     <strong>{primaryLabel}</strong>
+                    {pharmacyMedicine && batch.manufacturerBatchId && <span className="batch-entry-sku">Lote fabricante {batch.manufacturerBatchId}</span>}
                     {batch.sku && <span className="batch-entry-sku">SKU {batch.sku}</span>}
                   </div>
-                  <span className={`batch-entry-status ${archived ? 'is-archived' : 'is-active'}`}>
-                    {archived ? 'Archivado' : 'Activo'}
+                  <span className={`batch-entry-status ${archived ? 'is-archived' : expiredForSale ? 'is-expired' : 'is-active'}`}>
+                    {archived ? 'Archivado' : expiredForSale ? 'Vencido · no disponible para venta' : 'Activo'}
                   </span>
                 </div>
 
@@ -138,7 +152,8 @@ export default function BatchTable({
                   </div>
                   <dl className="batch-entry-meta">
                     {showExpiry && (
-                      <div><dt>Caducidad</dt><dd>{formatDate(batch.expiryDate)}</dd></div>
+                      <div><dt>Caducidad</dt><dd>{pharmacyMedicine
+                        ? formatBatchCalendarDate(batch.expiryDate) : formatDate(batch.expiryDate)}</dd></div>
                     )}
                     <div><dt>{isCommercialVariant ? 'Precio de variante' : 'Precio del producto'}</dt><dd>{formatMoney(getDisplayedBatchSalePrice(product, batch))}</dd></div>
                     {supplier && <div><dt>Proveedor</dt><dd>{supplier}</dd></div>}

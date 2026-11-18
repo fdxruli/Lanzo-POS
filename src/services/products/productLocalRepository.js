@@ -230,6 +230,12 @@ export const productLocalRepository = {
     return loadData(STORES.PRODUCT_BATCHES, batchId);
   },
 
+  async getBatchesByProductId(productId) {
+    if (!productId) return [];
+    await ensureOpen();
+    return db.table(STORES.PRODUCT_BATCHES).where('productId').equals(productId).toArray();
+  },
+
   async getCatalogRecordForSync(entityType, entityId) {
     if (!entityId) return null;
     await ensureOpen();

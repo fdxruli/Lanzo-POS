@@ -52,6 +52,7 @@ import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { salesRepository } from '../../db/sales';
+import { buildProcessedItemsAndDeductions } from '../../sales/inventoryFlow';
 import { addInventoryEntry } from '../inventoryEntryService';
 
 const freeLicense = () => ({
@@ -74,6 +75,7 @@ const strictProduct = () => ({
   cost: 10,
   price: 25,
   trackStock: true,
+  recipe: [],
   isActive: true,
   expirationMode: 'STRICT',
   batchManagement: { enabled: true }
@@ -181,5 +183,62 @@ describe('inventoryEntryService FREE/local authority', () => {
       supplier: 'Proveedor QA', documentReference: 'F-QA-001', manufacturerBatchId: 'VI-QA-001',
       expiryDate: '2027-12-31'
     });
+  });
+
+  it('allocates a 15-unit sale across 10 + 27 units in two lots and persists 22 after reopen', async () => {
+    const product = { ...strictProduct(), id: 'medicine-vi-multi', name: 'Medicamento VI multi lote',
+      metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'VI', status: 'confirmed' } } };
+    await db.table(STORES.MENU).put(product);
+    const first = await addInventoryEntry({
+      operationId: 'free-pharmacy-lot-a', productId: product.id, quantity: 10, baseQuantity: 10,
+      supplier: 'Proveedor QA', manufacturerBatchId: 'VI-LOT-A', expiryDate: '2027-01-31',
+      occurredAt: '2026-11-17T14:00:00.000Z', metadata: { pharmacyReceipt: {
+        version: 1, supplier: 'Proveedor QA', documentType: 'factura', documentReference: 'FAC-A',
+        receivedAt: '2026-11-17T14:00:00.000Z', manufacturerBatchId: 'VI-LOT-A', expiryDate: '2027-01-31'
+      } }
+    });
+    const second = await addInventoryEntry({
+      operationId: 'free-pharmacy-lot-b', productId: product.id, quantity: 27, baseQuantity: 27,
+      supplier: 'Proveedor QA', manufacturerBatchId: 'VI-LOT-B', expiryDate: '2028-01-31',
+      occurredAt: '2026-11-17T15:00:00.000Z', metadata: { pharmacyReceipt: {
+        version: 1, supplier: 'Proveedor QA', documentType: 'factura', documentReference: 'FAC-B',
+        receivedAt: '2026-11-17T15:00:00.000Z', manufacturerBatchId: 'VI-LOT-B', expiryDate: '2028-01-31'
+      } }
+    });
+    expect((await db.table(STORES.MENU).get(product.id)).stock).toBe(37);
+
+    const currentBatches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(product.id).toArray();
+    const allocation = buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: product.id, productId: product.id, quantity: 15, price: 25 }],
+      allProducts: [product],
+      batchesMap: new Map([[product.id, currentBatches]]),
+      roundCurrency: (value) => Math.round(value * 100) / 100,
+      now: new Date('2026-11-18T12:00:00.000Z')
+    });
+    expect(allocation.batchesToDeduct).toEqual([
+      { batchId: first.batch.id, quantity: 10, productId: product.id, fromCommittedStock: false },
+      { batchId: second.batch.id, quantity: 5, productId: product.id, fromCommittedStock: false }
+    ]);
+
+    const sale = {
+      id: 'free-pharmacy-multi-sale', status: 'closed', timestamp: new Date().toISOString(),
+      paymentMethod: 'tarjeta', total: 375, abono: 375, saldoPendiente: 0,
+      items: allocation.processedItems.map((item) => ({ ...item, quantity: 15, price: 25 }))
+    };
+    const result = await salesRepository.executeSaleTransaction(sale, allocation.batchesToDeduct);
+    expect(result.success).toBe(true);
+
+    const database = getActiveTenantDatabase();
+    database.close();
+    await database.open();
+    const storedProduct = await db.table(STORES.MENU).get(product.id);
+    const storedBatches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(product.id).toArray();
+    expect(storedProduct.stock).toBe(22);
+    expect(storedBatches.reduce((sum, batch) => sum + batch.stock, 0)).toBe(22);
+    expect(storedBatches.find((batch) => batch.id === first.batch.id).stock).toBe(0);
+    expect(storedBatches.find((batch) => batch.id === second.batch.id).stock).toBe(22);
+    expect((await db.table(STORES.SALES).get(sale.id)).items[0].batchesUsed).toHaveLength(2);
+    expect(await db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id)
+      .filter((event) => event.type === 'INVENTORY_ENTRY').count()).toBe(2);
   });
 });

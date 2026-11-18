@@ -33,6 +33,14 @@ describe('Apparel variant SKU cloud mapping', () => {
     });
   });
 
+  it('preserves a pharmacy calendar expiry through Cloud serialization and reload', () => {
+    const payload = batchToCloudPayload({
+      id: 'vi-lot', productId: 'medicine-vi', expiryDate: '2026-11-18T00:00:00.000Z'
+    });
+    expect(payload.expiry_date).toBe('2026-11-18T00:00:00.000Z');
+    expect(cloudBatchToLocal(payload).expiryDate).toBe('2026-11-18T00:00:00.000Z');
+  });
+
   it('carries the Apparel discriminator through Cloud metadata without adding it to other rubros', () => {
     const apparelPayload = productToCloudPayload({
       id: 'apparel-product',

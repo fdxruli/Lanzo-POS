@@ -16,6 +16,7 @@ import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import WasteModal from './WasteModal';
 import InventoryEntryModal from './InventoryEntryModal';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
+import { canAddInventoryEntry } from '../../services/inventory/inventoryEntryEligibility';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import './ProductList.css';
 
@@ -458,7 +459,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         <Icons.Layers /> <span>Lotes / historial</span>
                       </button>
                     )}
-                    {isTracked && canManageInventory && !Array.isArray(item.recipe) && (
+                    {isTracked && canManageInventory && canAddInventoryEntry(item) && (
                       <button
                         className="ui-button ui-button--primary ui-button--sm btn-action"
                         onClick={() => setProductForInventoryEntry(item)}
