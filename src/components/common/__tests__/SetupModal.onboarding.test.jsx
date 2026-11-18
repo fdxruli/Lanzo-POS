@@ -369,7 +369,9 @@ describe('integrated owner onboarding', () => {
     try {
       await start(); business(); await continueIntegratedOwner();
       await waitForLegalDocuments({ selectTimezone: false });
-      expect(screen.getByRole('combobox', { name: 'Zona horaria del negocio' })).toHaveValue('');
+      const timezoneField = screen.getByRole('combobox', { name: 'Zona horaria del negocio' });
+      expect(timezoneField).toHaveValue('');
+      expect(timezoneField).toHaveAttribute('placeholder', 'Ejemplo: America/Merida');
       fireEvent.click(screen.getByRole('button', { name: 'Usar zona detectada (America/Tijuana)' }));
       expect(screen.getByRole('combobox', { name: 'Zona horaria del negocio' })).toHaveValue('America/Tijuana');
       expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   loadNextPage: vi.fn(async () => true),
   loadBatchesForProduct: vi.fn(async () => []),
   addSmartItem: vi.fn(),
+  showMessageModal: vi.fn(),
   saveScrollPosition: vi.fn()
 }));
 
@@ -20,7 +21,7 @@ vi.mock('../../../hooks/pos/useActiveOrders', () => ({
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector({ licenseDetails: null })
 }));
-vi.mock('../../../services/utils', () => ({ showMessageModal: vi.fn() }));
+vi.mock('../../../services/utils', () => ({ showMessageModal: mocks.showMessageModal }));
 vi.mock('../../../hooks/useFeatureConfig', () => ({
   useFeatureConfig: () => ({ hasVariants: false, hasModifiers: false, hasWholesale: false })
 }));
@@ -315,5 +316,51 @@ describe('ProductMenu stable real pagination', () => {
 
     render(<ProductMenu {...defaultProps} searchTerm="sku-remote" />);
     expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+  });
+
+  it('retries a transient STRICT batch read on the next product selection without selling on the failed read', async () => {
+    const strictProduct = {
+      id: 'strict-shirt',
+      name: 'Camisa casual',
+      stock: 4,
+      expirationMode: 'STRICT',
+      batchManagement: { enabled: true }
+    };
+    const validBatch = {
+      id: 'shirt-lot-m',
+      productId: strictProduct.id,
+      stock: 4,
+      committedStock: 0,
+      isActive: true,
+      expiryDate: '2030-01-01'
+    };
+    mocks.loadBatchesForProduct.mockResolvedValue([validBatch]);
+    const { rerender } = render(<ProductMenu {...defaultProps} products={[]} />);
+    rerender(<ProductMenu {...defaultProps} products={[strictProduct]} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    mocks.loadBatchesForProduct.mockReset()
+      .mockRejectedValueOnce(new Error('temporary read failure'))
+      .mockResolvedValueOnce([validBatch]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Camisa casual' }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mocks.addSmartItem).not.toHaveBeenCalled();
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'No se pudo validar el lote vigente de este producto. Intenta de nuevo.',
+      null,
+      expect.objectContaining({ type: 'warning' })
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Camisa casual' }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mocks.loadBatchesForProduct).toHaveBeenCalledTimes(2);
+    expect(mocks.addSmartItem).toHaveBeenCalledWith(expect.objectContaining({ id: strictProduct.id }));
   });
 });

@@ -41,6 +41,7 @@ import {
   getSalesActorIdentity
 } from '../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthorization';
+import { classifyActorAuthorityError } from '../services/auth/actorAuthorityErrors';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 import { getLicenseKeyFromDetails } from '../services/sync/syncConstants';
@@ -542,8 +543,14 @@ export default function DashboardPage() {
         actorHandle: captureRefundsActorHandle(),
         actorIdentity: salesActorIdentity
       });
-    } catch {
-      showMessageModal('No tienes permiso vigente para cancelar o reembolsar ventas.', null, { type: 'error' });
+    } catch (error) {
+      const authorityFailure = classifyActorAuthorityError(error, actorRuntime);
+      showMessageModal(
+        authorityFailure?.message
+          || 'No se pudo confirmar la autorización para cancelar la venta. La venta no se canceló; verifica tu acceso.',
+        null,
+        { type: authorityFailure?.kind === 'permission_denied' ? 'error' : 'warning' }
+      );
     }
   };
 

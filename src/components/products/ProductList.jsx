@@ -449,10 +449,10 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                       <button
                         className="ui-button ui-button--neutral ui-button--sm btn-action btn-batches"
                         onClick={() => onManageBatches(item.id)}
-                        title="Gestionar Lotes / Caducidades"
+                        title="Consultar lotes, variantes e historial"
                         disabled={!isActive}
                       >
-                        <Icons.Layers /> <span>Lotes</span>
+                        <Icons.Layers /> <span>Lotes / historial</span>
                       </button>
                     )}
                     {isTracked && canManageInventory && !Array.isArray(item.recipe) && (

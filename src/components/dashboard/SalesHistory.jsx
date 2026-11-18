@@ -232,6 +232,7 @@ export default function SalesHistory({
   const [expandedSplits, setExpandedSplits] = useState({});
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [exportNotice, setExportNotice] = useState('');
   const [filters, setFilters] = useState({
     query: '',
     dateFrom: '',
@@ -374,21 +375,28 @@ export default function SalesHistory({
 
   const exportCsv = () => {
     setExportError('');
-    const csv = buildSalesHistoryCsv(filteredSales, exportMetadata);
-    const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `historial-ventas-pagina-${pageNumber}-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.hidden = true;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setExportNotice('');
+    try {
+      const csv = buildSalesHistoryCsv(filteredSales, exportMetadata);
+      const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `historial-ventas-pagina-${pageNumber}-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.hidden = true;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportNotice('Se solicitó la descarga CSV de esta página.');
+    } catch {
+      setExportError('No se pudo iniciar la descarga CSV. Intenta de nuevo.');
+    }
   };
 
   const printPdf = () => {
     setExportError('');
+    setExportNotice('');
     const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) {
       setExportError('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para imprimir o guardar como PDF.');
@@ -429,6 +437,7 @@ export default function SalesHistory({
           ? 'Las exportaciones estarán disponibles al terminar la carga.'
           : `CSV e impresión incluirán solo ${filteredSales.length} venta(s) filtradas de las ${mainSales.length} cargadas en esta página.`}
       </p>
+      {exportNotice && <div className="ui-alert ui-alert--success sales-history-notice" role="status">{exportNotice}</div>}
 
       <div className="history-meta" aria-label="Alcance de la consulta">
         <span>Origen: {sourceLabel}</span>

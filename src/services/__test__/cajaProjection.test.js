@@ -216,6 +216,95 @@ describe('loadCashSessionProjection', () => {
     ]);
   });
 
+  it('does not synthesize a card or transfer movement for a delivered layaway', () => {
+    const deliveredLayaways = [
+      {
+        id: 'sale-layaway-completed-method',
+        status: 'closed',
+        paymentMethod: 'layaway_completed',
+        total: '899'
+      },
+      {
+        id: 'sale-layaway-completed-legacy',
+        status: 'closed',
+        paymentMethod: 'efectivo',
+        total: '899',
+        isLayawayConversion: true
+      }
+    ];
+
+    expect(normalizeSaleMovements(deliveredLayaways)).toEqual([]);
+    expect(calculateSessionTotals(deliveredLayaways)).toEqual({
+      ventasContado: '0',
+      abonosFiado: '0'
+    });
+  });
+
+  it('keeps the commercial layaway sale and official refund without synthesizing tender', async () => {
+    const session = { ...cashSession, id: 'cash-layaway-refund' };
+    const completedSale = {
+      id: 'sale-layaway-completed',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T11:45:00.000Z',
+      status: 'closed',
+      paymentMethod: 'layaway_completed',
+      isLayawayConversion: true,
+      total: '899'
+    };
+    const sale = {
+      id: 'sale-layaway-refund',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'cancelled',
+      fulfillmentStatus: 'cancelled',
+      paymentMethod: 'layaway_completed',
+      isLayawayConversion: true,
+      total: '899',
+      cancellationFinancials: {
+        version: 1,
+        refunds: [{ method: 'cash', amount: '20' }],
+        refundTotal: '20',
+        cashRefundTotal: '20',
+        cashRefundMovementId: 'cash-refund:cancel-1'
+      }
+    };
+    const refundMovement = {
+      id: 'cash-refund:cancel-1',
+      cash_session_id: session.id,
+      tipo: 'salida',
+      monto: '20',
+      concepto: 'Devolución en efectivo por cancelación',
+      referenceType: 'sale',
+      referenceId: sale.id,
+      saleId: sale.id,
+      metadata: {
+        source: 'sale_cancellation',
+        cancellationId: 'cancel-1',
+        refundMethod: 'cash',
+        refundAmount: '20'
+      },
+      fecha: '2026-06-14T13:00:00.000Z'
+    };
+
+    await testDb.table('sales').bulkAdd([completedSale, sale]);
+    await testDb.table('movimientos_caja').add(refundMovement);
+
+    const firstProjection = await loadCashSessionProjection(testDb, session);
+    const retryProjection = await loadCashSessionProjection(testDb, session);
+
+    expect(firstProjection.sales).toEqual(expect.arrayContaining([completedSale, sale]));
+    expect(firstProjection.movements.map((movement) => movement.id)).toEqual([refundMovement.id]);
+    expect(firstProjection.movements[0]).toMatchObject({
+      tipo: 'salida',
+      monto: '20',
+      referenceId: sale.id
+    });
+    expect(firstProjection.totals).toEqual({ ventasContado: '0', abonosFiado: '0' });
+    expect(retryProjection.movements.map((movement) => movement.id)).toEqual([refundMovement.id]);
+    expect(await testDb.table('sales').get(sale.id)).toEqual(sale);
+    expect(await testDb.table('movimientos_caja').get(refundMovement.id)).toEqual(refundMovement);
+  });
+
   it('ignora movimientos null al construir una proyección real', async () => {
     const movementTable = testDb.table('movimientos_caja');
     vi.spyOn(movementTable, 'where').mockReturnValue({

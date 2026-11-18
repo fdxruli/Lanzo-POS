@@ -32,7 +32,7 @@ export default function BusinessTimezoneField({ value, onChange, required = fals
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onBlur={() => setTouched(true)}
-        placeholder="America/Merida"
+        placeholder="Ejemplo: America/Merida"
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}
