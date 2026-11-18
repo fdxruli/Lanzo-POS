@@ -224,10 +224,13 @@ export const addInventoryEntry = async ({
           const manufacturer = String(entry.manufacturerBatchId || '').trim().toLowerCase();
           if (!manufacturer || !expiryDay(entry.expiryDate)) throw domainError('PHARMACY_BATCH_IDENTITY_REQUIRED');
           const matchingManufacturer = batches.find((batch) =>
-            batch?.isActive !== false && batch?.status !== 'archived' &&
+            !batch?.deletedAt && !batch?.deleted_at &&
             String(batch.manufacturerBatchId || '').trim().toLowerCase() === manufacturer
           );
-          if (matchingManufacturer) throw domainError('PHARMACY_EXISTING_BATCH_REQUIRED');
+          if (matchingManufacturer) throw domainError(
+            matchingManufacturer.isActive === false || matchingManufacturer.status === 'archived'
+              ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED'
+          );
         }
         target = makeNewBatch({ product, operationId: resolvedOperationId, entry, timestamp });
       }
@@ -345,6 +348,7 @@ export const inventoryEntryErrors = Object.freeze({
   PHARMACY_PROVENANCE_REQUIRED: 'Registra el proveedor, tipo y referencia del comprobante.',
   PHARMACY_BATCH_IDENTITY_REQUIRED: 'Registra un lote de fabricante y una caducidad válidos.',
   PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe este lote de fabricante: selecciónalo para registrar otra recepción.',
+  PHARMACY_ARCHIVED_BATCH_EXISTS: 'Este lote de fabricante ya existe archivado. Revisa su estado en Lotes / historial antes de registrar una recepción; no crees otro lote con la misma identidad.',
   PHARMACY_EXPIRED_BATCH: 'No se pueden recibir lotes vencidos como existencia vendible.',
   BATCH_NOT_FOUND: 'El lote seleccionado no está disponible.'
 });

@@ -133,4 +133,27 @@ describe('inventoryEntryService FREE/local authority', () => {
     expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(0);
     expect(mocks.actorCapture).not.toHaveBeenCalled();
   });
+
+  it('receives a fraction VI medicine once with documentary evidence in FREE/local', async () => {
+    await db.table(STORES.MENU).put({ ...strictProduct(), id: 'medicine-vi',
+      metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    });
+    const request = {
+      operationId: 'free-pharmacy-vi', productId: 'medicine-vi', quantity: 10, baseQuantity: 10,
+      supplier: 'Proveedor QA', manufacturerBatchId: 'VI-QA-001', expiryDate: '2027-12-31',
+      occurredAt: '2026-11-17T14:00:00.000Z', metadata: { pharmacyReceipt: {
+        version: 1, supplier: 'Proveedor QA', documentType: 'factura',
+        documentReference: 'F-QA-001', receivedAt: '2026-11-17T14:00:00.000Z',
+        manufacturerBatchId: 'VI-QA-001', expiryDate: '2027-12-31'
+      } }
+    };
+    const first = await addInventoryEntry(request);
+    const retry = await addInventoryEntry(request);
+    expect(first.newStock).toBe(10);
+    expect(retry.duplicate).toBe(true);
+    expect((await db.table(STORES.MENU).get('medicine-vi')).stock).toBe(10);
+    expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(10);
+    expect((await db.table(STORES.INVENTORY_EVENTS).where('productId').equals('medicine-vi').toArray())).toHaveLength(1);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(0);
+  });
 });

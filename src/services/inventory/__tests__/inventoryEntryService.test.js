@@ -177,6 +177,21 @@ describe('pharmacy stage 2 - local reception', () => {
     expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(10);
   });
 
+  it('does not create a second identity for an archived empty pharmacy lot', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    await db.table(STORES.PRODUCT_BATCHES).put({
+      id: 'archived-lot', productId: 'product-1', stock: 0, isActive: false,
+      status: 'archived', manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    });
+    await expect(addInventoryEntry(pharmacyEntry({
+      operationId: 'pharma-archived', quantity: 10, invoice: 'FAC-QA-001',
+      manufacturerBatchId: 'amx-qa-2026-a', expiryDate: '2027-10-31'
+    }))).rejects.toMatchObject({ code: 'PHARMACY_ARCHIVED_BATCH_EXISTS' });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(1);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+  });
+
   it('rejects unsupported special fractions and medicine without batch management', async () => {
     const entry = pharmacyEntry({
       operationId: 'pharma-special', quantity: 1, invoice: 'FAC-QA-001',

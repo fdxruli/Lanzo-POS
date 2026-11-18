@@ -36,6 +36,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const [supplier, setSupplier] = useState('');
   const [occurredAt, setOccurredAt] = useState(toDateTimeLocal);
   const [batches, setBatches] = useState([]);
+  const [archivedBatches, setArchivedBatches] = useState([]);
   const [batchId, setBatchId] = useState('');
   const [manufacturerBatchId, setManufacturerBatchId] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -72,6 +73,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         .then((items) => {
           if (!active) return;
           const usable = items.filter((item) => item.isActive !== false && item.status !== 'archived');
+          setArchivedBatches(items.filter((item) => item.isActive === false || item.status === 'archived'));
           setBatches(usable);
           if (usable.length === 1) setBatchId(usable[0].id);
         })
@@ -179,6 +181,9 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
                 </option>
               ))}
             </select>
+          </div>}
+          {medicine && archivedBatches.length > 0 && <div className="ui-alert ui-alert--info" role="status">
+            {archivedBatches.length} lote(s) archivado(s) no disponibles para recepción. Revisa Lotes / historial antes de registrar uno nuevo con la misma identidad.
           </div>}
           {batchManaged && !batchId && (medicine || product?.expirationMode === 'STRICT') && <>
             <div className="form-group"><label htmlFor="inventory-entry-manufacturer">Lote del fabricante *</label>
