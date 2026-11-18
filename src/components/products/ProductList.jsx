@@ -15,6 +15,7 @@ import { formatShelfLife, getProductBatchSummaryMap, getProductCardExpiryState }
 import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import WasteModal from './WasteModal';
 import InventoryEntryModal from './InventoryEntryModal';
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import './ProductList.css';
 
@@ -407,6 +408,8 @@ export default function ProductList({ products, categories = [], isLoading, onEd
             const isTracked = item.trackStock !== false && (
               item.trackStock === true || item.batchManagement?.enabled === true
             );
+            const pharmacy = getPharmacyClassification(item);
+            const isMedicine = pharmacy.recorded && pharmacy.kind === 'medicine';
 
             // Unidad de medida
             const unitLabel = resolveProductSaleUnit(item);
@@ -459,10 +462,10 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                       <button
                         className="ui-button ui-button--primary ui-button--sm btn-action"
                         onClick={() => setProductForInventoryEntry(item)}
-                        title="Agregar existencia"
+                        title={isMedicine ? 'Recibir medicamento con proveedor, comprobante y lote' : 'Agregar existencia'}
                         disabled={!isActive}
                       >
-                        <span>＋</span> <span>Agregar existencia</span>
+                        <span>＋</span> <span>{isMedicine ? 'Recibir medicamento' : 'Agregar existencia'}</span>
                       </button>
                     )}
                     {canManageProducts && (

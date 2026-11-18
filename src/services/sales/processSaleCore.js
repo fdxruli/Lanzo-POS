@@ -28,7 +28,7 @@ import {
     restaurantCloudTableTerminalBlockedResult
 } from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
-import { isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import {
   createFinancialNotificationResult,
   notificationNotRequested
@@ -376,6 +376,22 @@ export const processSaleCore = async ({
             cloudCashierDecision?.useCloud === true &&
             CLOUD_INVENTORY_AUTHORITATIVE_MODES.has(cloudCashierDecision?.mode)
         );
+
+        const medicineIds = itemsToProcess.map(item => item.parentId || item.productId || item.id).filter(id => {
+            const classification = getPharmacyClassification(productMap.get(id));
+            return classification.recorded && classification.kind === 'medicine';
+        });
+        if (medicineIds.length && await salesCloudCashierService.requiresCloudPharmacyAuthority()) {
+            if (!isCloudInventorySale) {
+                return withFinancialFailure({
+                    success: false,
+                    code: 'PHARMACY_CLOUD_AUTHORITY_REQUIRED',
+                    message: 'Conéctate a la caja Nube para verificar las existencias del medicamento. No se cobró.'
+                });
+            }
+            const { assertCloudPharmacyInventoryReconciled } = await import('../inventory/inventoryEntryService');
+            await assertCloudPharmacyInventoryReconciled(medicineIds);
+        }
 
         const directPartialContext = {
             order: itemsToProcess,

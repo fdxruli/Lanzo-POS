@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { posSyncOrchestrator } from '../../services/sync/posSyncOrchestrator';
 import { db, STORES } from '../../services/db/dexie';
-import { addInventoryEntry, inventoryEntryErrors } from '../../services/inventory/inventoryEntryService';
+import { addInventoryEntry, inventoryEntryErrors, retryCloudPharmacyReceipt } from '../../services/inventory/inventoryEntryService';
 import { generateIdempotencyKey } from '../../services/sync/idempotency';
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../services/sync/syncConstants';
 import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
 import { productCloudRepository } from '../../services/products/productCloudRepository';
 import { useAppStore } from '../../store/useAppStore';
-import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled } from '../../services/sync/syncConstants';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAuthorityRequired } from '../../services/sync/syncConstants';
 
 const toDateTimeLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const day = (value) => String(value || '').slice(0, 10);
@@ -19,7 +21,7 @@ const toReceiptView = (item, cloud = false) => ({
   receipt: cloud ? item.receipt : item.metadata?.pharmacyReceipt,
   responsible: cloud ? item.responsible : null,
   status: cloud ? 'Sincronizado en Cloud' : item.syncDisposition === 'local_only'
-    ? 'Guardado local' : item.synced ? 'Sincronizado' : 'Pendiente de sincronizar'
+    ? 'Guardado local' : item.rejectionCode ? 'Rechazado' : item.synced ? 'Sincronizado' : 'Pendiente de sincronizar'
 });
 const mergeReceiptHistory = (local, cloud) => {
   const merged = new Map();
@@ -36,6 +38,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const [supplier, setSupplier] = useState('');
   const [occurredAt, setOccurredAt] = useState(toDateTimeLocal);
   const [batches, setBatches] = useState([]);
+  const [archivedBatches, setArchivedBatches] = useState([]);
   const [batchId, setBatchId] = useState('');
   const [manufacturerBatchId, setManufacturerBatchId] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -52,6 +55,23 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
 
   const pharmacy = getPharmacyClassification(product);
   const medicine = pharmacy.recorded && pharmacy.kind === 'medicine';
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const cloudMedicine = medicine && isPharmacyCloudAuthorityRequired(licenseDetails);
+  const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+  const cloudEvents = useLiveQuery(() => cloudMedicine
+    ? db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id)
+      .filter((entry) => entry.type === 'INVENTORY_ENTRY' && (!entry.licenseKey || entry.licenseKey === licenseKey))
+      .sortBy('timestamp')
+    : [], [cloudMedicine, product.id, licenseKey], []);
+  const cloudEvent = cloudEvents.filter((entry) => entry.syncDisposition === 'cloud_authoritative').at(-1);
+  const legacyPending = cloudEvents.find((entry) => entry.syncDisposition !== 'cloud_authoritative'
+    && entry.syncDisposition !== 'local_only' && !entry.synced && entry.operationId && entry.metadata?.pharmacyReceipt);
+  const legacyReview = Boolean(legacyPending) || cloudEvents.some((entry) => entry.syncDisposition === 'local_only'
+    || (entry.syncDisposition !== 'cloud_authoritative' && !entry.synced));
+  const confirmedSubmission = cloudEvent?.synced && cloudEvent.operationId === operationIdRef.current;
+  const pendingCloudReceipt = cloudEvent && !cloudEvent.synced && !cloudEvent.rejectionCode;
+  const eventToVerify = legacyPending || (pendingCloudReceipt ? cloudEvent : null);
+  const sending = saving && cloudMedicine;
   const special = medicine && isSpecialPharmacyProduct(product);
   const unit = resolveProductSaleUnit(product) || 'pza';
   const batchManaged = product?.batchManagement?.enabled === true;
@@ -71,7 +91,8 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
       db.table(STORES.PRODUCT_BATCHES).where('productId').equals(product.id).toArray()
         .then((items) => {
           if (!active) return;
-          const usable = items.filter((item) => item.isActive !== false && item.status !== 'archived');
+          const usable = items.filter((item) => item.isActive !== false && item.status !== 'archived' && !item.deletedAt && !item.deleted_at);
+          setArchivedBatches(items.filter((item) => item.isActive === false || item.status === 'archived'));
           setBatches(usable);
           if (usable.length === 1) setBatchId(usable[0].id);
         })
@@ -106,11 +127,11 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (submittingRef.current || blocked) return;
+    if (submittingRef.current || blocked || pendingCloudReceipt || confirmedSubmission || legacyReview) return;
     submittingRef.current = true;
     setSaving(true);
     setError('');
-    if (!operationIdRef.current) {
+    if (!operationIdRef.current || (cloudEvent?.rejectionCode && cloudEvent.operationId === operationIdRef.current)) {
       operationIdRef.current = generateIdempotencyKey({
         prefix: 'inventory-entry', entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
         operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id
@@ -135,6 +156,10 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         manufacturerBatchId: batchId ? null : manufacturerBatchId.trim(),
         expiryDate: batchId ? null : expiryDate, entryKind: 'restock', metadata
       });
+      if (cloudMedicine && result?.pending) {
+        await posSyncOrchestrator.processOutbox('pharmacy_inventory_receipt');
+        return;
+      }
       if (result?.success) {
         try { await onCompleted?.(); } finally { onClose(); }
       }
@@ -180,6 +205,9 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
               ))}
             </select>
           </div>}
+          {medicine && archivedBatches.length > 0 && <div className="ui-alert ui-alert--info" role="status">
+            {archivedBatches.length} lote(s) archivado(s) no disponibles para recepción. Revisa Lotes / historial antes de registrar uno nuevo con la misma identidad.
+          </div>}
           {batchManaged && !batchId && (medicine || product?.expirationMode === 'STRICT') && <>
             <div className="form-group"><label htmlFor="inventory-entry-manufacturer">Lote del fabricante *</label>
               <input id="inventory-entry-manufacturer" value={manufacturerBatchId}
@@ -214,11 +242,19 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
           <div className="form-group"><label htmlFor="inventory-entry-date">Fecha y hora de recepción</label>
             <input id="inventory-entry-date" type="datetime-local" value={occurredAt}
               onChange={(event) => setOccurredAt(event.target.value)} required /></div>
-          <div className="ui-alert ui-alert--info">
+          {!cloudMedicine && <div className="ui-alert ui-alert--info">
             Existencia actual: <strong>{product.stock ?? 0} {unit}</strong>
             {' · '}Entrada: <strong>+{Number(quantity) || 0} {unit}</strong>
             {' · '}Total estimado: <strong>{nextStock} {unit}</strong>
-          </div>
+          </div>}
+          {legacyReview && <div role="alert" className="ui-alert ui-alert--danger">
+            {inventoryEntryErrors.PHARMACY_INVENTORY_REVIEW_REQUIRED}
+          </div>}
+          {cloudMedicine && !legacyReview && <div role="status" className="ui-alert ui-alert--info">
+            {sending ? 'Enviando al servidor…' : pendingCloudReceipt ? 'Recepción pendiente de verificación.'
+              : cloudEvent?.rejectionCode ? inventoryEntryErrors[cloudEvent.rejectionCode] || 'Recepción rechazada. Revisa los datos.'
+                : cloudEvent?.synced ? 'Recepción confirmada.' : 'La recepción se confirmará en Nube.'}
+          </div>}
           {medicine && <section aria-label="Últimas recepciones documentadas">
             <h4>Últimas recepciones documentadas</h4>
             {history.length === 0 && <small>No hay recepciones documentadas recuperadas.</small>}
@@ -238,9 +274,20 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         </div>
         <div className="modal-footer">
           <button type="button" className="ui-button ui-button--ghost" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button type="submit" className="ui-button ui-button--primary" disabled={saving || blocked}>
+          {eventToVerify ? <button type="button" className="ui-button ui-button--primary" disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await retryCloudPharmacyReceipt(eventToVerify.operationId);
+                await posSyncOrchestrator.processOutbox('pharmacy_receipt_status');
+              }
+              catch (cause) {
+                setError(inventoryEntryErrors[cause?.code] || 'No se pudo verificar la recepción. Intenta de nuevo.');
+              }
+              finally { setSaving(false); }
+            }}>Verificar recepción</button> : <button type="submit" className="ui-button ui-button--primary" disabled={saving || blocked || confirmedSubmission || legacyReview}>
             {saving ? 'Guardando…' : medicine ? 'Confirmar recepción' : 'Agregar existencia'}
-          </button>
+          </button>}
         </div>
       </form>
     </div>

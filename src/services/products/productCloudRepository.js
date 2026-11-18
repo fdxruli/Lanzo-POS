@@ -64,6 +64,8 @@ const getMutationRequirementsForRpc = (rpcName, args = {}) => {
     rpcName === 'pos_upsert_product_batch'
     || rpcName === 'pos_delete_product_batch'
     || rpcName === 'pos_add_inventory_entry'
+    || rpcName === 'pos_receive_pharmacy_inventory_v1'
+    || rpcName === 'pos_verify_legacy_pharmacy_receipt_v1'
   ) {
     return { inventory: true };
   }
@@ -166,8 +168,10 @@ export const productCloudRepository = {
     }, actorHandle);
   },
 
-  async addInventoryEntry({ licenseKey, entry, idempotencyKey, actorHandle = null }) {
-    return callCatalogMutationRpc('pos_add_inventory_entry', licenseKey, {
+  async addInventoryEntry({ licenseKey, entry, idempotencyKey, actorHandle = null, cloudPharmacyReceipt = false, verifyLegacyPharmacyReceipt = false }) {
+    const rpc = verifyLegacyPharmacyReceipt ? 'pos_verify_legacy_pharmacy_receipt_v1'
+      : cloudPharmacyReceipt ? 'pos_receive_pharmacy_inventory_v1' : 'pos_add_inventory_entry';
+    return callCatalogMutationRpc(rpc, licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: entry.productId,
       p_batch_id: entry.batchId || null,

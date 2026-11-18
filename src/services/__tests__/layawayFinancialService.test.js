@@ -8,6 +8,10 @@ vi.mock('../auth/actorRuntimeController', async (importOriginal) => {
   };
 });
 
+vi.mock('../inventory/inventoryEntryService', () => ({
+  assertCloudPharmacyInventoryReconciled: vi.fn()
+}));
+
 vi.mock('../financial/financialIntentLedger', () => ({
   acknowledgeLayawayPayment: vi.fn(),
   listLayawayPaymentIntents: vi.fn()

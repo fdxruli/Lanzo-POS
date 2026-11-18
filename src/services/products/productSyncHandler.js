@@ -21,7 +21,7 @@ import {
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
-import { markInventoryEntrySynced } from '../inventory/inventoryEntryService';
+import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../inventory/inventoryEntryService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import {
   assertProductInventoryMutationCurrent,
@@ -277,6 +277,8 @@ export const productSyncHandler = {
     const expectedVersion = getExpectedVersion(operation);
     const idempotencyKey = operation.idempotencyKey || operation.id;
     const op = operation.operation;
+    const pharmacyReceipt = operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY
+      && (payload.cloudPharmacyReceipt === true || Boolean(payload.entry?.metadata?.pharmacyReceipt));
     const mutationRequirements = getProductInventoryMutationRequirements(operation);
     const actorRequirementFlags = { products: mutationRequirements.includes('products'), inventory: mutationRequirements.includes('inventory') };
     let actorHandle = null;
@@ -287,8 +289,13 @@ export const productSyncHandler = {
     // context at the RPC boundary without persisting it into the old row.
     if (mutationRequirements.length > 0 && operation.actorSensitivity === 'actor_bound') {
       try {
-        assertProductInventoryOperationActorCurrent(operation);
+        if (!pharmacyReceipt) assertProductInventoryOperationActorCurrent(operation);
         actorHandle = captureProductInventoryMutation(actorRequirementFlags);
+        // A restored session may verify or retry the same receipt as its
+        // original actor. The request still checks live permissions on both ends.
+        if (pharmacyReceipt && operation.originActorKey !== actorHandle.actorKey) {
+          assertProductInventoryOperationActorCurrent(operation);
+        }
         assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
       } catch (error) {
         if (String(error?.code || '').startsWith('ACTOR_')) {
@@ -308,6 +315,7 @@ export const productSyncHandler = {
     }
 
     let response;
+    let verifyLegacyPharmacyReceipt = false;
 
     if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) {
       response = op === SYNC_OPERATIONS.DELETE
@@ -326,12 +334,45 @@ export const productSyncHandler = {
           idempotencyKey
         });
     } else if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) {
-      response = await productCloudRepository.addInventoryEntry({
-        actorHandle,
-        licenseKey,
-        entry: payload.entry,
-        idempotencyKey
-      });
+      const cloudPharmacyReceipt = payload.cloudPharmacyReceipt === true;
+      verifyLegacyPharmacyReceipt = !cloudPharmacyReceipt && Boolean(payload.entry?.metadata?.pharmacyReceipt);
+      try {
+        response = await productCloudRepository.addInventoryEntry({
+          actorHandle,
+          licenseKey,
+          entry: payload.entry,
+          ...(cloudPharmacyReceipt ? { cloudPharmacyReceipt } : {}),
+          ...(verifyLegacyPharmacyReceipt ? { verifyLegacyPharmacyReceipt } : {}),
+          idempotencyKey
+        });
+      } catch (error) {
+        if (!cloudPharmacyReceipt || error?.code !== 'P0001'
+          || !/^(PHARMACY_CLASSIFICATION_REQUIRED|PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE|PHARMACY_BATCHES_REQUIRED|PHARMACY_PROVENANCE_REQUIRED|PHARMACY_BATCH_IDENTITY_REQUIRED|PHARMACY_RECEIPT_BATCH_MISMATCH|PHARMACY_EXISTING_BATCH_REQUIRED|PRODUCT_NOT_FOUND|BATCH_NOT_FOUND)$/.test(error.message)) throw error;
+        response = { success: false, code: error.message };
+      }
+      if (verifyLegacyPharmacyReceipt) {
+        if (response?.success !== true || response.idempotency_key !== idempotencyKey
+          || response.product?.id !== payload.entry.productId || !Array.isArray(response.batches)
+          || !['confirmed', 'rejected'].includes(response.receipt_outcome)) {
+          throw asError({ code: 'PHARMACY_INVENTORY_REVIEW_REQUIRED' }, 'PRODUCT_PUSH_FAILED');
+        }
+        const applied = await productLocalRepository.applyCloudCatalog(response, {
+          legacyReceipt: { productId: payload.entry.productId, batchId: payload.entry.batchId }
+        });
+        if (applied.deferredInventory || applied.rejected.length) {
+          throw asError({ code: 'PHARMACY_INVENTORY_REVIEW_REQUIRED' }, 'PRODUCT_PUSH_FAILED');
+        }
+        if (actorHandle) assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
+        await markInventoryEntrySynced(idempotencyKey, response);
+        notifyProductsChanged({ source: 'productSyncHandler.pharmacyReceiptReconciled', productId: operation.entityId });
+        return response;
+      }
+      if (cloudPharmacyReceipt && response?.success === false
+        && /^(PHARMACY_|PRODUCT_NOT_FOUND$|BATCH_PRODUCT_MISMATCH$|BATCH_NOT_FOUND$|INVALID_QUANTITY$|INVALID_UNIT_PRECISION$|STOCK_TRACKING_DISABLED$|VARIANT_REQUIRED$|IDEMPOTENCY_PAYLOAD_MISMATCH$)/.test(response.code)) {
+        if (actorHandle) assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
+        await markCloudPharmacyReceiptRejected(idempotencyKey, response.code);
+        return response;
+      }
     } else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) {
       response = op === SYNC_OPERATIONS.DELETE
         ? await productCloudRepository.deleteProductBatch({
@@ -399,6 +440,10 @@ export const productSyncHandler = {
       response?.success !== true
       || !response?.inventory_movement?.id
       || response?.idempotency_key !== idempotencyKey
+      || (payload.cloudPharmacyReceipt && (
+        response.product?.id !== operation.entityId || !response.batch?.id
+        || response.batch?.product_id !== operation.entityId
+      ))
     )) {
       throw asError({ code: 'INVENTORY_RECEIPT_CONFIRMATION_MISSING' }, 'PRODUCT_PUSH_FAILED');
     }
@@ -409,18 +454,24 @@ export const productSyncHandler = {
       return { conflict: staleResponse, success: false };
     }
 
-    await productLocalRepository.applyCloudCatalog(response);
+    const applied = payload.cloudPharmacyReceipt
+      ? await productLocalRepository.applyCloudCatalog(response, { requireInventoryProjection: true })
+      : await productLocalRepository.applyCloudCatalog(response);
+    if (payload.cloudPharmacyReceipt && (applied?.rejected?.length || applied?.deferredInventory)) {
+      throw asError({ code: 'INVENTORY_RECEIPT_PROJECTION_PENDING' }, 'PRODUCT_PUSH_FAILED');
+    }
 
     if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) {
       await markInventoryEntrySynced(idempotencyKey, response);
     }
 
     const latestChangeSeq = normalizeChangeSeq(response, 0);
-    if (latestChangeSeq > 0) {
+    if (latestChangeSeq > 0 && !payload.cloudPharmacyReceipt) {
       await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
     }
 
-    const changedProductId = operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
+    const changedProductId = operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY
+      ? operation.entityId : operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
       ? (payload.productId || payload.product?.id || operation.entityId)
       : (
         operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH
