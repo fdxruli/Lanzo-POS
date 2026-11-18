@@ -10,6 +10,8 @@ import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils
 import { productCloudRepository } from '../../services/products/productCloudRepository';
 import { useAppStore } from '../../store/useAppStore';
 import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAuthorityRequired } from '../../services/sync/syncConstants';
+import { isBatchArchived } from '../../services/products/batchStatus';
+import { isBatchExpiredForSale } from '../../services/products/fefoUtils';
 
 const toDateTimeLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const day = (value) => String(value || '').slice(0, 10);
@@ -75,6 +77,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const special = medicine && isSpecialPharmacyProduct(product);
   const unit = resolveProductSaleUnit(product) || 'pza';
   const batchManaged = product?.batchManagement?.enabled === true;
+  const productExpirationMode = product?.expirationMode || product?.expiration_mode || 'NONE';
   const selectedBatch = batches.find((batch) => batch.id === batchId);
   const nextStock = useMemo(
     () => Number(product?.stock || 0) + (Number(quantity) || 0),
@@ -91,8 +94,11 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
       db.table(STORES.PRODUCT_BATCHES).where('productId').equals(product.id).toArray()
         .then((items) => {
           if (!active) return;
-          const usable = items.filter((item) => item.isActive !== false && item.status !== 'archived' && !item.deletedAt && !item.deleted_at);
-          setArchivedBatches(items.filter((item) => item.isActive === false || item.status === 'archived'));
+          const expiryProduct = { expirationMode: productExpirationMode };
+          const usable = items.filter((item) => !isBatchArchived(item)
+            && (!medicine || !isBatchExpiredForSale(item, expiryProduct)));
+          setArchivedBatches(items.filter((item) => isBatchArchived(item)
+            || (medicine && isBatchExpiredForSale(item, expiryProduct))));
           setBatches(usable);
           if (usable.length === 1) setBatchId(usable[0].id);
         })
@@ -123,7 +129,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
       }
     }
     return () => { active = false; };
-  }, [batchManaged, medicine, product?.id]);
+  }, [batchManaged, medicine, product?.id, productExpirationMode]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -206,7 +212,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
             </select>
           </div>}
           {medicine && archivedBatches.length > 0 && <div className="ui-alert ui-alert--info" role="status">
-            {archivedBatches.length} lote(s) archivado(s) no disponibles para recepción. Revisa Lotes / historial antes de registrar uno nuevo con la misma identidad.
+            {archivedBatches.length} lote(s) archivado(s) o vencido(s) no disponible(s) para recepción. Revisa Lotes / historial antes de registrar uno nuevo con la misma identidad.
           </div>}
           {batchManaged && !batchId && (medicine || product?.expirationMode === 'STRICT') && <>
             <div className="form-group"><label htmlFor="inventory-entry-manufacturer">Lote del fabricante *</label>

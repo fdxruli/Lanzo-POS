@@ -13,7 +13,14 @@ import {
 import { categoriesRepository } from '../db/general';
 import { generateID } from '../utils';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
-import { isSpecialPharmacyProduct, hasChangedConfirmedClassification, pharmacyLegacyIndicators, getPharmacyClassification } from '../../utils/pharmacyClassification';
+import {
+  isSpecialPharmacyProduct,
+  hasChangedConfirmedClassification,
+  pharmacyLegacyIndicators,
+  getPharmacyClassification,
+  requiresConfirmedMedicineClassification,
+  PHARMACY_CLASSIFICATION_REQUIRED_FOR_ACTIVATION
+} from '../../utils/pharmacyClassification';
 import {
   cloudBatchToLocal,
   cloudCategoryToLocal,
@@ -504,6 +511,11 @@ export const productLocalRepository = {
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
     const current = (await this.getProductById(productId)) || (typeof product === 'string' ? null : product);
+    if (isActive && requiresConfirmedMedicineClassification(current)) {
+      const error = new Error(PHARMACY_CLASSIFICATION_REQUIRED_FOR_ACTIVATION);
+      error.code = 'PHARMACY_CLASSIFICATION_REQUIRED';
+      throw error;
+    }
     if (isActive && isSpecialPharmacyProduct(current)) throw new Error('La fracción I, II o III no puede activarse para venta genérica.');
     await assertIngredientChangeDoesNotBreakRecipes(current, { ...current, isActive });
     const mutationSync = createLocalMutationSync();

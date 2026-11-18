@@ -1,9 +1,9 @@
 import { db, STORES } from '../db/dexie';
 import { getAvailableStock, getCommittedStock } from '../db/utils';
+import { isBatchArchived } from './batchStatus';
 
 export const BATCH_MANAGER_PAGE_SIZE = 50;
 
-const ARCHIVED_STATUSES = new Set(['archived', 'deleted', 'removed', 'inactive']);
 const ACTIVE_STATUSES = new Set(['active', 'enabled']);
 const VALID_FILTERS = new Set(['all', 'active', 'archived']);
 
@@ -34,18 +34,11 @@ export const getBatchSortValue = (batch) => (
 
 export const getBatchManagerStatus = (batch) => {
   const status = String(batch?.status || '').trim().toLowerCase();
-  const hasArchiveMarker = Boolean(batch?.deletedAt || batch?.deleted_at);
-
-  if (
-    batch?.isArchived === true
-    || batch?.isActive === false
-    || hasArchiveMarker
-    || ARCHIVED_STATUSES.has(status)
-  ) {
-    return 'archived';
-  }
+  if (isBatchArchived(batch)) return 'archived';
 
   if (batch?.isActive === true || ACTIVE_STATUSES.has(status)) return 'active';
+  if (batch?.isActive === false && Number(batch?.stock) <= 0) return 'active';
+  if (status === 'inactive' && Number(batch?.stock) <= 0) return 'active';
 
   // Los registros legacy ambiguos quedan en historial para no volverlos vendibles.
   return 'archived';

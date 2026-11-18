@@ -6,6 +6,7 @@ import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAu
 import { useAppStore } from '../../store/useAppStore';
 import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import { isBatchArchived } from '../products/batchStatus';
 import { canAddInventoryEntry, hasInventoryRecipe } from './inventoryEntryEligibility';
 import {
   actorOriginFromHandle,
@@ -264,15 +265,14 @@ export const addInventoryEntry = async ({
             && String(batch.manufacturerBatchId || '').trim().toLowerCase() === manufacturer
           );
           if (matchingManufacturer) throw domainError(
-            matchingManufacturer.isActive === false || matchingManufacturer.status === 'archived'
-              || matchingManufacturer.deletedAt || matchingManufacturer.deleted_at
+            isBatchArchived(matchingManufacturer)
               ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED'
           );
         }
         target = makeNewBatch({ product, operationId: resolvedOperationId, entry, timestamp });
       }
       if (pharmacyMedicine) {
-        if (target.isActive === false || target.status === 'archived' || target.deletedAt || target.deleted_at) {
+        if (isBatchArchived(target)) {
           throw domainError('BATCH_NOT_FOUND');
         }
         const expiry = expiryDay(target.expiryDate);
@@ -280,6 +280,14 @@ export const addInventoryEntry = async ({
           throw domainError('PHARMACY_BATCH_IDENTITY_REQUIRED');
         }
         if (expiry < localToday()) throw domainError('PHARMACY_EXPIRED_BATCH');
+        const receipt = entry.metadata?.pharmacyReceipt;
+        const receiptManufacturer = String(receipt?.manufacturerBatchId || '').trim().toLowerCase();
+        const receiptExpiry = expiryDay(receipt?.expiryDate);
+        if (receiptManufacturer !== String(target.manufacturerBatchId).trim().toLowerCase()
+          || receiptExpiry !== expiry
+          || Date.parse(receipt?.receivedAt) !== Date.parse(entry.occurredAt)) {
+          throw domainError('PHARMACY_RECEIPT_BATCH_MISMATCH');
+        }
       }
       if (isStrict(product) && (!target.manufacturerBatchId || !target.expiryDate)) {
         throw domainError(!target.manufacturerBatchId ? 'STRICT_MANUFACTURER_BATCH_REQUIRED' : 'STRICT_EXPIRY_REQUIRED');
@@ -431,6 +439,7 @@ export const inventoryEntryErrors = Object.freeze({
   PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE: 'Los medicamentos de fracciones I–III requieren un procedimiento de control especial no disponible en esta recepción.',
   PHARMACY_BATCHES_REQUIRED: 'Activa el control por lotes del medicamento antes de recibir existencias.',
   PHARMACY_PROVENANCE_REQUIRED: 'Registra el proveedor, tipo y referencia del comprobante.',
+  PHARMACY_RECEIPT_BATCH_MISMATCH: 'El lote de fabricante, la caducidad y la fecha de recepción deben coincidir con el comprobante.',
   PHARMACY_BATCH_IDENTITY_REQUIRED: 'Registra un lote de fabricante y una caducidad válidos.',
   PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe este lote de fabricante: selecciónalo para registrar otra recepción.',
   PHARMACY_ARCHIVED_BATCH_EXISTS: 'Este lote de fabricante ya existe archivado. Revisa su estado en Lotes / historial antes de registrar una recepción; no crees otro lote con la misma identidad.',

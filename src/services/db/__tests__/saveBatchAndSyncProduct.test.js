@@ -26,22 +26,27 @@ const batchTable = {
   }))
 };
 
+const dbMock = {
+  table: vi.fn((store) => (store === 'menu' ? menuTable : batchTable)),
+  transaction: vi.fn(async (...args) => {
+    const operation = args.at(-1);
+    const before = clone(state);
+    try {
+      return await operation();
+    } catch (error) {
+      state.product = before.product;
+      state.batches = before.batches;
+      throw error;
+    }
+  })
+};
+
 vi.mock('../dexie', () => ({
-  STORES: { MENU: 'menu', PRODUCT_BATCHES: 'product_batches' },
-  db: {
-    table: vi.fn((store) => (store === 'menu' ? menuTable : batchTable)),
-    transaction: vi.fn(async (...args) => {
-      const operation = args.at(-1);
-      const before = clone(state);
-      try {
-        return await operation();
-      } catch (error) {
-        state.product = before.product;
-        state.batches = before.batches;
-        throw error;
-      }
-    })
-  }
+  STORES: {
+    MENU: 'menu', PRODUCT_BATCHES: 'product_batches',
+    INVENTORY_EVENTS: 'inventory_events', INVENTORY_MOVEMENTS: 'inventory_movements'
+  },
+  db: dbMock
 }));
 
 describe('productsRepository.saveBatchAndSyncProduct', () => {
@@ -100,6 +105,42 @@ describe('productsRepository.saveBatchAndSyncProduct', () => {
     expect(state.product.batchManagement).toBeUndefined();
   });
 
+  it('registra un lote general vacío sin aumentar el stock ni escribir movimientos', async () => {
+    const { productsRepository } = await import('../products');
+    const { db, STORES } = await import('../dexie');
+    state.product = { ...state.product, stock: 0, committedStock: 0 };
+    db.table.mockClear();
+
+    await expect(productsRepository.saveBatchAndSyncProduct({
+      id: 'batch-empty-identity', productId: 'product_legacy', stock: 0, committedStock: 0,
+      trackStock: false, isActive: false, manufacturerBatchId: 'LOT-EMPTY-QA', supplier: null
+    })).resolves.toEqual({ success: true });
+
+    expect(state.batches).toHaveLength(1);
+    expect(state.batches[0]).toMatchObject({ stock: 0, trackStock: false, isActive: false });
+    expect(state.product.stock).toBe(0);
+    expect(db.table).not.toHaveBeenCalledWith(STORES.INVENTORY_EVENTS);
+    expect(db.table).not.toHaveBeenCalledWith(STORES.INVENTORY_MOVEMENTS);
+  });
+
+  it('permite una identidad medicinal en cero, pero no la convierte en una recepción', async () => {
+    const { productsRepository } = await import('../products');
+    const { db, STORES } = await import('../dexie');
+    state.product.stock = 0;
+    state.product.metadata.pharmacy = { kind: 'medicine', fraction: 'VI', status: 'confirmed' };
+
+    await expect(productsRepository.saveBatchAndSyncProduct({
+      id: 'medicine-empty-identity', productId: 'product_legacy', stock: 0, committedStock: 0,
+      trackStock: false, isActive: false, manufacturerBatchId: 'MED-EMPTY-001',
+      expiryDate: '2027-10-31', supplier: null
+    })).resolves.toEqual({ success: true });
+
+    expect(state.batches[0]).toMatchObject({ stock: 0, isActive: false, manufacturerBatchId: 'MED-EMPTY-001' });
+    expect(state.product.stock).toBe(0);
+    expect(db.table).not.toHaveBeenCalledWith(STORES.INVENTORY_EVENTS);
+    expect(db.table).not.toHaveBeenCalledWith(STORES.INVENTORY_MOVEMENTS);
+  });
+
   it('conserva DatabaseError y hace rollback completo ante una validacion real', async () => {
     const { productsRepository } = await import('../products');
     const before = clone(state);
@@ -122,7 +163,7 @@ describe('productsRepository.saveBatchAndSyncProduct', () => {
     const { productsRepository } = await import('../products');
     state.product.metadata.pharmacy = { kind: 'medicine', fraction: 'VI', status: 'confirmed' };
     state.batches = [{ id: 'lot-a', productId: 'product_legacy', manufacturerBatchId: 'VI-LOT-A', stock: 0,
-      isActive: true, status: 'active' }];
+      isActive: false, status: 'inactive' }];
 
     await expect(productsRepository.saveBatchAndSyncProduct({
       id: 'lot-b', productId: 'product_legacy', manufacturerBatchId: ' vi-lot-a ', stock: 0,

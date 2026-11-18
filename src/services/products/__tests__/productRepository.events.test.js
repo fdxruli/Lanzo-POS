@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
   upsertProduct: vi.fn(),
   pullCatalogSnapshot: vi.fn(),
   deleteProduct: vi.fn(),
-  toggleProductStatus: vi.fn()
+  toggleProductStatus: vi.fn(),
+  upsertProductBatch: vi.fn()
 }));
 
 vi.mock('../../Logger', () => ({
@@ -85,7 +86,8 @@ vi.mock('../productCloudRepository', () => ({
     upsertProduct: mocks.upsertProduct,
     pullCatalogSnapshot: mocks.pullCatalogSnapshot,
     deleteProduct: mocks.deleteProduct,
-    toggleProductStatus: mocks.toggleProductStatus
+    toggleProductStatus: mocks.toggleProductStatus,
+    upsertProductBatch: mocks.upsertProductBatch
   }
 }));
 vi.mock('../productLocalRepository', () => ({
@@ -159,6 +161,8 @@ beforeEach(() => {
   mocks.applyCloudCategory.mockResolvedValue({ id: 'category-1', name: 'Category', serverVersion: 1 });
   mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'category-1', name: 'Category' } });
   mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1' } });
+  mocks.upsertProductBatch.mockResolvedValue({ success: true, batch: { id: 'batch-1' } });
+  mocks.toggleProductStatus.mockResolvedValue({ success: true, product: { id: 'product-1' } });
   mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
     success: true,
     products: entityType === 'products' ? [] : undefined,
@@ -169,6 +173,43 @@ beforeEach(() => {
 });
 
 describe('productRepository directed catalog events', () => {
+  it('explains pending medical classification before attempting activation', async () => {
+    const pendingMedicine = {
+      id: 'pending-medicine', isActive: false,
+      metadata: { pharmacy: { kind: 'medicine', fraction: null, status: 'pending' } }
+    };
+
+    await expect(productRepository.toggleProductStatus(pendingMedicine, true)).resolves.toMatchObject({
+      success: false,
+      code: 'PHARMACY_CLASSIFICATION_REQUIRED',
+      message: expect.stringMatching(/clasificación sanitaria válida/i)
+    });
+    expect(mocks.toggleProductStatusLocal).not.toHaveBeenCalled();
+    expect(mocks.toggleProductStatus).not.toHaveBeenCalled();
+  });
+
+  it('does not report a Cloud toggle success without an explicit confirmation', async () => {
+    mocks.cloudEnabled = true;
+    mocks.toggleProductStatus.mockResolvedValueOnce({});
+
+    await expect(productRepository.toggleProductStatus({ id: 'product-1', isActive: false }, true))
+      .resolves.toMatchObject({ success: false, code: 'PRODUCT_TOGGLE_CONFIRMATION_MISSING' });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('does not report a Cloud batch save success without an explicit confirmation', async () => {
+    mocks.cloudEnabled = true;
+    mocks.getProductById.mockResolvedValueOnce({
+      id: 'product-1', name: 'Product', rubroContext: 'abarrotes'
+    });
+    mocks.upsertProductBatch.mockResolvedValueOnce({});
+
+    await expect(productRepository.saveBatch({
+      id: 'batch-1', productId: 'product-1', stock: 0, isActive: false
+    })).resolves.toMatchObject({ success: false, code: 'BATCH_SYNC_CONFIRMATION_MISSING' });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
   it('genera SKU Apparel antes de guardar cada variante y conserva el SKU manual', async () => {
     const prepared = {
       ...preparedProduct(false),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PR #478 focused SQL regression on disposable PostgreSQL 17, never Production."""
+"""Focused Pharmacy guard regressions on disposable PostgreSQL 17, never Production."""
 import os
 import subprocess
 from pathlib import Path
@@ -15,6 +15,13 @@ names = [
     "pharmacy_stage2_guard_product_upsert", "pharmacy_stage2_guard_batch_upsert",
     "pharmacy_stage2_validate_receipt",
 ]
+stage1_sql = Path("supabase/migrations/20261111190000_pharmacy_stage1_catalog_and_sale_guard.sql").read_text()
+
+def read_stage1_function(name):
+    start = stage1_sql.lower().index("create or replace function private." + name + "(")
+    end = stage1_sql.index("$$;", start)
+    return stage1_sql[start:end + 3]
+
 def read_function(name):
     start = sql.lower().index("create or replace function private." + name + "(")
     end = sql.index("$$;", start)
@@ -26,7 +33,7 @@ create type public.business_category as enum ('farmacia','food_service');
 create table public.business_profiles(license_id uuid,business_type public.business_category[]);
 create table public.pos_products(
  id text,license_id uuid,deleted_at timestamptz,metadata jsonb,
- requires_prescription boolean,prescription_type text,batch_management jsonb,
+ requires_prescription boolean,prescription_type text,batch_management jsonb,is_active boolean,
  primary key(license_id,id)
 );
 create table public.pos_product_batches(
@@ -54,6 +61,7 @@ insert into public.pos_products values
   '{}',false,'otc','{"enabled":true}');
 insert into public.pos_product_batches values
  ('b-iv','00000000-0000-0000-0000-000000000001','iv',10,'AMX-1','2028-12-30',null),
+ ('b-iv-empty','00000000-0000-0000-0000-000000000001','iv',0,'AMX-EMPTY','2028-12-30',null),
  ('b-other','00000000-0000-0000-0000-000000000001','other',10,null,null,null),
  ('b-food','00000000-0000-0000-0000-000000000002','food',10,null,null,null);
 create or replace function private.expect_block(label text,statement text,expected text)
@@ -76,6 +84,9 @@ def query(expr):
 def expect(label, expr, expected):
     return ("select private.expect_block('" + label + "', $cmd$" +
             query(expr) + "$cmd$,'" + expected + "');")
+def expect_statement(label, statement, expected):
+    return ("select private.expect_block('" + label + "', $cmd$" + statement +
+            ";$cmd$,'" + expected + "');")
 def product(label, stock, metadata):
     return ("private.pharmacy_stage2_guard_product_upsert(" + ctx +
             ",'{\"id\":\"" + label + "\",\"stock\":" + str(stock) +
@@ -87,13 +98,19 @@ def batch(context, bid, pid, stock=None):
         val += ',"stock":' + str(stock)
     return "private.pharmacy_stage2_guard_batch_upsert(" + context + ",'" + val + "}'::jsonb)"
 receipt = '{"pharmacyReceipt":{"version":1,"supplier":"QA Supplier","documentType":"factura","documentReference":"QA-FAC-1","receivedAt":"2026-11-11T14:00:00Z","manufacturerBatchId":"AMX-1","expiryDate":"2028-12-30"}}'
-def recv(pid, meta):
+empty_identity_receipt = '{"pharmacyReceipt":{"version":1,"supplier":"QA Supplier","documentType":"factura","documentReference":"QA-FAC-EMPTY","receivedAt":"2026-11-11T14:00:00Z","manufacturerBatchId":"AMX-EMPTY","expiryDate":"2028-12-30"}}'
+def recv(pid, meta, batch_id="b-iv"):
     return ("private.pharmacy_stage2_validate_receipt('" + license_ph +
             "'::uuid,(select p from public.pos_products p where p.id='" + pid +
-            "'),(select b from public.pos_product_batches b where b.id='b-iv')," +
+            "'),(select b from public.pos_product_batches b where b.id='" + batch_id + "')," +
             "'" + meta + "'::jsonb,'QA Supplier',null,null," +
             "'2026-11-11T14:00:00Z'::timestamptz)")
 test = [
+    "insert into public.pos_products (id,license_id,deleted_at,metadata,requires_prescription,prescription_type,batch_management,is_active) values ("
+    "'pending-med','" + license_ph + "'::uuid,null,'{\"pharmacy\":{\"kind\":\"medicine\",\"status\":\"pending\",\"fraction\":null,\"antibiotic\":false}}'::jsonb,false,'otc','{\"enabled\":true}'::jsonb,false);",
+    expect_statement("pending_medicine_activation",
+        "update public.pos_products set is_active=true where id='pending-med'",
+        "PHARMACY_PENDING_ACTIVATION_FORBIDDEN"),
     "do $$ begin if private.pharmacy_stage2_protected_product('" + license_ph +
     "','iv','{\"metadata\":{\"pharmacy\":{\"kind\":\"other\"}}}'::jsonb) is not true then " +
     "raise exception 'CLASSIFICATION_DOWNGRADE_BYPASS'; end if; end $$;",
@@ -119,6 +136,7 @@ test = [
     query(batch(ctx_food, "b-food", "food", 15)),
     expect("iv_receipt_without_document", recv("iv", "{}"), "PHARMACY_PROVENANCE_REQUIRED"),
     query(recv("iv", receipt)),
+    query(recv("iv", empty_identity_receipt, "b-iv-empty")),
     expect("ii_special", recv("ii", receipt), "PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE"),
     # Persisted kind='other' must not defeat protected legacy prescription indicators.
     expect("legacy_conflicting_kind", recv("misclassified", "{}"),
@@ -126,7 +144,14 @@ test = [
     query(recv("other", "{}")),
     "select 'PASS postgres17 pharmacy_stage2_guard_scope' as result;",
 ]
-full = fixture + "\n".join(read_function(n) for n in names) + "\nbegin;\n" + "\n".join(test) + "\nrollback;\n"
+stage1_guard = read_stage1_function("pharmacy_stage1_product_write_guard")
+stage1_trigger = """
+create trigger trg_pharmacy_stage1_product_write_guard
+before insert or update on public.pos_products
+for each row execute function private.pharmacy_stage1_product_write_guard();
+"""
+full = fixture + "\n" + stage1_guard + "\n" + stage1_trigger + "\n"
+full += "\n".join(read_function(n) for n in names) + "\nbegin;\n" + "\n".join(test) + "\nrollback;\n"
 result = subprocess.run(
     ["psql", "-X", "-v", "ON_ERROR_STOP=1", "-q"],
     input=full, text=True, capture_output=True, check=False, timeout=120

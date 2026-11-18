@@ -267,6 +267,7 @@
 }
 .batch-entry-status.is-active { color: var(--success-color); background: var(--light-background); }
 .batch-entry-status.is-archived { color: var(--text-light); background: var(--light-background); }
+.batch-entry-status.is-empty { color: var(--text-light); background: var(--light-background); }
 .batch-entry-status.is-expired { color: var(--danger-color); background: var(--danger-background, #fff0ef); }
 .batch-entry-body {
   display: grid;

@@ -140,6 +140,41 @@ describe('inventoryEntryService FREE/local authority', () => {
     expect(mocks.actorCapture).not.toHaveBeenCalled();
   });
 
+  it('keeps documentary validation active for a Free/Local medicine receipt', async () => {
+    const medicine = {
+      ...strictProduct(), id: 'medicine-free-docs',
+      metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    };
+    await db.table(STORES.MENU).put(medicine);
+
+    await expect(addInventoryEntry({
+      operationId: 'free-medicine-missing-docs', productId: medicine.id,
+      quantity: 2, baseQuantity: 2, supplier: null,
+      manufacturerBatchId: 'FREE-VI-001', expiryDate: '2027-12-31'
+    })).rejects.toMatchObject({ code: 'PHARMACY_PROVENANCE_REQUIRED' });
+
+    expect((await db.table(STORES.MENU).get(medicine.id)).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(medicine.id).count()).toBe(0);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+  });
+
+  it('does not allocate a sale from a zero-stock identity-only general lot', () => {
+    const product = {
+      id: 'general-empty-lot', name: 'Producto general', stock: 0, cost: 3,
+      trackStock: true, isActive: true, expirationMode: 'NONE', batchManagement: { enabled: true }
+    };
+    const emptyBatch = {
+      id: 'general-empty-batch', productId: product.id, stock: 0,
+      trackStock: false, isActive: false, status: 'inactive'
+    };
+
+    expect(() => buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: product.id, productId: product.id, quantity: 1, price: 8 }],
+      allProducts: [product], batchesMap: new Map([[product.id, [emptyBatch]]]),
+      roundCurrency: (value) => Number(Number(value || 0).toFixed(2))
+    })).toThrow(/Disponible 0, requerido 1/);
+  });
+
   it('receives 10 and sells 2 units offline, preserving the documented batch and sale on reopen', async () => {
     vi.stubGlobal('navigator', { onLine: false });
     await db.table(STORES.MENU).put({ ...strictProduct(), id: 'medicine-vi',

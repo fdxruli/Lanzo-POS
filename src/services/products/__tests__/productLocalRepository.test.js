@@ -196,4 +196,19 @@ describe('recipe ingredient dependency protection', () => {
     await expect(productLocalRepository.deleteProductLocal('salt')).resolves.toMatchObject({ success: true });
     expect(softDeleteWithCascadeSafe).toHaveBeenCalledOnce();
   });
+
+  it('blocks direct local activation of a medicine with pending classification', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const pendingMedicine = {
+      id: 'medicine-pending', isActive: false,
+      metadata: { pharmacy: { kind: 'medicine', fraction: null, status: 'pending' } }
+    };
+    vi.mocked(loadData).mockResolvedValue(pendingMedicine);
+
+    await expect(productLocalRepository.toggleProductStatusLocal(pendingMedicine, true)).rejects.toMatchObject({
+      code: 'PHARMACY_CLASSIFICATION_REQUIRED',
+      message: expect.stringMatching(/clasificación sanitaria válida/i)
+    });
+    expect(updateProductSafe).not.toHaveBeenCalled();
+  });
 });
