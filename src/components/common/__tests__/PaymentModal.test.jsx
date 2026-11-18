@@ -482,4 +482,113 @@ it('routes a fully paid Fiado as paid sale even with historical debt and zero li
       await pendingCheckout;
     });
   });
+
+  it.each([
+    ['Tarjeta', 'tarjeta', 'card'],
+    ['Transferencia', 'transferencia', 'transfer']
+  ])('PAY-01/PAY-02 aplica el total exacto con %s y no calcula cambio', async (label, method, rowMethod) => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={599} />);
+
+    await user.click(await screen.findByRole('button', { name: label }));
+    expect(screen.queryByLabelText('Monto Recibido:')).not.toBeInTheDocument();
+    expect(screen.getByText(`${label} seleccionada`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Confirmar Pago' }));
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      paymentMethod: method,
+      amountPaid: '599',
+      receivedAmount: null,
+      changeAmount: '0',
+      saldoPendiente: '0',
+      payments: [{ method: rowMethod, amount: '599', receivedAmount: '599', changeAmount: '0' }]
+    });
+  });
+
+  it('PAY-03 bloquea un combinado incompleto y envía efectivo y tarjeta por separado', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={799} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Combinado' }));
+    const cash = screen.getByLabelText('Efectivo aplicado');
+    const card = screen.getByLabelText('Tarjeta aplicada');
+    const confirm = screen.getByRole('button', { name: 'Confirmar Pago' });
+    expect(confirm).toBeDisabled();
+
+    await user.type(cash, '400');
+    expect(screen.getByText('$399.00')).toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    await user.type(card, '399');
+    expect(confirm).toBeEnabled();
+    expect(screen.getByText('$0.00')).toBeInTheDocument();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      paymentMethod: 'mixed',
+      amountPaid: '799',
+      saldoPendiente: '0',
+      payments: [
+        { method: 'cash', amount: '400', receivedAmount: '400', changeAmount: '0' },
+        { method: 'card', amount: '399', receivedAmount: '399', changeAmount: '0' }
+      ]
+    });
+  });
+
+  it('PAY-04 suma importes con centavos exactos usando coma y punto decimal', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={300.25} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Combinado' }));
+    await user.type(screen.getByLabelText('Efectivo aplicado'), '100,10');
+    await user.type(screen.getByLabelText('Tarjeta aplicada'), '200.15');
+    const confirm = screen.getByRole('button', { name: 'Confirmar Pago' });
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      paymentMethod: 'mixed',
+      amountPaid: '300.25',
+      payments: [
+        expect.objectContaining({ method: 'cash', amount: '100.1' }),
+        expect.objectContaining({ method: 'card', amount: '200.15' })
+      ]
+    })));
+  });
+
+  it('PAY-05/PAY-06 no permite confirmar asignaciones parciales ni excedidas', async () => {
+    const user = userEvent.setup();
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={vi.fn()} total={799} />);
+    await user.click(await screen.findByRole('button', { name: 'Combinado' }));
+
+    const cash = screen.getByLabelText('Efectivo aplicado');
+    const card = screen.getByLabelText('Tarjeta aplicada');
+    const confirm = screen.getByRole('button', { name: 'Confirmar Pago' });
+    await user.type(cash, '400');
+    expect(confirm).toBeDisabled();
+    await user.type(card, '500');
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('no puede superar el total');
+  });
+
+  it('PAY-12 muestra el error cuando el cobro no queda confirmado', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: false, code: 'CLOUD_SALE_FAILED', message: 'No se confirmó la venta.' });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={100} />);
+    await user.click(await screen.findByRole('button', { name: 'Tarjeta' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar Pago' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se confirmó la venta.');
+    expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeEnabled();
+  });
 });

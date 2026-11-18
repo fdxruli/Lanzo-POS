@@ -12,7 +12,11 @@ import { validateCartCheckoutPriority } from '../../services/sales/localCartPrio
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { Money } from '../../utils/moneyMath';
 import { pharmacyPrescriptionRequirement } from '../../services/pharmacy/pharmacyDispensation';
-import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
+import {
+    getExplicitSalePaymentRows,
+    isRestaurantSplitCashPayment,
+    normalizeRestaurantSplitPaymentMethod
+} from '../../services/sales/paymentMethodContract';
 import {
     prepareCustomerMessageOutbox,
     showCustomerMessageOutboxModal
@@ -1265,7 +1269,14 @@ export function usePosCheckout({
         );
 
         const hasInitialCreditPayment = paymentMethod === 'credit' && Money.init(paymentData.amountPaid || 0).gt(0);
-        const hasCashComponent = paymentMethod === 'cash' || (hasInitialCreditPayment && initialPaymentMethod === 'cash');
+        const explicitPaymentRows = getExplicitSalePaymentRows(paymentData);
+        const hasExplicitCashPayment = explicitPaymentRows?.some((payment) => (
+            isRestaurantSplitCashPayment(payment)
+            && Money.init(payment?.amount ?? payment?.total ?? 0).gt(0)
+        )) || false;
+        const hasCashComponent = paymentMethod === 'cash'
+            || hasExplicitCashPayment
+            || (hasInitialCreditPayment && initialPaymentMethod === 'cash');
 
         const cloudSalesTurnRequired = shouldRequireOpenCashSessionForCloudSale(licenseDetails);
         if (

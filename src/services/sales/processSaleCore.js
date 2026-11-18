@@ -22,6 +22,7 @@ import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
 import { buildSalePaymentSnapshot } from './saleRefunds';
+import { normalizeRestaurantSplitPaymentMethod } from './paymentMethodContract';
 import {
     isRestaurantCloudTableShadow,
     isRestaurantCloudTableTerminal,
@@ -587,6 +588,32 @@ export const processSaleCore = async ({
             ? null
             : suppliedCashStationId;
         const saleId = activeOrderId || generateID('sal');
+        const paymentSnapshot = buildSalePaymentSnapshot({
+            paymentData: safePaymentData,
+            paymentMethod: safePaymentData.paymentMethod,
+            total: Money.toExactString(totalNum),
+            initialPaid: Money.toExactString(abonoSeguro),
+            saleId
+        });
+        const normalizedPaymentMethod = normalizeRestaurantSplitPaymentMethod(safePaymentData.paymentMethod);
+        if (totalNum.gt(0) && ['cash', 'card', 'transfer', 'mixed'].includes(normalizedPaymentMethod)) {
+            const supportedMethods = new Set(['cash', 'card', 'transfer']);
+            const appliedPaymentTotal = paymentSnapshot.reduce(
+                (sum, payment) => Money.add(sum, payment.amount),
+                Money.init(0)
+            );
+            const paymentMethods = new Set(paymentSnapshot.map((payment) => payment.method));
+            if (
+                paymentSnapshot.length === 0
+                || paymentSnapshot.some((payment) => !supportedMethods.has(payment.method))
+                || !appliedPaymentTotal.eq(totalNum)
+                || (normalizedPaymentMethod === 'mixed' && paymentMethods.size < 2)
+            ) {
+                const error = new Error('Los importes asignados deben sumar exactamente el total de la venta.');
+                error.code = 'SALE_PAYMENT_TOTAL_MISMATCH';
+                throw error;
+            }
+        }
 
         const sale = {
             id: saleId,
@@ -609,13 +636,7 @@ export const processSaleCore = async ({
                     || safePaymentData.creditPaymentMethod
                     || safePaymentData.partialPaymentMethod
                     || null,
-                payments: buildSalePaymentSnapshot({
-                    paymentData: safePaymentData,
-                    paymentMethod: safePaymentData.paymentMethod,
-                    total: Money.toExactString(totalNum),
-                    initialPaid: Money.toExactString(abonoSeguro),
-                    saleId
-                })
+                payments: paymentSnapshot
             }),
             cash_session_id: safePaymentData.cashSessionId || safePaymentData.cash_session_id || null,
             cashStationId,

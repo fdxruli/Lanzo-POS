@@ -714,3 +714,31 @@ describe('salesCloudCashierMapper payment arithmetic contract', () => {
     expect(payload.payments[0]).toMatchObject({ method: 'cash', amount: 100, received_amount: 150, change_amount: 50 });
   });
 });
+
+describe('APPAREL-13 ordinary combined cashier mapping', () => {
+  it('maps the $799 cash + card breakdown as one fully paid sale with stable replay identity', () => {
+    const input = {
+      sale: { id: 'apparel-13-sale', timestamp: '2026-07-03T12:00:00.000Z', subtotal: '799', total: '799' },
+      processedItems: [{ id: 'product-1', lineId: 'line-1', name: 'Producto', price: '799', quantity: 1, exactTotal: '799', lineTotal: '799' }],
+      paymentData: {
+        paymentMethod: 'mixed', amountPaid: '799', saldoPendiente: '0',
+        payments: [
+          { method: 'cash', amount: '400', receivedAmount: '400', changeAmount: '0' },
+          { method: 'card', amount: '399', receivedAmount: '399', changeAmount: '0' }
+        ]
+      },
+      total: '799'
+    };
+
+    const first = mapLocalCheckoutToCloudSale(input);
+    const replay = mapLocalCheckoutToCloudSale(input);
+
+    expect(first.sale).toMatchObject({ payment_method: 'mixed', total: 799, amount_paid: 799, balance_due: 0, change_amount: 0 });
+    expect(first.payments).toMatchObject([
+      { id: 'apparel-13-sale:payment:1', method: 'cash', amount: 400, received_amount: 400, change_amount: 0 },
+      { id: 'apparel-13-sale:payment:2', method: 'card', amount: 399, received_amount: 399, change_amount: 0 }
+    ]);
+    expect(first.idempotencyKey).toBe(replay.idempotencyKey);
+    expect(first.items).toHaveLength(1);
+  });
+});

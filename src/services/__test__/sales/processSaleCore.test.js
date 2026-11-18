@@ -113,6 +113,49 @@ describe('processSaleCore', () => {
         expect(result.notificationResult).toMatchObject({ status: 'opened' });
     });
 
+    it('PAY-03 persiste un combinado ordinario como una sola venta con sus pagos aplicados', async () => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            paymentData: {
+                paymentMethod: 'mixed', amountPaid: '10', saldoPendiente: '0', sendReceipt: false,
+                payments: [
+                    { method: 'cash', amount: '4.00' },
+                    { method: 'card', amount: '6.00' }
+                ]
+            }
+        }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledOnce();
+        expect(deps.executeSaleTransactionSafe.mock.calls[0][0]).toMatchObject({
+            paymentMethod: 'mixed',
+            total: '10',
+            abono: '10',
+            saldoPendiente: '0',
+            payments: [
+                expect.objectContaining({ method: 'cash', amount: '4' }),
+                expect.objectContaining({ method: 'card', amount: '6' })
+            ]
+        });
+    });
+
+    it.each([
+        ['incomplete', [{ method: 'cash', amount: '4' }, { method: 'card', amount: '5' }]],
+        ['exceeded', [{ method: 'cash', amount: '4' }, { method: 'card', amount: '7' }]],
+        ['single method', [{ method: 'card', amount: '10' }]]
+    ])('PAY-05/PAY-06 rejects %s combined payments before persistence', async (_case, payments) => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            paymentData: {
+                paymentMethod: 'mixed', amountPaid: '10', saldoPendiente: '0', sendReceipt: false, payments
+            }
+        }), deps);
+
+        expect(result).toMatchObject({ success: false, code: 'SALE_PAYMENT_TOTAL_MISMATCH' });
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+        expect(deps.saveData).not.toHaveBeenCalled();
+    });
+
     it('guarda el medio real del abono inicial de una venta fiada para conciliaciones futuras', async () => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams({

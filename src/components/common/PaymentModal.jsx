@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { loadData, STORES, db } from '../../services/database';
 import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
@@ -10,6 +10,12 @@ import { isCreditPaymentMethod, isOverdueCreditNote } from '../../services/custo
 import { isMoneyInputDraft, normalizeMoneyInputDraft, parseMoneyInputDraft } from '../../utils/moneyInputDraft';
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
+const COMBINED_PAYMENT_METHODS = Object.freeze([
+  { key: 'cash', method: 'cash', label: 'Efectivo' },
+  { key: 'card', method: 'card', label: 'Tarjeta' },
+  { key: 'transfer', method: 'transfer', label: 'Transferencia' }
+]);
+const emptyPaymentBreakdown = () => ({ cash: '', card: '', transfer: '' });
 const selectCurrentOrder = (state) => (state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null);
 
 export default function PaymentModal({ show, onClose, onConfirm, total }) {
@@ -18,6 +24,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('efectivo');
+  const [paymentBreakdown, setPaymentBreakdown] = useState(emptyPaymentBreakdown);
   const [initialPaymentMethod, setInitialPaymentMethod] = useState('efectivo');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
@@ -26,6 +33,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const [dueDate, setDueDate] = useState('');
   const [hasOverdueCredit, setHasOverdueCredit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const submitLockRef = useRef(false);
   const activeTotals = orderTotals(currentOrder || {});
   const effectiveTotal = Number(activeTotals.total || total || 0);
 
@@ -34,6 +43,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       loadData(STORES.CUSTOMERS).then((customerData) => setCustomers(customerData || []));
       if (paymentMethod === 'efectivo') setAmountPaid(Money.toNumber(Money.init(effectiveTotal)).toFixed(2).toString());
       else setAmountPaid('');
+      if (paymentMethod === 'mixed') setPaymentBreakdown(emptyPaymentBreakdown());
+      setSubmitError('');
       setIsSubmitting(false);
     } else {
       setAmountPaid('');
@@ -41,9 +52,12 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setCustomerSearch('');
       setFilteredCustomers([]);
       setPaymentMethod('efectivo');
+      setPaymentBreakdown(emptyPaymentBreakdown());
       setInitialPaymentMethod('efectivo');
       setSendReceipt(true);
       setIsSubmitting(false);
+      setSubmitError('');
+      submitLockRef.current = false;
       setDueDate('');
       setHasOverdueCredit(false);
       setIsQuickAddOpen(false);
@@ -71,9 +85,26 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const safeTotal = Money.init(effectiveTotal);
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = isCreditPaymentMethod(paymentMethod);
+  const isCombined = paymentMethod === 'mixed';
+  const isSingleNonCash = paymentMethod === 'tarjeta' || paymentMethod === 'transferencia';
   const paidDraft = parseMoneyInputDraft(amountPaid, { allowEmpty: isFiado });
-  const isAmountValid = paidDraft.status !== 'invalid' && paidDraft.cents !== null;
-  const safePaid = Money.fromCents(paidDraft.cents ?? 0);
+  const isAmountValid = isSingleNonCash || (paidDraft.status !== 'invalid' && paidDraft.cents !== null);
+  const parsedPaid = Money.fromCents(paidDraft.cents ?? 0);
+  const safePaid = isSingleNonCash ? safeTotal : parsedPaid;
+  const combinedRows = COMBINED_PAYMENT_METHODS.map((entry) => {
+    const draft = parseMoneyInputDraft(paymentBreakdown[entry.key], { allowEmpty: true });
+    const amount = draft.cents === null ? Money.init(0) : Money.fromCents(draft.cents);
+    return { ...entry, draft, amount };
+  });
+  const combinedTotal = combinedRows.reduce((sum, row) => Money.add(sum, row.amount), Money.init(0));
+  const combinedMethodsUsed = combinedRows.filter((row) => row.amount.gt(0)).length;
+  const combinedHasInvalidDraft = combinedRows.some((row) => row.draft.status !== 'valid');
+  const combinedExceedsTotal = combinedRows.some((row) => row.amount.gt(safeTotal)) || combinedTotal.gt(safeTotal);
+  const combinedPending = combinedTotal.lte(safeTotal) ? Money.subtract(safeTotal, combinedTotal) : Money.init(0);
+  const combinedIsComplete = !combinedHasInvalidDraft
+    && !combinedExceedsTotal
+    && combinedMethodsUsed >= 2
+    && combinedTotal.eq(safeTotal);
   const hasInitialCreditPayment = isFiado && safePaid.gt(0);
   const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init('0');
   const safeChange = change.gte(0) ? change : Money.init('0');
@@ -87,11 +118,27 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const todayStr = new Date().toISOString().split('T')[0];
   const requiresDueDate = isFiado && saldoPendiente.gt(0);
   const isDueDateValid = !requiresDueDate || Boolean(dueDate && dueDate >= todayStr);
-  const canConfirm = isAmountValid && (isEfectivo ? safePaid.gte(safeTotal) : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid));
+  const canConfirm = isSingleNonCash
+    ? safeTotal.gt(0)
+    : isCombined
+      ? combinedIsComplete
+      : isAmountValid && (isEfectivo
+        ? safePaid.gte(safeTotal)
+        : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid));
 
   const handleAmountChange = (event) => {
     const val = event.target.value;
-    if (isMoneyInputDraft(val)) setAmountPaid(val);
+    if (isMoneyInputDraft(val)) {
+      setAmountPaid(val);
+      setSubmitError('');
+    }
+  };
+
+  const handleBreakdownChange = (key, value) => {
+    if (isMoneyInputDraft(value)) {
+      setPaymentBreakdown((current) => ({ ...current, [key]: value }));
+      setSubmitError('');
+    }
   };
 
   const handleDenominationClick = (amount) => {
@@ -101,18 +148,37 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!canConfirm || isSubmitting) return;
+    if (!canConfirm || isSubmitting || submitLockRef.current) return;
+    submitLockRef.current = true;
     setIsSubmitting(true);
+    setSubmitError('');
 
     try {
-      await onConfirm({
-        amountPaid: Money.toExactString(safePaid),
+      const amountToApply = isCombined ? combinedTotal : safePaid;
+      const paymentRows = isCombined
+        ? combinedRows.filter((row) => row.amount.gt(0)).map((row) => ({
+          method: row.method,
+          amount: Money.toExactString(row.amount),
+          receivedAmount: Money.toExactString(row.amount),
+          changeAmount: '0'
+        }))
+        : isSingleNonCash
+          ? [{
+            method: paymentMethod === 'tarjeta' ? 'card' : 'transfer',
+            amount: Money.toExactString(safeTotal),
+            receivedAmount: Money.toExactString(safeTotal),
+            changeAmount: '0'
+          }]
+          : null;
+      const result = await onConfirm({
+        amountPaid: Money.toExactString(amountToApply),
         receivedAmount: isEfectivo || (hasInitialCreditPayment && initialPaymentMethod === 'efectivo') ? Money.toExactString(safePaid) : null,
         changeAmount: isEfectivo ? Money.toExactString(safeChange) : '0',
         customerId: selectedCustomerId,
         paymentMethod: isFiado && saldoPendiente.eq(0) ? initialPaymentMethod : paymentMethod,
+        ...(paymentRows ? { payments: paymentRows } : {}),
         initialPaymentMethod: hasInitialCreditPayment && saldoPendiente.gt(0) ? initialPaymentMethod : null,
-        saldoPendiente: Money.toExactString(saldoPendiente),
+        saldoPendiente: Money.toExactString(isCombined || isSingleNonCash ? Money.init(0) : saldoPendiente),
         sendReceipt,
         dueDate: requiresDueDate && dueDate ? new Date(dueDate).toISOString() : null,
         subtotal: activeTotals.subtotal || effectiveTotal,
@@ -121,9 +187,16 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         saleDiscount: activeTotals.saleDiscount || null,
         discount: activeTotals.saleDiscount || null
       });
+      if (result?.success === false) {
+        setSubmitError(result.isFinancialOperationAmbiguous || result.code === 'LOCAL_COMMIT_UNCERTAIN'
+          ? 'No se pudo comprobar si el cobro quedó confirmado. Revisa el historial antes de volver a intentarlo.'
+          : result.message || 'El cobro no se confirmó. Revisa los datos e inténtalo de nuevo.');
+      }
     } catch (error) {
       Logger.error('Error al procesar pago:', error);
+      setSubmitError(error?.message || 'No se pudo confirmar el cobro. Revisa el historial antes de volver a intentarlo.');
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -154,15 +227,21 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
     setInitialPaymentMethod('efectivo');
+    setSubmitError('');
+    if (method === 'mixed') setPaymentBreakdown(emptyPaymentBreakdown());
     if (method === 'efectivo') {
       setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
       setDueDate('');
       setHasOverdueCredit(false);
     } else {
       setAmountPaid('');
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() + 15);
-      setDueDate(defaultDate.toISOString().split('T')[0]);
+      if (method === 'fiado') {
+        const defaultDate = new Date();
+        defaultDate.setDate(defaultDate.getDate() + 15);
+        setDueDate(defaultDate.toISOString().split('T')[0]);
+      } else {
+        setDueDate('');
+      }
     }
   };
 
@@ -184,8 +263,11 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   <div className="form-group">
                     <div id="payment-method-label" className="form-label">Método de Pago:</div>
                     <div className="payment-method-selector" role="group" aria-labelledby="payment-method-label">
-                      <button type="button" className={`btn-method ${isEfectivo ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('efectivo')}>Efectivo</button>
-                      <button type="button" className={`btn-method ${isFiado ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('fiado')}>Fiado</button>
+                      <button type="button" aria-pressed={isEfectivo} className={`btn-method ${isEfectivo ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('efectivo')}>Efectivo</button>
+                      <button type="button" aria-pressed={paymentMethod === 'tarjeta'} className={`btn-method ${paymentMethod === 'tarjeta' ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('tarjeta')}>Tarjeta</button>
+                      <button type="button" aria-pressed={paymentMethod === 'transferencia'} className={`btn-method ${paymentMethod === 'transferencia' ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('transferencia')}>Transferencia</button>
+                      <button type="button" aria-pressed={isCombined} className={`btn-method ${isCombined ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('mixed')}>Combinado</button>
+                      <button type="button" aria-pressed={isFiado} className={`btn-method ${isFiado ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('fiado')}>Fiado</button>
                     </div>
                   </div>
 
@@ -212,18 +294,67 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
               <div className="payment-col-right">
                 <div className="payment-details">
-                  <label className="payment-input-label" htmlFor="payment-amount">{isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}</label>
-                  <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onBlur={() => { const normalized = normalizeMoneyInputDraft(amountPaid, { allowEmpty: isFiado }); if (normalized !== null) setAmountPaid(normalized); }} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} aria-invalid={(amountPaid !== '' && !isAmountValid) || (isFiado && safePaid.gt(safeTotal))} aria-describedby={amountPaid !== '' && !isAmountValid ? 'payment-amount-error' : isFiado && safePaid.gt(safeTotal) ? 'payment-advance-error' : undefined} />
-                  {amountPaid !== '' && !isAmountValid && <p id="payment-amount-error" className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>}
+                  {isCombined ? (
+                    <div className="payment-combined" aria-label="Desglose de pago combinado">
+                      <p className="ui-inline-help payment-inline-message payment-inline-message--helper">Asigna el total entre al menos dos métodos.</p>
+                      <div className="payment-combined-breakdown">
+                        {combinedRows.map((row) => (
+                          <div className="payment-combined-row" key={row.key}>
+                            <label htmlFor={`payment-${row.key}-amount`}>
+                              {row.label}{row.key === 'cash' ? ' aplicado' : ' aplicada'}
+                            </label>
+                            <input
+                              className="payment-input payment-combined-input"
+                              id={`payment-${row.key}-amount`}
+                              type="text"
+                              inputMode="decimal"
+                              value={paymentBreakdown[row.key]}
+                              onChange={(event) => handleBreakdownChange(row.key, event.target.value)}
+                              onBlur={() => {
+                                const normalized = normalizeMoneyInputDraft(paymentBreakdown[row.key], { allowEmpty: true });
+                                if (normalized !== null) setPaymentBreakdown((current) => ({ ...current, [row.key]: normalized }));
+                              }}
+                              aria-invalid={row.draft.status !== 'valid' || row.amount.gt(safeTotal)}
+                            />
+                            {row.draft.status !== 'valid' && paymentBreakdown[row.key] !== '' && (
+                              <p className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>
+                            )}
+                            {row.amount.gt(safeTotal) && <p className="ui-inline-error payment-inline-message" role="alert">El importe no puede superar el total.</p>}
+                          </div>
+                        ))}
+                      </div>
+                      <dl className="payment-combined-summary">
+                        <div><dt>Total</dt><dd>${Money.toNumber(safeTotal).toFixed(2)}</dd></div>
+                        <div><dt>Asignado</dt><dd>${Money.toNumber(combinedTotal).toFixed(2)}</dd></div>
+                        <div><dt>Pendiente de asignar</dt><dd>${Money.toNumber(combinedPending).toFixed(2)}</dd></div>
+                      </dl>
+                      {combinedExceedsTotal && <p className="ui-inline-error payment-inline-message" role="alert">La suma no puede superar el total de la venta.</p>}
+                      {!combinedExceedsTotal && combinedMethodsUsed < 2 && <p className="ui-inline-help payment-inline-message payment-inline-message--helper">Selecciona importes en dos métodos como mínimo.</p>}
+                      <p className="ui-inline-help payment-inline-message payment-inline-message--helper">Los importes son pagos aplicados; este desglose no genera cambio.</p>
+                    </div>
+                  ) : isSingleNonCash ? (
+                    <div className="payment-fixed-method" role="status">
+                      <strong>{paymentMethod === 'tarjeta' ? 'Tarjeta' : 'Transferencia'} seleccionada</strong>
+                      <span>Importe exacto: ${Money.toNumber(safeTotal).toFixed(2)} · Sin cambio.</span>
+                    </div>
+                  ) : (
+                    <>
+                      <label className="payment-input-label" htmlFor="payment-amount">{isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}</label>
+                      <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onBlur={() => { const normalized = normalizeMoneyInputDraft(amountPaid, { allowEmpty: isFiado }); if (normalized !== null) setAmountPaid(normalized); }} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} aria-invalid={(amountPaid !== '' && !isAmountValid) || (isFiado && safePaid.gt(safeTotal))} aria-describedby={amountPaid !== '' && !isAmountValid ? 'payment-amount-error' : isFiado && safePaid.gt(safeTotal) ? 'payment-advance-error' : undefined} />
+                      {amountPaid !== '' && !isAmountValid && <p id="payment-amount-error" className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>}
+                    </>
+                  )}
 
                   {hasInitialCreditPayment && <div className="form-group payment-initial-payment-method"><label className="form-label" htmlFor="initial-payment-method">Método del abono inicial:</label><select id="initial-payment-method" className="form-input" value={initialPaymentMethod} onChange={(event) => setInitialPaymentMethod(event.target.value)}><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option></select><p className="ui-inline-help payment-inline-message payment-inline-message--helper">Solo efectivo se reflejará en caja.</p></div>}
 
                   {isEfectivo && <div className="quick-cash-options">{CASH_DENOMINATIONS.map((amount) => <button key={amount} type="button" className="btn-cash-option" onClick={() => handleDenominationClick(amount)}>${amount}</button>)}<button type="button" className="btn-cash-option btn-cash-option-exact" onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}>Exacto (${Money.toNumber(safeTotal).toFixed(2)})</button></div>}
 
-                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : saldoPendiente.eq(0) ? <span>Pago completo: no genera deuda nueva.</span> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p id="payment-advance-error" className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
+                  {isEfectivo && <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></>}
+                  {isFiado && <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : saldoPendiente.eq(0) ? <span>Pago completo: no genera deuda nueva.</span> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{safePaid.gt(safeTotal) && <p id="payment-advance-error" className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
                 </div>
 
                 <div className="payment-actions">
+                  {submitError && <p className="ui-inline-error payment-submit-error" role="alert">{submitError}</p>}
                   <button id="confirm-payment-btn" className="ui-button ui-button--success payment-confirm-button" type="submit" disabled={!canConfirm || isSubmitting}>{isSubmitting ? 'Procesando...' : 'Confirmar Pago'}</button>
                   <button id="cancel-payment-btn" className="ui-button ui-button--ghost payment-cancel-button" type="button" onClick={onClose} disabled={isSubmitting}>Cancelar</button>
                 </div>
