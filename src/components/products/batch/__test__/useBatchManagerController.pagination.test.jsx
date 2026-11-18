@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   searchProductsInDB: vi.fn(),
   refreshData: vi.fn(),
-  saveBatch: vi.fn()
+  saveBatch: vi.fn(),
+  showMessageModal: vi.fn()
 }));
 
 vi.mock('../../../../hooks/useDebounce', () => ({ useDebounce: (value) => value }));
@@ -39,7 +40,7 @@ vi.mock('../../../../services/products/productMapper', () => ({
     serverVersion: product.serverVersion ?? product.server_version ?? existing?.serverVersion
   })
 }));
-vi.mock('../../../../services/utils', () => ({ showMessageModal: vi.fn() }));
+vi.mock('../../../../services/utils', () => ({ showMessageModal: mocks.showMessageModal }));
 vi.mock('../../../../services/inventoryMovement', () => ({
   loadBatchesForManager: mocks.loadBatchesForManager,
   loadNextBatchManagerPage: mocks.loadNextBatchManagerPage
@@ -101,6 +102,7 @@ describe('useBatchManagerController pagination', () => {
     vi.clearAllMocks();
     mocks.loadData.mockResolvedValue(null);
     mocks.searchProductsInDB.mockResolvedValue([]);
+    mocks.saveBatch.mockResolvedValue({ success: true });
   });
 
   afterEach(() => cleanup());
@@ -207,5 +209,60 @@ describe('useBatchManagerController pagination', () => {
 
     expect(saveResult.success).toBe(true);
     expect(result.current.selectedProduct).toMatchObject({ price: 24.5, serverVersion: 12 });
+  });
+
+  it('confirma el registro local de una identidad en cero sin afirmar que cambió el stock', async () => {
+    mocks.loadBatchesForManager.mockResolvedValue(snapshot('batch-empty'));
+    const { result } = renderController();
+    await waitFor(() => expect(result.current.selectedProduct.id).toBe('product-a'));
+
+    await act(async () => {
+      await result.current.handleSaveBatch({
+        id: 'batch-empty', productId: 'product-a', stock: 0, cost: 3, price: 8
+      });
+    });
+
+    expect(mocks.showMessageModal).toHaveBeenLastCalledWith('Lote registrado en este dispositivo, sin existencias.');
+  });
+
+  it('dice explícitamente cuándo Cloud confirmó cambios de existencias', async () => {
+    mocks.loadBatchesForManager.mockResolvedValue(snapshot('batch-new'));
+    mocks.saveBatch.mockResolvedValue({ success: true, response: { success: true } });
+    const { result } = renderController();
+    await waitFor(() => expect(result.current.selectedProduct.id).toBe('product-a'));
+
+    await act(async () => {
+      await result.current.handleSaveBatch({
+        id: 'batch-new', productId: 'product-a', stock: 4, cost: 3, price: 8
+      });
+    });
+
+    expect(mocks.showMessageModal).toHaveBeenLastCalledWith(
+      'Lote registrado y confirmado en Nube; existencias confirmadas en Nube.'
+    );
+  });
+
+  it('identifica la sincronización pendiente y presenta rechazo como error', async () => {
+    mocks.loadBatchesForManager.mockResolvedValue(snapshot('batch-pending'));
+    mocks.saveBatch.mockResolvedValueOnce({ success: true, pending: true });
+    const { result } = renderController();
+    await waitFor(() => expect(result.current.selectedProduct.id).toBe('product-a'));
+
+    await act(async () => {
+      await result.current.handleSaveBatch({
+        id: 'batch-pending', productId: 'product-a', stock: 0, cost: 3, price: 8
+      });
+    });
+    expect(mocks.showMessageModal).toHaveBeenLastCalledWith(
+      'Lote registrado localmente; las existencias no cambiaron. Sincronización pendiente.'
+    );
+
+    mocks.saveBatch.mockResolvedValueOnce({ success: false, message: 'Nube rechazó el lote.' });
+    await act(async () => {
+      await result.current.handleSaveBatch({
+        id: 'batch-pending', productId: 'product-a', stock: 0, cost: 3, price: 8
+      });
+    });
+    expect(mocks.showMessageModal).toHaveBeenLastCalledWith('Error: Nube rechazó el lote.');
   });
 });

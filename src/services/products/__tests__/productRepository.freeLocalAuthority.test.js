@@ -318,6 +318,25 @@ describe('productRepository FREE/local authority', () => {
     expect(mocks.cloud.upsertProductBatch).not.toHaveBeenCalled();
   });
 
+  it('keeps an unarchived empty pharmacy identity editable and distinct from an archived lot', async () => {
+    const pharmacyProduct = {
+      id: 'medicine-vi', metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+    };
+    const emptyBatch = {
+      id: 'batch-empty', productId: pharmacyProduct.id, manufacturerBatchId: 'VI-EMPTY-001',
+      stock: 0, isActive: false, status: 'inactive'
+    };
+    mocks.getProductById.mockResolvedValue(pharmacyProduct);
+
+    await expect(productRepository.saveBatch({
+      ...emptyBatch, supplier: 'Proveedor registrado', notes: 'Identidad histórica'
+    }, { existingBatch: emptyBatch })).resolves.toMatchObject({ success: true });
+    expect(mocks.saveBatchLocal).toHaveBeenCalledOnce();
+    expect(mocks.saveBatchLocal).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'batch-empty', stock: 0, isActive: false, manufacturerBatchId: 'VI-EMPTY-001'
+    }), expect.any(Object));
+  });
+
   it.each([
     ['archived batch reactivation', {
       original: { id: 'batch-old', productId: 'medicine-vi', manufacturerBatchId: 'VI-LOT-001',

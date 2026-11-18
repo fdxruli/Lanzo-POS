@@ -365,10 +365,21 @@ export function useBatchManagerController({
 
       await fetchBatches({ refresh: true });
       await refreshData();
+      const action = isEditing ? 'Lote actualizado' : 'Lote registrado';
+      const previousStock = isEditing ? Number(batchToEdit?.stock) || 0 : 0;
+      const nextStock = Number(batchData.stock) || 0;
+      const stockChanged = previousStock !== nextStock;
+      const stockSummary = `Existencias ${previousStock} → ${nextStock}.`;
+      const cloudConfirmed = saveBatchResult?.response?.success === true;
+      const zeroIdentity = !isEditing && nextStock === 0;
       showMessageModal(
         isNewProduction
           ? 'Lote producido e ingredientes descontados correctamente.'
-          : (saveBatchResult.pending ? 'Lote guardado localmente. Se sincronizará al volver internet.' : 'Lote guardado y stock actualizado.')
+          : saveBatchResult.pending
+            ? `${action} localmente${stockChanged ? `; ${stockSummary}` : '; las existencias no cambiaron'}. Sincronización pendiente.`
+            : cloudConfirmed
+              ? `${action} y confirmado en Nube${stockChanged ? '; existencias confirmadas en Nube.' : zeroIdentity ? '; sin existencias iniciales.' : '; las existencias no cambiaron.'}`
+              : `${action} en este dispositivo${stockChanged ? `; ${stockSummary}` : zeroIdentity ? ', sin existencias.' : '; las existencias no cambiaron.'}`
       );
       return { success: true, rawMaterialsCost: saveBatchResult.rawMaterialsCost || 0 };
     } catch (error) {

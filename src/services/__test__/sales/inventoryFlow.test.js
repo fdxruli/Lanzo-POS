@@ -45,6 +45,23 @@ const createFakeDb = ({ products = [], batches = [] } = {}) => {
 };
 
 describe('inventoryFlow committed stock', () => {
+  it('rejects a sale when the only batch is a zero-stock identity', () => {
+    const product = {
+      id: 'tea', name: 'Té', trackStock: true, stock: 0, committedStock: 0,
+      batchManagement: { enabled: true, selectionStrategy: 'fifo' }
+    };
+
+    expect(() => buildProcessedItemsAndDeductions({
+      itemsToProcess: [{ id: 'tea', name: 'Té', quantity: 1 }],
+      allProducts: [product],
+      batchesMap: new Map([['tea', [{
+        id: 'tea-empty-identity', productId: 'tea', stock: 0, committedStock: 0,
+        isActive: false, status: 'inactive'
+      }]]]),
+      roundCurrency: (value) => Math.round(value * 100) / 100
+    })).toThrow('CRITICAL_STOCK_COMMIT_FAILED');
+  });
+
   it('reserva stock simple sin tocar el stock fisico', async () => {
     const db = createFakeDb({
       products: [

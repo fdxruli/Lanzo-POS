@@ -119,6 +119,7 @@ export default function BatchTable({
             const pharmacy = getPharmacyClassification(product);
             const pharmacyMedicine = pharmacy.recorded && pharmacy.kind === 'medicine';
             const expiredForSale = pharmacyMedicine && isBatchExpiredForSale(batch, product);
+            const empty = Number(batch.stock || 0) === 0;
             const available = getAvailableStock(batch);
             const committed = getCommittedStock(batch);
             const primaryLabel = showVariants
@@ -139,8 +140,8 @@ export default function BatchTable({
                     {pharmacyMedicine && batch.manufacturerBatchId && <span className="batch-entry-sku">Lote fabricante {batch.manufacturerBatchId}</span>}
                     {batch.sku && <span className="batch-entry-sku">SKU {batch.sku}</span>}
                   </div>
-                  <span className={`batch-entry-status ${archived ? 'is-archived' : expiredForSale ? 'is-expired' : 'is-active'}`}>
-                    {archived ? 'Archivado' : expiredForSale ? 'Vencido · no disponible para venta' : 'Activo'}
+                  <span className={`batch-entry-status ${expiredForSale ? 'is-expired' : archived ? 'is-archived' : empty ? 'is-empty' : 'is-active'}`}>
+                    {expiredForSale ? 'Vencido · no disponible para venta' : archived ? 'Archivado' : empty ? 'Sin existencias' : 'Activo'}
                   </span>
                 </div>
 

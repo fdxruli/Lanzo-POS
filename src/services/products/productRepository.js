@@ -24,7 +24,13 @@ import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
 import { CANONICAL_BUSINESS_TYPES } from '../../utils/businessType';
-import { getPharmacyClassification, isSpecialPharmacyProduct } from '../../utils/pharmacyClassification';
+import {
+  getPharmacyClassification,
+  isSpecialPharmacyProduct,
+  requiresConfirmedMedicineClassification,
+  PHARMACY_CLASSIFICATION_REQUIRED_FOR_ACTIVATION
+} from '../../utils/pharmacyClassification';
+import { isBatchArchived } from './batchStatus';
 import { notifyProductsChanged } from './productEvents';
 import {
   actorOriginFromHandle,
@@ -851,6 +857,13 @@ export const productRepository = {
     const product = (await productLocalRepository.getProductById(productId))
       || (typeof productOrId === 'string' ? null : productOrId);
     const isActive = isActiveOverride === undefined ? !(product?.isActive !== false) : Boolean(isActiveOverride);
+    if (isActive && requiresConfirmedMedicineClassification(product)) {
+      return {
+        success: false,
+        code: 'PHARMACY_CLASSIFICATION_REQUIRED',
+        message: PHARMACY_CLASSIFICATION_REQUIRED_FOR_ACTIVATION
+      };
+    }
     if (isActive && isSpecialPharmacyProduct(product)) {
       return { success: false, message: 'La fracción I, II o III no puede activarse para venta genérica.' };
     }
@@ -927,6 +940,13 @@ export const productRepository = {
         });
         return normalizeCloudFailure(response, 'PRODUCT_TOGGLE_FAILED');
       }
+      if (response?.success !== true) {
+        return {
+          success: false,
+          code: 'PRODUCT_TOGGLE_CONFIRMATION_MISSING',
+          message: 'Nube no confirmó el cambio de estado. Actualiza el catálogo antes de continuar.'
+        };
+      }
 
       assertProductInventoryMutationCurrent(actorHandle, { products: true });
       await applyResponseAndNotify(response, {
@@ -953,8 +973,7 @@ export const productRepository = {
       const original = currentBatch;
       const originalManufacturer = String(original?.manufacturerBatchId || '').trim().toLowerCase();
       const nextManufacturer = String(batchData.manufacturerBatchId || '').trim().toLowerCase();
-      const wasArchived = Boolean(original?.deletedAt || original?.deleted_at
-        || original?.isActive === false || original?.status === 'archived');
+      const wasArchived = isBatchArchived(original);
       const isReactivated = (batchData.deletedAt === undefined || batchData.deletedAt === null)
         && (batchData.deleted_at === undefined || batchData.deleted_at === null)
         && batchData.isActive !== false && batchData.status !== 'archived';
@@ -967,7 +986,7 @@ export const productRepository = {
         const duplicate = batches.find((batch) => batch.id !== batchData.id
           && String(batch.manufacturerBatchId || '').trim().toLowerCase() === nextManufacturer);
         if (duplicate) return pharmacyBatchFailure(
-          duplicate.deletedAt || duplicate.deleted_at || duplicate.isActive === false || duplicate.status === 'archived'
+          isBatchArchived(duplicate)
             ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED'
         );
       }
@@ -1070,6 +1089,13 @@ export const productRepository = {
           localPayload: batchData
         });
         return normalizeCloudFailure(response, 'BATCH_SYNC_FAILED');
+      }
+      if (response?.success !== true) {
+        return {
+          success: false,
+          code: 'BATCH_SYNC_CONFIRMATION_MISSING',
+          message: 'Nube no confirmó el lote. Actualiza el historial antes de continuar.'
+        };
       }
 
       assertProductInventoryMutationCurrent(actorHandle, { inventory: true });

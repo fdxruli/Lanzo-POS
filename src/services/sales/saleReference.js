@@ -78,6 +78,22 @@ export const getSaleDisplayReference = (sale = {}) => {
   return getSaleOperationalFolio(sale) || getSaleFinancialFolio(sale);
 };
 
+export const getSaleCancellationReference = (sale = {}) => {
+  const identityKeys = new Set(getSaleIdentityReferences(sale).map((value) => value.toLowerCase()));
+  const candidates = [
+    isEcommerceSale(sale) ? getSaleEcommerceOrderCode(sale) : null,
+    getSaleOperationalFolio(sale),
+    sale.folio,
+    sale.cloudFolio,
+    sale.cloud_folio,
+    sale.localFolio,
+    sale.local_folio
+  ];
+
+  return candidates.map((value) => firstText(value))
+    .find((value) => value && !identityKeys.has(value.toLowerCase())) || null;
+};
+
 export const getSaleSecondaryReference = (sale = {}, { includeOrigin = true } = {}) => {
   if (!isEcommerceSale(sale)) return includeOrigin ? 'Venta local' : null;
   const folio = getSaleFinancialFolio(sale);
@@ -104,6 +120,7 @@ export const saleMatchesReference = (sale = {}, query = '') => {
 };
 
 export default {
+  getSaleCancellationReference,
   getSaleDisplayReference,
   getSaleSecondaryReference,
   getSaleOriginLabel,

@@ -11,6 +11,9 @@ const VALID = new Set(SANITARY_FRACTIONS.map(({ value }) => value));
 const SPECIAL = new Set(['I', 'II', 'III']);
 const record = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+export const PHARMACY_CLASSIFICATION_REQUIRED_FOR_ACTIVATION =
+  'Para activar un medicamento, primero confirma una clasificación sanitaria válida (fracción I–VI).';
+
 export const getPharmacyClassification = (product = {}) => {
   const saved = record(product.metadata?.pharmacy)
     ? product.metadata.pharmacy
@@ -34,6 +37,13 @@ export const isSpecialPharmacyProduct = (product = {}) => {
   return classification.kind === 'medicine'
     && classification.status === 'confirmed'
     && SPECIAL.has(classification.fraction);
+};
+
+export const requiresConfirmedMedicineClassification = (product = {}) => {
+  const classification = getPharmacyClassification(product);
+  return classification.recorded
+    && classification.kind === 'medicine'
+    && classification.status !== 'confirmed';
 };
 
 export const pharmacyLegacyIndicators = (product = {}) => {

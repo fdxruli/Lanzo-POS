@@ -18,6 +18,7 @@ import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { findBarcodeConflictsInTable } from './barcodeDuplicates';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
+import { isBatchArchived } from '../products/batchStatus';
 
 const validateInitialBatchForProduct = (batch, product) => {
     if (!batch?.id) {
@@ -586,8 +587,7 @@ export const productsRepository = {
                     const nextManufacturer = normalizeManufacturer(
                         normalizedBatchData.manufacturerBatchId || normalizedBatchData.manufacturer_batch_id
                     );
-                    const wasArchived = Boolean(existingBatch?.deletedAt || existingBatch?.deleted_at
-                        || existingBatch?.isActive === false || existingBatch?.status === 'archived');
+                    const wasArchived = isBatchArchived(existingBatch);
                     const isReactivated = !normalizedBatchData.deletedAt && !normalizedBatchData.deleted_at
                         && normalizedBatchData.isActive !== false && normalizedBatchData.status !== 'archived';
                     if (wasArchived && isReactivated) {
@@ -608,8 +608,7 @@ export const productsRepository = {
                         const conflict = duplicate.find((batch) => batch.id !== normalizedBatchData.id
                             && normalizeManufacturer(batch.manufacturerBatchId || batch.manufacturer_batch_id) === nextManufacturer);
                         if (conflict) {
-                            const archived = Boolean(conflict.deletedAt || conflict.deleted_at
-                                || conflict.isActive === false || conflict.status === 'archived');
+                            const archived = isBatchArchived(conflict);
                             const code = archived ? 'PHARMACY_ARCHIVED_BATCH_EXISTS' : 'PHARMACY_EXISTING_BATCH_REQUIRED';
                             const message = archived
                                 ? 'Este lote ya está archivado. Revisa Lotes / historial; no se puede reactivar ni duplicar su identidad.'

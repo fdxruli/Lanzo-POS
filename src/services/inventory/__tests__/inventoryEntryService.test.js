@@ -122,7 +122,9 @@ const pharmacyEntry = ({ operationId, batchId = null, quantity, invoice, manufac
   metadata: {
     pharmacyReceipt: {
       version: 1, supplier: 'Distribuidora QA', documentType: 'factura',
-      documentReference: invoice, receivedAt: '2026-11-11T14:00:00.000Z'
+      documentReference: invoice, receivedAt: '2026-11-11T14:00:00.000Z',
+      ...(manufacturerBatchId ? { manufacturerBatchId } : {}),
+      ...(expiryDate ? { expiryDate } : {})
     }
   }
 });
@@ -139,7 +141,8 @@ describe('pharmacy stage 2 - local reception', () => {
     });
     const received = await addInventoryEntry(first);
     const second = pharmacyEntry({
-      operationId: 'pharma-second', batchId: received.batch.id, quantity: 5, invoice: 'FAC-QA-002'
+      operationId: 'pharma-second', batchId: received.batch.id, quantity: 5, invoice: 'FAC-QA-002',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
     });
     await addInventoryEntry(second);
     const retry = await addInventoryEntry(second);
@@ -157,6 +160,30 @@ describe('pharmacy stage 2 - local reception', () => {
     expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(2);
     const outbox = await db.table(POS_SYNC_STORES.OUTBOX).toArray();
     expect(outbox.map((item) => JSON.stringify(item)).join(' ')).toContain('FAC-QA-002');
+  });
+
+  it('receives into an unarchived medical identity that currently has zero stock', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    await db.table(STORES.PRODUCT_BATCHES).put({
+      id: 'empty-medical-lot', productId: 'product-1', stock: 0, isActive: false,
+      status: 'inactive', manufacturerBatchId: 'AMX-QA-EMPTY', expiryDate: '2027-10-31'
+    });
+    const received = await addInventoryEntry({
+      operationId: 'pharma-empty-identity-receipt', productId: 'product-1', batchId: 'empty-medical-lot',
+      quantity: 4, baseQuantity: 4, supplier: 'Distribuidora QA',
+      occurredAt: '2026-11-11T14:00:00.000Z',
+      metadata: { pharmacyReceipt: {
+        version: 1, supplier: 'Distribuidora QA', documentType: 'factura', documentReference: 'FAC-EMPTY-001',
+        receivedAt: '2026-11-11T14:00:00.000Z', manufacturerBatchId: 'AMX-QA-EMPTY', expiryDate: '2027-10-31'
+      } }
+    });
+
+    expect(received).toMatchObject({ success: true, previousStock: 0, newStock: 4 });
+    expect(await db.table(STORES.PRODUCT_BATCHES).get('empty-medical-lot')).toMatchObject({
+      stock: 4, isActive: true, status: 'active', manufacturerBatchId: 'AMX-QA-EMPTY'
+    });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(4);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(1);
   });
 
   it('projects independent batches and preserves the earlier expiry date', async () => {
@@ -189,6 +216,20 @@ describe('pharmacy stage 2 - local reception', () => {
       pharmacyReceipt: { ...entry.metadata.pharmacyReceipt, documentReference: 'FAC-QA-002' }
     } })).rejects.toMatchObject({ code: 'PHARMACY_EXISTING_BATCH_REQUIRED' });
     expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(10);
+  });
+
+  it('rejects a documentary lot identity that differs from the selected batch', async () => {
+    await db.table(STORES.MENU).put(medicine());
+    const entry = pharmacyEntry({
+      operationId: 'pharma-document-mismatch', quantity: 2, invoice: 'FAC-MISMATCH',
+      manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
+    });
+    entry.metadata.pharmacyReceipt.manufacturerBatchId = 'ANOTHER-LOT';
+
+    await expect(addInventoryEntry(entry)).rejects.toMatchObject({ code: 'PHARMACY_RECEIPT_BATCH_MISMATCH' });
+    expect((await db.table(STORES.MENU).get('product-1')).stock).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
   });
 
   it('does not create a second identity for an archived empty pharmacy lot', async () => {
@@ -253,10 +294,12 @@ describe('pharmacy stage 2 - local reception', () => {
     }));
     await Promise.all([
       addInventoryEntry(pharmacyEntry({
-        operationId: 'pharma-concurrent-a', batchId: first.batch.id, quantity: 5, invoice: 'FAC-QA-002'
+        operationId: 'pharma-concurrent-a', batchId: first.batch.id, quantity: 5, invoice: 'FAC-QA-002',
+        manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
       })),
       addInventoryEntry(pharmacyEntry({
-        operationId: 'pharma-concurrent-b', batchId: first.batch.id, quantity: 3, invoice: 'FAC-QA-003'
+        operationId: 'pharma-concurrent-b', batchId: first.batch.id, quantity: 3, invoice: 'FAC-QA-003',
+        manufacturerBatchId: 'AMX-QA-2026-A', expiryDate: '2027-10-31'
       }))
     ]);
     expect((await db.table(STORES.PRODUCT_BATCHES).get(first.batch.id)).stock).toBe(18);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getSaleCancellationReference,
   getSaleDisplayReference,
   getSaleFinancialFolio,
   getSaleSecondaryReference,
@@ -18,6 +19,13 @@ describe('saleReference', () => {
       ecommerceOrderId: null,
       ecommerceOrderCode: null
     });
+  });
+
+  it('shows a verified sale folio and never falls back to an internal identity in cancellation', () => {
+    expect(getSaleCancellationReference({
+      id: 'sale-uuid-internal', folio: 'V-000035', pos_folio: 'FG-01-000035'
+    })).toBe('FG-01-000035');
+    expect(getSaleCancellationReference({ id: 'sale-uuid-internal' })).toBeNull();
   });
 
   it('uses the server-assigned POS folio while preserving the financial folio', () => {

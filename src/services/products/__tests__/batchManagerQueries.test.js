@@ -119,6 +119,20 @@ describe('batchManagerQueries', () => {
     expect(getBatchManagerStatus({})).toBe('archived');
   });
 
+  it.each([
+    { stock: 0, isActive: false },
+    { stock: 0, isActive: false, status: 'inactive' }
+  ])('conserva una identidad sin existencias en el listado operativo: %o', (batch) => {
+    expect(getBatchManagerStatus(batch)).toBe('active');
+  });
+
+  it('mantiene inactivos con stock y lotes marcados explícitamente como archivados fuera de recepción', () => {
+    expect(getBatchManagerStatus({ stock: 3, isActive: false })).toBe('archived');
+    expect(getBatchManagerStatus({ stock: 0, isActive: false, status: 'archived' })).toBe('archived');
+    expect(getBatchManagerStatus({ stock: 0, isActive: false, status: 'expired' })).toBe('archived');
+    expect(getBatchManagerStatus({ stock: 0, isActive: false, archivedAt: '2026-11-18T00:00:00.000Z' })).toBe('archived');
+  });
+
   it('usa fallback de fecha estable sin Date.now', () => {
     expect(getBatchSortValue({ id: 'batch_1750000000000_x', createdAt: 'invalid' })).toBe(1750000000000);
     expect(getBatchSortValue({ id: 'legacy', createdAt: null, updatedAt: null })).toBe(0);
