@@ -8,13 +8,13 @@ import {
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
+import { formatBusinessInstant } from '../../../utils/businessTime';
 
 const formatMoney = (value) => `$${Money.toNumber(value || 0).toFixed(2)}`;
 
-const formatDate = (value) => {
+const formatDate = (value, timeZone) => {
   if (!value) return 'N/A';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
+  return formatBusinessInstant(value, timeZone) || 'N/A';
 };
 
 const getResponsibleName = (session = {}) => (
@@ -127,6 +127,7 @@ const matchesStaffFilter = (session, staffFilter) => {
 };
 
 const CajaStaffAuditPanel = ({
+  businessTimezone = null,
   adminCashSessions = [],
   listCashSessionsForAudit,
   isReadOnly = false,
@@ -294,7 +295,7 @@ const CajaStaffAuditPanel = ({
                 <div className="staff-audit-primary">
                   <span className="staff-audit-primary-field">
                     <small>Apertura</small>
-                    <strong>{formatDate(session.fecha_apertura)}</strong>
+                    <strong>{formatDate(session.fecha_apertura, businessTimezone)}</strong>
                   </span>
                   <span className="staff-audit-primary-field staff-audit-primary-field--expected">
                     <small>Efectivo esperado</small>
@@ -319,7 +320,7 @@ const CajaStaffAuditPanel = ({
                   <details className="caja-disclosure staff-audit-details">
                     <summary>Detalles</summary>
                     <div className="staff-audit-secondary">
-                      <span><small>Cierre</small><strong>{formatDate(session.fecha_cierre)}</strong></span>
+                      <span><small>Cierre</small><strong>{formatDate(session.fecha_cierre, businessTimezone)}</strong></span>
                       <span><small>Monto inicial</small><strong>{formatMoney(session.monto_inicial)}</strong></span>
                       <span><small>Entradas</small><strong>{formatMoney(session.entradas_efectivo)}</strong></span>
                       <span><small>Salidas</small><strong>{formatMoney(session.salidas_efectivo)}</strong></span>

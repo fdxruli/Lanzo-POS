@@ -101,6 +101,28 @@ describe('getCloudFinalDashboardMetrics', () => {
     expect(result.creditGenerated).toMatchObject({ value: 0, status: 'complete' });
   });
 
+  it('reconciles a confirmed $50 cash sale and a separate $120 fiado sale', () => {
+    const result = getCloudFinalDashboardMetrics(cloudReport({
+      net_sales_total: 170,
+      net_sales_count: 2,
+      cash_sales_total: 50,
+      credit_sales_total: 120,
+      mixed_sales_total: 0,
+      credit_payments_total: 0,
+      credit_initial_payments_total: 0,
+      credit_balance_created_total: 120
+    }), {
+      creditHistoryReport: historyReport([
+        cloudSale({ id: 'sale-cash-50', total: '50.00', amount_paid: '50.00', credit_effect_status: 'not_required' }),
+        cloudSale({ id: 'sale-credit-120', total: '120.00', amount_paid: '0.00', credit_effect_status: 'applied' })
+      ])
+    });
+
+    expect(result.netSales).toMatchObject({ value: 170, status: 'complete' });
+    expect(result.collected).toMatchObject({ value: 50, status: 'complete' });
+    expect(result.creditGenerated).toMatchObject({ value: 120, status: 'complete' });
+  });
+
   it('marks collections and credit incomplete when cancellations or reversals exist', () => {
     const result = getCloudFinalDashboardMetrics(cloudReport({
       cancelled_sales_count: 1,

@@ -14,6 +14,7 @@ import {
 import { Money } from '../../../utils/moneyMath';
 import { resolveCashSessionAmounts } from '../../../services/cajaProjection';
 import { hasHistoricalIntegrityWarning } from '../../../services/layawayFinancialProjection';
+import { formatBusinessInstant } from '../../../utils/businessTime';
 
 const CajaStatusCard = ({
   cajaActual,
@@ -28,6 +29,7 @@ const CajaStatusCard = ({
   isCloudCash = false,
   isReadOnly = false,
   cashActor = null,
+  businessTimezone = null,
   onEditarFondoInicial,
   onBackup,
   onReporte,
@@ -103,7 +105,7 @@ const CajaStatusCard = ({
           <div className="status-meta">
             <span>
               <Clock3 size={14} aria-hidden="true" />
-              Inicio: {cajaActual?.fecha_apertura ? new Date(cajaActual.fecha_apertura).toLocaleString() : '...'}
+              Inicio: {cajaActual?.fecha_apertura ? formatBusinessInstant(cajaActual.fecha_apertura, businessTimezone) : '...'}
             </span>
             {responsibleName && (
               <span>
@@ -114,13 +116,13 @@ const CajaStatusCard = ({
             {lastSyncTime && (
               <span>
                 <Activity size={14} aria-hidden="true" />
-                Sync: {lastSyncTime.toLocaleTimeString()}
+                Sync: {formatBusinessInstant(lastSyncTime, businessTimezone, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             )}
             {lastActivity && (
               <span className="activity-indicator">
                 <span className={`activity-dot ${isActive ? 'active' : ''}`} aria-hidden="true" />
-                {isActive ? 'Activo ahora' : `Actividad: ${lastActivity.toLocaleTimeString()}`}
+                {isActive ? 'Activo ahora' : `Actividad: ${formatBusinessInstant(lastActivity, businessTimezone, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
               </span>
             )}
           </div>

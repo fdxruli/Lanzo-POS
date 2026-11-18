@@ -10,6 +10,7 @@ import {
   WalletCards
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { formatBusinessInstant } from '../../../utils/businessTime';
 import {
   getSaleDisplayReference,
   getSaleSecondaryReference,
@@ -30,7 +31,7 @@ const NO_CASH_EFFECT_TYPES = new Set(['venta_tarjeta', 'venta_eliminada', 'merma
 
 const getMovementType = (movement = {}) => String(movement.tipo || movement.type || '').toLowerCase();
 
-const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCash = false }) => {
+const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCash = false, businessTimezone = null }) => {
   const [filtroTipo, setFiltroTipo] = useState(initialFilterType);
   const [busqueda, setBusqueda] = useState('');
 
@@ -113,7 +114,9 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
         secondaryReference,
         salesChannel: traceability.salesChannel,
         monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
-        hora: mov.fecha ? new Date(mov.fecha).toLocaleTimeString() : '',
+        hora: mov.fecha ? formatBusinessInstant(mov.fecha, businessTimezone, {
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }) || '' : '',
         actor: mov.actor || mov.actorName || mov.audit?.actor || null,
         origen: mov.origen || mov.source || mov.metadata?.source || (mov.cloudCash || isCloudCash ? 'cloud' : 'local'),
         staff: mov.staffUserId || mov.staff_user_id ? String(mov.staffUserId || mov.staff_user_id).slice(0, 8) : null,
@@ -122,7 +125,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
         tone
       };
     });
-  }, [movimientos, filtroTipo, busqueda, isCloudCash]);
+  }, [movimientos, filtroTipo, busqueda, isCloudCash, businessTimezone]);
 
   const handleLimpiarFiltros = () => {
     setFiltroTipo('todos');

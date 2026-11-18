@@ -13,6 +13,7 @@ import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActor
 import { Money } from '../../utils/moneyMath';
 import { pharmacyPrescriptionRequirement } from '../../services/pharmacy/pharmacyDispensation';
 import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
+import { normalizeStableSaleTimestamp } from '../../services/sales/stableSaleTimestamp';
 import {
     prepareCustomerMessageOutbox,
     showCustomerMessageOutboxModal
@@ -288,7 +289,11 @@ export function usePosCheckout({
         if (!order) return;
 
         const nextOrders = new Map(state.activeOrders);
-        nextOrders.set(orderId, { ...order, checkoutAttemptId });
+        nextOrders.set(orderId, {
+            ...order,
+            checkoutAttemptId,
+            ...(checkoutAttemptId ? {} : { checkoutSaleTimestamp: null })
+        });
         useActiveOrders.setState({ activeOrders: nextOrders });
     }, []);
 
@@ -299,7 +304,10 @@ export function usePosCheckout({
                 if (!existing?.isLockedForCheckout) {
                     throw new Error('checkout_lock_missing_after_acquire');
                 }
-                await db.table(STORES.SALES).update(orderId, { checkoutAttemptId });
+                await db.table(STORES.SALES).update(orderId, {
+                    checkoutAttemptId,
+                    ...(existing.checkoutAttemptId !== checkoutAttemptId ? { checkoutSaleTimestamp: null } : {})
+                });
             });
             setCheckoutAttemptOwnerInMemory(orderId, checkoutAttemptId);
             return { success: true };
@@ -316,6 +324,42 @@ export function usePosCheckout({
             };
         }
     }, [setCheckoutAttemptOwnerInMemory]);
+
+    const persistCheckoutSaleTimestamp = useCallback(async ({ orderId, checkoutAttemptId, candidateTimestamp }) => {
+        const normalizedCandidate = normalizeStableSaleTimestamp(candidateTimestamp);
+        if (!orderId || !checkoutAttemptId || !normalizedCandidate) {
+            return { success: false, code: 'SALE_TIMESTAMP_REQUIRED' };
+        }
+        try {
+            let stableTimestamp = null;
+            await db.transaction('rw', db.table(STORES.SALES), async () => {
+                const existing = await db.table(STORES.SALES).get(orderId);
+                if (!existing?.isLockedForCheckout || existing.checkoutAttemptId !== checkoutAttemptId) {
+                    throw new Error('checkout_attempt_owner_changed');
+                }
+                const persistedTimestamp = normalizeStableSaleTimestamp(existing.checkoutSaleTimestamp);
+                stableTimestamp = persistedTimestamp || normalizedCandidate;
+                if (!persistedTimestamp) {
+                    await db.table(STORES.SALES).update(orderId, { checkoutSaleTimestamp: stableTimestamp });
+                }
+            });
+            const state = useActiveOrders.getState();
+            const order = state.activeOrders.get(orderId);
+            if (order) {
+                const nextOrders = new Map(state.activeOrders);
+                nextOrders.set(orderId, { ...order, checkoutSaleTimestamp: stableTimestamp });
+                useActiveOrders.setState({ activeOrders: nextOrders });
+            }
+            return { success: true, timestamp: stableTimestamp };
+        } catch (error) {
+            console.error('[usePosCheckout] No se pudo guardar la hora confirmada del cobro:', {
+                orderId,
+                checkoutAttemptId,
+                error: error?.message || 'checkout_sale_timestamp_persist_failed'
+            });
+            return { success: false, code: 'CHECKOUT_SALE_TIMESTAMP_PERSIST_FAILED' };
+        }
+    }, []);
 
     const showEcommerceCheckoutBlocked = useCallback(() => {
         showMessageModal(
@@ -430,7 +474,10 @@ export function usePosCheckout({
 
                     const latestPersisted = await db.table(STORES.SALES).get(snapshot.orderId);
                     if (latestPersisted) {
-                        await db.table(STORES.SALES).update(snapshot.orderId, { checkoutAttemptId: null });
+                        await db.table(STORES.SALES).update(snapshot.orderId, {
+                            checkoutAttemptId: null,
+                            checkoutSaleTimestamp: null
+                        });
                     }
                 });
 
@@ -1033,7 +1080,7 @@ export function usePosCheckout({
             order: null,
             total: null,
             tableData: null,
-            saleTimestamp: stableSaleTimestamp,
+            saleTimestamp: null,
             createdAt: stableSaleTimestamp
         };
 
@@ -1354,6 +1401,15 @@ export function usePosCheckout({
             const closeResult = closeModalIfOwned('payment', snapshot);
             if (closeResult.staleAttempt) return closeResult;
 
+            if (!snapshot.saleTimestamp) snapshot.saleTimestamp = new Date().toISOString();
+            const timestampResult = await persistCheckoutSaleTimestamp({
+                orderId: snapshot.orderId,
+                checkoutAttemptId: snapshot.checkoutAttemptId,
+                candidateTimestamp: snapshot.saleTimestamp
+            });
+            if (!timestampResult.success) return timestampResult;
+            snapshot.saleTimestamp = timestampResult.timestamp;
+
             const result = await processSale({
                 order: snapshot.order,
                 paymentData: {
@@ -1373,8 +1429,7 @@ export function usePosCheckout({
                 ignoreStock: forceSale,
                 partialAuthorization,
                 activeOrderId: snapshot.orderId,
-                saleTimestamp: snapshot.saleTimestamp,
-                createdAt: snapshot.createdAt
+                saleTimestamp: snapshot.saleTimestamp
             });
 
             if (['LOCAL_COMMIT_UNCERTAIN', 'CLOUD_COMMIT_UNCERTAIN'].includes(result.code)) {
@@ -1584,6 +1639,7 @@ export function usePosCheckout({
         modal,
         posSearch,
         persistCheckoutAttemptOwnership,
+        persistCheckoutSaleTimestamp,
         prescription,
         releaseCheckoutSnapshotLock,
         validateLiveCheckoutSnapshot,

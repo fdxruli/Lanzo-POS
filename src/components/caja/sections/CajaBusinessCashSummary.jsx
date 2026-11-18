@@ -7,6 +7,7 @@ import {
   isStaffCashSession
 } from '../../../services/cash/businessCashSummary';
 import { getCashSessionAttentionDomId } from '../../../services/cash/cashSessionAgeAttention';
+import { formatBusinessInstant } from '../../../utils/businessTime';
 
 const formatMoney = (value) => `$${Money.toNumber(value || 0).toFixed(2)}`;
 
@@ -21,12 +22,12 @@ const getResponsibleName = (session = {}) => (
 
 const getOpenedAt = (session = {}) => session.opened_at || session.fecha_apertura;
 
-const formatOpenedAt = (value) => {
+const formatOpenedAt = (value, timeZone) => {
   if (!value) return 'Hora de apertura no disponible';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
+  const formatted = formatBusinessInstant(value, timeZone);
+  return !formatted
     ? 'Hora de apertura no disponible'
-    : date.toLocaleString();
+    : formatted;
 };
 
 const getExpectedCash = (session = {}) => (
@@ -38,7 +39,8 @@ const CajaBusinessCashSummary = ({
   cajaActual = null,
   onReviewSession = null,
   isReadOnly = false,
-  attentionSessionId = null
+  attentionSessionId = null,
+  businessTimezone = null
 }) => {
   const summary = buildBusinessCashSummary(adminOpenSessions, cajaActual);
 
@@ -98,7 +100,7 @@ const CajaBusinessCashSummary = ({
                 <strong>{getCashSessionStationLabel(session)}</strong>
                 <span className="business-cash-session-meta"><UserRound size={13} aria-hidden="true" />{type}</span>
                 <span className="business-cash-session-meta">Responsable: {getResponsibleName(session)}</span>
-                <span className="business-cash-session-meta">Abierta: {formatOpenedAt(getOpenedAt(session))}</span>
+                <span className="business-cash-session-meta">Abierta: {formatOpenedAt(getOpenedAt(session), businessTimezone)}</span>
               </div>
               <div className="business-cash-session-value">
                 <strong>{formatMoney(getExpectedCash(session))}</strong>

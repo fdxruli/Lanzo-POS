@@ -113,6 +113,47 @@ describe('processSaleCore', () => {
         expect(result.notificationResult).toMatchObject({ status: 'opened' });
     });
 
+    it.each([
+        {
+            label: 'cash',
+            total: 50,
+            quantity: 5,
+            paymentData: { paymentMethod: 'efectivo', amountPaid: 50, saldoPendiente: 0 },
+            expected: { paymentStatus: 'paid', payments: [{ method: 'cash', amount: '50' }] }
+        },
+        {
+            label: 'credit',
+            total: 120,
+            quantity: 12,
+            paymentData: { customerId: 'cust-1', paymentMethod: 'fiado', amountPaid: 0, saldoPendiente: 120 },
+            expected: { paymentStatus: 'credit_pending', payments: [], saldoPendiente: '120', creditStatus: 'VIGENTE' }
+        },
+        {
+            label: 'partially paid credit',
+            total: 120,
+            quantity: 12,
+            paymentData: {
+                customerId: 'cust-1', paymentMethod: 'fiado', initialPaymentMethod: 'efectivo',
+                amountPaid: 50, saldoPendiente: 70
+            },
+            expected: { paymentStatus: 'partial', payments: [{ method: 'cash', amount: '50' }], saldoPendiente: '70' }
+        }
+    ])('persists confirmed local payment evidence for $label sales', async ({ total, quantity, paymentData, expected }) => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            activeOrderId: `local-${expected.paymentStatus}`,
+            saleTimestamp: '2026-11-18T09:30:00.000Z',
+            order: [{ id: 'prod-1', name: 'Producto 1', quantity, price: 10 }],
+            total,
+            paymentData: { ...paymentData, sendReceipt: false }
+        }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe.mock.calls[0][0]).toMatchObject({
+            status: 'closed', timestamp: '2026-11-18T09:30:00.000Z', ...expected
+        });
+    });
+
     it('guarda el medio real del abono inicial de una venta fiada para conciliaciones futuras', async () => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams({
@@ -344,11 +385,11 @@ describe('processSaleCore', () => {
         );
     });
 
-    it('reuses the durable order timestamp when retrying the same active order', async () => {
+    it('uses the payment confirmation instant instead of the durable draft creation timestamp', async () => {
         const deps = makeDeps({
             loadData: vi.fn(async (store, id) => {
                 if (store === 'sales' && id === 'active-order-1') {
-                    return { id, timestamp: '2026-08-29T12:34:56.000Z' };
+                    return { id, status: 'open', timestamp: '2026-08-29T12:34:56.000Z' };
                 }
                 if (store === 'menu') {
                     return {
@@ -365,20 +406,29 @@ describe('processSaleCore', () => {
             })
         });
 
-        const result = await processSaleCore(makeParams({ activeOrderId: 'active-order-1' }), deps);
+        const result = await processSaleCore(makeParams({
+            activeOrderId: 'active-order-1',
+            saleTimestamp: '2026-08-30T10:00:00.000Z',
+            activeOrderCreatedAt: '2026-08-29T12:34:56.000Z'
+        }), deps);
 
         expect(result.success).toBe(true);
         expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
-            expect.objectContaining({ timestamp: '2026-08-29T12:34:56.000Z' }),
+            expect.objectContaining({ timestamp: '2026-08-30T10:00:00.000Z' }),
             expect.any(Array)
         );
     });
 
-    it('does not let a newer checkout snapshot replace the durable order timestamp', async () => {
+    it('reuses the persisted payment confirmation instant during an uncertain checkout retry', async () => {
         const deps = makeDeps({
             loadData: vi.fn(async (store, id) => {
                 if (store === 'sales' && id === 'active-order-1') {
-                    return { id, timestamp: '2026-08-29T12:34:56.000Z' };
+                    return {
+                        id,
+                        status: 'open',
+                        timestamp: '2026-08-29T12:34:56.000Z',
+                        checkoutSaleTimestamp: '2026-08-30T10:00:00.000Z'
+                    };
                 }
                 if (store === 'menu') {
                     return {
@@ -403,7 +453,7 @@ describe('processSaleCore', () => {
 
         expect(result.success).toBe(true);
         expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
-            expect.objectContaining({ timestamp: '2026-08-29T12:34:56.000Z' }),
+            expect.objectContaining({ timestamp: '2026-08-30T10:00:00.000Z' }),
             expect.any(Array)
         );
     });
@@ -416,7 +466,7 @@ describe('processSaleCore', () => {
         expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
     });
 
-    it('carries one active-order creation timestamp when SALES has no row', async () => {
+    it('carries one payment confirmation timestamp when SALES has no row', async () => {
         vi.useFakeTimers();
         try {
             vi.setSystemTime(new Date('2026-08-30T10:00:00.000Z'));
@@ -424,13 +474,15 @@ describe('processSaleCore', () => {
             const stableCreatedAt = '2026-08-29T12:34:56.000Z';
             const first = await processSaleCore(makeParams({
                 activeOrderId: 'active-order-without-sales-row',
-                activeOrderCreatedAt: stableCreatedAt
+                activeOrderCreatedAt: stableCreatedAt,
+                saleTimestamp: '2026-08-30T10:00:00.000Z'
             }), deps);
 
             vi.setSystemTime(new Date('2026-08-30T10:10:00.000Z'));
             const second = await processSaleCore(makeParams({
                 activeOrderId: 'active-order-without-sales-row',
-                activeOrderCreatedAt: stableCreatedAt
+                activeOrderCreatedAt: stableCreatedAt,
+                saleTimestamp: '2026-08-30T10:00:00.000Z'
             }), deps);
 
             expect(first.success).toBe(true);
@@ -440,7 +492,7 @@ describe('processSaleCore', () => {
             expect(secondSale.id).toBe(firstSale.id);
             expect(secondSale.timestamp).toBe(firstSale.timestamp);
             expect(firstSale.id).toBe('active-order-without-sales-row');
-            expect(firstSale.timestamp).toBe(stableCreatedAt);
+            expect(firstSale.timestamp).toBe('2026-08-30T10:00:00.000Z');
         } finally {
             vi.useRealTimers();
         }

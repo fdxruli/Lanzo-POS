@@ -627,12 +627,17 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
 
     expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledTimes(1);
     expect(mocks.processSale).toHaveBeenCalledTimes(2);
-    expect(mocks.processSale.mock.calls[1][0]).toMatchObject({
+    const firstAttemptPayload = mocks.processSale.mock.calls[0][0];
+    const retryPayload = mocks.processSale.mock.calls[1][0];
+    expect(retryPayload).toMatchObject({
       ignoreStock: true,
       partialAuthorization: approval,
-      activeOrderId: 'order-a',
-      createdAt: '2026-08-30T00:00:00.000Z'
+      activeOrderId: 'order-a'
     });
+    expect(retryPayload).not.toHaveProperty('createdAt');
+    expect(firstAttemptPayload.saleTimestamp).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+    expect(retryPayload.saleTimestamp).toBe(firstAttemptPayload.saleTimestamp);
+    expect(mocks.sales.get('order-a').checkoutSaleTimestamp).toBe(retryPayload.saleTimestamp);
     expect(mocks.activeState.removeOrder).toHaveBeenCalledWith('order-a');
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
   });

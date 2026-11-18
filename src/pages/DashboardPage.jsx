@@ -261,7 +261,9 @@ export default function DashboardPage() {
   const loadDashboardReporting = useCallback(async () => {
     const requestId = ++reportRequestRef.current;
     const shouldLoadFinalHistory = Boolean(dashboardReportMode.cloudSalesFinal);
-    const statsRequestedRange = shouldLoadFinalHistory ? buildCloudStatsRange(cloudStatsPeriod) : null;
+    const statsRequestedRange = shouldLoadFinalHistory
+      ? buildCloudStatsRange(cloudStatsPeriod, new Date(), companyProfile?.timezone)
+      : null;
     setReportingData((current) => ({
       ...current,
       isLoading: true,
@@ -378,7 +380,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, cloudStatsPeriod, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey, selectedStatsCustomerId]);
+  }, [companyProfile?.timezone, dashboardReportMode, cloudStatsPeriod, features.activeRubros, salesActorIdentity, salesHistoryCacheContextKey, salesHistoryContextKey, selectedStatsCustomerId]);
 
   useEffect(() => {
     if (!dashboardReportMode.cloudSalesFinal) return undefined;
@@ -683,7 +685,9 @@ export default function DashboardPage() {
   }
 
   const statsIsCloudFinal = dashboardReportMode.cloudSalesFinal;
-  const currentCloudStatsRange = statsIsCloudFinal ? buildCloudStatsRange(cloudStatsPeriod) : null;
+  const currentCloudStatsRange = statsIsCloudFinal
+    ? buildCloudStatsRange(cloudStatsPeriod, new Date(), companyProfile?.timezone)
+    : null;
   const currentCloudStatsRequest = reportingData.overviewReport?.statsRequestContext || {};
   const cloudStatsRequestMatchesCurrent = Boolean(
     !statsIsCloudFinal
@@ -759,6 +763,7 @@ export default function DashboardPage() {
               period={cloudStatsPeriod}
               onPeriodChange={setCloudStatsPeriod}
               requestedRange={currentCloudStatsRange}
+              businessTimezone={companyProfile?.timezone || null}
               isLoading={cloudStatsIsLoading}
               customers={canFilterStatsByCustomer ? statsCustomerOptions : []}
               customerId={selectedStatsCustomerId}
@@ -784,6 +789,7 @@ export default function DashboardPage() {
               isCloudReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.CLOUD}
               isMixedReport={reportingData.reportSource?.mode === REPORT_SOURCE_MODES.MIXED}
               isStale={Boolean(reportingData.reportSource?.stale)}
+              businessTimezone={companyProfile?.timezone || null}
             />
           )}
         </section>
@@ -840,6 +846,7 @@ export default function DashboardPage() {
               dateRange={historyDateRange}
               error={historyUsesRepository && historyContextMatches ? reportingData.salesHistoryError : null}
               businessName={companyProfile?.name || companyProfile?.business_name || ''}
+              businessTimezone={companyProfile?.timezone || null}
               canManageRefunds={canManageRefunds}
             />
           ) : (

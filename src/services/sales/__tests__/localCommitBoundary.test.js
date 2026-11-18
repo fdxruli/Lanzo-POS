@@ -23,7 +23,7 @@ import { calculatePricingDetails } from '../../pricingLogic';
 
 let authority, handle, revoked;
 const product = { id: 'p', name: 'Producto', price: 10, cost: 4, trackStock: true, stock: 10 };
-const params = () => ({ activeOrderId: 'order-a', createdAt: '2026-08-30T00:00:00.000Z', order: [{ ...product, quantity: 1 }], total: 10,
+const params = () => ({ activeOrderId: 'order-a', createdAt: '2026-08-29T12:00:00.000Z', saleTimestamp: '2026-08-30T00:00:00.000Z', order: [{ ...product, quantity: 1 }], total: 10,
   paymentData: { paymentMethod: 'tarjeta', amountPaid: 10 }, features: {}, actorContext: handle,
   allProducts: [product], companyName: 'Test' });
 const deps = execute => ({ STORES,

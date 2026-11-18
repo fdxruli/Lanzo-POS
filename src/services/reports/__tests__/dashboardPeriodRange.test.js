@@ -31,4 +31,25 @@ describe('Períodos Dashboard Cloud', () => {
     expect(CLOUD_STATS_PERIODS.map(({ key }) => key)).toEqual(['today', 'last7', 'last15', 'thisMonth']);
     expect(() => buildCloudStatsRange('all', at)).toThrow('DASHBOARD_PERIOD_UNSUPPORTED');
   });
+
+  it('uses the configured business timezone for report day boundaries', () => {
+    const now = new Date('2026-11-18T15:00:00.000Z');
+    expect(buildCloudStatsRange('today', now, 'America/Merida')).toEqual({
+      dateFrom: '2026-11-18T06:00:00.000Z',
+      dateTo: '2026-11-19T06:00:00.000Z'
+    });
+    expect(buildCloudStatsRange('today', now, 'UTC')).toEqual({
+      dateFrom: '2026-11-18T00:00:00.000Z',
+      dateTo: '2026-11-19T00:00:00.000Z'
+    });
+    expect(buildCloudStatsRange('today', now, 'America/Tijuana')).toEqual({
+      dateFrom: '2026-11-18T08:00:00.000Z',
+      dateTo: '2026-11-19T08:00:00.000Z'
+    });
+  });
+
+  it('keeps business calendar days correct through a DST boundary', () => {
+    const requested = buildCloudStatsRange('today', new Date('2026-03-08T12:00:00.000Z'), 'America/New_York');
+    expect(requested).toEqual({ dateFrom: '2026-03-08T05:00:00.000Z', dateTo: '2026-03-09T04:00:00.000Z' });
+  });
 });

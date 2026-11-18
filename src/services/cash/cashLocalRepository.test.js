@@ -19,6 +19,8 @@ import { localTenantAccessController } from '../tenant/localTenantPolicy';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import { loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
 import { cancelSaleCore } from '../sales/cancelSaleCore';
+import { summarizeLocalDashboardFinance } from '../sales/dashboardFinancialSummary';
+import { getSaleInitialFinancialAmounts, getSalePaymentStatusLabel } from '../reports/salesHistoryExport';
 
 const stationKey = 'local:device:fp-browser-s';
 const stationKeyA = 'local:device:fp-browser-a';
@@ -65,23 +67,35 @@ const getCurrentCashActorContext = (cashSession) => {
   return actorContext;
 };
 
-const processCashSale = ({ id, cashSession, paymentMethod = 'efectivo', createdAt }) => processSaleCore({
-  order: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }],
+const processCashSale = ({
+  id,
+  cashSession,
+  paymentMethod = 'efectivo',
+  createdAt,
+  saleTimestamp = new Date().toISOString(),
+  total = 20,
+  amountPaid = paymentMethod === 'efectivo' ? total : 0,
+  saldoPendiente = total - amountPaid,
+  customerId = null
+}) => processSaleCore({
+  order: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: total / 20 }],
   paymentData: {
     paymentMethod,
-    amountPaid: paymentMethod === 'efectivo' ? '20' : '0',
-    saldoPendiente: paymentMethod === 'efectivo' ? '0' : '20',
+    amountPaid: String(amountPaid),
+    saldoPendiente: String(saldoPendiente),
+    customerId,
     cashSessionId: cashSession.id,
     localStationKey: cashSession.localStationKey,
     sendReceipt: false
   },
-  total: 20,
+  total,
   allProducts: [saleProduct],
   features: { hasRecipes: false, hasKDS: false, hasLabFields: false, hasTables: false },
   companyName: 'Negocio de prueba',
   tempPrescriptionData: null,
   ignoreStock: false,
   activeOrderId: id,
+  saleTimestamp,
   createdAt,
   actorContext: getCurrentCashActorContext(cashSession)
 }, {
@@ -118,6 +132,82 @@ afterEach(() => {
 });
 
 describe('cashLocalRepository shared-terminal financial ownership', () => {
+  it('reconciles $50 cash and $120 credit through sales, local report, cash close and a reopened session', async () => {
+    await db.table(STORES.MENU).put(saleProduct);
+    const actor = grantCashActor();
+    await db.table(STORES.CUSTOMERS).put({
+      id: 'customer-finance-qa', name: 'Cliente de conciliación', debt: '0', debtCents: 0
+    });
+    const cashSession = await cashLocalRepository.openCashSession({
+      actorKey: actor.actorKey,
+      actorGeneration: actor.generation,
+      localStationKey: stationKey,
+      montoInicial: '1000'
+    });
+    const confirmedAt = new Date(Date.parse(cashSession.fecha_apertura) + 1000).toISOString();
+    const cashResult = await processCashSale({
+      id: 'finance-cash-sale-50', cashSession, total: 50, amountPaid: 50,
+      saldoPendiente: 0, paymentMethod: 'efectivo', saleTimestamp: confirmedAt
+    });
+    const creditResult = await processCashSale({
+      id: 'finance-credit-sale-120', cashSession, total: 120, amountPaid: 0,
+      saldoPendiente: 120, paymentMethod: 'fiado', customerId: 'customer-finance-qa',
+      saleTimestamp: new Date(Date.parse(confirmedAt) + 1000).toISOString()
+    });
+
+    expect(cashResult).toMatchObject({ success: true, saleId: 'finance-cash-sale-50' });
+    expect(creditResult).toMatchObject({ success: true, saleId: 'finance-credit-sale-120' });
+    const persistedSales = await db.table(STORES.SALES).bulkGet([cashResult.saleId, creditResult.saleId]);
+    const [cashSale, creditSale] = persistedSales;
+    expect(cashSale).toMatchObject({ paymentStatus: 'paid', paymentMethod: 'efectivo', total: '50' });
+    expect(creditSale).toMatchObject({
+      paymentStatus: 'credit_pending', paymentMethod: 'fiado', total: '120',
+      saldoPendiente: '120', payments: []
+    });
+    expect(getSalePaymentStatusLabel(cashSale)).toBe('Pagada');
+    expect(getSaleInitialFinancialAmounts(cashSale)).toEqual({ paidInitially: 50, initialCredit: null });
+    expect(getSalePaymentStatusLabel(creditSale)).toBe('Fiada');
+    expect(getSaleInitialFinancialAmounts(creditSale)).toEqual({ paidInitially: 0, initialCredit: 120 });
+
+    const cashProjection = await loadCashSessionProjection(db, cashSession);
+    expect(cashProjection.reconciliation).toMatchObject({ directCashSales: 50, theoreticalCash: 1050 });
+    expect(resolveCashSessionAmounts(cashSession, cashProjection.totals).totalTeorico).toBe('1050');
+    expect(cashProjection.movements.filter((movement) => movement.tipo === 'venta'))
+      .toEqual([expect.objectContaining({ saleId: cashResult.saleId, monto: '50' })]);
+
+    const dashboardProjection = summarizeLocalDashboardFinance({
+      sales: persistedSales,
+      customerLedger: await db.table(STORES.CUSTOMER_LEDGER).toArray(),
+      cancelledSales: [],
+      cashReversalMovements: [],
+      range: null
+    });
+    expect(dashboardProjection.totalSales).toBe(170);
+    expect(dashboardProjection.collected).toMatchObject({ value: 50, status: 'complete' });
+    expect(dashboardProjection.creditGenerated).toMatchObject({ value: 120, status: 'complete' });
+
+    const closed = await cashLocalRepository.closeCashSession({
+      cashSessionId: cashSession.id,
+      countedAmount: '1050',
+      nextShiftFund: '0',
+      actorKey: actor.actorKey,
+      localStationKey: stationKey
+    });
+    expect(closed.cashSession.detalle_cierre).toMatchObject({ ventas_contado: '50', total_teorico: '1050' });
+    expect(closed.diferencia).toBe('0');
+
+    const reopened = await cashLocalRepository.openCashSession({
+      actorKey: actor.actorKey,
+      actorGeneration: actor.generation,
+      localStationKey: stationKey,
+      montoInicial: '1000'
+    });
+    const reopenedProjection = await loadCashSessionProjection(db, reopened);
+    expect(reopenedProjection.sales).toHaveLength(0);
+    expect(reopenedProjection.reconciliation.theoreticalCash).toBe(1000);
+    expect(new Set(persistedSales.map((sale) => sale.id)).size).toBe(2);
+  });
+
   it('reconciles an actual $20 cash sale and $20 refund to the original $100 fund exactly once', async () => {
     const cashSession = await cashLocalRepository.openCashSession({
       actorKey: 'admin:refund',
@@ -491,7 +581,7 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
     expect(closed.diferencia).toBe('-0.5');
   });
 
-  it('counts two independently committed cash sales in their linked session when an order predates opening', async () => {
+  it('counts linked cash sales by their checkout instant while preserving older draft creation times', async () => {
     await db.table(STORES.MENU).put(saleProduct);
     const actor = grantCashActor();
     const orderCreatedBeforeOpen = new Date(Date.now() - 60_000).toISOString();
@@ -510,6 +600,7 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       localStationKey: stationKey,
       montoInicial: '100'
     });
+    const firstCheckoutAt = new Date(Date.parse(cashSession.fecha_apertura) + 1000).toISOString();
     const orderCreatedAfterOpen = new Date().toISOString();
     await db.table(STORES.SALES).put({
       id: 'order-created-after-cash-open',
@@ -521,23 +612,26 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
     });
 
+    const secondCheckoutAt = new Date(Date.parse(cashSession.fecha_apertura) + 2000).toISOString();
     const firstSale = await processCashSale({
       id: 'order-created-before-cash-open',
       cashSession,
-      createdAt: orderCreatedBeforeOpen
+      createdAt: orderCreatedBeforeOpen,
+      saleTimestamp: firstCheckoutAt
     });
     const secondSale = await processCashSale({
       id: 'order-created-after-cash-open',
       cashSession,
-      createdAt: orderCreatedAfterOpen
+      createdAt: orderCreatedAfterOpen,
+      saleTimestamp: secondCheckoutAt
     });
 
     expect(firstSale.success).toBe(true);
     expect(secondSale.success).toBe(true);
     const storedSales = await db.table(STORES.SALES).bulkGet([firstSale.saleId, secondSale.saleId]);
     expect(storedSales).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: firstSale.saleId, cash_session_id: cashSession.id, timestamp: orderCreatedBeforeOpen }),
-      expect.objectContaining({ id: secondSale.saleId, cash_session_id: cashSession.id, timestamp: orderCreatedAfterOpen })
+      expect.objectContaining({ id: firstSale.saleId, cash_session_id: cashSession.id, timestamp: firstCheckoutAt }),
+      expect.objectContaining({ id: secondSale.saleId, cash_session_id: cashSession.id, timestamp: secondCheckoutAt })
     ]));
 
     const projection = await loadCashSessionProjection(db, cashSession);
@@ -582,7 +676,10 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       status: 'open', paymentMethod: null, total: '20',
       items: [{ id: saleProduct.id, name: saleProduct.name, price: 20, quantity: 1 }]
     });
-    const previousSale = await processCashSale({ id: 'order-previous-session', cashSession: previousSession, createdAt: orderCreatedAt });
+    const previousSale = await processCashSale({
+      id: 'order-previous-session', cashSession: previousSession, createdAt: orderCreatedAt,
+      saleTimestamp: new Date(Date.parse(previousSession.fecha_apertura) + 1000).toISOString()
+    });
     expect(previousSale.success).toBe(true);
 
     const previousClose = await cashLocalRepository.closeCashSession({

@@ -64,6 +64,24 @@ const metricDisplay = (metric, formatter) => {
   return 'No disponible';
 };
 
+const getNetSalesNote = (metric) => {
+  if (metric.status === 'complete') return 'Importe de ventas Cloud confirmadas, después de cancelaciones.';
+  if (metric.reason === 'net_sales_not_in_report') return 'El reporte oficial no incluyó el total de ventas para este período.';
+  if (metric.reason === 'negative_net_sales_total') return 'El total de ventas reportado no es válido y requiere revisión.';
+  return 'Cloud no confirmó un total oficial de ventas para este período y alcance.';
+};
+
+const getCollectedNote = (metric) => {
+  if (metric.status === 'complete') return 'Pagos iniciales y abonos confirmados en este período.';
+  if (metric.reason === 'cancellation_or_reversal_requires_detail') {
+    return 'Hay cancelaciones o devoluciones; falta conciliar los reversos antes de certificar cobros.';
+  }
+  if (metric.reason === 'reversal_metrics_not_in_report') return 'El reporte no incluyó los importes necesarios para comprobar cancelaciones y devoluciones.';
+  if (metric.reason === 'payment_breakdown_not_in_report') return 'El reporte no incluyó el desglose confirmado por medio de pago.';
+  if (metric.reason === 'credit_payment_totals_do_not_reconcile') return 'Los abonos a crédito no cuadran con los pagos iniciales del período.';
+  return 'Cloud no confirmó un desglose completo de cobros para este período y alcance.';
+};
+
 const readOptionalMoney = (overview, keys) => {
   const metric = readMetric(overview, keys);
   return metric.has ? formatCurrency(metric.value) : 'Sin dato';
@@ -77,6 +95,7 @@ export default function CloudFinalStatsGrid({
   period = 'today',
   onPeriodChange = () => {},
   requestedRange = null,
+  businessTimezone = null,
   isLoading = false,
   customers = [],
   customerId = null,
@@ -126,12 +145,12 @@ export default function CloudFinalStatsGrid({
       : source.mode === 'mixed' || source.local?.includes('all')
         ? 'Respaldo local · Cloud no confirmado'
         : 'Origen no confirmado');
-  const periodLabel = `Fechas: ${describeCloudStatsRange(requestedRange)} (zona horaria de este dispositivo).`;
+  const periodLabel = `Fechas: ${describeCloudStatsRange(requestedRange, businessTimezone)}${businessTimezone ? ` · ${businessTimezone}` : ''}.`;
   const reportedRange = reportData?.dateRange || reportData?.date_range || reportData?.raw?.date_range || {};
   const reportedFrom = reportedRange.date_from || reportedRange.start || reportedRange.from || reportedRange.dateFrom;
   const reportedTo = reportedRange.date_to || reportedRange.end || reportedRange.to || reportedRange.dateTo;
   const receivedRangeLabel = Number.isFinite(Date.parse(reportedFrom)) && Number.isFinite(Date.parse(reportedTo))
-    ? describeCloudStatsRange({ dateFrom: reportedFrom, dateTo: reportedTo })
+    ? describeCloudStatsRange({ dateFrom: reportedFrom, dateTo: reportedTo }, businessTimezone)
     : 'no informado';
   const scopeLabel = `Alcance consultado: ${scope === 'mine' ? 'usuario o dispositivo actual' : 'licencia autorizada'}.`;
 
@@ -204,7 +223,7 @@ export default function CloudFinalStatsGrid({
             <div className="card-mini-stats">
               <span className="mini-stat-pill">Ventas comerciales válidas</span>
             </div>
-            <small className="text-muted">Importe de ventas Cloud confirmadas, después de cancelaciones.</small>
+            <small className="text-muted">{getNetSalesNote(metrics.netSales)}</small>
           </div>
         </div>
 
@@ -212,7 +231,7 @@ export default function CloudFinalStatsGrid({
           <div className="card-content">
             <span className="card-label">Cobrado</span>
             <h2 className="card-value-main">{isLoading ? 'Cargando' : metricDisplay(metrics.collected, formatCurrency)}</h2>
-            <small className="text-muted">Pagos iniciales y abonos registrados en este período.</small>
+            <small className="text-muted">{getCollectedNote(metrics.collected)}</small>
           </div>
         </div>
 

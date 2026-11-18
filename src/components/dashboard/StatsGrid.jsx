@@ -28,6 +28,13 @@ import { useStatsStore } from '../../store/useStatsStore';
 import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
 import { filterLocalDashboardReportForCustomer } from '../../services/sales/customerStatsFilter';
 import DashboardCustomerFilter from './DashboardCustomerFilter';
+import {
+  addBusinessCalendarDays,
+  formatBusinessInstant,
+  getBusinessDateKey,
+  startOfBusinessDay,
+  startOfBusinessMonth
+} from '../../utils/businessTime';
 
 // Periodos disponibles
 const TIME_PERIODS = {
@@ -38,33 +45,29 @@ const TIME_PERIODS = {
   all: { label: 'Total', days: Infinity }
 };
 
-const buildPeriodRanges = (timeRange) => {
-  const now = new Date();
+export const buildPeriodRanges = (timeRange, now = new Date(), timeZone = null) => {
   const period = TIME_PERIODS[timeRange];
 
   let startDate = null;
   if (period.days === 1) {
-    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    startDate = startOfBusinessDay(now, timeZone);
   } else if (period.days === 'month') {
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    startDate = startOfBusinessMonth(now, 0, timeZone);
   } else if (period.days !== Infinity) {
-    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    startDate.setDate(startDate.getDate() - (period.days - 1));
+    startDate = addBusinessCalendarDays(startOfBusinessDay(now, timeZone), -(period.days - 1), timeZone);
   }
 
   let prevPeriodStart = null;
   let prevPeriodEnd = null;
   if (period.days === 1) {
-    prevPeriodStart = new Date(startDate);
-    prevPeriodStart.setDate(prevPeriodStart.getDate() - 1);
+    prevPeriodStart = addBusinessCalendarDays(startDate, -1, timeZone);
     prevPeriodEnd = new Date(startDate.getTime() - 1);
   } else if (period.days === 'month') {
-    prevPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    prevPeriodStart = startOfBusinessMonth(now, -1, timeZone);
     prevPeriodEnd = new Date(startDate.getTime() - 1);
   } else if (period.days !== Infinity) {
     const prevPeriodEndDate = new Date(startDate.getTime() - 1);
-    prevPeriodStart = new Date(prevPeriodEndDate);
-    prevPeriodStart.setDate(prevPeriodStart.getDate() - (period.days - 1));
+    prevPeriodStart = addBusinessCalendarDays(startDate, -period.days, timeZone);
     prevPeriodEnd = prevPeriodEndDate;
   }
 
@@ -195,11 +198,7 @@ const SOURCE_LABELS = {
   [REPORT_SOURCE_MODES.LOCAL]: 'Local'
 };
 
-const getDateKey = (value) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
+const getDateKey = (value, timeZone = null) => getBusinessDateKey(value, timeZone);
 
 const getDateLabel = (dateKey) => {
   const parts = String(dateKey || '').split('-');
@@ -351,33 +350,34 @@ const normalizeStatsGridReportData = ({ reportData, reportSource, isCloudReport,
   };
 };
 
-const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricKey }) => {
+const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricKey, businessTimezone = null }) => {
   const dayMap = new Map();
 
+  const todayStart = startOfBusinessDay(now, businessTimezone);
   const periodStart = period.days === 'month'
-    ? new Date(now.getFullYear(), now.getMonth(), 1)
+    ? startOfBusinessMonth(now, 0, businessTimezone)
     : (period.days === Infinity
       ? null
-      : new Date(now.getFullYear(), now.getMonth(), now.getDate() - (period.days - 1)));
+      : addBusinessCalendarDays(todayStart, -(period.days - 1), businessTimezone));
 
   if (periodStart !== null) {
     const currentDate = new Date(periodStart);
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     if (period.days === 1) {
-      const yesterday = new Date(currentDate);
-      yesterday.setDate(yesterday.getDate() - 1);
-      dayMap.set(getDateKey(yesterday), createEmptyDayMetric());
+      const yesterday = addBusinessCalendarDays(currentDate, -1, businessTimezone);
+      dayMap.set(getDateKey(yesterday, businessTimezone), createEmptyDayMetric());
     }
 
-    while (currentDate <= today) {
-      dayMap.set(getDateKey(currentDate), createEmptyDayMetric());
-      currentDate.setDate(currentDate.getDate() + 1);
+    while (currentDate.getTime() <= todayStart.getTime()) {
+      dayMap.set(getDateKey(currentDate, businessTimezone), createEmptyDayMetric());
+      const nextDate = addBusinessCalendarDays(currentDate, 1, businessTimezone);
+      if (!nextDate || nextDate.getTime() <= currentDate.getTime()) break;
+      currentDate.setTime(nextDate.getTime());
     }
   }
 
   sales.forEach((sale) => {
-    const dateKey = getDateKey(sale.timestamp);
+    const dateKey = getDateKey(sale.timestamp, businessTimezone);
     if (!dateKey) return;
     const financialSummary = summarizeFinancialSales([sale]);
     if (financialSummary.totalSales === 0) return;
@@ -391,7 +391,13 @@ const buildDailyMetricData = ({ sales = [], wasteLogs = [], period, now, metricK
   });
 
   wasteLogs.forEach((log) => {
-    const dateKey = getDateKey(log.timestamp || log.date || log.createdAt);
+    const timestamp = log.timestamp || log.createdAt || log.created_at;
+    const storedDate = log.date;
+    const dateKey = timestamp
+      ? getDateKey(timestamp, businessTimezone)
+      : /^\d{4}-\d{2}-\d{2}$/.test(String(storedDate || ''))
+        ? String(storedDate)
+        : getDateKey(storedDate, businessTimezone);
     if (!dateKey) return;
     if (!dayMap.has(dateKey)) dayMap.set(dateKey, createEmptyDayMetric());
     dayMap.get(dateKey).waste += summarizeWaste([log]);
@@ -424,6 +430,7 @@ export default function StatsGrid({
   isCloudReport = false,
   isMixedReport = false,
   isStale = false,
+  businessTimezone = null,
   customerOptions = [],
   customerId = null,
   customerName = '',
@@ -461,7 +468,7 @@ export default function StatsGrid({
     isMixedReport,
     isStale
   }), [reportData, reportSource, isCloudReport, isMixedReport, isStale]);
-  const statsRequestKey = JSON.stringify([timeRange, customerId, reportRefreshKey, localRefreshKey, activeRubros]);
+  const statsRequestKey = JSON.stringify([timeRange, businessTimezone, customerId, reportRefreshKey, localRefreshKey, activeRubros]);
   const effectiveReportStatus = loadedStatsRequestKey === statsRequestKey ? reportStatus : 'loading';
 
   const renderSourceBadges = (badges = []) => {
@@ -507,7 +514,7 @@ export default function StatsGrid({
     async function loadPeriodSales() {
       setReportStatus('loading');
       try {
-        const ranges = buildPeriodRanges(timeRange);
+        const ranges = buildPeriodRanges(timeRange, new Date(), businessTimezone);
         const [currentReport, previousReport] = await Promise.all([
           reportingService.getDashboardReport({
             rangoFechas: ranges.current,
@@ -558,7 +565,7 @@ export default function StatsGrid({
     }
     loadPeriodSales();
     return () => { isActive = false; };
-  }, [activeRubros, customerId, localRefreshKey, reportRefreshKey, statsRequestKey, timeRange]);
+  }, [activeRubros, businessTimezone, customerId, localRefreshKey, reportRefreshKey, statsRequestKey, timeRange]);
 
   // Calcular métricas para el periodo seleccionado
   const metrics = useMemo(() => {
@@ -633,7 +640,8 @@ export default function StatsGrid({
       wasteLogs: filteredWasteLogs,
       period,
       now,
-      metricKey: selectedMetricKey
+      metricKey: selectedMetricKey,
+      businessTimezone
     });
 
     const cloudInventoryMetric = reportContext.metrics.inventoryValueApprox;
@@ -687,14 +695,16 @@ export default function StatsGrid({
       salesAttributionIncomplete,
       paymentAttributionIncomplete
     };
-  }, [customerId, filteredSales, filteredWasteLogs, prevPeriodSales, previousSalesAttributionIncomplete, prevPeriodWasteLogs, financeEvents, effectiveReportStatus, selectedMetric, stats, timeRange, reportContext]);
+  }, [businessTimezone, customerId, filteredSales, filteredWasteLogs, prevPeriodSales, previousSalesAttributionIncomplete, prevPeriodWasteLogs, financeEvents, effectiveReportStatus, selectedMetric, stats, timeRange, reportContext]);
 
   useEffect(() => {
     if (customerId && selectedMetric === 'waste') setSelectedMetric('revenue');
   }, [customerId, selectedMetric]);
 
-  const periodRange = buildPeriodRanges(timeRange);
-  const formatPeriodDate = (date) => new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+  const periodRange = buildPeriodRanges(timeRange, new Date(), businessTimezone);
+  const formatPeriodDate = (date) => formatBusinessInstant(date, businessTimezone, {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
   const cloudMetrics = reportContext.metrics;
   const cashSessionsMetric = {
     has: Boolean(cloudMetrics.cashSessionsOpen?.has || cloudMetrics.cashSessionsClosed?.has),
@@ -804,9 +814,17 @@ export default function StatsGrid({
                 ? (metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible')
                 : metrics.collected.status === 'complete' ? formatCurrency(metrics.collected.value) : 'Incompleto'}
             </h2>
-            <small className="text-muted">{metrics.paymentAttributionIncomplete
-              ? 'Hay pagos o reversos sin una relación de cliente confirmada en este periodo.'
-              : 'Pagos iniciales y abonos registrados en este período.'}</small>
+            <small className="text-muted">{metrics.financialDataStatus !== 'ready'
+              ? metrics.financialDataStatus === 'loading'
+                ? 'Consultando los movimientos locales de este período.'
+                : 'No se pudo consultar el reporte local de este período.'
+              : metrics.paymentAttributionIncomplete
+                ? 'Hay pagos o reversos sin una relación de cliente confirmada en este período.'
+                : metrics.collected.reason === 'cancellation_or_refund_in_period'
+                  ? 'Hay cancelaciones o devoluciones; falta conciliar los reversos antes de certificar el total.'
+                  : metrics.collected.reason === 'payment_evidence_incomplete'
+                    ? 'Falta evidencia de uno o más pagos; no se infiere el medio ni el importe.'
+                    : 'Pagos iniciales y abonos registrados en este período.'}</small>
           </div>
         </div>
 
@@ -827,6 +845,10 @@ export default function StatsGrid({
               ? 'Porción fiada al cerrar las ventas del periodo.'
               : metrics.paymentAttributionIncomplete || metrics.salesAttributionIncomplete
                 ? 'Hay operaciones sin una relación de cliente confirmada; no se inventa un total.'
+                : metrics.creditGenerated.reason === 'credit_cancellation_in_period'
+                  ? 'Hay cancelaciones o devoluciones; falta conciliar sus reversos con el crédito del período.'
+                  : metrics.creditGenerated.reason === 'initial_payment_evidence_incomplete'
+                    ? 'Falta evidencia del pago inicial o del saldo; no se infiere la porción fiada.'
                 : 'No se puede separar con certeza el pago inicial o los reversos.'}
           </small>
           {renderSourceBadges(reportContext.salesBadges)}

@@ -17,6 +17,7 @@ import {
 } from '../services/cash/cashStation';
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
 import { getCashSessionStationLabel } from '../services/cash/businessCashSummary';
+import { formatBusinessInstant } from '../utils/businessTime';
 import { getFinancialTimeoutMs, withFinancialTimeout } from '../services/financial/financialTimeout';
 import { useAppStore } from '../store/useAppStore';
 import { getCancellationCashRefreshRoute, isCancellationCashEventForScope } from '../services/financial/cancellationCashRefreshRoute';
@@ -182,6 +183,7 @@ const normalizeRepositoryResult = (result = {}) => {
 };
 
 export function useCaja({ executionScope = null } = {}) {
+  const businessTimezone = useAppStore((state) => state.companyProfile?.timezone || null);
   const [cajaActual, setCajaActual] = useState(null);
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
@@ -1010,7 +1012,7 @@ export function useCaja({ executionScope = null } = {}) {
       const headers = ['Concepto', 'Valor', 'Tipo', 'Notas', 'Origen', 'Tipo de referencia', 'ID de referencia', 'ID de apartado', 'ID de pago', 'Estado financiero'];
       const reconciliation = resumen.reconciliation || {};
       const rows = [
-        ['Fecha Apertura', new Date(cajaActual.fecha_apertura).toLocaleString(), 'info', ''],
+        ['Fecha Apertura', formatBusinessInstant(cajaActual.fecha_apertura, businessTimezone), 'info', ''],
         ['Responsable', cajaActual.responsable_apertura || cajaActual.responsibleName || '', 'info', ''],
         ['Estado', cajaActual.estado, 'info', ''],
         ['Total Teórico Caja', `$${Money.toNumber(resumen.totalTeorico).toFixed(2)}`, 'total', ''],
@@ -1030,7 +1032,7 @@ export function useCaja({ executionScope = null } = {}) {
           `Movimiento: ${mov.concepto}`,
           `$${Money.toNumber(mov.monto).toFixed(2)}`,
           mov.tipo,
-          new Date(mov.fecha).toLocaleString(),
+          formatBusinessInstant(mov.fecha, businessTimezone) || '',
           mov.source || mov.origen || '',
           mov.referenceType || '',
           mov.referenceId || '',
@@ -1046,7 +1048,7 @@ export function useCaja({ executionScope = null } = {}) {
       Logger.error('Error exportando reporte de caja', exportError);
       return { success: false, error: exportError.message };
     }
-  }, [cajaActual, movimientosCaja, obtenerResumenEstadistico]);
+  }, [businessTimezone, cajaActual, movimientosCaja, obtenerResumenEstadistico]);
 
   const descargarReporteCaja = useCallback(async () => {
     const resultado = await exportarReporteCajaCSV();
