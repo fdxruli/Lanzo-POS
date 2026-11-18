@@ -93,6 +93,95 @@
   line-height: 1.4;
 }
 
+#payment-modal .payment-submit-error {
+  margin: 0 0 var(--spacing-sm);
+  text-align: left;
+}
+
+#payment-modal .payment-method-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#payment-modal .btn-method {
+  min-height: 42px;
+  min-width: 0;
+}
+
+#payment-modal .payment-combined {
+  margin-bottom: var(--spacing-md);
+}
+
+#payment-modal .payment-combined-breakdown {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+
+#payment-modal .payment-combined-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 42%);
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--ui-border-color);
+}
+
+#payment-modal .payment-combined-row label {
+  color: var(--ui-text-strong);
+  font-weight: 500;
+}
+
+#payment-modal .payment-combined-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--spacing-sm);
+  font-size: 1rem;
+  text-align: right;
+}
+
+#payment-modal .payment-combined-row .payment-inline-message {
+  grid-column: 1 / -1;
+}
+
+#payment-modal .payment-combined-summary {
+  margin: var(--spacing-sm) 0;
+  display: grid;
+  gap: var(--spacing-xs);
+}
+
+#payment-modal .payment-combined-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+#payment-modal .payment-combined-summary dt {
+  color: var(--ui-text-muted);
+}
+
+#payment-modal .payment-combined-summary dd {
+  margin: 0;
+  color: var(--ui-text-strong);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#payment-modal .payment-fixed-method {
+  display: grid;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  background: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+}
+
+#payment-modal .payment-fixed-method span {
+  color: var(--ui-text-muted);
+}
+
 #payment-modal .payment-initial-payment-method {
   margin-top: var(--spacing-sm);
 }
