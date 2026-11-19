@@ -9,31 +9,27 @@ import {
 } from '../../services/reports/pharmacySanitaryRegister';
 import './PharmacySanitaryRegister.css';
 
-const localDate = (date) => {
-  const day = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return day.toISOString().slice(0, 10);
-};
-const initialFilters = () => {
+import { addBusinessCalendarDays, formatBusinessInstant, getBusinessDateKey, isValidTimeZone } from '../../utils/businessTime';
+
+const initialFilters = (timezone) => {
   const today = new Date();
-  const from = new Date(today);
-  from.setDate(from.getDate() - 29);
-  return { from: localDate(from), to: localDate(today),
-    search: '', movementType: '', batchId: '', traceStatus: '' };
+  return { from: getBusinessDateKey(addBusinessCalendarDays(today, -29, timezone), timezone),
+    to: getBusinessDateKey(today, timezone), search: '', movementType: '', batchId: '', traceStatus: '' };
 };
 const LABELS = {
   receipt: 'Recepción', dispensation: 'Dispensación', waste: 'Merma',
   return: 'Devolución', adjustment: 'Ajuste', other: 'Sin clasificación',
   complete: 'Documentado', incomplete: 'Dato incompleto', limited: 'Cobertura limitada'
 };
-const dateLabel = (value) => {
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString('es-MX') : 'Fecha no verificable';
-};
+const dateLabel = (value, timezone) => (value && formatBusinessInstant(value, timezone, {
+  dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23'
+})) || 'Fecha no verificable';
 const shown = (value) => value === null || value === undefined || value === ''
   ? 'No registrado' : String(value);
 
-export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdentity }) {
-  const [draft, setDraft] = useState(initialFilters);
+export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdentity, timezone: configuredTimezone }) {
+  const timezone = isValidTimeZone(configuredTimezone) ? configuredTimezone : 'UTC';
+  const [draft, setDraft] = useState(() => initialFilters(timezone));
   const [applied, setApplied] = useState(draft);
   const [cursors, setCursors] = useState([null]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -54,7 +50,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
     setError('');
     setResult(null);
     getSanitaryRegisterPage({
-      licenseKey, cloud, actorIdentity, filters: applied, cursor, limit: SANITARY_PAGE_SIZE
+      licenseKey, cloud, actorIdentity, timezone, filters: applied, cursor, limit: SANITARY_PAGE_SIZE
     }).then((page) => {
       if (active) setResult(page);
     }).catch((cause) => {
@@ -63,7 +59,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [licenseKey, cloud, actorIdentity, applied, cursor, canRead]);
+  }, [licenseKey, cloud, actorIdentity, timezone, applied, cursor, canRead]);
 
   const summary = useMemo(() => {
     const rows = result?.rows || [];
@@ -87,7 +83,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
     setExporting(true);
     setError('');
     try {
-      const rows = await collectSanitaryExport({ licenseKey, cloud, actorIdentity, filters: applied });
+      const rows = await collectSanitaryExport({ licenseKey, cloud, actorIdentity, timezone, filters: applied });
       const csv = buildSanitaryCsv(rows);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -158,6 +154,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
 
       <p className="sanitary-source">
         Fuente: {cloud ? 'PRO/Nube autorizada' : 'Solo este dispositivo (Local)'}.
+        {' '}Zona horaria de consulta y visualización: {timezone}. El CSV conserva la zona o el desfase de cada timestamp.
         {' '}La cobertura histórica puede ser parcial; los saldos físicos no se calculan desde este reporte.
         {' '}CSV limitado a {SANITARY_EXPORT_LIMIT} filas; si se supera, se solicitará reducir el periodo.
       </p>
@@ -184,7 +181,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                   <summary>
                     <span className="sanitary-item-main">
                       <strong>{shown(row.productName)}</strong>
-                      <small>{dateLabel(row.occurredAt)} · {LABELS[row.movementType] || row.movementType}</small>
+                      <small>{dateLabel(row.occurredAt, timezone)} · {LABELS[row.movementType] || row.movementType}</small>
                     </span>
                     <span className="sanitary-item-end">
                       <strong>{shown(row.quantity)} {row.unit || 'unidad no indicada'}</strong>
@@ -195,7 +192,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                     <div><dt>Operación</dt><dd>{shown(row.operationId || row.id)}</dd></div>
                     <div><dt>Lote</dt><dd>{shown(row.batchNumber || row.batchId)}</dd></div>
                     <div><dt>Caducidad</dt><dd>{shown(row.expiryDate)}</dd></div>
-                    {row.receiptAt && <div><dt>Recepción declarada</dt><dd>{dateLabel(row.receiptAt)}</dd></div>}
+                    {row.receiptAt && <div><dt>Recepción declarada</dt><dd>{dateLabel(row.receiptAt, timezone)}</dd></div>}
                     <div><dt>Comprobante / receta</dt><dd>{shown(row.documentReference)}</dd></div>
                     <div><dt>Venta</dt><dd>{shown(row.saleId)}</dd></div>
                     <div><dt>Responsable</dt><dd>{shown(row.actor)}</dd></div>

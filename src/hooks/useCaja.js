@@ -33,6 +33,10 @@ import {
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
 const CACHE_TTL_MS = 5000;
 
+const matchesCashScope = (left, right) => left?.licenseKey === right?.licenseKey
+  && left?.actor?.actorKey === right?.actor?.actorKey
+  && left?.cloudEnabled === right?.cloudEnabled;
+
 const isOpenCashSession = (cashSession) => (
   cashSession?.estado === 'abierta' || cashSession?.status === 'open'
 );
@@ -231,9 +235,11 @@ export function useCaja({ executionScope = null } = {}) {
     if (!mountedRef.current) return;
 
     const result = normalizeRepositoryResult(rawResult);
-    const previous = lastCashStateRef.current;
+    const currentMode = cashRepository.getMode();
+    const previous = matchesCashScope(lastCashStateRef.current.mode, currentMode)
+      ? lastCashStateRef.current : null;
     const isNetworkUnavailable = result.networkUnavailable;
-    const displayResult = isNetworkUnavailable
+    const displayResult = isNetworkUnavailable && previous
       ? {
         ...result,
         cashSession: result.cashSession || previous.cashSession,
@@ -263,7 +269,6 @@ export function useCaja({ executionScope = null } = {}) {
     const history = (displayResult.cashSessions || [])
       .filter(Boolean)
       .filter((cashSession) => !current || cashSession.id !== current.id);
-    const currentMode = cashRepository.getMode();
     const nextReadOnly = Boolean(
       displayResult.readOnly
       || (currentMode.cloudEnabled && candidateSessionMismatch)
@@ -363,7 +368,8 @@ export function useCaja({ executionScope = null } = {}) {
 
   const buildNetworkFallbackResult = useCallback(() => {
     const mode = cashRepository.getMode();
-    const previous = lastCashStateRef.current;
+    const previous = matchesCashScope(lastCashStateRef.current.mode, mode)
+      ? lastCashStateRef.current : {};
     return {
       success: true,
       cashSession: previous.cashSession,
@@ -453,6 +459,9 @@ export function useCaja({ executionScope = null } = {}) {
 
         if (sequence >= lastAppliedSequenceRef.current) {
           Logger.error('Error al cargar estado de caja:', loadError);
+          setCashMode((mode) => mode.cloudEnabled
+            ? { ...mode, readOnly: true, stateKnown: false, networkUnavailable: false }
+            : mode);
           setError(loadError.message || 'Error al cargar la caja.');
           setEstadoCaja('error');
         }
@@ -514,6 +523,9 @@ export function useCaja({ executionScope = null } = {}) {
       const offlineSequence = verificationSequenceRef.current + 1;
       verificationSequenceRef.current = offlineSequence;
       lastAppliedSequenceRef.current = offlineSequence;
+      verificationInFlightRef.current = null;
+      setIsLoading(false);
+      setIsRetrying(false);
       applyCashState(buildNetworkFallbackResult());
     };
     const refresh = event => {
@@ -558,6 +570,7 @@ export function useCaja({ executionScope = null } = {}) {
     setCashActor(mode.actor);
     const verificationUnknown = mode.cloudEnabled && (
       !mode.online
+      || !matchesCashScope(mode, cashMode)
       || cashMode.readOnly
       || cashMode.stateKnown === false
       || cashMode.networkUnavailable

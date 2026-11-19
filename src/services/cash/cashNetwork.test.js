@@ -12,6 +12,7 @@ describe('cash network recovery classification', () => {
     ['Failed to fetch', new TypeError('Failed to fetch')],
     ['generic TypeError transport', new TypeError('Opaque browser transport failure')],
     ['NetworkError', new Error('NetworkError when attempting to fetch resource')],
+    ['read timeout', Object.assign(new Error('Cash read deadline'), { name: 'TimeoutError' })],
     ['408', Object.assign(new Error('Request timeout'), { status: 408 })],
     ['429', Object.assign(new Error('Too many requests'), { status: 429 })],
     ['5xx', Object.assign(new Error('Bad gateway'), { status: 503 })]
@@ -50,6 +51,7 @@ describe('cash network recovery classification', () => {
   });
 
   it('does not reinterpret a station or authorization error as a network error', () => {
+    expect(isCashNetworkUnavailableError({ code: 'CLOUD_REQUEST_RESPONSE_STALE', reason: 'actor_changed' })).toBe(false);
     expect(isCashNetworkUnavailableError(new Error('CASH_SESSION_STATION_MISMATCH'))).toBe(false);
     expect(isCashNetworkUnavailableError(Object.assign(new Error('device denied'), { code: 'DEVICE_NOT_ALLOWED' }))).toBe(false);
   });

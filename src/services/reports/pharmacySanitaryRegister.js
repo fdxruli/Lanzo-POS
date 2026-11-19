@@ -5,6 +5,8 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { canReadSalesReports, canAuditSalesReports, getSalesActorIdentity } from '../auth/salesPermissionPolicy';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 
+import { addBusinessCalendarDays, businessDateKeyToStart } from '../../utils/businessTime';
+
 export const SANITARY_PAGE_SIZE = 50;
 export const SANITARY_EXPORT_LIMIT = 2000;
 const MAX_LOCAL_ROWS_PER_STORE = 3000;
@@ -16,16 +18,15 @@ const ts = (value) => {
   return Number.isFinite(n) ? new Date(n).toISOString() : '';
 };
 
-export const sanitaryFilters = ({ from, to, search = '', movementType = '', batchId = '', traceStatus = '' }) => {
-  const start = new Date(String(from) + 'T00:00:00');
-  const end = new Date(String(to) + 'T00:00:00');
-  end.setDate(end.getDate() + 1);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())
-      || end <= start || end - start > 93 * 86400000 || search.trim().length > 120) {
+export const sanitaryFilters = ({ from, to, search = '', movementType = '', batchId = '', traceStatus = '' }, timezone = 'UTC') => {
+  const start = businessDateKeyToStart(from, timezone);
+  const lastDay = businessDateKeyToStart(to, timezone);
+  const calendarSpan = businessDateKeyToStart(to, 'UTC') - businessDateKeyToStart(from, 'UTC');
+  if (!start || !lastDay || lastDay < start || calendarSpan >= 92 * 86400000 || search.trim().length > 120) {
     throw new Error('Selecciona un periodo válido de hasta 92 días.');
   }
   return {
-    dateFrom: start.toISOString(), dateTo: end.toISOString(),
+    dateFrom: start.toISOString(), dateTo: addBusinessCalendarDays(lastDay, 1, timezone).toISOString(),
     search: search.trim().toLowerCase(), movementType: VALID_MOVEMENTS.has(movementType) ? movementType : '',
     batchId: identity(batchId), traceStatus: VALID_TRACES.has(traceStatus) ? traceStatus : ''
   };
@@ -169,10 +170,10 @@ export const pageSanitaryRows = (rows, f, cursor = null, limit = SANITARY_PAGE_S
 };
 
 export const getSanitaryRegisterPage = async ({
-  licenseKey, cloud, actorIdentity, filters, cursor = null, limit = SANITARY_PAGE_SIZE
+  licenseKey, cloud, actorIdentity, filters, timezone = 'UTC', cursor = null, limit = SANITARY_PAGE_SIZE
 }) => {
   assertSanitaryReader(actorIdentity);
-  const f = sanitaryFilters(filters);
+  const f = sanitaryFilters(filters, timezone);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Límite inválido.');
   let response;
   if (cloud) {
@@ -206,7 +207,7 @@ export const getSanitaryRegisterPage = async ({
 };
 
 export const SANITARY_CSV_HEADERS = [
-  'Fecha UTC', 'Fecha recepción declarada', 'Movimiento', 'Trazabilidad', 'ID operación', 'Medicamento',
+  'Fecha y hora del registro (ISO 8601)', 'Fecha y hora de recepción declarada (ISO 8601)', 'Movimiento', 'Trazabilidad', 'ID operación', 'Medicamento',
   'Origen nombre', 'Sustancia activa histórica', 'Clasificación histórica',
   'Cantidad', 'Unidad', 'Lote ID', 'Lote fabricante', 'Caducidad', 'Fuente caducidad',
   'Comprobante o receta', 'Tipo documento', 'ID receta', 'Venta', 'Línea venta',
@@ -215,7 +216,8 @@ export const SANITARY_CSV_HEADERS = [
 ];
 
 const formulaSafe = (value) => {
-  let cell = value == null ? '' : String(value);
+  let cell = value === null || value === undefined ? '' : String(value);
+  // eslint-disable-next-line no-control-regex -- spreadsheets can skip leading control characters
   if (/^[\s\u0000-\u001f\uFEFF]*[=+\-@]/u.test(cell)) cell = "'" + cell;
   return '"' + cell.replace(/"/g, '""') + '"';
 };

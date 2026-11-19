@@ -11,6 +11,7 @@ import {
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
+import { FINANCIAL_TIMEOUTS } from '../financial/financialTimeout';
 import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
 import {
   isCashNetworkUnavailableError,
@@ -24,15 +25,19 @@ const parseRpcPayload = (data) => {
 };
 
 const invokeCashReadRpc = async (rpcName, args) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FINANCIAL_TIMEOUTS.PREFLIGHT_MS);
   try {
-    const { data, error } = await supabaseClient.rpc(rpcName, args);
+    const { data, error } = await supabaseClient.rpc(rpcName, args).abortSignal(controller.signal);
     if (error) throw error;
     return parseRpcPayload(data);
   } catch (error) {
-    if (isCashNetworkUnavailableError(error)) {
+    if (controller.signal.aborted || isCashNetworkUnavailableError(error)) {
       throw normalizeCashNetworkError(error, { rpcName });
     }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
 };
 

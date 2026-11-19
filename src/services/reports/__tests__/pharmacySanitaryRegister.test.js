@@ -38,6 +38,8 @@ import {
   pageSanitaryRows, buildSanitaryCsv, collectSanitaryExport, getSanitaryRegisterPage
 } from '../pharmacySanitaryRegister';
 
+import { formatBusinessDateTimeInput, formatBusinessInstant, parseBusinessDateTimeInput } from '../../../utils/businessTime';
+
 const filters = { from: '2026-11-10', to: '2026-11-12', search: '',
   movementType: '', batchId: '', traceStatus: '' };
 const actorIdentity = 'admin:admin-1:s1';
@@ -64,6 +66,33 @@ describe('pharmacy sanitary register', () => {
     expect(() => sanitaryFilters({ from: '2026-01-01', to: '2026-11-12' })).toThrow();
     expect(() => sanitaryFilters({ from: '2026-11-12', to: '2026-11-10' })).toThrow();
     expect(sanitaryFilters(filters).dateTo).toBeTruthy();
+  });
+
+  it('uses the Mérida calendar window and preserves the declared instant and expiry in CSV', async () => {
+    const timezone = 'America/Merida';
+    const day = { from: '2026-11-18', to: '2026-11-18' };
+    const declared = parseBusinessDateTimeInput('2026-11-18T20:15', timezone);
+    expect(declared.toISOString()).toBe('2026-11-19T02:15:00.000Z');
+    expect(formatBusinessDateTimeInput(declared, timezone)).toBe('2026-11-18T20:15');
+    const row = item('inventory:merida', {
+      occurredAt: '2026-11-19T02:17:00+00:00', receiptAt: declared.toISOString()
+    });
+    expect(formatBusinessInstant(row.occurredAt, timezone, {
+      dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23'
+    })).toMatch(/18\/11\/26.*20:17/);
+    expect(sanitaryFilters(day, timezone)).toMatchObject({
+      dateFrom: '2026-11-18T06:00:00.000Z', dateTo: '2026-11-19T06:00:00.000Z'
+    });
+    mocks.rpc.mockResolvedValue({ data: { success: true, rows: [row], hasMore: false }, error: null });
+    const rows = await collectSanitaryExport({ licenseKey: 'QA', cloud: true, actorIdentity, filters: day, timezone });
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_get_pharmacy_sanitary_register_v1', expect.objectContaining({
+      p_date_from: '2026-11-18T06:00:00.000Z', p_date_to: '2026-11-19T06:00:00.000Z'
+    }));
+    expect(rows).toEqual([row]);
+    const csv = buildSanitaryCsv(rows);
+    expect(csv).toContain('Fecha y hora de recepción declarada (ISO 8601)');
+    expect(csv).toContain('"2026-11-19T02:17:00+00:00","2026-11-19T02:15:00.000Z"');
+    expect(csv).toContain('"2027-10-30"');
   });
 
   it('retains two legitimate equal-quantity receptions and deduplicates by stable identity only', () => {

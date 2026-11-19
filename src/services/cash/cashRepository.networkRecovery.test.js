@@ -164,6 +164,35 @@ describe('cashRepository network recovery', () => {
     });
   });
 
+  it('rechecks both Cloud reads after synchronization invalidates the station response', async () => {
+    runtime.current.mockResolvedValue({ success: true, actor_key: 'admin:one' });
+    runtime.stationState
+      .mockRejectedValueOnce(Object.assign(new Error('discarded'), {
+        code: 'CLOUD_REQUEST_RESPONSE_STALE', reason: 'generation_changed'
+      }))
+      .mockResolvedValueOnce({
+        success: true, cash_station: { id: STATION_A, device_id: DEVICE_UUID_A },
+        financial_status: 'NO_SESSION'
+      });
+
+    await expect(cashRepository.getCurrentCashSession({ force: true })).resolves.toMatchObject({
+      success: true, readOnly: false, stateKnown: true, networkUnavailable: false
+    });
+    expect(runtime.current).toHaveBeenCalledTimes(2);
+    expect(runtime.stationState).toHaveBeenCalledTimes(2);
+    expect(runtime.current).toHaveBeenLastCalledWith(expect.objectContaining({ force: false }));
+  });
+
+  it('does not retry or reinterpret a server denial', async () => {
+    runtime.current.mockResolvedValue({ success: false, code: 'CASH_PERMISSION_REQUIRED' });
+
+    await expect(cashRepository.getCurrentCashSession({ force: true })).resolves.toMatchObject({
+      success: false, code: 'CASH_PERMISSION_REQUIRED'
+    });
+    expect(runtime.current).toHaveBeenCalledTimes(1);
+    expect(runtime.stationState).not.toHaveBeenCalled();
+  });
+
   it('keeps a real online station mismatch as a financial inconsistency, not a network outage', async () => {
     runtime.current.mockResolvedValue({
       success: true,
