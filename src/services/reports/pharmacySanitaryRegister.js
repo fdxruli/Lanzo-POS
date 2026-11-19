@@ -61,18 +61,14 @@ const hydrateCloudUnits = async (rows) => {
       return {
         ...row,
         unit: cloudUnit,
-        unitSource,
-        ...(row.traceStatus === 'complete' && unitSource !== 'cloud_record'
-          ? { traceStatus: 'incomplete' } : {})
+        unitSource
       };
     }
     const product = catalog.get(identity(row.productId || row.product_id));
     const unitInfo = resolveUnitInfo([], product, true);
     return {
       ...row,
-      ...unitInfo,
-      ...(row.traceStatus === 'complete' && unitInfo.unitSource !== 'cloud_record'
-        ? { traceStatus: 'incomplete' } : {})
+      ...unitInfo
     };
   });
 };

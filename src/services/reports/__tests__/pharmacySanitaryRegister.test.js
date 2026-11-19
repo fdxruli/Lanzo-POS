@@ -95,7 +95,7 @@ describe('pharmacy sanitary register', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('pos_get_pharmacy_sanitary_register_v1', expect.objectContaining({
       p_date_from: '2026-11-18T06:00:00.000Z', p_date_to: '2026-11-19T06:00:00.000Z'
     }));
-    expect(rows[0]).toMatchObject({ id: row.id, unit: null, unitSource: 'cloud_not_returned', traceStatus: 'incomplete' });
+    expect(rows[0]).toMatchObject({ id: row.id, unit: null, unitSource: 'cloud_not_returned', traceStatus: 'complete' });
     const csv = buildSanitaryCsv(rows);
     expect(csv).toContain('Fecha y hora de recepción declarada (ISO 8601)');
     expect(csv).toContain('"2026-11-19T02:17:00+00:00","2026-11-19T02:15:00.000Z"');
@@ -220,15 +220,43 @@ describe('pharmacy sanitary register', () => {
     mocks.rpc.mockResolvedValue({ data: { success: true, rows: [item('cloud-current', { productId: 'p1' })], hasMore: false }, error: null });
     const current = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
     expect(current.rows[0]).toMatchObject({
-      unit: 'frasco', unitSource: 'current_catalog', traceStatus: 'incomplete'
+      unit: 'frasco', unitSource: 'current_catalog', traceStatus: 'complete'
     });
     expect(sanitaryIncidences(current.rows[0])).toContain('Unidad del catálogo actual, no dato histórico');
+    expect(current.rows.filter((row) => row.traceStatus !== 'complete'
+      || sanitaryIncidences(row).length > 0)).toHaveLength(1);
 
     mocks.stores.menu = [];
     mocks.rpc.mockResolvedValue({ data: { success: true, rows: [item('cloud-missing')], hasMore: false }, error: null });
     const missing = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
-    expect(missing.rows[0]).toMatchObject({ unit: null, unitSource: 'cloud_not_returned', traceStatus: 'incomplete' });
+    expect(missing.rows[0]).toMatchObject({ unit: null, unitSource: 'cloud_not_returned', traceStatus: 'complete' });
     expect(sanitaryMissingUnitLabel(missing.rows[0])).toBe('unidad no devuelta por Cloud');
+    expect(sanitaryIncidences(missing.rows[0])).toContain('Unidad histórica no devuelta por la consulta Cloud');
+    expect(missing.rows.filter((row) => row.traceStatus !== 'complete'
+      || sanitaryIncidences(row).length > 0)).toHaveLength(1);
+  });
+
+  it.each(['complete', 'incomplete'])('preserves the Cloud %s filter status when historical unit is absent', async (traceStatus) => {
+    const filtersForStatus = { ...filters, traceStatus };
+    mocks.rpc.mockResolvedValue({ data: {
+      success: true,
+      rows: [item(`cloud-${traceStatus}`, { unit: null, traceStatus })],
+      hasMore: false
+    }, error: null });
+
+    const page = await getSanitaryRegisterPage({
+      cloud: true, licenseKey: 'QA', actorIdentity, filters: filtersForStatus
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_get_pharmacy_sanitary_register_v1', expect.objectContaining({
+      p_trace_status: traceStatus
+    }));
+    expect(page.rows[0]).toMatchObject({
+      traceStatus, unit: null, unitSource: 'cloud_not_returned'
+    });
+    expect(sanitaryIncidences(page.rows[0])).toContain('Unidad histórica no devuelta por la consulta Cloud');
+    expect(page.rows.filter((row) => row.traceStatus !== 'complete'
+      || sanitaryIncidences(row).length > 0)).toHaveLength(1);
   });
 
   it('keeps real local batch allocations as rows under one sale and exports source references', async () => {
