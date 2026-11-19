@@ -293,6 +293,29 @@ describe('useCaja network recovery', () => {
     expect(result.current.networkUnavailable).toBe(false);
   });
 
+  it('reconnects while a forced pre-disconnect read is still pending', async () => {
+    let resolveBeforeDisconnect;
+    runtime.getCurrent.mockResolvedValueOnce(validResult())
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveBeforeDisconnect = resolve; }))
+      .mockResolvedValueOnce(validResult());
+    const { result } = renderHook(() => useCaja());
+    await waitFor(() => expect(result.current.stateKnown).toBe(true));
+
+    act(() => { void result.current.reintentarVerificacion(); });
+    act(() => { window.dispatchEvent(new Event('offline')); });
+    expect(result.current.cajaActual.id).toBe(cachedSession.id);
+    expect(result.current.isCloudCashReadOnly).toBe(true);
+    act(() => { window.dispatchEvent(new Event('online')); });
+    await waitFor(() => expect(result.current.isCloudCashReadOnly).toBe(false));
+
+    await act(async () => { resolveBeforeDisconnect(networkResult()); });
+    expect(result.current.stateKnown).toBe(true);
+    expect(result.current.cajaActual.id).toBe(cachedSession.id);
+    expect(runtime.getCurrent).toHaveBeenCalledTimes(3);
+    expect(runtime.open).not.toHaveBeenCalled();
+    expect(runtime.movement).not.toHaveBeenCalled();
+  });
+
   it('does not send a financial write while state is unknown', async () => {
     runtime.getCurrent.mockResolvedValue(networkResult());
     const { result } = renderHook(() => useCaja());

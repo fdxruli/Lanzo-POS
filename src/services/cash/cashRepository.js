@@ -33,6 +33,7 @@ import {
 import {
   CASH_NETWORK_UNAVAILABLE_CODE,
   CASH_NETWORK_UNAVAILABLE_MESSAGE,
+  CASH_STALE_RESPONSE_CODE,
   isCashNetworkUnavailableError,
   normalizeCashNetworkError
 } from './cashNetwork';
@@ -48,6 +49,8 @@ import {
   getFinancialTimeoutMs,
   withFinancialTimeout
 } from '../financial/financialTimeout';
+
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 import './cashSyncHandler';
 
@@ -990,7 +993,7 @@ export const cashRepository = {
     return cashCloudRepository.invalidateCashReadGenerations?.() || 0;
   },
 
-  async getCurrentCashSession({ force = false } = {}) {
+  async getCurrentCashSession({ force = false, retryInvalidated = true } = {}) {
     const mode = getCashMode();
 
     if (!mode.cloudEnabled) {
@@ -1001,6 +1004,19 @@ export const cashRepository = {
       logCashNetworkUnavailableOnce({ code: CASH_NETWORK_UNAVAILABLE_CODE, message: CASH_NETWORK_UNAVAILABLE_MESSAGE });
       return buildNetworkUnavailableScope(mode);
     }
+
+    const actorGeneration = actorRuntimeController.getState().generation;
+    const isSameScope = () => {
+      const current = getCashMode();
+      return current.licenseKey === mode.licenseKey
+        && current.actor.actorKey === mode.actor.actorKey
+        && actorRuntimeController.getState().generation === actorGeneration;
+    };
+    const assertSameScope = () => {
+      if (!isSameScope()) {
+        throw new CashFinancialError('ACTOR_CONTEXT_STALE', 'La sesión cambió durante la verificación de Caja.');
+      }
+    };
 
     let station = null;
     try {
@@ -1015,6 +1031,7 @@ export const cashRepository = {
     const cashReadCacheContext = buildCashReadCacheContext(mode, station);
 
     try {
+      assertSameScope();
       const response = await cashCloudRepository.getCurrentCashSession({
         licenseKey: mode.licenseKey,
         force,
@@ -1030,6 +1047,7 @@ export const cashRepository = {
         return fail(response.message || 'No se pudo cargar la caja cloud.', response.code || 'CASH_CURRENT_FAILED', { response });
       }
 
+      assertSameScope();
       const stationState = await cashCloudRepository.getCashStationState({
         licenseKey: mode.licenseKey,
         force,
@@ -1052,6 +1070,7 @@ export const cashRepository = {
           { stationState }
         );
       }
+      assertSameScope();
       const stationId = assertCloudResponseStation({ response: stationState, localStation: station });
       const currentSession = assertResponseOwnSession(response, mode, stationId);
       const stationOpenCashSession = assertSessionForStation(stationState?.station_open_cash_session
@@ -1136,6 +1155,7 @@ export const cashRepository = {
         if (!isCashNetworkUnavailableError(snapshotError)) {
           Logger.warn('[Cash] Snapshot posterior a current fallo:', snapshotError);
         }
+        assertSameScope();
         cashSessions = await cashLocalRepository.getHistory({
           actorKey: mode.actor.actorKey,
           staffUserId: mode.actor.staffUserId,
@@ -1145,6 +1165,7 @@ export const cashRepository = {
         });
       }
 
+      assertSameScope();
       cashNetworkWarningActive = false;
       return buildFinancialResult({
         mode,
@@ -1186,6 +1207,16 @@ export const cashRepository = {
         }
       });
     } catch (error) {
+      if (!isSameScope()) {
+        return fail('La sesión cambió durante la verificación de Caja.', 'ACTOR_CONTEXT_STALE');
+      }
+      if (retryInvalidated && getCashMode().online
+        && error?.code === CASH_STALE_RESPONSE_CODE
+        && String(error.reason || '').startsWith('generation_changed')) {
+        // Sync or a concurrent forced read invalidated one leg of the read.
+        // Read the full pair again and join any current requests.
+        return cashRepository.getCurrentCashSession({ retryInvalidated: false });
+      }
       const networkUnavailable = isCashNetworkUnavailableError(error);
       const normalized = networkUnavailable
         ? normalizeCashNetworkError(error, { rpcName: error?.rpcName || 'cash_verification' })
@@ -1214,6 +1245,9 @@ export const cashRepository = {
       const cached = networkUnavailable
         ? await buildNetworkUnavailableScope(mode)
         : await getSafeCachedScope({ ...mode, readOnly: true }, { networkUnavailable: false });
+      if (!isSameScope()) {
+        return fail('La sesión cambió durante la verificación de Caja.', 'ACTOR_CONTEXT_STALE');
+      }
       const safeFinancialCode = networkUnavailable
         ? CASH_NETWORK_UNAVAILABLE_CODE
         : (normalized.code || cached.financialCode || CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE);

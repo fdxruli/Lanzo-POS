@@ -879,7 +879,8 @@ export default function DashboardPage() {
       {activeTab === 'sanitary' && features.activeRubros.includes('farmacia') && hasSalesActorPermission(actorRuntime, 'reports') && canAuditSalesReports(actorRuntime) && (
         <section className="ui-section dashboard-section" aria-label="Registro sanitario">
           <PharmacySanitaryRegister
-            key={salesHistoryContextKey}
+            key={JSON.stringify([salesHistoryContextKey, companyProfile?.timezone])}
+            timezone={companyProfile?.timezone}
             licenseKey={licenseKey}
             cloud={dashboardReportMode.cloudReports}
             actorIdentity={salesActorIdentity}

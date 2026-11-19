@@ -13,7 +13,14 @@ import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAu
 import { isBatchArchived } from '../../services/products/batchStatus';
 import { isBatchExpiredForSale } from '../../services/products/fefoUtils';
 
-const toDateTimeLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+import { formatBusinessDateTimeInput, formatBusinessInstant, isValidTimeZone, parseBusinessDateTimeInput } from '../../utils/businessTime';
+
+const timestampLabel = (value, timezone) => {
+  if (!value || /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return formatBusinessInstant(value, timezone, {
+    dateStyle: 'short', timeStyle: 'short', hourCycle: 'h23'
+  });
+};
 const day = (value) => String(value || '').slice(0, 10);
 const toReceiptView = (item, cloud = false) => ({
   id: item.id,
@@ -30,15 +37,19 @@ const mergeReceiptHistory = (local, cloud) => {
   for (const item of local) merged.set(item.operationId, toReceiptView(item));
   for (const item of cloud) merged.set(item.operationId || item.id, toReceiptView(item, true));
   return [...merged.values()].sort((a, b) =>
-    String(b.receivedAt).localeCompare(String(a.receivedAt)) || String(b.id).localeCompare(String(a.id))
+    (Date.parse(b.receivedAt) - Date.parse(a.receivedAt)) || String(b.id).localeCompare(String(a.id))
   ).slice(0, 5);
 };
 
 export default function InventoryEntryModal({ product, onClose, onCompleted }) {
+  const businessTimezone = useAppStore((state) => state.companyProfile?.timezone);
+  const pharmacy = getPharmacyClassification(product);
+  const medicine = pharmacy.recorded && pharmacy.kind === 'medicine';
+  const receiptTimezone = medicine ? (isValidTimeZone(businessTimezone) ? businessTimezone : 'UTC') : null;
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
   const [supplier, setSupplier] = useState('');
-  const [occurredAt, setOccurredAt] = useState(toDateTimeLocal);
+  const [occurredAt, setOccurredAt] = useState(() => formatBusinessDateTimeInput(new Date(), receiptTimezone));
   const [batches, setBatches] = useState([]);
   const [archivedBatches, setArchivedBatches] = useState([]);
   const [batchId, setBatchId] = useState('');
@@ -55,8 +66,6 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const submittingRef = useRef(false);
   const operationIdRef = useRef(null);
 
-  const pharmacy = getPharmacyClassification(product);
-  const medicine = pharmacy.recorded && pharmacy.kind === 'medicine';
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const cloudMedicine = medicine && isPharmacyCloudAuthorityRequired(licenseDetails);
   const cloudConfirmation = cloudMedicine || isCloudGeneralPharmacyBatchEntry(product, licenseDetails);
@@ -148,7 +157,12 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
       const acquired = acquiredAt || null;
       const batchManufacturer = selectedBatch?.manufacturerBatchId || manufacturerBatchId.trim();
       const batchExpiry = selectedBatch?.expiryDate || expiryDate;
-      const receivedAt = new Date(occurredAt).toISOString();
+      const instant = parseBusinessDateTimeInput(occurredAt, receiptTimezone);
+      if (!instant) {
+        setError('Selecciona una fecha y hora de recepción válida para la zona indicada.');
+        return;
+      }
+      const receivedAt = instant.toISOString();
       const metadata = medicine ? {
         pharmacyReceipt: {
           version: 1, supplier: supplier.trim(), documentType, documentReference: documentReference.trim(),
@@ -246,7 +260,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
               <textarea id="inventory-entry-notes" value={notes}
                 onChange={(event) => setNotes(event.target.value)} rows={2} /></div>
           </>}
-          <div className="form-group"><label htmlFor="inventory-entry-date">Fecha y hora de recepción</label>
+          <div className="form-group"><label htmlFor="inventory-entry-date">Fecha y hora de recepción{medicine && ` (${receiptTimezone})`}</label>
             <input id="inventory-entry-date" type="datetime-local" value={occurredAt}
               onChange={(event) => setOccurredAt(event.target.value)} required /></div>
           {!cloudConfirmation && <div className="ui-alert ui-alert--info">
@@ -260,14 +274,18 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
           {cloudConfirmation && !legacyReview && <div role="status" className="ui-alert ui-alert--info">
             {sending ? 'Enviando al servidor…' : pendingCloudReceipt ? 'Recepción pendiente de verificación.'
               : cloudEvent?.rejectionCode ? inventoryEntryErrors[cloudEvent.rejectionCode] || 'Recepción rechazada. Revisa los datos.'
-                : cloudEvent?.synced ? 'Recepción confirmada.' : 'La recepción se confirmará en Nube.'}
+                : confirmedSubmission
+                  ? medicine
+                    ? <>Recepción confirmada. Fecha y hora declaradas: {timestampLabel(cloudEvent.occurredAt, receiptTimezone) || 'Fecha no verificable'}.</>
+                    : 'Recepción confirmada.'
+                  : 'La recepción se confirmará en Nube.'}
           </div>}
           {medicine && <section aria-label="Últimas recepciones documentadas">
             <h4>Últimas recepciones documentadas</h4>
             {history.length === 0 && <small>No hay recepciones documentadas recuperadas.</small>}
             {history.map((item) => (
               <p key={item.operationId}>
-                {day(item.receivedAt)} · +{item.quantity} {unit} ·
+                {timestampLabel(item.receivedAt, receiptTimezone) || 'Fecha no verificable'} · +{item.quantity} {unit} ·
                 {' '}{item.receipt?.manufacturerBatchId || 'Lote no disponible'} ·
                 {' '}{item.receipt?.supplier || 'Proveedor no disponible'} ·
                 {' '}{item.receipt?.documentType || 'Documento'} {item.receipt?.documentReference || 'sin referencia'} ·

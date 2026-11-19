@@ -106,7 +106,9 @@ const loadCashSessionAgeAttention = ({
         return snapshot;
       }
 
-      const result = await cashRepository.getCurrentCashSession({ force: true });
+      // This read already bypasses cache. Join Caja's live verification instead
+      // of invalidating it when both listeners receive the same refresh event.
+      const result = await cashRepository.getCurrentCashSession();
       if (!isCurrent()) return snapshot;
 
       const sessions = getConfirmedOpenCashSessions({

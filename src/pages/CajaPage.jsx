@@ -689,7 +689,7 @@ export default function CajaPage() {
       }
 
       let backupSummary = 'No se completó el respaldo automático.';
-      let backupWarning = false;
+      let backupWarning = true;
       try {
         const hasValidDriveSession = Boolean(
           isDriveConnected
@@ -710,6 +710,7 @@ export default function CajaPage() {
 
         if (backupResult.success === true) {
           showBackupPerformanceWarning(backupResult);
+          backupWarning = false;
           backupSummary = 'Respaldo local completado.';
 
           if (hasValidDriveSession) {

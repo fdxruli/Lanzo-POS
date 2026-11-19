@@ -76,6 +76,9 @@ export const isCashNetworkUnavailableError = (error) => {
 
   return getErrorChain(error).some((candidate) => {
     if (candidate?.code === CASH_STALE_RESPONSE_CODE
+      && String(candidate?.reason || '').startsWith('actor_changed')) return false;
+    if (candidate?.name === 'TimeoutError'
+      || candidate?.code === CASH_STALE_RESPONSE_CODE
       || candidate?.origin === 'stale/discarded'
       || String(candidate?.reason || '').includes('connection_lost')
       || String(candidate?.reason || '').includes('browser_offline')) {
