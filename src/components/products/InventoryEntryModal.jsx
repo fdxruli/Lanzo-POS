@@ -22,23 +22,31 @@ const timestampLabel = (value, timezone) => {
   });
 };
 const day = (value) => String(value || '').slice(0, 10);
-const toReceiptView = (item, cloud = false) => ({
-  id: item.id,
-  operationId: item.operationId || item.id,
-  receivedAt: cloud ? (item.receipt?.receivedAt || item.createdAt) : (item.occurredAt || item.timestamp),
-  quantity: cloud ? item.quantity : item.delta,
-  receipt: cloud ? item.receipt : item.metadata?.pharmacyReceipt,
-  responsible: cloud ? item.responsible : null,
-  status: cloud ? 'Sincronizado en Cloud' : item.syncDisposition === 'local_only'
-    ? 'Guardado local' : item.rejectionCode ? 'Rechazado' : item.synced ? 'Sincronizado' : 'Pendiente de sincronizar'
-});
-const mergeReceiptHistory = (local, cloud) => {
+const toReceiptView = (item, cloud = false) => {
+  const movement = item.synced && !item.rejectionCode && item.syncDisposition === 'cloud_authoritative'
+    ? item.cloudResult?.inventory_movement : null;
+  const receipt = cloud ? item.receipt : movement?.metadata?.pharmacyReceipt || item.metadata?.pharmacyReceipt;
+  return {
+    id: movement?.id || item.id,
+    operationId: item.operationId || item.id,
+    receivedAt: receipt?.receivedAt || (cloud ? item.createdAt : (item.occurredAt || item.timestamp)),
+    quantity: cloud ? item.quantity : movement?.quantity ?? item.delta,
+    receipt,
+    responsible: cloud ? item.responsible : movement?.actor_name,
+    status: cloud ? 'Sincronizado en Cloud' : item.syncDisposition === 'local_only'
+      ? 'Guardado local' : item.rejectionCode ? 'Rechazado' : item.synced
+        ? (item.syncDisposition === 'cloud_authoritative' ? 'Sincronizado en Cloud' : 'Sincronizado')
+        : 'Pendiente de sincronizar'
+  };
+};
+const mergeReceiptHistory = (local, cloud, submittedOperationId) => {
   const merged = new Map();
-  for (const item of local) merged.set(item.operationId, toReceiptView(item));
+  for (const item of local) merged.set(item.operationId || item.id, toReceiptView(item));
   for (const item of cloud) merged.set(item.operationId || item.id, toReceiptView(item, true));
   return [...merged.values()].sort((a, b) =>
     (Date.parse(b.receivedAt) - Date.parse(a.receivedAt)) || String(b.id).localeCompare(String(a.id))
-  ).slice(0, 5);
+  ).filter((item, index) => index < 5 || (item.operationId === submittedOperationId
+    && item.status === 'Sincronizado en Cloud'));
 };
 
 export default function InventoryEntryModal({ product, onClose, onCompleted }) {
@@ -59,8 +67,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const [documentReference, setDocumentReference] = useState('');
   const [acquiredAt, setAcquiredAt] = useState('');
   const [notes, setNotes] = useState('');
-  const [history, setHistory] = useState([]);
-  const [historyError, setHistoryError] = useState('');
+  const [cloudHistory, setCloudHistory] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const submittingRef = useRef(false);
@@ -70,17 +77,36 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const cloudMedicine = medicine && isPharmacyCloudAuthorityRequired(licenseDetails);
   const cloudConfirmation = cloudMedicine || isCloudGeneralPharmacyBatchEntry(product, licenseDetails);
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
-  const cloudEvents = useLiveQuery(() => cloudConfirmation
-    ? db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id)
-      .filter((entry) => entry.type === 'INVENTORY_ENTRY' && (!entry.licenseKey || entry.licenseKey === licenseKey))
-      .sortBy('timestamp')
-    : [], [cloudConfirmation, product.id, licenseKey], []);
+  const productId = product.id;
+  const historyScope = useMemo(() => ({ productId, licenseKey }), [productId, licenseKey]);
+  const observed = useLiveQuery(async () => {
+    if (!medicine && !cloudConfirmation) return null;
+    try {
+      const events = await db.table(STORES.INVENTORY_EVENTS).where('productId').equals(productId)
+        .filter((entry) => entry.type === 'INVENTORY_ENTRY' && (!entry.licenseKey || entry.licenseKey === licenseKey))
+        .sortBy('timestamp');
+      return { scope: historyScope, events };
+    } catch {
+      return { scope: historyScope, events: [], error: 'No se pudo consultar el historial local.' };
+    }
+  }, [medicine, cloudConfirmation, historyScope, productId, licenseKey]);
+  const currentObservation = observed?.scope === historyScope ? observed : null;
+  const loadCloudHistory = medicine && Boolean(currentObservation && licenseKey) && isCloudProductsSyncEnabled(licenseDetails);
+  const localEvents = currentObservation?.events || [];
+  const cloudEvents = cloudConfirmation ? localEvents : [];
   const cloudEvent = cloudEvents.filter((entry) => entry.syncDisposition === 'cloud_authoritative').at(-1);
+  const localReceipts = medicine ? localEvents.filter((entry) => entry.metadata?.pharmacyReceipt) : [];
+  const confirmedOperations = localReceipts
+    .filter((entry) => entry.syncDisposition === 'cloud_authoritative' && entry.synced && !entry.rejectionCode)
+    .map((entry) => entry.operationId).join(' ');
+  const currentCloudHistory = loadCloudHistory && cloudHistory?.scope === historyScope ? cloudHistory : null;
+  const history = mergeReceiptHistory(localReceipts, currentCloudHistory?.receipts || [], operationIdRef.current);
+  const historyError = currentCloudHistory?.error || currentObservation?.error;
   const legacyPending = cloudEvents.find((entry) => entry.syncDisposition !== 'cloud_authoritative'
     && entry.syncDisposition !== 'local_only' && !entry.synced && entry.operationId && entry.metadata?.pharmacyReceipt);
   const legacyReview = cloudMedicine && (Boolean(legacyPending) || cloudEvents.some((entry) => entry.syncDisposition === 'local_only'
     || (entry.syncDisposition !== 'cloud_authoritative' && !entry.synced)));
-  const confirmedSubmission = cloudEvent?.synced && cloudEvent.operationId === operationIdRef.current;
+  const confirmedSubmission = cloudEvent?.synced && !cloudEvent.rejectionCode && cloudEvent.operationId === operationIdRef.current;
   const pendingCloudReceipt = cloudEvent && !cloudEvent.synced && !cloudEvent.rejectionCode;
   const eventToVerify = legacyPending || (pendingCloudReceipt ? cloudEvent : null);
   const sending = saving && cloudConfirmation;
@@ -114,32 +140,30 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         })
         .catch(() => { if (active) setError('No se pudieron consultar los lotes.'); });
     }
-    if (medicine) {
-      let localReceipts = [];
-      let cloudReceipts = [];
-      const refresh = () => { if (active) setHistory(mergeReceiptHistory(localReceipts, cloudReceipts)); };
-      db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id).toArray()
-        .then((events) => {
-          localReceipts = events.filter((item) => item.type === 'INVENTORY_ENTRY' && item.metadata?.pharmacyReceipt);
-          refresh();
-        })
-        .catch(() => { if (active) setHistoryError('No se pudo consultar el historial local.'); });
-      const licenseDetails = useAppStore.getState()?.licenseDetails;
-      const licenseKey = getLicenseKeyFromDetails(licenseDetails);
-      if (licenseKey && isCloudProductsSyncEnabled(licenseDetails)) {
-        productCloudRepository.listPharmacyInventoryReceipts({ licenseKey, productId: product.id, limit: 20 })
-          .then((response) => {
-            if (response?.success !== true || !Array.isArray(response?.receipts)) {
-              throw new Error('PHARMACY_CLOUD_HISTORY_INVALID');
-            }
-            cloudReceipts = response.receipts;
-            refresh();
-          })
-          .catch(() => { if (active) setHistoryError('El historial Cloud no está disponible. Las recepciones locales siguen visibles.'); });
-      }
-    }
     return () => { active = false; };
   }, [batchManaged, medicine, product?.id, productExpirationMode]);
+
+  useEffect(() => {
+    if (!loadCloudHistory) return;
+    let active = true;
+    productCloudRepository.listPharmacyInventoryReceipts({ licenseKey, productId, limit: 20 })
+      .then((response) => {
+        if (!active) return;
+        if (response?.success !== true || !Array.isArray(response?.receipts)) {
+          throw new Error('PHARMACY_CLOUD_HISTORY_INVALID');
+        }
+        setCloudHistory({ scope: historyScope, receipts: response.receipts });
+      })
+      .catch(() => {
+        if (!active) return;
+        setCloudHistory((current) => ({
+          scope: historyScope,
+          receipts: current?.scope === historyScope ? current.receipts : [],
+          error: 'No se pudo actualizar el historial Cloud. Vuelve a abrir el formulario para consultarlo.'
+        }));
+      });
+    return () => { active = false; };
+  }, [loadCloudHistory, licenseKey, productId, historyScope, confirmedOperations]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -181,7 +205,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
         await posSyncOrchestrator.processOutbox('pharmacy_inventory_entry');
         return;
       }
-      if (result?.success) {
+      if (result?.success && !cloudMedicine) {
         try { await onCompleted?.(); } finally { onClose(); }
       }
     } catch (cause) {
@@ -280,7 +304,7 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
                     : 'Recepción confirmada.'
                   : 'La recepción se confirmará en Nube.'}
           </div>}
-          {medicine && <section aria-label="Últimas recepciones documentadas">
+          {medicine && <section aria-label="Últimas recepciones documentadas" style={{ overflowWrap: 'anywhere' }}>
             <h4>Últimas recepciones documentadas</h4>
             {history.length === 0 && <small>No hay recepciones documentadas recuperadas.</small>}
             {history.map((item) => (

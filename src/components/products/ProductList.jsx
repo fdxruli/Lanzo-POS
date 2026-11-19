@@ -614,7 +614,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       )}
 
       <WasteModal show={showWaste} onClose={handleCloseWaste} product={productForWaste} onConfirm={handleWasteConfirmed} />
-      {productForInventoryEntry && <InventoryEntryModal product={productForInventoryEntry} onClose={() => setProductForInventoryEntry(null)} onCompleted={refreshData} />}
+      {productForInventoryEntry && <InventoryEntryModal key={productForInventoryEntry.id} product={productForInventoryEntry} onClose={() => setProductForInventoryEntry(null)} onCompleted={refreshData} />}
     </div>
   );
 }
