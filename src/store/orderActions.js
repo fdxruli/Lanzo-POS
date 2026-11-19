@@ -19,6 +19,7 @@ import {
   compareOrderVersions,
   getNextPersistedOrderVersion
 } from '../services/orders/orderVersioning';
+import { isSellablePharmacyBatch } from '../services/products/batchStatus';
 import { isCommercialVariantProduct } from '../services/products/commercialVariants';
 import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
@@ -134,6 +135,17 @@ export const getInventoryReservationKey = (item) => {
 // Zero/negative legacy lines are not sellable and cannot offset real claims.
 export const getInventoryClaimQuantity = (value) => Math.max(0, Number(value) || 0);
 
+const usesAutomaticPharmacyBatches = (product) => (
+  (product.rubroContext === 'farmacia' || product.metadata?.pharmacy?.kind === 'medicine'
+    || product.metadata?.pharmacy?.kind === 'other')
+  && product.trackStock !== false
+  && (!product.saleType || product.saleType === 'unit')
+  && product.conversionFactor?.enabled !== true
+  && !product.recipe?.length
+  && !product.selectedModifiers?.length
+  && !isCommercialVariantProduct(product)
+);
+
 const getSessionReservedQuantity = (activeOrders = new Map(), candidate, excludeOrderId = null) => {
   const reservationKey = getInventoryReservationKey(candidate);
   if (!reservationKey) return 0;
@@ -158,7 +170,8 @@ export const getCartAvailableStock = (product, batch = null) => {
   if (product?.batchId && (!batch || batch.id !== product.batchId
     || batch.productId !== (getCartProductId(product) || product.id)
     || batch.isActive !== true || batch.status === 'inactive'
-    || batch.deletedAt || batch.deletedTimestamp)) return null;
+    || batch.deletedAt || batch.deletedTimestamp
+    || (product.automaticPharmacyBatch && !isSellablePharmacyBatch(batch, product)))) return null;
   if (!product?.batchId && product?.batchManagement?.enabled) return null;
   const snapshot = getOperationalStockSnapshot(product?.batchId ? batch : product);
   return snapshot.valid && snapshot.physicalStock >= 0
@@ -304,7 +317,7 @@ const getCurrentOrder = (state) => (
 );
 
 export const createOrderActions = (set, get) => ({
-      addSmartItem: async (product, orderId = get().currentOrderId) => {
+      addSmartItem: async (product, orderId = get().currentOrderId, preferredBatchId = null) => {
         assertRestaurantCloudTableEditable(get().activeOrders.get(orderId));
         const requiresBatchResolution = (
           product?.batchManagement?.enabled &&
@@ -329,10 +342,20 @@ export const createOrderActions = (set, get) => ({
             .where('productId')
             .equals(product.id)
             .toArray();
+          const order = get().activeOrders.get(orderId);
+          const automaticPharmacyBatch = order && !order.isSaved && order.origin !== 'ecommerce'
+            && order.orderType !== TABLE_ORDER_TYPE && usesAutomaticPharmacyBatches(product);
           const sellableBatches = allBatches.filter((batch) => batch.isActive === true
             && Number(batch.stock) > 0
-            && getPosStockState(batch, { tracked: true }).kind === 'available');
+            && getPosStockState(batch, { tracked: true }).kind === 'available'
+            && (!automaticPharmacyBatch || isSellablePharmacyBatch(batch, product)));
           const sortedBatches = getSortedBatchesForProduct(sellableBatches, product);
+          if (automaticPharmacyBatch && !sortedBatches.length) {
+            return {
+              success: false, code: 'POS_INVENTORY_BLOCKED',
+              stockState: { blocked: true, kind: 'unknown' }
+            };
+          }
           if (allBatches.length > 0 && sortedBatches.length === 0) {
             const candidate = allBatches.find((batch) => batch.isActive === true) || allBatches[0];
             const observed = candidate.isActive === true
@@ -360,6 +383,21 @@ export const createOrderActions = (set, get) => ({
               batch => getAvailableStock(batch) > minimumBulkBatchStock
             );
             if (!validBatch) validBatch = sortedBatches[sortedBatches.length - 1];
+          } else if (automaticPharmacyBatch) {
+            const state = get();
+            const items = state.activeOrders.get(orderId)?.items || [];
+            const canAddToBatch = (batch) => {
+              const candidate = { ...product, batchId: batch.id };
+              const available = getSessionAvailableStock(state, candidate, orderId, batch);
+              const claimed = items.reduce((sum, item) => item.batchId === batch.id
+                ? sum + getInventoryClaimQuantity(item.quantity) : sum, 0);
+              return available !== null && normalizeStock(claimed + 1) <= available;
+            };
+            const preferredBatch = sortedBatches.find((batch) => batch.id === preferredBatchId);
+            validBatch = preferredBatch && canAddToBatch(preferredBatch)
+              ? preferredBatch : sortedBatches.find(canAddToBatch);
+            // Let the existing reservation guard report the conflict when every lot is full.
+            validBatch ||= sortedBatches[0];
           } else {
             validBatch = sortedBatches[0];
           }
@@ -375,6 +413,12 @@ export const createOrderActions = (set, get) => ({
             ? {
                 ...product,
                 batchId: validBatch.id,
+                ...(automaticPharmacyBatch ? {
+                  automaticPharmacyBatch: true,
+                  batchSku: validBatch.sku || null,
+                  manufacturerBatchId: validBatch.manufacturerBatchId || null,
+                  batchExpiryDate: validBatch.expiryDate || null
+                } : {}),
                 price: salePrice,
                 cost: validBatch.cost,
                 stock: getAvailableStock(validBatch),
@@ -526,6 +570,7 @@ export const createOrderActions = (set, get) => ({
             updatedOrder[existingItemIndex] = {
               ...currentItem,
               productId: getCartProductId(currentItem) ?? productForCart.productId,
+              ...(product.automaticPharmacyBatch ? { automaticPharmacyBatch: true } : {}),
               quantity: newQuantity,
               price: finalPrice,
               // Refresh the provisional snapshot after a cancellation or inventory sync.
@@ -681,6 +726,17 @@ export const createOrderActions = (set, get) => ({
       },
 
       updateItemQuantity: (lineId, newQuantity, orderId = get().currentOrderId) => {
+        const order = get().activeOrders.get(orderId);
+        const item = order?.items?.find((candidate, index) => isCartLineMatch(candidate, lineId, index));
+        if (item?.automaticPharmacyBatch && !order.isSaved && order.origin !== 'ecommerce'
+          && newQuantity === Number(item.quantity) + 1) {
+          // A new lot receives its own line identity and the original catalog price.
+          return get().addSmartItem({
+            ...item, id: getCartProductId(item), price: item.originalPrice ?? item.price,
+            lineId: undefined, uniqueLineId: undefined, cartItemId: undefined, orderItemId: undefined, batchId: undefined,
+            discount: undefined, discountAmount: undefined
+          }, orderId, item.batchId);
+        }
         return get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           return order.map((item, index) => {

@@ -18,8 +18,8 @@ vi.mock('../../services/sales/inventoryFlow', () => ({
 }));
 vi.mock('../../services/sales/financialStats', () => ({ SALE_STATUS: {} }));
 
-const batchTable = (batches) => ({
-  where: () => ({ equals: () => ({ toArray: async () => batches }) })
+const batchTable = (batches, productId) => ({
+  where: () => ({ equals: () => ({ toArray: async () => batches.map((batch) => ({ productId, ...batch })) }) })
 });
 
 const addWithBatches = async (product, batches) => {
@@ -31,7 +31,7 @@ const addWithBatches = async (product, batches) => {
   };
   const set = (updater) => { state = { ...state, ...(typeof updater === 'function' ? updater(state) : updater) }; };
   const get = () => ({ ...state, addItem: added });
-  db.table.mockReturnValue(batchTable(batches));
+  db.table.mockReturnValue(batchTable(batches, product.id));
 
   await createOrderActions(set, get).addSmartItem(product);
   return added.mock.calls[0][0];
@@ -46,7 +46,7 @@ describe('addSmartItem batch pricing', () => {
   it('uses parent price and selected FEFO batch cost for a physical pharmacy batch', async () => {
     const item = await addWithBatches(
       { id: 'med-1', price: 23, hasVariants: false, rubroContext: 'farmacia', batchManagement: { enabled: true } },
-      [{ id: 'batch-a', price: 25, cost: 12, stock: 10, isActive: true, expiryDate: '2026-10-15' }]
+      [{ id: 'batch-a', price: 25, cost: 12, stock: 10, isActive: true, expiryDate: '2099-10-15' }]
     );
 
     expect(item).toMatchObject({ price: 23, originalPrice: 23, cost: 12, batchId: 'batch-a', isVariant: false });
@@ -55,7 +55,7 @@ describe('addSmartItem batch pricing', () => {
   it('keeps the nearest FEFO batch while preserving the product sale price', async () => {
     const item = await addWithBatches(
       { id: 'med-1', price: 23, hasVariants: false, rubroContext: 'farmacia', batchManagement: { enabled: true } },
-      [{ id: 'batch-b', price: 27, cost: 13, stock: 10, isActive: true, expiryDate: '2026-12-01' }, { id: 'batch-a', price: 25, cost: 12, stock: 10, isActive: true, expiryDate: '2026-09-20' }]
+      [{ id: 'batch-b', price: 27, cost: 13, stock: 10, isActive: true, expiryDate: '2099-12-01' }, { id: 'batch-a', price: 25, cost: 12, stock: 10, isActive: true, expiryDate: '2099-09-20' }]
     );
 
     expect(item).toMatchObject({ price: 23, cost: 12, batchId: 'batch-a', isVariant: false });

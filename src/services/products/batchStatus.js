@@ -1,3 +1,5 @@
+import { getBatchExpiryStatus } from '../../utils/dateUtils';
+
 const ARCHIVED_STATUSES = new Set(['archived', 'deleted', 'removed', 'expired']);
 
 export const isBatchArchived = (batch = {}) => {
@@ -22,4 +24,12 @@ export const isBatchArchived = (batch = {}) => {
   const stock = hasStock ? Number(batch.stock) : Number.NaN;
   const inactive = batch.isActive === false || status === 'inactive';
   return inactive && (!Number.isFinite(stock) || stock !== 0);
+};
+
+export const isSellablePharmacyBatch = (batch, product, now) => {
+  if (batch?.isActive !== true || isBatchArchived(batch) || batch.trackStock === false) return false;
+  const expiryStatus = getBatchExpiryStatus(batch, now);
+  const mode = product.expirationMode ?? product.expiration_mode;
+  return expiryStatus === 'valid' || expiryStatus === 'expires_today'
+    || (expiryStatus === 'missing' && mode !== 'STRICT');
 };

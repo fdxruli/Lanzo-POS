@@ -625,6 +625,9 @@ export default function OrderSummary({
 
                     <div className="order-item-price">
                       {displayQuantity} {saleUnitLabel} × ${item.price.toFixed(2)}/{saleUnitLabel}
+                      {item.automaticPharmacyBatch && item.batchId && (
+                        <> · Lote {item.manufacturerBatchId || item.batchSku || item.batchId}</>
+                      )}
                     </div>
                     {isFractioned && <div className="order-item-sale-mode">Fraccionado · Venta por {saleUnitLabel}</div>}
 

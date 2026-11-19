@@ -41,6 +41,12 @@ const isPharmacyMedicine = (product) => {
   const pharmacy = getPharmacyClassification(product);
   return pharmacy.recorded && pharmacy.kind === 'medicine';
 };
+export const isCloudGeneralPharmacyBatchEntry = (product, licenseDetails) => (
+  usesBatches(product) && product.trackStock !== false
+  && getPharmacyClassification(product).kind === 'other'
+  && isPharmacyCloudAuthorityRequired(licenseDetails)
+);
+
 const expiryDay = (value) => {
   const day = String(value || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
@@ -214,7 +220,9 @@ export const addInventoryEntry = async ({
     }
 
     const cloudReceipt = pharmacyMedicine && cloudProducts;
-    if (cloudReceipt) {
+    const cloudGeneralEntry = isCloudGeneralPharmacyBatchEntry(product, licenseDetails);
+    const cloudConfirmation = cloudReceipt || cloudGeneralEntry;
+    if (cloudConfirmation) {
       if (!resolvedLicenseKey || resolvedLicenseKey !== getLicenseKeyFromDetails(licenseDetails)
         || localOnly || !isCloudProductsSyncEnabled(licenseDetails)) {
         throw domainError('PHARMACY_CLOUD_SESSION_REQUIRED');
@@ -222,19 +230,27 @@ export const addInventoryEntry = async ({
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         throw domainError('PHARMACY_CLOUD_OFFLINE');
       }
-      const pending = await db.table(POS_SYNC_STORES.OUTBOX)
-        .where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
-        .filter((row) => row.licenseKey === resolvedLicenseKey && row.entityId === productId
-          && row.status !== OUTBOX_STATUS.SYNCED).first();
-      const localHistory = await eventTable.where('productId').equals(productId)
-        .filter((event) => event.type === 'INVENTORY_ENTRY'
-          && (!event.licenseKey || event.licenseKey === resolvedLicenseKey)
-          && (event.syncDisposition === 'local_only'
-            || (event.syncDisposition !== 'cloud_authoritative' && !event.synced))).first();
-      if (localHistory || (pending && !pending.payload?.cloudPharmacyReceipt)) {
-        throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
+      if (cloudReceipt) {
+        const pending = await db.table(POS_SYNC_STORES.OUTBOX)
+          .where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
+          .filter((row) => row.licenseKey === resolvedLicenseKey && row.entityId === productId
+            && row.status !== OUTBOX_STATUS.SYNCED).first();
+        const localHistory = await eventTable.where('productId').equals(productId)
+          .filter((event) => event.type === 'INVENTORY_ENTRY'
+            && (!event.licenseKey || event.licenseKey === resolvedLicenseKey)
+            && (event.syncDisposition === 'local_only'
+              || (event.syncDisposition !== 'cloud_authoritative' && !event.synced))).first();
+        if (localHistory || (pending && !pending.payload?.cloudPharmacyReceipt)) {
+          throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
+        }
+        if (pending) throw domainError('PHARMACY_RECEIPT_PENDING');
+      } else {
+        const pending = await eventTable.where('productId').equals(productId)
+          .filter((event) => event.type === 'INVENTORY_ENTRY' && !event.synced && !event.rejectionCode
+            && (!event.licenseKey || event.licenseKey === resolvedLicenseKey)
+            && ['cloud_authoritative', 'actor_bound'].includes(event.syncDisposition)).first();
+        if (pending) throw domainError('PHARMACY_RECEIPT_PENDING');
       }
-      if (pending) throw domainError('PHARMACY_RECEIPT_PENDING');
     }
 
     const timestamp = nowIso();
@@ -303,18 +319,18 @@ export const addInventoryEntry = async ({
         status: 'active',
         updatedAt: timestamp
       };
-      if (!cloudReceipt) {
+      if (!cloudConfirmation) {
         assertInventoryMutationCurrent(actorHandle);
         await batchTable.put(updatedBatch);
       }
       const projected = buildProjection({ product, batches: [...batches.filter((batch) => batch.id !== updatedBatch.id), updatedBatch], timestamp });
       assertInventoryMutationCurrent(actorHandle);
-      if (!cloudReceipt) await productTable.put(projected);
+      if (!cloudConfirmation) await productTable.put(projected);
       parent = projected;
       previousStock = asNumber(product.stock, 0);
       newStock = projected.stock;
       batchResult = { id: updatedBatch.id, previousStock: previousBatchStock, newStock: updatedBatch.stock };
-      if (!cloudReceipt) entry.batchId = updatedBatch.id;
+      if (!cloudConfirmation) entry.batchId = updatedBatch.id;
     } else {
       const updatedProduct = { ...product, stock: newStock, updatedAt: timestamp };
       assertInventoryMutationCurrent(actorHandle);
@@ -325,10 +341,10 @@ export const addInventoryEntry = async ({
     const result = {
       success: true,
       operationId: resolvedOperationId,
-      product: cloudReceipt ? product : parent,
-      batch: cloudReceipt ? null : batchResult,
+      product: cloudConfirmation ? product : parent,
+      batch: cloudConfirmation ? null : batchResult,
       previousStock,
-      newStock: cloudReceipt ? previousStock : newStock,
+      newStock: cloudConfirmation ? previousStock : newStock,
       pending: !localOnly
     };
     assertInventoryMutationCurrent(actorHandle);
@@ -342,7 +358,7 @@ export const addInventoryEntry = async ({
       requestHash,
       synced: localOnly,
       syncedAt: localOnly ? timestamp : null,
-      syncDisposition: cloudReceipt ? 'cloud_authoritative' : localOnly ? 'local_only' : 'actor_bound',
+      syncDisposition: cloudConfirmation ? 'cloud_authoritative' : localOnly ? 'local_only' : 'actor_bound',
       result
     });
 
@@ -351,7 +367,11 @@ export const addInventoryEntry = async ({
       await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
         licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
         operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
-        payload: cloudReceipt ? { entry, cloudPharmacyReceipt: true } : { entry }, idempotencyKey: resolvedOperationId,
+        payload: {
+          entry,
+          ...(cloudReceipt ? { cloudPharmacyReceipt: true } : {}),
+          ...(cloudGeneralEntry ? { cloudInventoryEntry: true } : {})
+        }, idempotencyKey: resolvedOperationId,
         actorSensitive: true,
         originActor: actorOriginFromHandle(actorHandle),
         metadata: { source: 'inventoryEntryService', operationId: resolvedOperationId }
@@ -390,7 +410,21 @@ export const assertCloudPharmacyInventoryReconciled = async (productIds) => {
     inventoryEntryErrors.PHARMACY_INVENTORY_REVIEW_REQUIRED);
 };
 
-export const retryCloudPharmacyReceipt = async (operationId) => {
+export const assertNoPendingGeneralPharmacyStock = async (products) => {
+  const details = useAppStore.getState()?.licenseDetails;
+  const ids = [...new Set(products.filter((product) => isCloudGeneralPharmacyBatchEntry(product, details))
+    .map((product) => product.id))];
+  if (!ids.length) return;
+  const licenseKey = getLicenseKeyFromDetails(details);
+  const pending = await db.table(STORES.INVENTORY_EVENTS).where('productId').anyOf(ids)
+    .filter((event) => event.type === 'INVENTORY_ENTRY' && !event.synced
+      && event.syncDisposition === 'actor_bound' && (!event.licenseKey || event.licenseKey === licenseKey))
+    .first();
+  if (pending) throw domainError('PHARMACY_GENERAL_STOCK_SYNC_PENDING',
+    inventoryEntryErrors.PHARMACY_GENERAL_STOCK_SYNC_PENDING);
+};
+
+export const retryCloudInventoryEntry = async (operationId) => {
   const licenseKey = getRuntimeLicenseKey();
   const handle = captureProductInventoryMutation({ inventory: true });
   await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'pharmacy_receipt_retry' });
@@ -399,7 +433,8 @@ export const retryCloudPharmacyReceipt = async (operationId) => {
     assertInventoryMutationCurrent(handle);
     const row = await outbox.where('entityType').equals(SYNC_ENTITY_TYPES.INVENTORY_ENTRY)
       .filter((record) => record.licenseKey === licenseKey && record.idempotencyKey === operationId
-        && (record.payload?.cloudPharmacyReceipt === true || record.payload?.entry?.metadata?.pharmacyReceipt)).first();
+        && (record.payload?.cloudPharmacyReceipt === true || record.payload?.cloudInventoryEntry === true
+          || record.payload?.entry?.metadata?.pharmacyReceipt)).first();
     if (!row) throw domainError('PHARMACY_INVENTORY_REVIEW_REQUIRED');
     const staleActorConflict = row.status === OUTBOX_STATUS.CONFLICT
       && row.conflictPayload?.code === 'ACTOR_CONTEXT_STALE';
@@ -444,9 +479,10 @@ export const inventoryEntryErrors = Object.freeze({
   PHARMACY_EXISTING_BATCH_REQUIRED: 'Ya existe este lote de fabricante: selecciónalo para registrar otra recepción.',
   PHARMACY_ARCHIVED_BATCH_EXISTS: 'Este lote de fabricante ya existe archivado. Revisa su estado en Lotes / historial antes de registrar una recepción; no crees otro lote con la misma identidad.',
   PHARMACY_EXPIRED_BATCH: 'No se pueden recibir lotes vencidos como existencia vendible.',
-  PHARMACY_CLOUD_SESSION_REQUIRED: 'Inicia una sesión autorizada para recibir medicamentos en Nube.',
+  PHARMACY_CLOUD_SESSION_REQUIRED: 'Inicia una sesión autorizada para registrar existencias en Nube.',
   PHARMACY_CLOUD_OFFLINE: 'Conéctate a internet para confirmar la recepción.',
   PHARMACY_INVENTORY_REVIEW_REQUIRED: 'El inventario de este medicamento requiere revisión. Hay recepciones anteriores sin conciliar.',
+  PHARMACY_GENERAL_STOCK_SYNC_PENDING: 'Hay una entrada de inventario pendiente de confirmar en Nube. Espera a que se sincronice antes de cobrar este producto.',
   PHARMACY_RECEIPT_PENDING: 'Hay una recepción pendiente de verificar. Consulta su estado antes de confirmar otra.',
   BATCH_NOT_FOUND: 'El lote seleccionado no está disponible.'
 });
