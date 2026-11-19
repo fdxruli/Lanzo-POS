@@ -161,10 +161,11 @@ export const calculateSessionTotals = (sales = []) => {
     const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
     if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
-    const method = String(sale.paymentMethod || sale.payment_method || '').toLowerCase();
+    const rawMethod = String(sale.paymentMethod || sale.payment_method || '').trim().toLowerCase();
+    const method = normalizeRestaurantSplitPaymentMethod(rawMethod);
     // A delivered layaway is a commercial sale recognition, not another cash
     // receipt. Its advances were already recorded when they were paid.
-    if (sale.isLayawayConversion === true || method === 'layaway_completed') continue;
+    if (sale.isLayawayConversion === true || rawMethod === 'layaway_completed') continue;
     const paymentAmount = sale.paymentData?.amount;
     const explicitPayments = getExplicitSalePaymentRows(sale);
     if (explicitPayments !== null) {
@@ -172,19 +173,23 @@ export const calculateSessionTotals = (sales = []) => {
         if (!isRestaurantSplitCashPayment(payment)) return sum;
         return Money.add(sum, payment?.amount ?? payment?.total ?? 0);
       }, Money.init(0));
-      if (normalizeRestaurantSplitPaymentMethod(method) === 'credit') {
+      const hasCreditPayment = explicitPayments.some((payment) => (
+        normalizeRestaurantSplitPaymentMethod(
+          payment?.method || payment?.paymentMethod || payment?.payment_method
+        ) === 'credit'
+      ));
+      if (method === 'credit' || hasCreditPayment) {
         abonosFiado = Money.add(abonosFiado, cashApplied);
       } else {
         contado = Money.add(contado, cashApplied);
       }
       continue;
     }
-    const isCash = method === 'efectivo' || method === 'cash' ||
-      (!method && Number(paymentAmount) > 0);
+    const isCash = method === 'cash' || (!rawMethod && Number(paymentAmount) > 0);
 
     if (isCash) {
       contado = Money.add(contado, sale.total || paymentAmount || 0);
-    } else if (method === 'fiado') {
+    } else if (method === 'credit') {
       abonosFiado = Money.add(abonosFiado, sale.abono || 0);
     }
   }
@@ -248,6 +253,9 @@ const normalizeIdentity = (value) => String(value ?? '').trim().toLowerCase();
 
 const saleEffectType = (movement = {}) => {
   const type = String(movement.tipo || movement.type || '').toLowerCase();
+  // Informational credit rows are presentation-only and must never collapse
+  // into the identity of an official cash receipt.
+  if (type === 'venta_credito') return null;
   if (['venta', 'venta_efectivo', 'venta_tarjeta'].includes(type)) return 'sale';
   if (['abono', 'abono_cliente'].includes(type)) return 'customer_payment';
   if (['cancelacion', 'reversa'].includes(type)) return type;
@@ -324,6 +332,57 @@ export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
   });
 };
 
+const resolveCreditFinancedAmount = ({
+  sale,
+  explicitPayments,
+  cashApplied,
+  nonCashApplied,
+  creditApplied,
+  paymentAmount
+}) => {
+  if (creditApplied?.gt(0)) return creditApplied;
+
+  const firstPositiveAmount = (values) => {
+    for (const value of values) {
+      if (!hasAmountValue(value) || !Number.isFinite(Number(value))) continue;
+      const amount = Money.init(value);
+      if (amount.gt(0)) return amount;
+    }
+    return null;
+  };
+
+  const originalBalance = firstPositiveAmount([
+    sale.originalBalanceDue,
+    sale.original_balance_due
+  ]);
+  if (originalBalance) return originalBalance;
+
+  const totalValue = sale.total ?? paymentAmount;
+  const hasTotal = hasAmountValue(totalValue) && Number.isFinite(Number(totalValue));
+  const paidValues = [sale.abono, sale.amountPaid, sale.amount_paid, sale.paymentData?.amountPaid];
+  const initialPaidValue = paidValues.find((value) => (
+    hasAmountValue(value) && Number.isFinite(Number(value))
+  ));
+  const hasInitialPaid = initialPaidValue !== undefined;
+  if (hasTotal && (explicitPayments !== null || hasInitialPaid)) {
+    const total = Money.init(totalValue);
+    const paid = explicitPayments !== null
+      ? Money.add(cashApplied, nonCashApplied)
+      : Money.init(initialPaidValue);
+    const safePaid = paid.gt(0) ? paid : Money.init(0);
+    return total.gt(safePaid) ? Money.subtract(total, safePaid) : Money.init(0);
+  }
+
+  const currentBalance = firstPositiveAmount([
+    sale.saldoPendiente,
+    sale.balanceDue,
+    sale.balance_due
+  ]);
+  if (currentBalance) return currentBalance;
+
+  return hasTotal ? Money.init(totalValue) : Money.init(0);
+};
+
 export const normalizeSaleMovements = (sales = []) => {
   const movements = [];
 
@@ -331,15 +390,15 @@ export const normalizeSaleMovements = (sales = []) => {
     const trackedCancellation = sale?.status === 'cancelled' && sale?.cancellationFinancials?.version === 1;
     if (!isFinanciallyClosedSale(sale) && !trackedCancellation) continue;
 
-    const method = String(sale.paymentMethod || sale.payment_method || '').toLowerCase();
+    const rawMethod = String(sale.paymentMethod || sale.payment_method || '').trim().toLowerCase();
+    const method = normalizeRestaurantSplitPaymentMethod(rawMethod);
     // A delivered layaway is a commercial sale recognition. Its advances were
     // already recorded as cash movements when paid, so do not synthesize a
     // cash, card, or transfer movement for the conversion itself.
-    if (sale.isLayawayConversion === true || method === 'layaway_completed') continue;
+    if (sale.isLayawayConversion === true || rawMethod === 'layaway_completed') continue;
     const paymentAmount = sale.paymentData?.amount;
     const explicitPayments = getExplicitSalePaymentRows(sale);
-    const isCash = method === 'efectivo' || method === 'cash' ||
-      (!method && Number(paymentAmount) > 0);
+    const isCash = method === 'cash' || (!rawMethod && Number(paymentAmount) > 0);
     const saleLabel = getSaleDisplayReference(sale) || sale.ticketNumber || sale.id;
     const traceability = normalizeSaleTraceability(sale);
     const secondaryReference = getSaleSecondaryReference(sale);
@@ -357,7 +416,14 @@ export const normalizeSaleMovements = (sales = []) => {
           ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
           : sum
       ), Money.init(0));
-      const isCredit = normalizeRestaurantSplitPaymentMethod(method) === 'credit';
+      const creditApplied = explicitPayments.reduce((sum, payment) => (
+        normalizeRestaurantSplitPaymentMethod(
+          payment?.method || payment?.paymentMethod || payment?.payment_method
+        ) === 'credit'
+          ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
+          : sum
+      ), Money.init(0));
+      const isCredit = method === 'credit' || creditApplied.gt(0);
 
       if (isCredit && cashApplied.gt(0)) {
         movements.push({
@@ -413,10 +479,36 @@ export const normalizeSaleMovements = (sales = []) => {
           fecha: sale.timestamp
         });
       }
+      if (isCredit && !trackedCancellation) {
+        const financedAmount = resolveCreditFinancedAmount({
+          sale,
+          explicitPayments,
+          cashApplied,
+          nonCashApplied,
+          creditApplied,
+          paymentAmount
+        });
+        if (financedAmount.gt(0)) {
+          movements.push({
+            id: `${sale.id || sale.timestamp}:credit-info`,
+            sale,
+            saleId: sale.id || null,
+            sale_id: sale.id || null,
+            referenceType: 'sale',
+            referenceId: sale.id || null,
+            tipo: 'venta_credito',
+            monto: Money.toExactString(financedAmount),
+            concepto: saleLabel,
+            secondaryReference: [secondaryReference, 'Saldo financiado'].filter(Boolean).join(' · '),
+            ...traceability,
+            fecha: sale.timestamp
+          });
+        }
+      }
       continue;
     }
 
-    const isCredit = method === 'fiado';
+    const isCredit = method === 'credit';
     if (isCash) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,
@@ -432,22 +524,50 @@ export const normalizeSaleMovements = (sales = []) => {
         ...traceability,
         fecha: sale.timestamp
       });
-    } else if (isCredit && Number(sale.abono) > 0) {
-      movements.push({
-        id: sale.id || `abono-${sale.timestamp}`,
-        sale,
-        saleId: sale.id || null,
-        sale_id: sale.id || null,
-        referenceType: 'sale',
-        referenceId: sale.id || null,
-        tipo: 'abono',
-        monto: String(sale.abono),
-        concepto: saleLabel,
-        secondaryReference: `Abono fiado · ${secondaryReference}`,
-        ...traceability,
-        fecha: sale.timestamp
-      });
-    } else if (!isCredit) {
+    } else if (isCredit) {
+      if (Number(sale.abono) > 0) {
+        movements.push({
+          id: sale.id || `abono-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'abono',
+          monto: String(sale.abono),
+          concepto: saleLabel,
+          secondaryReference: `Abono fiado · ${secondaryReference}`,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      }
+      if (!trackedCancellation) {
+        const financedAmount = resolveCreditFinancedAmount({
+          sale,
+          explicitPayments: null,
+          cashApplied: Money.init(0),
+          nonCashApplied: Money.init(0),
+          creditApplied: Money.init(0),
+          paymentAmount
+        });
+        if (financedAmount.gt(0)) {
+          movements.push({
+            id: `${sale.id || sale.timestamp}:credit-info`,
+            sale,
+            saleId: sale.id || null,
+            sale_id: sale.id || null,
+            referenceType: 'sale',
+            referenceId: sale.id || null,
+            tipo: 'venta_credito',
+            monto: Money.toExactString(financedAmount),
+            concepto: saleLabel,
+            secondaryReference: [secondaryReference, 'Saldo financiado'].filter(Boolean).join(' · '),
+            ...traceability,
+            fecha: sale.timestamp
+          });
+        }
+      }
+    } else {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,
         sale,
@@ -458,7 +578,7 @@ export const normalizeSaleMovements = (sales = []) => {
         tipo: 'venta_tarjeta',
         monto: String(sale.total || paymentAmount || 0),
         concepto: saleLabel,
-        secondaryReference: `${secondaryReference} · ${sale.paymentMethod || 'Otro'}`,
+        secondaryReference: `${secondaryReference} · ${sale.paymentMethod || sale.payment_method || 'Otro'}`,
         ...traceability,
         fecha: sale.timestamp
       });

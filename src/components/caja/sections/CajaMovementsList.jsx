@@ -27,7 +27,7 @@ const CASH_OUTFLOW_TYPES = new Set([
 const CASH_ADJUSTMENT_TYPES = new Set([
   'ajuste_entrada', 'ajuste_salida', 'fondo_inicial_ajuste'
 ]);
-const NO_CASH_EFFECT_TYPES = new Set(['venta_tarjeta', 'venta_eliminada', 'merma']);
+const NO_CASH_EFFECT_TYPES = new Set(['venta_tarjeta', 'venta_credito', 'venta_eliminada', 'merma']);
 
 const getMovementType = (movement = {}) => String(movement.tipo || movement.type || '').toLowerCase();
 
@@ -65,6 +65,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
       const esAjuste = ['ajuste_entrada', 'ajuste_salida'].includes(tipo);
       const esAjusteFondoInicial = tipo === 'fondo_inicial_ajuste';
       const esVentaTarjeta = tipo === 'venta_tarjeta';
+      const esVentaCredito = tipo === 'venta_credito';
       const esCancelacionVenta = tipo === 'cancelacion_venta';
       const esCancelacionAbono = tipo === 'cancelacion_abono_inicial';
       const esCancelacionLegacy = tipo === 'cancelacion';
@@ -85,6 +86,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
       let badge = '';
       if (esAjuste) badge = 'Ajuste';
       else if (esAjusteFondoInicial) badge = 'Fondo inicial';
+      else if (esVentaCredito) badge = 'Crédito/Fiado';
       else if (esVentaTarjeta) badge = 'Tarjeta/Transf.';
       else if (esCancelacionVenta) badge = 'Devolución en efectivo';
       else if (esCancelacionAbono) badge = 'Devolución de abono';
@@ -101,7 +103,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
         ...(mov.metadata || {})
       };
       const traceability = normalizeSaleTraceability(referenceSource);
-      const isSaleMovement = ['venta', 'venta_efectivo', 'venta_tarjeta'].includes(tipo);
+      const isSaleMovement = ['venta', 'venta_efectivo', 'venta_tarjeta', 'venta_credito'].includes(tipo);
       const primaryReference = isSaleMovement
         ? getSaleDisplayReference(referenceSource) || mov.concepto
         : mov.concepto;

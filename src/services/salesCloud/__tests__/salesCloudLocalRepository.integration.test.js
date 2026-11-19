@@ -211,7 +211,9 @@ describe('Cloud split payments persisted through Dexie into Caja', () => {
     expect(projection.totals).toEqual({ ventasContado: '0', abonosFiado: cash });
     expect(projection.reconciliation.theoreticalCash).toBe(Money.toNumber(Money.add('50', cash)));
     expect(sumAmounts(projection.movements.filter((row) => row.tipo === 'venta_tarjeta'))).toBe(noncash);
-    expect(Money.toExactString(Money.add(sumAmounts(projection.movements), sale.saldoPendiente))).toBe('400');
+    expect(sumAmounts(projection.movements.filter((row) => row.tipo === 'venta_credito'))).toBe('150');
+    const receivedMovementTotal = sumAmounts(projection.movements.filter((row) => row.tipo !== 'venta_credito'));
+    expect(Money.toExactString(Money.add(receivedMovementTotal, sale.saldoPendiente))).toBe('400');
     const cashRow = sale.payments.find((row) => row.method === 'cash');
     if (cashRow) expect(cashRow).toMatchObject({ amount: '100', received_amount: '120', change_amount: '20' });
     expect(await runtime.database.table('customer_ledger').toArray()).toEqual(ledger);
@@ -235,11 +237,19 @@ describe('Cloud split payments persisted through Dexie into Caja', () => {
     const fixture = makeFixture({ method, payments: [], balance: method === 'fiado' ? '75' : '0' });
     await applySplitSalesFinancialResponseProjection(fixture);
     const projection = await loadCashSessionProjection(runtime.database, cashSession);
-    expect(projection.movements).toHaveLength(1);
-    expect(projection.movements[0]).toMatchObject({
-      tipo: method === 'cash' ? 'venta' : method === 'fiado' ? 'abono' : 'venta_tarjeta',
-      monto: method === 'fiado' ? '25' : '100'
-    });
+    if (method === 'fiado') {
+      expect(projection.movements).toHaveLength(2);
+      expect(projection.movements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ tipo: 'abono', monto: '25' }),
+        expect.objectContaining({ tipo: 'venta_credito', monto: '75' })
+      ]));
+    } else {
+      expect(projection.movements).toHaveLength(1);
+      expect(projection.movements[0]).toMatchObject({
+        tipo: method === 'cash' ? 'venta' : 'venta_tarjeta',
+        monto: '100'
+      });
+    }
   });
 
   it('BY_ITEMS associates top-level payments only with their matching child sale', async () => {
@@ -303,9 +313,13 @@ describe('Cloud split payments persisted through Dexie into Caja', () => {
       cash_session_id: cashSession.id, fecha: '2026-10-02T12:00:00.000Z'
     });
     const projection = await loadCashSessionProjection(runtime.database, cashSession);
-    expect(projection.movements).toHaveLength(2);
-    expect(projection.movements.map((row) => row.monto)).toEqual(['100', '150']);
+    expect(projection.movements).toHaveLength(3);
+    expect(projection.movements.map((row) => row.monto)).toEqual(['100', '150', '150']);
     expect(projection.movements[0].id).toBe('official-initial');
+    expect(projection.movements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tipo: 'venta_tarjeta', monto: '150' }),
+      expect.objectContaining({ tipo: 'venta_credito', monto: '150' })
+    ]));
     expect(projection.reconciliation.theoreticalCash).toBe(150);
   });
 
