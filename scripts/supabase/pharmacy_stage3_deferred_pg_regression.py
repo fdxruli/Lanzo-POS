@@ -238,23 +238,27 @@ try:
      refill = params.replace('=>10', '=>2').replace('far001-qa', 'far001-refill')
      sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_receive_pharmacy_inventory_v1("
          +refill+",p_batch_id=>'batch-entry-far001-qa')->>'success'; COMMIT;", user='authenticator')
+     sql("UPDATE public.pos_products SET price=50 WHERE id='far001-vi';")
      multi = request('far001-multi','far001-vi',batch='batch-entry-far001-qa',qty=15)
      first = request('far001-multi-a','far001-vi',batch='batch-entry-far001-qa',qty=10)['items'][0]
      second = request('far001-multi-b','far001-vi',batch='batch-entry-far001-second',qty=5)['items'][0]
      multi['items'] = [first, second]
-     multi['payments'][0].update(received_amount=150, change_amount=0)
-     multi['sale'].update(change_amount=0)
+     for line in multi['items']:
+      line.update(unit_price=50, line_subtotal=50*line['quantity'], line_total=50*line['quantity'])
+     multi['payments'][0].update(amount=750, received_amount=750, change_amount=0)
+     multi['sale'].update(subtotal=750, total=750, amount_paid=750, change_amount=0)
      assert float(scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'")) == 37
      with ThreadPoolExecutor(max_workers=2) as pool:
       replies = list(pool.map(call, [multi, multi]))
      assert all(reply.returncode == 0 and 'true' in reply.stdout for reply in replies), replies
      sold = state('far001-multi','far001-vi')
      assert sold['sales'] == sold['payments'] == sold['receipts'] == sold['cash'] == 1, sold
-     assert sold['stock'] == 22 and sold['cash_amount'] == 150 and sold['inventory'] == 2, sold
+     assert sold['stock'] == 22 and sold['cash_amount'] == 750 and sold['inventory'] == 2, sold
      assert scalar("SELECT string_agg(batch_id||':'||quantity::int,',' ORDER BY quantity DESC) "
                    "FROM public.pos_inventory_movements WHERE sale_id='far001-multi'") == (
                        'batch-entry-far001-qa:10,batch-entry-far001-second:5')
      assert call(multi).returncode == 0 and state('far001-multi','far001-vi') == sold
+     sql("UPDATE public.pos_products SET price=10 WHERE id='far001-vi';")
      print('far001 pharmacy multilote 10 + 27 -> 15 -> 22 PASS (concurrent same-key and replay)')
 
      sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,is_active,batch_management,expiration_mode,requires_prescription,prescription_type) VALUES "
@@ -355,6 +359,8 @@ try:
      assert scalar("SELECT count(*) FROM public.pos_sale_cancellations WHERE sale_id='far001-other-credit-confirmed'") == '1'
      assert scalar("SELECT count(*) FROM public.pos_cash_movements WHERE sale_id='far001-other-credit-confirmed'") == '0'
      print('far001 credit cancellation restores the same lot and clears debt once with no cash effect PASS')
+     sql("UPDATE public.license_staff_users SET permissions=permissions || '{\"customers\":true}' "
+         "WHERE id='00000000-0000-0000-0000-0000000000ab';")
      unauthorized = json.loads(json.dumps(credit))
      unauthorized['sale']['id'] = 'far001-other-staff-denied'
      unauthorized['items'][0]['id'] = 'far001-other-staff-denied-line'
