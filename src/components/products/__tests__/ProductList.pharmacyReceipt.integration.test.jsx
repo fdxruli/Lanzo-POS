@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProductList from '../ProductList';
+import InventoryEntryModal from '../InventoryEntryModal';
+import { markInventoryEntrySynced } from '../../../services/inventory/inventoryEntryService';
+import { productCloudRepository } from '../../../services/products/productCloudRepository';
 import { db, STORES } from '../../../services/db/dexie';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { useAppStore } from '../../../store/useAppStore';
@@ -167,5 +170,114 @@ describe('Free/Local pharmacy receipt from the product action', () => {
     expect(screen.getByLabelText(/^Proveedor/i)).not.toBeRequired();
     expect(screen.queryByLabelText(/Referencia del comprobante/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Lote del fabricante/i)).not.toBeInTheDocument();
+  });
+});
+
+
+describe('Cloud pharmacy receipt history', () => {
+  const license = {
+    ...freeLicense, license_key: 'LANZO-PRO-PHARMACY-UI', plan_code: 'pro',
+    features: { cloud_pos_sync: true, cloud_products_sync: true }
+  };
+  const medicine = (id) => ({
+    id, name: `Medicamento ${id}`, trackStock: true, stock: 0, expirationMode: 'STRICT',
+    batchManagement: { enabled: true },
+    metadata: { pharmacy: { version: 1, kind: 'medicine', fraction: 'VI', status: 'confirmed' } }
+  });
+  const receipt = {
+    supplier: 'Distribuidora QA', documentType: 'factura', documentReference: 'FAC-CLOUD',
+    manufacturerBatchId: 'LOTE-QA', receivedAt: '2026-11-19T12:00:00Z'
+  };
+  const localEvent = (operationId, extra = {}) => ({
+    id: `inventory-entry:${operationId}`, operationId, productId: 'A',
+    type: 'INVENTORY_ENTRY', syncDisposition: 'cloud_authoritative', synced: false,
+    licenseKey: license.license_key, delta: 10, timestamp: receipt.receivedAt,
+    metadata: { pharmacyReceipt: receipt }, ...extra
+  });
+  const canonical = (operationId, extra = {}) => ({
+    id: `cloud:${operationId}`, operationId, quantity: 10, receipt,
+    responsible: 'Responsable Cloud', ...extra
+  });
+  const result = (...receipts) => ({ success: true, receipts });
+  const view = (id) => <InventoryEntryModal product={medicine(id)} onClose={vi.fn()} />;
+
+  let list;
+  beforeEach(async () => {
+    await openTestTenantRuntime();
+    useAppStore.setState({ licenseDetails: license, appStatus: 'ready', currentDeviceRole: 'admin' });
+    list = vi.spyOn(productCloudRepository, 'listPharmacyInventoryReceipts');
+  });
+
+  afterEach(() => {
+    cleanup();
+    closeTestTenantRuntime();
+    vi.restoreAllMocks();
+  });
+
+  it('updates on confirmation, ignores an older response, and merges only by operation identity', async () => {
+    const initial = Promise.withResolvers();
+    const refreshed = Promise.withResolvers();
+    const first = canonical('first');
+    const second = canonical('second');
+    list.mockReturnValueOnce(initial.promise).mockReturnValueOnce(refreshed.promise)
+      .mockResolvedValue(result(first, second));
+    const events = db.table(STORES.INVENTORY_EVENTS);
+    await events.put(localEvent('first'));
+    const { unmount } = render(view('A'));
+    expect(await screen.findByText(/FAC-CLOUD.*Pendiente de sincronizar/)).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(1);
+    await act(() => markInventoryEntrySynced('first', {
+      inventory_movement: { id: first.id, quantity: 10, actor_name: 'Responsable Cloud' }
+    }));
+
+    const confirmed = await screen.findByText(/\+10.*LOTE-QA.*Distribuidora QA.*FAC-CLOUD.*Sincronizado en Cloud/);
+    expect(confirmed).toHaveTextContent('Responsable Cloud');
+    expect(screen.getAllByText(/FAC-CLOUD/)).toHaveLength(1);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    await act(() => refreshed.resolve(result(first, second)));
+    expect(screen.getAllByText(/FAC-CLOUD/)).toHaveLength(2);
+    await act(() => initial.resolve(result()));
+    expect(screen.getAllByText(/FAC-CLOUD/)).toHaveLength(2);
+    expect(await events.count()).toBe(1);
+    unmount();
+    render(view('A'));
+    await waitFor(() => expect(screen.getAllByText(/FAC-CLOUD.*Responsable Cloud/)).toHaveLength(2));
+  });
+
+  it('keeps rejected and pending rows distinct and retains the confirmation after a read failure', async () => {
+    list.mockResolvedValueOnce(result()).mockRejectedValueOnce(new Error('offline'));
+    const events = db.table(STORES.INVENTORY_EVENTS);
+    await events.bulkPut([localEvent('first'), localEvent('rejected', {
+      synced: true, rejectionCode: 'PHARMACY_LEGACY_RECEIPT_REJECTED'
+    })]);
+    render(view('A'));
+    expect(await screen.findByText(/FAC-CLOUD.*Rechazado/)).toBeInTheDocument();
+    expect(screen.getByText(/FAC-CLOUD.*Pendiente/)).toBeInTheDocument();
+    expect(screen.queryByText(/FAC-CLOUD.*Sincronizado en Cloud/)).not.toBeInTheDocument();
+    await act(() => markInventoryEntrySynced('first'));
+    expect(await screen.findByText(/No se pudo actualizar el historial Cloud/)).toBeInTheDocument();
+    expect(screen.getByText(/FAC-CLOUD.*Sincronizado en Cloud/)).toBeInTheDocument();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(await events.count()).toBe(2);
+  });
+
+  it('discards outstanding history reads after changing product or closing the form', async () => {
+    const old = Promise.withResolvers();
+    const afterClose = Promise.withResolvers();
+    const recordForB = canonical('B', { receipt: { ...receipt, documentReference: 'FAC-B' } });
+    list.mockReturnValueOnce(old.promise).mockResolvedValueOnce(result(recordForB))
+      .mockReturnValueOnce(afterClose.promise);
+    const { rerender, unmount } = render(view('A'));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    rerender(view('B'));
+    expect(await screen.findByText(/FAC-B/)).toBeInTheDocument();
+    await act(() => old.resolve(result(canonical('A'))));
+    expect(screen.queryByText(/FAC-CLOUD/)).not.toBeInTheDocument();
+    rerender(view('C'));
+    expect(screen.queryByText(/FAC-B/)).not.toBeInTheDocument();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+    unmount();
+    await act(() => afterClose.resolve(result(canonical('C'))));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
