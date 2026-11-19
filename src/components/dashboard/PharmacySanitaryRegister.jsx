@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   SANITARY_PAGE_SIZE,
   SANITARY_EXPORT_LIMIT,
@@ -14,6 +14,14 @@ import {
 import './PharmacySanitaryRegister.css';
 
 import { addBusinessCalendarDays, formatBusinessInstant, getBusinessDateKey, isValidTimeZone } from '../../utils/businessTime';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { isActorSnapshotCurrent } from '../../services/auth/actorAccessPolicy';
+import { isRecoverableTenantReadinessError } from '../../services/auth/actorAuthorityErrors';
+import { canAuditSalesReports, canReadSalesReports, getSalesActorIdentity } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
+import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
+import { useAppStore } from '../../store/useAppStore';
 
 const initialFilters = (timezone) => {
   const today = new Date();
@@ -42,19 +50,134 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [isRecoveringTenantAuthority, setIsRecoveringTenantAuthority] = useState(false);
+  const [pendingTenantRetryKey, setPendingTenantRetryKey] = useState(null);
+  const [tenantRetryVersion, setTenantRetryVersion] = useState(0);
   const [cloudMovementTypesByKey, setCloudMovementTypesByKey] = useState({});
+  const pendingTenantRetryRef = useRef(null);
+  const retriedTenantQueryKeyRef = useRef(null);
+  const attemptedTenantRecoveryKeyRef = useRef(null);
+  const runtimeSnapshot = useActorRuntimeSnapshot();
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const initializeApp = useAppStore((state) => state.initializeApp);
+  const isInitializing = useAppStore((state) => state._isInitializing === true);
+  const activeLicenseKey = getLicenseKeyFromDetails(licenseDetails);
   const cursor = cursors[pageIndex];
   const canRead = Boolean(actorIdentity);
   const capabilityKey = `${licenseKey || ''}:${actorIdentity || ''}`;
   const cloudMovementTypes = cloudMovementTypesByKey[capabilityKey] || LEGACY_SANITARY_MOVEMENT_TYPES;
   const movementOptions = cloud ? cloudMovementTypes : SANITARY_MOVEMENT_TYPES;
+  const queryKey = useMemo(() => JSON.stringify([
+    licenseKey || '', cloud, actorIdentity || '', timezone,
+    applied.from, applied.to, applied.search, applied.movementType,
+    applied.batchId, applied.traceStatus, cursor?.at || '', cursor?.id || ''
+  ]), [licenseKey, cloud, actorIdentity, timezone, applied, cursor]);
+
+  const queueTenantReadinessRetry = useCallback((capturedActor, cause) => {
+    if (activeLicenseKey !== licenseKey
+      || !isRecoverableTenantReadinessError(cause)
+      || retriedTenantQueryKeyRef.current === queryKey) return false;
+    const current = actorRuntimeController.getState();
+    const tenant = capturedActor?.tenant;
+    if (capturedActor?.status !== 'granted'
+      || current.status !== 'granted'
+      || current.actorKey !== capturedActor.actorKey
+      || current.sessionId !== capturedActor.sessionId
+      || current.generation !== capturedActor.generation
+      || getSalesActorIdentity(current) !== actorIdentity
+      || current.tenant?.opaqueId !== tenant?.opaqueId
+      || current.tenant?.databaseName !== tenant?.databaseName
+      || !tenant?.opaqueId || !tenant?.databaseName) return false;
+    pendingTenantRetryRef.current = {
+      requestKey: queryKey,
+      actorIdentity,
+      actorType: capturedActor.actorType,
+      actorKey: capturedActor.actorKey,
+      sessionId: capturedActor.sessionId,
+      tenant: { opaqueId: tenant.opaqueId, databaseName: tenant.databaseName }
+    };
+    setPendingTenantRetryKey(queryKey);
+    setError('Estamos verificando de nuevo la sesión y el dispositivo para esta consulta.');
+    return true;
+  }, [activeLicenseKey, actorIdentity, licenseKey, queryKey]);
+
+  useEffect(() => {
+    const pending = pendingTenantRetryRef.current;
+    if (!pending) return;
+    if (pending.requestKey !== queryKey) {
+      pendingTenantRetryRef.current = null;
+      setPendingTenantRetryKey(null);
+      return;
+    }
+    if (activeLicenseKey !== licenseKey) {
+      pendingTenantRetryRef.current = null;
+      setPendingTenantRetryKey(null);
+      setError('La licencia activa cambió. Confirma de nuevo el negocio antes de consultar.');
+      return;
+    }
+
+    const current = actorRuntimeController.getState();
+    const readiness = getTenantRuntimeReadiness();
+    const isSameActorSession = current.status === 'granted'
+      && current.actorKey === pending.actorKey
+      && current.sessionId === pending.sessionId
+      && getSalesActorIdentity(current) === pending.actorIdentity;
+    const isSameActorTenant = current.tenant?.opaqueId === pending.tenant.opaqueId
+      && current.tenant?.databaseName === pending.tenant.databaseName;
+    const isSameReadyTenant = readiness?.ready
+      && readiness.runtime?.opaqueId === pending.tenant.opaqueId
+      && readiness.runtime?.databaseName === pending.tenant.databaseName;
+
+    if (current.status === 'locked'
+      || (current.actorType && current.actorType !== pending.actorType)
+      || (current.status === 'granted' && (!isSameActorSession || !isSameActorTenant))
+      || (readiness?.ready && !isSameReadyTenant)) {
+      pendingTenantRetryRef.current = null;
+      setPendingTenantRetryKey(null);
+      setError('La sesión o el negocio cambió. Confirma el acceso antes de volver a consultar.');
+      return;
+    }
+
+    if (!isSameActorSession || !isSameActorTenant || !isSameReadyTenant
+      || !canReadSalesReports(current) || !canAuditSalesReports(current)
+      || !isActorSnapshotCurrent(current)) return;
+
+    pendingTenantRetryRef.current = null;
+    retriedTenantQueryKeyRef.current = queryKey;
+    setPendingTenantRetryKey(null);
+    setTenantRetryVersion((version) => version + 1);
+  }, [runtimeSnapshot, queryKey, actorIdentity, activeLicenseKey, licenseKey, pendingTenantRetryKey]);
 
   useEffect(() => {
     if (!canRead) {
       setResult(null);
       return undefined;
     }
+    if (activeLicenseKey !== licenseKey) {
+      setResult(null);
+      setLoading(false);
+      setError('La licencia activa cambió. Confirma de nuevo el negocio antes de consultar.');
+      return undefined;
+    }
+    if (pendingTenantRetryRef.current?.requestKey !== queryKey) {
+      pendingTenantRetryRef.current = null;
+      setPendingTenantRetryKey(null);
+    }
     let active = true;
+    const operationActor = actorRuntimeController.getState();
+    const isOperationContextCurrent = () => {
+      const current = actorRuntimeController.getState();
+      return operationActor.status === 'granted'
+        && getLicenseKeyFromDetails(useAppStore.getState().licenseDetails) === licenseKey
+        && current.status === 'granted'
+        && current.actorKey === operationActor.actorKey
+        && current.sessionId === operationActor.sessionId
+        && current.generation === operationActor.generation
+        && getSalesActorIdentity(current) === actorIdentity
+        && current.tenant?.opaqueId === operationActor.tenant?.opaqueId
+        && current.tenant?.databaseName === operationActor.tenant?.databaseName
+        && isActorSnapshotCurrent(operationActor);
+    };
     setLoading(true);
     setError('');
     setResult(null);
@@ -62,6 +185,13 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
       licenseKey, cloud, actorIdentity, timezone, filters: applied, cursor, limit: SANITARY_PAGE_SIZE
     }).then((page) => {
       if (active) {
+        if (!isOperationContextCurrent()) {
+          let staleContextError = null;
+          try { actorRuntimeController.assertCurrent(operationActor); } catch (cause) { staleContextError = cause; }
+          if (queueTenantReadinessRetry(operationActor, staleContextError)) return;
+          setError('La sesión o el negocio cambió durante la consulta. Vuelve a consultar cuando el acceso esté confirmado.');
+          return;
+        }
         if (cloud) {
           setCloudMovementTypesByKey((current) => ({
             ...current,
@@ -69,14 +199,80 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
           }));
         }
         setResult(page);
+        if (retriedTenantQueryKeyRef.current === queryKey) retriedTenantQueryKeyRef.current = null;
+        attemptedTenantRecoveryKeyRef.current = null;
       }
     }).catch((cause) => {
-      if (active) setError(cause?.message || 'No se pudo consultar el registro.');
+      if (!active) return;
+      if (queueTenantReadinessRetry(operationActor, cause)) return;
+      setError(isRecoverableTenantReadinessError(cause)
+        ? 'No se pudo restablecer la verificación del negocio. Vuelve a consultar cuando la sesión esté lista.'
+        : cause?.message || 'No se pudo consultar el registro.');
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [licenseKey, cloud, actorIdentity, timezone, applied, cursor, canRead, capabilityKey]);
+  }, [licenseKey, activeLicenseKey, cloud, actorIdentity, timezone, applied, cursor, canRead, capabilityKey, queryKey, tenantRetryVersion, queueTenantReadinessRetry]);
+
+  const retryTenantVerification = async () => {
+    const pending = pendingTenantRetryRef.current;
+    if (!pending || pending.requestKey !== queryKey || isRecoveringTenantAuthority || isInitializing) return;
+    if (getLicenseKeyFromDetails(useAppStore.getState().licenseDetails) !== licenseKey) {
+      pendingTenantRetryRef.current = null;
+      setPendingTenantRetryKey(null);
+      setError('La licencia activa cambió. Confirma de nuevo el negocio antes de consultar.');
+      return;
+    }
+    const recoveryKey = JSON.stringify([
+      licenseKey, pending.actorIdentity, pending.actorKey, pending.sessionId,
+      pending.tenant.opaqueId, pending.tenant.databaseName
+    ]);
+    if (attemptedTenantRecoveryKeyRef.current === recoveryKey) return;
+    attemptedTenantRecoveryKeyRef.current = recoveryKey;
+    setIsRecoveringTenantAuthority(true);
+    setError('Estamos confirmando de nuevo la misma sesión y el negocio.');
+    try {
+      const result = await initializeApp({ force: true });
+      const current = actorRuntimeController.getState();
+      const restoredForSameContext = result?.status === 'ready'
+        && getLicenseKeyFromDetails(useAppStore.getState().licenseDetails) === licenseKey
+        && current.status === 'granted'
+        && current.actorType === pending.actorType
+        && current.actorKey === pending.actorKey
+        && current.sessionId === pending.sessionId
+        && getSalesActorIdentity(current) === pending.actorIdentity
+        && current.tenant?.opaqueId === pending.tenant.opaqueId
+        && current.tenant?.databaseName === pending.tenant.databaseName
+        && isActorSnapshotCurrent(current);
+      if (!restoredForSameContext && pendingTenantRetryRef.current?.requestKey === queryKey) {
+        pendingTenantRetryRef.current = null;
+        setPendingTenantRetryKey(null);
+        setError('No pudimos confirmar la misma sesión y el negocio. Vuelve a identificarte antes de consultar.');
+      }
+    } catch {
+      if (pendingTenantRetryRef.current?.requestKey === queryKey) {
+        pendingTenantRetryRef.current = null;
+        setPendingTenantRetryKey(null);
+        setError('La verificación no se pudo restablecer. Vuelve a identificarte antes de consultar.');
+      }
+    } finally {
+      setIsRecoveringTenantAuthority(false);
+    }
+  };
+
+  const pendingTenantRecovery = pendingTenantRetryRef.current;
+  const canRetryTenantVerification = pendingTenantRetryKey === queryKey
+    && activeLicenseKey === licenseKey
+    && pendingTenantRecovery?.requestKey === queryKey
+    && runtimeSnapshot?.status === 'granted'
+    && runtimeSnapshot.actorKey === pendingTenantRecovery.actorKey
+    && runtimeSnapshot.sessionId === pendingTenantRecovery.sessionId
+    && getSalesActorIdentity(runtimeSnapshot) === pendingTenantRecovery.actorIdentity
+    && attemptedTenantRecoveryKeyRef.current !== JSON.stringify([
+      licenseKey, pendingTenantRecovery.actorIdentity, pendingTenantRecovery.actorKey,
+      pendingTenantRecovery.sessionId, pendingTenantRecovery.tenant.opaqueId,
+      pendingTenantRecovery.tenant.databaseName
+    ]);
 
   const summary = useMemo(() => {
     const rows = result?.rows || [];
@@ -179,7 +375,14 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
       </p>
 
       {!canRead && <p role="alert">Se requiere una sesión con permiso de Reportes.</p>}
-      {error && <p className="sanitary-error" role="alert">{error}</p>}
+      {error && <p className="sanitary-error" role={pendingTenantRetryKey === queryKey ? 'status' : 'alert'}>{error}</p>}
+      {canRetryTenantVerification && !isInitializing && (
+        <div className="sanitary-actions">
+          <button type="button" onClick={retryTenantVerification} disabled={isRecoveringTenantAuthority}>
+            {isRecoveringTenantAuthority ? 'Verificando…' : 'Reintentar verificación'}
+          </button>
+        </div>
+      )}
       {loading && <p role="status">Consultando movimientos…</p>}
 
       {result && !loading && (

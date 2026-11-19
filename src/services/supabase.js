@@ -17,7 +17,7 @@ import {
     getLocalTenantBinding,
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
-import { getActiveTenantRuntime } from './db/tenantRuntimeRouter';
+import { getActiveTenantRuntime, getTenantRuntimeReadiness, isTenantRuntimeError } from './db/tenantRuntimeRouter';
 import { getLicenseFromStorage, saveLicenseToStorage } from './licenseStorage';
 import { deriveLocalGracePeriodEnd } from '../store/slices/license/licenseGuards';
 import {
@@ -115,11 +115,32 @@ const runAuthenticatedLocalPersistence = async ({
 };
 
 async function getSecureCredentials() {
+    const tenantReadinessAtStart = getTenantRuntimeReadiness();
+    if (tenantReadinessAtStart?.ready !== true) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.TENANT_NOT_READY);
+    }
     try {
         const record = await loadData(STORES.SYNC_CACHE, 'device_security_token');
+        const tenantReadinessAfterRead = getTenantRuntimeReadiness();
+        if (tenantReadinessAfterRead?.ready !== true) {
+            throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.TENANT_NOT_READY);
+        }
+        const capturedTenant = tenantReadinessAtStart.runtime || null;
+        const currentTenant = tenantReadinessAfterRead.runtime || null;
+        const sameRuntime = (!capturedTenant && !currentTenant)
+            || (capturedTenant?.opaqueId === currentTenant?.opaqueId
+                && capturedTenant?.databaseName === currentTenant?.databaseName
+                && capturedTenant?.generation === currentTenant?.generation);
+        if (!sameRuntime) {
+            throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+                capturedTenant, currentTenant
+            });
+        }
         return record ? record.value : null;
     } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
+        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)
+            || [ACTOR_RUNTIME_ERROR_CODES.TENANT_NOT_READY, ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE]
+                .includes(error?.code)) throw error;
         return null;
     }
 }

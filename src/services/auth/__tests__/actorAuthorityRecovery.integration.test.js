@@ -227,6 +227,19 @@ describe('authenticated authority recovery with actor storage', () => {
     expect(getActorAuthorityRecoverySnapshot()).toBeNull();
   });
 
+  it('does not convert a temporary tenant readiness error into a login requirement', async () => {
+    await initialGrant();
+    const before = actorRuntimeController.getState();
+
+    expect(reportActorAuthorityError({ code: 'ACTOR_TENANT_NOT_READY' }, { operation: 'open_cash_register' })).toBe(false);
+    expect(actorRuntimeController.getState()).toMatchObject({
+      status: 'granted', actorKey: before.actorKey, sessionId: before.sessionId,
+      generation: before.generation
+    });
+    expect(getActorAuthorityRecoverySnapshot()).toBeNull();
+    expect(getActorScopedStorageState().writesSuspended).toBe(false);
+  });
+
   it.each(['DEVICE_NOT_ALLOWED', 'DEVICE_RELEASED', 'CLONING_DETECTED'])(
     'keeps the existing hard block for %s outside simple reauthentication', async (code) => {
       await initialGrant();
