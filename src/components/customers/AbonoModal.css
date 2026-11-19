@@ -99,6 +99,30 @@
   gap: 4px;
   min-width: 0;
 }
+
+.abono-payment-method {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+  font-weight: 600;
+}
+
+.abono-payment-method select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border-color, #b7b7b7);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+  color: inherit;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+}
+
+.abono-payment-impact {
+  margin: 0 0 0.75rem;
+}
 .abono-mode {
   position: relative;
   display: flex;

@@ -110,16 +110,17 @@ export function useBatchFormController({
 
     if (isEditing) {
       const attrs = batchToEdit?.attributes || {};
+      const expiryValue = batchToEdit?.expiryDate ?? batchToEdit?.expiry_date;
       setFormValues({
         ...DEFAULT_FORM_VALUES,
         cost: batchToEdit?.cost ?? '',
         price: isCommercialVariant ? (batchToEdit?.price ?? '') : (product?.price ?? ''),
         stock: batchToEdit?.stock ?? '',
         notes: batchToEdit?.notes || '',
-        expiryDate: batchToEdit?.expiryDate 
+        expiryDate: expiryValue
           ? (product?.expirationMode === 'SHELF_LIFE' 
-              ? batchToEdit.expiryDate.substring(0, 16) 
-              : batchToEdit.expiryDate.split('T')[0]) 
+              ? String(expiryValue).substring(0, 16)
+              : String(expiryValue).split('T')[0])
           : '',
         sku: batchToEdit?.sku || '',
         attribute1: attrs.talla || attrs.modelo || '',

@@ -956,7 +956,7 @@ export default function CustomersPage() {
     };
   };
 
-  const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
+  const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null, paymentMethod = 'efectivo') => {
     let result = null;
     setIsAbonoConfirmationPending(true);
 
@@ -982,7 +982,7 @@ export default function CustomersPage() {
       result = await customerCreditRepository.processPayment(
         customer.id,
         amount,
-        'efectivo',
+        paymentMethod,
         cajaVigente.id,
         `Abono de cliente: ${customer.name}`,
         allocations
@@ -1024,9 +1024,14 @@ export default function CustomersPage() {
     // Refreshing UI state happens after the payment is committed. A refresh
     // failure must never make a successful financial operation look aborted.
     const unallocated = isCloudCredit && result.allocationStatus !== 'applied';
+    const paymentLabel = ({ efectivo: 'efectivo', tarjeta: 'tarjeta', transferencia: 'transferencia' })[paymentMethod]
+      || 'efectivo';
+    const cashEffect = paymentLabel === 'efectivo'
+      ? 'El efectivo recibido se registró como ingreso en Caja.'
+      : `El pago por ${paymentLabel} no incrementó el efectivo en Caja.`;
     showMessageModal(unallocated
-      ? 'Abono general registrado. La deuda del cliente se redujo; la conciliación por nota no está confirmada.'
-      : '¡Abono registrado exitosamente!');
+      ? `Abono general confirmado. La deuda se redujo; la conciliación por nota no está confirmada. ${cashEffect}`
+      : `Abono confirmado por ${paymentLabel}. ${cashEffect}`);
     handleCloseModals();
     try {
       await Promise.all([loadInitialCustomers(), sincronizarEstadoCaja()]);

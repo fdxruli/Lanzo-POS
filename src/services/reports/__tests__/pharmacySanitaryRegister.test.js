@@ -41,7 +41,8 @@ vi.mock('../../../utils/pharmacyClassification', () => ({
 
 import {
   SANITARY_EXPORT_LIMIT, assertSanitaryReader, sanitaryFilters, sanitaryIncidences,
-  pageSanitaryRows, buildSanitaryCsv, collectSanitaryExport, getSanitaryRegisterPage
+  pageSanitaryRows, buildSanitaryCsv, collectSanitaryExport, getSanitaryRegisterPage,
+  sanitaryMissingUnitLabel, sanitaryUnitSourceLabel
 } from '../pharmacySanitaryRegister';
 
 import { formatBusinessDateTimeInput, formatBusinessInstant, parseBusinessDateTimeInput } from '../../../utils/businessTime';
@@ -94,11 +95,12 @@ describe('pharmacy sanitary register', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('pos_get_pharmacy_sanitary_register_v1', expect.objectContaining({
       p_date_from: '2026-11-18T06:00:00.000Z', p_date_to: '2026-11-19T06:00:00.000Z'
     }));
-    expect(rows).toEqual([row]);
+    expect(rows[0]).toMatchObject({ id: row.id, unit: null, unitSource: 'cloud_not_returned', traceStatus: 'incomplete' });
     const csv = buildSanitaryCsv(rows);
     expect(csv).toContain('Fecha y hora de recepción declarada (ISO 8601)');
     expect(csv).toContain('"2026-11-19T02:17:00+00:00","2026-11-19T02:15:00.000Z"');
     expect(csv).toContain('"2027-10-30"');
+    expect(csv).toContain('"Unidad histórica no devuelta por la consulta Cloud"');
   });
 
   it('retains two legitimate equal-quantity receptions and deduplicates by stable identity only', () => {
@@ -160,13 +162,13 @@ describe('pharmacy sanitary register', () => {
   });
 
   it('reads local receipts, prescription lines, and waste with source labels', async () => {
-    mocks.stores.menu = [{ id: 'p1', name: 'Amoxicilina', barcode: '750123',
+    mocks.stores.menu = [{ id: 'p1', name: 'Amoxicilina', barcode: '750123', unit: 'caja',
       metadata: { pharmacy: { kind: 'medicine' } } }];
     mocks.stores.inventory_events = [
       { id: 'inventory-entry:op1', type: 'INVENTORY_ENTRY', operationId: 'op1',
         productId: 'p1', batchId: 'b1', delta: 5, timestamp: '2026-11-11T12:00:00.000Z',
         manufacturerBatchId: 'M1', expiryDate: '2027-01-01', synced: false,
-        metadata: { pharmacyReceipt: { documentReference: 'FAC-1' } } },
+        metadata: { baseUnit: 'pieza', pharmacyReceipt: { documentReference: 'FAC-1' } } },
       { id: 'inventory-entry:op2', type: 'INVENTORY_ENTRY', operationId: 'op2',
         productId: 'p1', batchId: 'b1', delta: 5, timestamp: '2026-11-11T13:00:00.000Z',
         manufacturerBatchId: 'M1', expiryDate: '2027-01-01', synced: false,
@@ -175,7 +177,7 @@ describe('pharmacy sanitary register', () => {
     mocks.stores.sales = [{
       id: 'sale1', timestamp: '2026-11-11T14:00:00.000Z', status: 'closed',
       items: [{ productId: 'p1', name: 'Amoxicilina', quantity: 1, batchId: 'b1',
-        pharmacyDispensationV1: { version: 1, reference: 'RX-1' } }]
+        unit: 'cápsula', pharmacyDispensationV1: { version: 1, reference: 'RX-1' } }]
     }];
     mocks.stores.waste_logs = [{
       id: 'w1', timestamp: '2026-11-11T15:00:00.000Z',
@@ -184,9 +186,49 @@ describe('pharmacy sanitary register', () => {
     const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters });
     expect(page.rows).toHaveLength(4);
     expect(page.rows.filter((r) => r.movementType === 'receipt')).toHaveLength(2);
+    expect(page.rows.find((r) => r.operationId === 'op1')).toMatchObject({ unit: 'pieza', unitSource: 'operation_snapshot' });
+    expect(page.rows.find((r) => r.operationId === 'op2')).toMatchObject({
+      unit: 'caja', unitSource: 'current_catalog', traceStatus: 'incomplete'
+    });
     expect(page.rows.find((r) => r.movementType === 'dispensation').syncStatus)
       .toBe('local_not_cloud_confirmed');
+    expect(page.rows.find((r) => r.movementType === 'dispensation')).toMatchObject({
+      unit: 'cápsula', unitSource: 'operation_snapshot'
+    });
     expect(page.source).toBe('local_device');
+    const csv = buildSanitaryCsv(page.rows);
+    expect(csv).toContain('"Fuente unidad"');
+    expect(csv).toContain('"caja","Catálogo actual (no histórico)"');
+    expect(sanitaryUnitSourceLabel(page.rows.find((row) => row.operationId === 'op1'))).toBe('Registro de operación');
+  });
+
+  it('keeps missing local units visible as an incomplete traceability incidence', async () => {
+    mocks.stores.menu = [{ id: 'p1', name: 'Amoxicilina', metadata: { pharmacy: { kind: 'medicine' } } }];
+    mocks.stores.inventory_events = [{
+      id: 'inventory-entry:missing-unit', type: 'INVENTORY_ENTRY', operationId: 'missing-unit', productId: 'p1',
+      batchId: 'b1', delta: 5, timestamp: '2026-11-11T12:00:00.000Z', manufacturerBatchId: 'M1',
+      expiryDate: '2027-01-01', metadata: { pharmacyReceipt: { documentReference: 'FAC-1' } }
+    }];
+    const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters });
+    expect(page.rows[0]).toMatchObject({ unit: null, unitSource: 'not_recorded', traceStatus: 'incomplete' });
+    expect(sanitaryMissingUnitLabel(page.rows[0])).toBe('unidad no registrada');
+    expect(sanitaryIncidences(page.rows[0])).toContain('Unidad de medida no registrada');
+  });
+
+  it('labels a current Cloud catalog unit separately from an absent Cloud historical unit', async () => {
+    mocks.stores.menu = [{ id: 'p1', unit: 'frasco' }];
+    mocks.rpc.mockResolvedValue({ data: { success: true, rows: [item('cloud-current', { productId: 'p1' })], hasMore: false }, error: null });
+    const current = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
+    expect(current.rows[0]).toMatchObject({
+      unit: 'frasco', unitSource: 'current_catalog', traceStatus: 'incomplete'
+    });
+    expect(sanitaryIncidences(current.rows[0])).toContain('Unidad del catálogo actual, no dato histórico');
+
+    mocks.stores.menu = [];
+    mocks.rpc.mockResolvedValue({ data: { success: true, rows: [item('cloud-missing')], hasMore: false }, error: null });
+    const missing = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
+    expect(missing.rows[0]).toMatchObject({ unit: null, unitSource: 'cloud_not_returned', traceStatus: 'incomplete' });
+    expect(sanitaryMissingUnitLabel(missing.rows[0])).toBe('unidad no devuelta por Cloud');
   });
 
   it('keeps real local batch allocations as rows under one sale and exports source references', async () => {
@@ -215,7 +257,7 @@ describe('pharmacy sanitary register', () => {
       ['sale-multi', 'line-b', 'batch-b', 5],
       ['sale-multi', 'line-a', 'batch-a', 10]
     ]);
-    expect(sales.every((row) => row.traceStatus === 'limited')).toBe(true);
+    expect(sales.every((row) => row.traceStatus === 'incomplete')).toBe(true);
     expect(sales.every((row) => row.sourceMovementIds[0] === 'evt-sale-product-1')).toBe(true);
     expect(sales.every((row) => row.documentReference === null)).toBe(true);
 
@@ -272,7 +314,7 @@ describe('pharmacy sanitary register', () => {
 
     const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters });
     const sale = page.rows.find((row) => row.movementType === 'sale');
-    expect(sale).toMatchObject({ saleId: 'sale-cancelled', saleStatus: 'cancelled', quantity: 2, traceStatus: 'limited' });
+    expect(sale).toMatchObject({ saleId: 'sale-cancelled', saleStatus: 'cancelled', quantity: 2, traceStatus: 'incomplete' });
     expect(sanitaryIncidences(sale)).toContain('Venta cancelada; revisar la devolución asociada');
     expect(sanitaryIncidences(sale)).toContain('La salida local no conserva una asignación de lote verificable');
     expect(mocks.stores.deleted_sales).toHaveLength(1);

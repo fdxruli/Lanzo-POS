@@ -83,6 +83,22 @@ describe('product catalog snapshot application', () => {
     expect(rows.menu.get('legacy-1')).toMatchObject({ serverVersion: 2, syncStatus: 'synced' });
   });
 
+  it('keeps a saved category through a partial catalog refresh and product reopen', async () => {
+    rows.menu.set('categorized-product', {
+      id: 'categorized-product', name: 'Producto categorizado', categoryId: 'category-selected', stock: 4
+    });
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const { getProductFormDefaults } = await import('../../../components/products/form-v2/config/productFormDefaults');
+
+    await productLocalRepository.applyCloudCatalog({
+      products: [{ id: 'categorized-product', stock: 7, committed_stock: 0 }]
+    });
+
+    const reopenedProduct = rows.menu.get('categorized-product');
+    expect(reopenedProduct.categoryId).toBe('category-selected');
+    expect(getProductFormDefaults({ productToEdit: reopenedProduct }).categoryId).toBe('category-selected');
+  });
+
 
   it('does not overwrite locally pending pharmacy inventory during a pull', async () => {
     rows.menu.set('medicine-1', {
