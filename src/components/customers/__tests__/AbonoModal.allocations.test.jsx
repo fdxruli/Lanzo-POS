@@ -57,13 +57,26 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('payment modalities and financial UI boundaries', () => {
-  it('defaults to a general payment and preserves the existing callback contract', async () => {
+  it('defaults to cash and explains its effect in Caja', async () => {
     open();
     expect(screen.getByRole('radio', { name: 'Abono general' }).checked).toBe(true);
+    expect(screen.getByRole('combobox', { name: 'Medio de pago' })).toHaveValue('efectivo');
+    expect(screen.getByText(/se registrará como ingreso en Caja/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Monto del abono'), { target: { value: '5' } });
     expect(screen.getByLabelText('Total a confirmar').textContent).toBe('$5.00');
     fireEvent.click(submit());
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '5', true, null));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '5', true, null, 'efectivo'));
+  });
+  it.each([
+    ['tarjeta', /no incrementará el efectivo en Caja/],
+    ['transferencia', /no incrementará el efectivo en Caja/]
+  ])('passes %s and describes its effect before confirmation', async (method, impact) => {
+    open();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Medio de pago' }), { target: { value: method } });
+    expect(screen.getByText(impact)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Monto del abono'), { target: { value: '5' } });
+    fireEvent.click(submit());
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '5', true, null, method));
   });
   it('assigns only the chosen verified note and shows original/live amounts and totals', async () => {
     open();
@@ -78,7 +91,7 @@ describe('payment modalities and financial UI boundaries', () => {
     expect(screen.getByLabelText('Total a confirmar').textContent).toBe('$5.00');
     fireEvent.click(submit());
     await waitFor(() =>
-      expect(confirm).toHaveBeenCalledWith(customer, '5', true, [{ saleId: 'B', amountApplied: '5' }])
+      expect(confirm).toHaveBeenCalledWith(customer, '5', true, [{ saleId: 'B', amountApplied: '5' }], 'efectivo')
     );
   });
   it('supports multiple selected notes without changing their original amounts', async () => {
@@ -92,7 +105,7 @@ describe('payment modalities and financial UI boundaries', () => {
       expect(confirm).toHaveBeenCalledWith(customer, '15', true, [
         { saleId: 'A', amountApplied: '5' },
         { saleId: 'B', amountApplied: '10' }
-      ])
+      ], 'efectivo')
     );
   });
   it('clears note assignments when returning to general while preserving its typed amount', async () => {
@@ -102,7 +115,7 @@ describe('payment modalities and financial UI boundaries', () => {
     setNote('A', '5');
     general();
     fireEvent.click(submit());
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '7', true, null));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '7', true, null, 'efectivo'));
   });
   it('lets the user select the historical modality and explains its financial block', () => {
     open({ cloudAllocationStatus: 'historical_unallocated', authoritativePendingSales: [] });
@@ -248,7 +261,7 @@ describe('payment modalities and financial UI boundaries', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Ofrecer comprobante como imagen al terminar' }));
     fireEvent.change(screen.getByLabelText('Monto del abono'), { target: { value: '5' } });
     fireEvent.click(submit());
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '5', false, null));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(customer, '5', false, null, 'efectivo'));
   });
   it('keeps Local note reads local without requiring Cloud markers', async () => {
     dbRead.mockReturnValue({
@@ -275,7 +288,7 @@ describe('payment modalities and financial UI boundaries', () => {
     setNote('L', '5');
     fireEvent.click(submit());
     await waitFor(() =>
-      expect(confirm).toHaveBeenCalledWith(customer, '5', true, [{ saleId: 'L', amountApplied: '5' }])
+      expect(confirm).toHaveBeenCalledWith(customer, '5', true, [{ saleId: 'L', amountApplied: '5' }], 'efectivo')
     );
   });
 });

@@ -27,7 +27,9 @@ const state = vi.hoisted(() => ({
   },
   reminderListCalls: 0,
   templatesMounts: 0,
-  automationMounts: 0
+  automationMounts: 0,
+  confirmPayment: false,
+  paymentMethod: 'tarjeta'
 }));
 
 vi.mock('../../components/customers/CustomerForm', () => ({
@@ -54,12 +56,13 @@ vi.mock('../../components/settings/CustomerMessageAutomationSettings', () => ({
 
 vi.mock('../../components/customers/PurchaseHistoryModal', () => ({ default: () => null }));
 vi.mock('../../components/customers/AbonoModal', () => ({
-  default: ({ show, cloudAllocationStatus, authoritativePendingSales, customer, onReloadPendingSales }) => state.paymentTest && show ? (
+  default: ({ show, cloudAllocationStatus, authoritativePendingSales, customer, onReloadPendingSales, onConfirmAbono }) => state.paymentTest && show ? (
     <div data-testid="abono-read-state">
       <output data-testid="abono-allocation-status">{cloudAllocationStatus}</output>
       <output data-testid="abono-verified-notes">{JSON.stringify(authoritativePendingSales)}</output>
       <output data-testid="abono-debt">{customer.debt}</output>
       <button onClick={onReloadPendingSales}>Reconsultar notas controladas</button>
+      {state.confirmPayment && <button onClick={() => onConfirmAbono(customer, '50', false, null, state.paymentMethod)}>Confirmar abono de prueba</button>}
     </div>
   ) : null
 }));
@@ -172,6 +175,7 @@ import { customerRepository } from '../../services/customers/customerRepository'
 import { customerCreditRepository } from '../../services/customerCredit/customerCreditRepository';
 import { db } from '../../services/db/dexie';
 import { selectCreditNotes } from '../../services/customerMessaging';
+import { showMessageModal } from '../../services/utils';
 
 function HistoryControls() {
   const navigate = useNavigate();
@@ -213,6 +217,8 @@ describe('CustomersPage navigation', () => {
     state.reminderListCalls = 0;
     state.templatesMounts = 0;
     state.automationMounts = 0;
+    state.confirmPayment = false;
+    state.paymentMethod = 'tarjeta';
     vi.clearAllMocks();
   });
 
@@ -473,6 +479,68 @@ describe('CustomersPage navigation', () => {
     expect(customerCreditRepository.getCustomerCreditSummary).toHaveBeenLastCalledWith('ruly', { force: true });
     expect(db.table).not.toHaveBeenCalled();
     expect(customerCreditRepository.processPayment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['tarjeta', /no incrementó el efectivo en Caja/],
+    ['transferencia', /no incrementó el efectivo en Caja/],
+    ['efectivo', /se registró como ingreso en Caja/]
+  ])('sends %s to the payment service and reports its confirmed Caja effect', async (method, message) => {
+    state.paymentTest = true;
+    state.confirmPayment = true;
+    state.paymentMethod = method;
+    selectCreditNotes.mockReturnValue([]);
+    customerCreditRepository.getCustomerCreditSummary.mockResolvedValueOnce({
+      success: true,
+      customer: { debt: '125' },
+      sale_allocation_version: 1,
+      sale_balances_authoritative: true,
+      sale_allocation_status: 'reconciled',
+      pending_credit_sales: []
+    });
+    customerCreditRepository.processPayment.mockResolvedValueOnce({
+      success: true, allocationStatus: 'applied', newDebt: '75'
+    });
+    renderPage('/clientes');
+    fireEvent.click(await screen.findByRole('button', { name: 'Abonar controlado' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar abono de prueba' }));
+
+    await waitFor(() => expect(customerCreditRepository.processPayment).toHaveBeenCalledWith(
+      'ruly', '50', method, 'cash-controlled', 'Abono de cliente: Ruly', null
+    ));
+    expect(showMessageModal).toHaveBeenCalledWith(expect.stringMatching(message));
+  });
+
+  it.each([
+    ['failed', { success: false, code: 'CUSTOMER_PAYMENT_FAILED', message: 'Abono no confirmado.' }],
+    ['uncertain', { success: false, code: 'CUSTOMER_PAYMENT_RESULT_PENDING', message: 'Abono pendiente de verificación.' }]
+  ])('does not announce success for a %s payment result', async (_scenario, result) => {
+    state.paymentTest = true;
+    state.confirmPayment = true;
+    state.paymentMethod = 'efectivo';
+    selectCreditNotes.mockReturnValue([]);
+    customerCreditRepository.getCustomerCreditSummary.mockResolvedValueOnce({
+      success: true,
+      customer: { debt: '125' },
+      sale_allocation_version: 1,
+      sale_balances_authoritative: true,
+      sale_allocation_status: 'reconciled',
+      pending_credit_sales: []
+    });
+    customerCreditRepository.processPayment.mockResolvedValueOnce(result);
+    if (result.code === 'CUSTOMER_PAYMENT_RESULT_PENDING') {
+      customerCreditRepository.getPendingCloudPayment
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ intentId: 'payment-intent-1', canRecover: true, amount: '50' });
+    }
+    renderPage('/clientes');
+    fireEvent.click(await screen.findByRole('button', { name: 'Abonar controlado' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar abono de prueba' }));
+
+    await waitFor(() => expect(showMessageModal).toHaveBeenCalledWith(result.message, null, expect.any(Object)));
+    const shownMessages = showMessageModal.mock.calls.map(([message]) => String(message));
+    expect(shownMessages.some((message) => /Abono confirmado|registrado exitosamente|ingreso en Caja/i.test(message)))
+      .toBe(false);
   });
 
   it.each([

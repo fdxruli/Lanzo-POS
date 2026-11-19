@@ -212,7 +212,11 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     name,
     name_lower: text(name).toLowerCase(),
     category: product.category || existing?.category || '',
-    categoryId: product.category_id || product.categoryId || '',
+    categoryId: product.category_id !== undefined
+      ? (product.category_id ?? '')
+      : product.categoryId !== undefined
+        ? (product.categoryId ?? '')
+        : (existing?.categoryId ?? existing?.category_id ?? ''),
     description: product.description || '',
     barcode: product.barcode || '',
     barcode_normalized: product.barcode_key || product.barcode_normalized || '',

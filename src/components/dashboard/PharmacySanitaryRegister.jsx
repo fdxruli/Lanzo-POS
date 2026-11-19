@@ -7,7 +7,9 @@ import {
   buildSanitaryCsv,
   collectSanitaryExport,
   getSanitaryRegisterPage,
-  sanitaryIncidences
+  sanitaryIncidences,
+  sanitaryMissingUnitLabel,
+  sanitaryUnitSourceLabel
 } from '../../services/reports/pharmacySanitaryRegister';
 import './PharmacySanitaryRegister.css';
 
@@ -202,7 +204,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                       <small>{dateLabel(row.occurredAt, timezone)} · {LABELS[row.movementType] || row.movementType}</small>
                     </span>
                     <span className="sanitary-item-end">
-                      <strong>{shown(row.quantity)} {row.unit || 'unidad no indicada'}</strong>
+                      <strong>{shown(row.quantity)} {row.unit || sanitaryMissingUnitLabel(row)}</strong>
                       <small>{LABELS[row.traceStatus] || 'Revisar'}</small>
                     </span>
                   </summary>
@@ -222,6 +224,8 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                       </>
                     )}
                     <div><dt>Lote</dt><dd>{shown(row.batchNumber || row.batchId)}</dd></div>
+                    <div><dt>Unidad</dt><dd>{row.unit || sanitaryMissingUnitLabel(row)}</dd></div>
+                    <div><dt>Fuente de unidad</dt><dd>{sanitaryUnitSourceLabel(row)}</dd></div>
                     <div><dt>Caducidad</dt><dd>{shown(row.expiryDate)}</dd></div>
                     {row.batchSku && <div><dt>SKU de lote</dt><dd>{shown(row.batchSku)}</dd></div>}
                     {row.receiptAt && <div><dt>Recepción declarada</dt><dd>{dateLabel(row.receiptAt, timezone)}</dd></div>}

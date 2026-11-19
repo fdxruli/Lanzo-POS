@@ -13,6 +13,35 @@ const newMedication = () => ({
 });
 
 describe('Farmacia - payload a Cloud y de regreso', () => {
+  it('persists a selected commercial category and preserves it in partial Cloud responses', () => {
+    const selected = { ...newMedication(), categoryId: 'cat-medicamentos' };
+    const formPayload = buildProductFormPayload(selected, { activeRubro: 'farmacia' });
+    expect(formPayload.categoryId).toBe('cat-medicamentos');
+    const payload = productToCloudPayload(formPayload);
+    expect(payload.category_id).toBe('cat-medicamentos');
+    const reloaded = cloudProductToLocal(payload);
+    expect(getProductFormDefaults({ activeRubro: 'farmacia', productToEdit: reloaded }).categoryId)
+      .toBe('cat-medicamentos');
+
+    const partial = cloudProductToLocal(
+      { id: 'med-qa', stock: 12, committed_stock: 0 },
+      reloaded
+    );
+    expect(partial.categoryId).toBe('cat-medicamentos');
+  });
+
+  it('keeps an explicit choice to remove a product category', () => {
+    const formPayload = buildProductFormPayload(
+      { ...newMedication(), categoryId: '' },
+      { activeRubro: 'farmacia' }
+    );
+    expect(productToCloudPayload(formPayload).category_id).toBeNull();
+    expect(cloudProductToLocal(
+      { id: 'med-qa', category_id: null },
+      { id: 'med-qa', categoryId: 'cat-medicamentos' }
+    ).categoryId).toBe('');
+  });
+
   it('persiste metadatos y flags de antibiótico sin convertirlo en controlado', () => {
     const initial = buildProductFormPayload(newMedication(), { activeRubro: 'farmacia' });
     expect(initial.metadata.pharmacy).toMatchObject({ fraction: 'IV', antibiotic: true, concentration: '500 mg' });

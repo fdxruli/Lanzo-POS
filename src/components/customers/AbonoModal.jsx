@@ -51,6 +51,7 @@ export default function AbonoModal({
   onRecoverPending = null
 }) {
   const [monto, setMonto] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('efectivo');
   const [error, setError] = useState('');
   const [sendReceipt, setSendReceipt] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -78,6 +79,7 @@ export default function AbonoModal({
   useEffect(() => {
     if (!show) {
       setMonto('');
+      setPaymentMethod('efectivo');
       setError('');
       setMode('general');
       setAllocations({});
@@ -288,7 +290,7 @@ export default function AbonoModal({
     setIsSubmitting(true);
     setError('');
     try {
-      await onConfirmAbono(customer, amount.exact, sendReceipt, finalAllocations);
+      await onConfirmAbono(customer, amount.exact, sendReceipt, finalAllocations, paymentMethod);
     } catch (submitError) {
       if (isMountedRef.current)
         setError(
@@ -322,6 +324,9 @@ export default function AbonoModal({
     : isCloudCredit && notesStatus === 'historical_unallocated'
       ? 'Reduce la deuda general. En esta cuenta el pago no se asignará a una venta porque existen abonos sin conciliar.'
       : 'En cuentas conciliadas, el abono se aplica a las notas pendientes empezando por la más antigua.';
+  const paymentImpactHelp = paymentMethod === 'efectivo'
+    ? 'Al confirmar, el efectivo recibido se registrará como ingreso en Caja. Este aviso no crea un movimiento adicional.'
+    : `Al confirmar, se registrará el abono por ${paymentMethod}; no incrementará el efectivo en Caja.`;
 
   return (
     <div
@@ -425,6 +430,22 @@ export default function AbonoModal({
                 </label>
               ))}
             </fieldset>
+            <label className="abono-payment-method" htmlFor={`${id}-payment-method`}>
+              Medio de pago
+              <select
+                id={`${id}-payment-method`}
+                value={paymentMethod}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+                disabled={isBlocked || isSubmitting}
+              >
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="transferencia">Transferencia</option>
+              </select>
+            </label>
+            <p className="abono-mode-help abono-payment-impact" aria-live="polite">
+              {paymentImpactHelp}
+            </p>
             <section
               id={`${id}-panel`}
               className="abono-mode-panel"

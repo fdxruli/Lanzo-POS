@@ -53,7 +53,7 @@ const CriticalStorageLockScreen = () => {
     try {
       await downloadBackupSmart();
       showMessageModal('Respaldo de emergencia completado. Ahora libera espacio en tu dispositivo.');
-    } catch (e) {
+    } catch {
       showMessageModal('Fallo al respaldar.', null, { type: 'error' });
     } finally {
       setBackupLoading(false);
@@ -146,7 +146,17 @@ export const PersistenceWarningBanner = ({ suppressSecondaryBanner = false } = {
   const canRetry = persistenceState === 'prompt' || persistenceState === 'unknown';
 
   return (
-    <div className="persistence-warning-banner" role="alert" aria-live="polite">
+    <div
+      className="persistence-warning-banner"
+      role="alert"
+      aria-live="polite"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setVolatileDismissed(true);
+        }
+      }}
+    >
       <div className="banner-content">
         <div className="banner-icon" aria-hidden="true">
           <ShieldAlert size={28} />

@@ -4,8 +4,8 @@ import {
 import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
 import { getBatchManagerStatus } from '../../../services/products/batchManagerQueries';
 import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
-import { isBatchExpiredForSale } from '../../../services/products/fefoUtils';
-import { extractCalendarDate } from '../../../utils/dateUtils';
+import { getBatchExpiryValue, getFefoExpiryBadge, isBatchExpiredForSale } from '../../../services/products/fefoUtils';
+import { extractCalendarDate, getBatchExpiryStatus } from '../../../utils/dateUtils';
 import { getPharmacyClassification } from '../../../utils/pharmacyClassification';
 
 const formatDate = (isoDate) => {
@@ -14,11 +14,23 @@ const formatDate = (isoDate) => {
   return Number.isNaN(date.getTime()) ? 'Sin fecha' : date.toLocaleDateString('es-MX');
 };
 
-export const formatBatchCalendarDate = (value) => {
+export const formatBatchCalendarDate = (value, fallback = 'Fecha no registrada') => {
   const calendarDate = extractCalendarDate(value);
-  if (!calendarDate) return 'Sin fecha';
+  if (!calendarDate) return fallback;
   const [year, month, day] = calendarDate.split('-');
   return `${day}/${month}/${year}`;
+};
+
+const getPharmacyExpiryLabel = (batch) => {
+  const expiryDate = getBatchExpiryValue(batch);
+  const status = getBatchExpiryStatus({ expiryDate });
+  if (status === 'missing') return 'Fecha no registrada';
+  if (status === 'invalid') return 'Fecha no válida';
+  if (status === 'expired') return 'Vencido';
+
+  const badge = getFefoExpiryBadge({ expiryDate });
+  if (badge?.tone === 'warning') return `Próximo a vencer · ${badge.label}`;
+  return 'Vigente';
 };
 
 const formatMoney = (amount) => Number(amount || 0).toLocaleString('es-MX', {
@@ -53,7 +65,9 @@ export default function BatchTable({
   onEditBatch,
   onDeleteBatch
 }) {
-  const showExpiry = Boolean(features.hasLots || features.hasExpiry);
+  const pharmacy = getPharmacyClassification(product);
+  const pharmacyMedicine = pharmacy.recorded && pharmacy.kind === 'medicine';
+  const showExpiry = Boolean(features.hasLots || features.hasExpiry || pharmacyMedicine);
   const showVariants = Boolean(features.hasVariants);
   const isCommercialVariant = isCommercialVariantProduct({
     ...product,
@@ -116,9 +130,8 @@ export default function BatchTable({
         <div className="batch-entry-list" role="list" aria-label="Lotes registrados">
           {productBatches.map((batch) => {
             const archived = getBatchManagerStatus(batch) === 'archived';
-            const pharmacy = getPharmacyClassification(product);
-            const pharmacyMedicine = pharmacy.recorded && pharmacy.kind === 'medicine';
             const expiredForSale = pharmacyMedicine && isBatchExpiredForSale(batch, product);
+            const expiryValue = getBatchExpiryValue(batch);
             const empty = Number(batch.stock || 0) === 0;
             const available = getAvailableStock(batch);
             const committed = getCommittedStock(batch);
@@ -153,8 +166,13 @@ export default function BatchTable({
                   </div>
                   <dl className="batch-entry-meta">
                     {showExpiry && (
-                      <div><dt>Caducidad</dt><dd>{pharmacyMedicine
-                        ? formatBatchCalendarDate(batch.expiryDate) : formatDate(batch.expiryDate)}</dd></div>
+                      <>
+                        <div><dt>Caducidad</dt><dd>{pharmacyMedicine
+                          ? formatBatchCalendarDate(expiryValue) : formatDate(expiryValue)}</dd></div>
+                        {pharmacyMedicine && (
+                          <div><dt>Estado de caducidad</dt><dd>{getPharmacyExpiryLabel(batch)}</dd></div>
+                        )}
+                      </>
                     )}
                     <div><dt>{isCommercialVariant ? 'Precio de variante' : 'Precio del producto'}</dt><dd>{formatMoney(getDisplayedBatchSalePrice(product, batch))}</dd></div>
                     {supplier && <div><dt>Proveedor</dt><dd>{supplier}</dd></div>}

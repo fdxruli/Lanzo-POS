@@ -18,7 +18,69 @@ export const LEGACY_SANITARY_MOVEMENT_TYPES = [
 const MAX_LOCAL_ROWS_PER_STORE = 3000;
 const VALID_MOVEMENTS = new Set(SANITARY_MOVEMENT_TYPES);
 const VALID_TRACES = new Set(['complete', 'incomplete', 'limited']);
+export const SANITARY_UNIT_SOURCE_LABELS = Object.freeze({
+  operation_snapshot: 'Registro de operación',
+  cloud_record: 'Registro Cloud',
+  current_catalog: 'Catálogo actual (no histórico)',
+  cloud_not_returned: 'Unidad histórica no devuelta por la consulta Cloud',
+  not_recorded: 'Unidad no registrada'
+});
 const identity = (value) => String(value ?? '').trim();
+const normalizeUnit = (...values) => values
+  .map((value) => (typeof value === 'string' ? value.trim() : ''))
+  .find(Boolean) || null;
+const catalogUnit = (product) => normalizeUnit(
+  product?.unit,
+  product?.saleUnit,
+  product?.sale_unit,
+  product?.metadata?.sale_unit,
+  product?.metadata?.unit,
+  product?.metadata?.baseUnit
+);
+const resolveUnitInfo = (snapshotValues, product, cloud = false) => {
+  const snapshotUnit = normalizeUnit(...snapshotValues);
+  if (snapshotUnit) return { unit: snapshotUnit, unitSource: 'operation_snapshot' };
+  const currentUnit = catalogUnit(product);
+  if (currentUnit) return { unit: currentUnit, unitSource: 'current_catalog' };
+  return { unit: null, unitSource: cloud ? 'cloud_not_returned' : 'not_recorded' };
+};
+const hydrateCloudUnits = async (rows) => {
+  let catalog = new Map();
+  try {
+    if (!db.isOpen()) await db.open();
+    const products = await db.table(STORES.MENU).toArray();
+    catalog = new Map(products.map((product) => [identity(product.id), product]));
+  } catch {
+    // Local cache is an optional current-catalog fallback for the Cloud report.
+  }
+
+  return rows.map((row) => {
+    const cloudUnit = normalizeUnit(row.unit);
+    if (cloudUnit) {
+      const unitSource = row.unitSource || row.unit_source || 'cloud_record';
+      return {
+        ...row,
+        unit: cloudUnit,
+        unitSource
+      };
+    }
+    const product = catalog.get(identity(row.productId || row.product_id));
+    const unitInfo = resolveUnitInfo([], product, true);
+    return {
+      ...row,
+      ...unitInfo
+    };
+  });
+};
+export const sanitaryUnitSourceLabel = (row) => {
+  const inferredSource = normalizeUnit(row?.unit)
+    ? (row?.source === 'cloud' ? 'cloud_record' : 'operation_snapshot')
+    : 'not_recorded';
+  return SANITARY_UNIT_SOURCE_LABELS[row?.unitSource || inferredSource] || 'Fuente no identificada';
+};
+export const sanitaryMissingUnitLabel = (row) => row?.unitSource === 'cloud_not_returned'
+  ? 'unidad no devuelta por Cloud'
+  : 'unidad no registrada';
 const ts = (value) => {
   const n = Date.parse(value);
   return Number.isFinite(n) ? new Date(n).toISOString() : '';
@@ -82,6 +144,9 @@ const localRows = async (f) => {
     if (event?.type !== 'INVENTORY_ENTRY' || !event.metadata?.pharmacyReceipt) continue;
     const product = catalog.get(identity(event.productId));
     const receipt = event.metadata.pharmacyReceipt;
+    const unitInfo = resolveUnitInfo([
+      event.baseUnit, event.metadata?.baseUnit, receipt.baseUnit
+    ], product);
     result.push({
       id: 'inventory:' + identity(event.operationId || event.id),
       operationId: identity(event.operationId || event.id),
@@ -91,7 +156,7 @@ const localRows = async (f) => {
       productId: identity(event.productId), productName: product?.name || 'Medicamento no disponible',
       nameSource: 'current_catalog', activeSubstance: null, classificationAtOperation: null,
       barcode: product?.barcode || null, searchHints: product?.activeSubstance || null,
-      quantity: Number(event.delta), unit: null, batchId: event.batchId || null,
+      quantity: Number(event.delta), ...unitInfo, batchId: event.batchId || null,
       batchNumber: event.manufacturerBatchId || null, expiryDate: event.expiryDate || null,
       expirySource: 'receipt_event', documentReference: receipt.documentReference || null,
       documentType: receipt.documentType || null, supplier: receipt.supplier || event.supplier || null,
@@ -99,6 +164,7 @@ const localRows = async (f) => {
       source: 'local_device', provenance: 'inventory_entry_event',
       syncStatus: event.syncDisposition === 'local_only' ? 'local_only' : event.synced ? 'synced' : 'pending',
       traceStatus: receipt.documentReference && event.batchId && event.manufacturerBatchId && event.expiryDate
+        && unitInfo.unitSource === 'operation_snapshot'
         ? 'complete' : 'incomplete'
     });
   }
@@ -132,6 +198,7 @@ const localRows = async (f) => {
 
       if (rx?.version === 1) {
         const batch = item.batchId || item.batch_id || item.batchesUsed?.[0]?.batchId || null;
+        const unitInfo = resolveUnitInfo([item.unit, item.baseUnit, item.saleUnit], product);
         result.push({
           id: 'local-dispensation:' + saleId + ':' + index,
           operationId: saleId + ':' + index,
@@ -140,7 +207,7 @@ const localRows = async (f) => {
           productName: item.name || item.productName || 'Medicamento',
           nameSource: 'sale_snapshot', activeSubstance: null, classificationAtOperation: null,
           barcode: item.barcode || null, searchHints: item.activeSubstance || product?.activeSubstance || null,
-          quantity: Number(item.quantity), unit: null, batchId: batch,
+          quantity: Number(item.quantity), ...unitInfo, batchId: batch,
           batchNumber: item.batchSku || null, expiryDate: item.batchExpiryDate || null,
           expirySource: item.batchExpiryDate ? 'sale_snapshot' : null,
           documentReference: rx.reference || null, documentType: 'prescription',
@@ -150,6 +217,7 @@ const localRows = async (f) => {
           source: 'local_device', provenance: 'local_sale_rx_snapshot',
           syncStatus: 'local_not_cloud_confirmed',
           traceStatus: batch && rx.reference && statusFromSale(sale) === 'complete'
+            && unitInfo.unitSource === 'operation_snapshot'
             ? 'limited' : 'incomplete'
         });
       }
@@ -234,6 +302,10 @@ const localRows = async (f) => {
       const sourceItem = sourceLine
         ? group.lines.find((line) => line.lineId === sourceLine)?.item
         : group.lines[0]?.item;
+      const unitInfo = resolveUnitInfo(
+        [sourceItem?.unit, sourceItem?.baseUnit, sourceItem?.saleUnit],
+        group.product
+      );
       result.push({
         id: 'local-sale:' + saleId + ':' + internalLine + ':' + (batchId || 'unassigned') + ':' + allocationKey,
         operationId: null,
@@ -243,7 +315,7 @@ const localRows = async (f) => {
         nameSource: 'sale_snapshot', activeSubstance: null, classificationAtOperation: null,
         barcode: sourceItem?.barcode || group.product?.barcode || null,
         searchHints: group.product?.activeSubstance || null,
-        quantity: allocation.quantity, unit: sourceItem?.unit || null,
+        quantity: allocation.quantity, ...unitInfo,
         batchId, batchNumber: allocation.batchNumber || null, batchSku: allocation.batchSku || null,
         expiryDate: allocation.expiryDate || null,
         expirySource: allocation.expiryDate ? 'sale_snapshot' : null,
@@ -253,12 +325,15 @@ const localRows = async (f) => {
         saleStatus: group.sale.status || 'unknown', actor: group.sale.actorName || null,
         source: 'local_device', provenance: allocation.provenance,
         sourceMovementIds: deduction.ids, movementGranularity: 'product',
-        syncStatus: 'local_not_cloud_confirmed', traceStatus: 'limited'
+        syncStatus: 'local_not_cloud_confirmed',
+        traceStatus: unitInfo.unitSource === 'operation_snapshot' ? 'limited' : 'incomplete'
       });
     });
   }
   for (const log of waste) {
-    if (!identity(log.id) || !isMedicine(catalog.get(identity(log.productId)))) continue;
+    const product = catalog.get(identity(log.productId));
+    if (!identity(log.id) || !isMedicine(product)) continue;
+    const unitInfo = resolveUnitInfo([log.unit, log.baseUnit], product);
     result.push({
       id: 'local-waste:' + identity(log.id), operationId: identity(log.id),
       occurredAt: ts(log.timestamp), movementType: 'waste', productId: identity(log.productId),
@@ -266,12 +341,12 @@ const localRows = async (f) => {
       nameSource: log.productName ? 'waste_snapshot' : 'current_catalog',
       activeSubstance: null, classificationAtOperation: null,
       searchHints: catalog.get(identity(log.productId))?.activeSubstance || null,
-      quantity: Number(log.quantity), unit: log.unit || null,
+      quantity: Number(log.quantity), ...unitInfo,
       batchId: log.batchId || null, batchNumber: log.batchSku || null,
       expiryDate: null, documentReference: null, documentType: null, actor: null,
       notes: log.reason || log.notes || null, source: 'local_device',
       provenance: 'waste_log', syncStatus: 'local_only',
-      traceStatus: log.batchId ? 'limited' : 'incomplete'
+      traceStatus: log.batchId && unitInfo.unitSource === 'operation_snapshot' ? 'limited' : 'incomplete'
     });
   }
   return result;
@@ -279,6 +354,13 @@ const localRows = async (f) => {
 
 export const sanitaryIncidences = (row) => {
   const issues = [];
+  if (!normalizeUnit(row.unit)) {
+    issues.push(row.unitSource === 'cloud_not_returned'
+      ? 'Unidad histórica no devuelta por la consulta Cloud'
+      : 'Unidad de medida no registrada');
+  } else if (row.unitSource === 'current_catalog') {
+    issues.push('Unidad del catálogo actual, no dato histórico');
+  }
   if (!row.batchId) issues.push('Lote sin identidad verificable');
   if (!row.expiryDate) issues.push('Caducidad no disponible');
   if (row.movementType === 'receipt' && !row.documentReference) issues.push('Recepción sin comprobante');
@@ -310,14 +392,22 @@ export const pageSanitaryRows = (rows, f, cursor = null, limit = SANITARY_PAGE_S
   const unique = new Map();
   for (const row of rows) {
     if (!row?.id || !row.occurredAt || row.occurredAt < f.dateFrom || row.occurredAt >= f.dateTo) continue;
-    if (f.movementType && row.movementType !== f.movementType) continue;
-    if (f.traceStatus && row.traceStatus !== f.traceStatus) continue;
-    if (f.batchId && identity(row.batchId).toLowerCase() !== f.batchId.toLowerCase()
-        && identity(row.batchNumber).toLowerCase() !== f.batchId.toLowerCase()) continue;
-    if (f.search && ![row.productName, row.productId, row.activeSubstance, row.barcode, row.searchHints]
+    const unit = normalizeUnit(row.unit);
+    const unitSource = row.unitSource || (unit ? 'operation_snapshot' : 'not_recorded');
+    const normalized = {
+      ...row,
+      unit,
+      unitSource,
+      ...(row.traceStatus === 'complete' && unitSource !== 'operation_snapshot' ? { traceStatus: 'incomplete' } : {})
+    };
+    if (f.movementType && normalized.movementType !== f.movementType) continue;
+    if (f.traceStatus && normalized.traceStatus !== f.traceStatus) continue;
+    if (f.batchId && identity(normalized.batchId).toLowerCase() !== f.batchId.toLowerCase()
+        && identity(normalized.batchNumber).toLowerCase() !== f.batchId.toLowerCase()) continue;
+    if (f.search && ![normalized.productName, normalized.productId, normalized.activeSubstance, normalized.barcode, normalized.searchHints]
       .some((v) => String(v || '').toLowerCase().includes(f.search))) continue;
-    if (cursor && (row.occurredAt > cursor.at || (row.occurredAt === cursor.at && row.id >= cursor.id))) continue;
-    unique.set(row.id, row);
+    if (cursor && (normalized.occurredAt > cursor.at || (normalized.occurredAt === cursor.at && normalized.id >= cursor.id))) continue;
+    unique.set(normalized.id, normalized);
   }
   const sorted = [...unique.values()].sort((a, b) =>
     b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id));
@@ -362,6 +452,7 @@ export const getSanitaryRegisterPage = async ({
       && Array.isArray(data.supportedMovementTypes);
     response = {
       ...data,
+      rows: await hydrateCloudUnits(data.rows),
       supportedMovementTypes: currentContract
         ? [...new Set(data.supportedMovementTypes.filter((type) => VALID_MOVEMENTS.has(type)))]
         : LEGACY_SANITARY_MOVEMENT_TYPES,
@@ -377,7 +468,7 @@ export const getSanitaryRegisterPage = async ({
 export const SANITARY_CSV_HEADERS = [
   'Fecha y hora del registro (ISO 8601)', 'Fecha y hora de recepción declarada (ISO 8601)', 'Movimiento', 'Trazabilidad', 'ID operación', 'Medicamento',
   'Origen nombre', 'Sustancia activa histórica', 'Clasificación histórica',
-  'Cantidad', 'Unidad', 'Lote ID', 'Lote fabricante', 'Caducidad', 'Fuente caducidad',
+  'Cantidad', 'Unidad', 'Fuente unidad', 'Lote ID', 'Lote fabricante', 'Caducidad', 'Fuente caducidad',
   'Comprobante o receta', 'Tipo documento', 'ID receta', 'Venta', 'Línea venta',
   'Estado venta', 'Proveedor', 'Responsable', 'Fuente registro', 'Sincronización',
   'Procedencia', 'Incidencias', 'Observaciones', 'ID movimiento origen', 'Referencia de venta'
@@ -395,7 +486,7 @@ export const buildSanitaryCsv = (rows) => {
     r.occurredAt, r.receiptAt, r.movementType, r.traceStatus,
     r.operationId || r.movementId || (r.movementType === 'sale' ? '' : r.id), r.productName,
     r.nameSource, r.activeSubstance, r.classificationAtOperation, r.quantity,
-    r.unit, r.batchId, r.batchNumber, r.expiryDate, r.expirySource,
+    r.unit, sanitaryUnitSourceLabel(r), r.batchId, r.batchNumber, r.expiryDate, r.expirySource,
     r.documentReference, r.documentType, r.prescriptionId, r.saleId, r.saleItemId,
     r.saleStatus, r.supplier, r.actor, r.source, r.syncStatus,
     r.provenance, sanitaryIncidences(r).join('; '), r.notes,

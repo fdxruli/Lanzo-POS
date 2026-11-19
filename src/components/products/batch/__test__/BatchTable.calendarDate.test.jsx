@@ -6,11 +6,12 @@ import BatchTable, { formatBatchCalendarDate } from '../BatchTable';
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
 });
 
-const props = (product, productBatches) => ({
-  product, features: { hasExpiry: true }, productBatches, totalStock: 0, inventoryValue: 0,
+const props = (product, productBatches, features = { hasExpiry: true }) => ({
+  product, features, productBatches, totalStock: 0, inventoryValue: 0,
   isLoadingBatches: false, isLoadingInitial: false, isLoadingNextPage: false, isRefreshing: false,
   loadedCount: productBatches.length, totalCount: productBatches.length, hasMore: false,
   onRefresh: vi.fn(), onLoadMore: vi.fn(), onOpenNew: vi.fn(), onEditBatch: vi.fn(), onDeleteBatch: vi.fn()
@@ -48,7 +49,45 @@ describe('pharmacy lot calendar identity', () => {
     expect(screen.getByRole('button', { name: /^Editar Ingreso del/ })).toBeDisabled();
   });
 
-  it.each([375, 1280])('shows the manufacturer identity and empty state at %ipx viewport width', (width) => {
+  it('shows a Cloud snake-case expiry and its current status without product expiry flags', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-19T12:00:00'));
+    const product = { id: 'medicine-cloud', name: 'Medicamento Cloud', price: 20,
+      metadata: { pharmacy: { kind: 'medicine', status: 'confirmed' } } };
+    render(<BatchTable {...props(product, [{ id: 'lot-future', productId: product.id, stock: 5,
+      expiry_date: '2026-12-01', is_active: true }], { hasExpiry: false, hasLots: false })} />);
+
+    expect(screen.getByText('01/12/2026')).toBeInTheDocument();
+    expect(screen.getByText('Vigente')).toBeInTheDocument();
+  });
+
+  it('marks a near expiry using the existing FEFO warning window', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-19T12:00:00'));
+    const product = { id: 'medicine-near', name: 'Medicamento próximo', price: 20,
+      metadata: { pharmacy: { kind: 'medicine', status: 'confirmed' } } };
+    render(<BatchTable {...props(product, [{ id: 'lot-near', productId: product.id, stock: 5,
+      expiryDate: '2026-11-22' }], { hasExpiry: false, hasLots: false })} />);
+
+    expect(screen.getByText('Próximo a vencer · Vence en 3 días')).toBeInTheDocument();
+  });
+
+  it('shows a missing-date state and does not add expiry details to a general product', () => {
+    const medicine = { id: 'medicine-no-date', name: 'Medicamento sin fecha', price: 20,
+      metadata: { pharmacy: { kind: 'medicine', status: 'confirmed' } } };
+    const { rerender } = render(<BatchTable {...props(medicine, [{ id: 'lot-missing', stock: 1,
+      expiryDate: null }], { hasExpiry: false, hasLots: false })} />);
+    expect(screen.getAllByText('Fecha no registrada')).toHaveLength(2);
+    expect(screen.getByText('Estado de caducidad')).toBeInTheDocument();
+
+    const general = { id: 'general', name: 'Producto general', price: 20 };
+    rerender(<BatchTable {...props(general, [{ id: 'general-lot', stock: 1, expiryDate: '2026-12-01' }],
+      { hasExpiry: false, hasLots: false })} />);
+    expect(screen.queryByText('Caducidad')).not.toBeInTheDocument();
+    expect(screen.queryByText('Estado de caducidad')).not.toBeInTheDocument();
+  });
+
+  it.each([360, 390, 1280])('shows the manufacturer identity and empty state at %ipx viewport width', (width) => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     const product = { id: 'medicine-vi', name: 'Medicamento VI', expirationMode: 'STRICT', price: 20,
       metadata: { pharmacy: { kind: 'medicine', fraction: 'VI', status: 'confirmed' } } };
