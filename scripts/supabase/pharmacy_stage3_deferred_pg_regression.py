@@ -411,7 +411,7 @@ try:
       response = call(layaway_req, op='sale.layaway_complete')
       after = state(sale_id,'far001-vi')
       if reserved:
-       valid = (response.returncode==0 and 'true' in response.stdout and after['stock']==6
+       valid = (response.returncode==0 and 'true' in response.stdout and after['stock']==before['stock']-2
                 and after['sales']==1 and after['inventory']==1 and after['cash']==0)
       else:
        valid = (response.returncode!=0 and 'PHARMACY_CLOUD_AUTHORITY_REQUIRED' in response.stderr
