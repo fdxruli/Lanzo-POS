@@ -1,6 +1,7 @@
 import { getAvailableStock } from '../db/utils';
 import { getRecipeIngredientId, getIngredientDefaultUnit } from '../../utils/ingredientConfiguration';
 import { getOperationalStockSnapshot } from '../inventoryStock';
+import { isSellablePharmacyBatch } from '../products/batchStatus';
 import { isBatchExpiredForSale } from '../../utils/dateUtils';
 
 const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
@@ -149,7 +150,13 @@ export const validateStockBeforeSale = async ({
         const source = productMap.get(getRealProductId(item));
         const recipeIds = new Set((source?.recipe || []).map(getRecipeIngredientId));
         for (const [id, qty] of requirements) {
-            const current = totals.get(id) || { needed: 0, recipeOnly: true };
+            const current = totals.get(id) || { needed: 0, recipeOnly: true, selectedPharmacyLots: new Set() };
+            if (current.selectedPharmacyLots && id === getRealProductId(item)
+                && item.automaticPharmacyBatch === true && item.batchId) {
+                current.selectedPharmacyLots.add(item.batchId);
+            } else {
+                current.selectedPharmacyLots = null;
+            }
             current.needed += qty;
             current.recipeOnly = current.recipeOnly
                 && recipeIds.has(id)
@@ -172,7 +179,11 @@ export const validateStockBeforeSale = async ({
         }
         let available = getAvailableStock(product);
         if (product.batchManagement?.enabled) {
-            const batches = batchesByProduct.get(id) || [];
+            const allBatches = batchesByProduct.get(id) || [];
+            const batches = requirement.selectedPharmacyLots
+                ? allBatches.filter((batch) => requirement.selectedPharmacyLots.has(batch.id)
+                    && isSellablePharmacyBatch(batch, product))
+                : allBatches;
             if (batches.some((batch) => !getOperationalStockSnapshot(batch).valid)) {
                 unknownIngredients.push(id);
                 continue;

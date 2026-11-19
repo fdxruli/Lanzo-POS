@@ -2,6 +2,7 @@ import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/util
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
 import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { getDirectPartialRecipeSnapshot } from './directPartialAuthorization';
+import { isSellablePharmacyBatch } from '../products/batchStatus';
 import { isCommercialVariantLine } from '../products/commercialVariants';
 
 const TABLE_RESERVATION_SOURCE = 'table';
@@ -478,18 +479,18 @@ export const buildProcessedItemsAndDeductions = ({
             const rawBatches = targetProduct?.batchManagement?.enabled ? (batchesMap.get(targetId) || []) : [];
             const batches = filterBatchesEligibleForSale(rawBatches, targetProduct, { enforceExpiryStrict, now });
             const requiredStart = requiredQty;
-            const selectedVariantBatchId = targetId === realProductId
-                && isCommercialVariantLine(orderItem, product, batches)
-                ? String(orderItem.batchId ?? orderItem.batch_id)
+            const automaticPharmacyBatch = orderItem.automaticPharmacyBatch === true;
+            const selectedBatchId = targetId === realProductId
+                && (isCommercialVariantLine(orderItem, product, batches) || automaticPharmacyBatch)
+                ? (orderItem.batchId ?? orderItem.batch_id)
                 : null;
-            const selectedVariantBatch = selectedVariantBatchId
-                ? batches.find((batch) => (
-                    String(batch.id) === selectedVariantBatchId
+            const batchesForAllocation = selectedBatchId
+                ? batches.filter((batch) => (
+                    String(batch.id) === String(selectedBatchId)
                     && String(batch.productId || '') === String(targetId)
+                    && (!automaticPharmacyBatch || !enforceExpiryStrict
+                        || isSellablePharmacyBatch(batch, product, now))
                 ))
-                : null;
-            const batchesForAllocation = selectedVariantBatchId
-                ? (selectedVariantBatch ? [selectedVariantBatch] : [])
                 : batches;
 
             for (const batch of batchesForAllocation) {

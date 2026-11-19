@@ -188,7 +188,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     : getExplicitBatchesUsed(item, allowLocalBatches);
   const explicitBatchId = isSelectedCommercialVariant
     ? firstText(item.batchId, item.batch_id)
-    : hasManualBatchSelection(item)
+    : (hasManualBatchSelection(item) || item.automaticPharmacyBatch === true)
     ? firstText(item.batchId, item.batch_id)
     : (allowLocalBatches ? firstText(item.batchId, item.batch_id) : null);
   const discount = getDiscountObject(item);

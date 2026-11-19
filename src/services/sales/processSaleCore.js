@@ -443,6 +443,15 @@ export const processSaleCore = async ({
             await assertCloudPharmacyInventoryReconciled(medicineIds);
         }
 
+        if (isCloudInventorySale) {
+            const products = itemsToProcess.map((item) => productMap.get(item.parentId || item.productId || item.id))
+                .filter((product) => getPharmacyClassification(product).kind === 'other');
+            if (products.length) {
+                const { assertNoPendingGeneralPharmacyStock } = await import('../inventory/inventoryEntryService');
+                await assertNoPendingGeneralPharmacyStock(products);
+            }
+        }
+
         const directPartialContext = {
             order: itemsToProcess,
             total,

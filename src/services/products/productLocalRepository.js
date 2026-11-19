@@ -626,6 +626,11 @@ export const productLocalRepository = {
             }
             try {
               const existing = await db.table(store).get(entityId);
+              // An idempotent generic entry can return a projection older than a later sale or pull.
+              if (requireInventoryProjection && !legacyReceipt && existing
+                && Number(existing.serverVersion || 0) > Number(record.server_version ?? record.serverVersion ?? 0)) {
+                continue;
+              }
               // A pull or another receipt cannot erase still-pending additive
               // inventory from this device. Only an original confirmed receipt
               // with no other unresolved receipts may apply its Cloud snapshot.

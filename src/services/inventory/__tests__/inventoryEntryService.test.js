@@ -4,7 +4,7 @@ import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { useAppStore } from '../../../store/useAppStore';
-import { addInventoryEntry } from '../inventoryEntryService';
+import { addInventoryEntry, assertNoPendingGeneralPharmacyStock, markInventoryEntrySynced } from '../inventoryEntryService';
 vi.mock('../../auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_STATUS: {
     LOCKED: 'locked', AUTHENTICATING: 'authenticating', HANDOFF_CHECK: 'handoff_check', GRANTED: 'granted'
@@ -324,6 +324,32 @@ describe('pharmacy Cloud receipt authority', () => {
   afterEach(() => {
     useAppStore.setState({ licenseDetails: previousLicenseDetails });
     closeTestTenantRuntime();
+  });
+
+  it('keeps a general pharmacy lot unavailable until its generic Cloud receipt is confirmed', async () => {
+    const general = product({ stock: 0, batchManagement: { enabled: true }, expirationMode: 'STRICT',
+      metadata: { pharmacy: { kind: 'other', status: 'pending' } } });
+    await db.table(STORES.MENU).put(general);
+    const entry = { operationId: 'cloud-general-entry', productId: general.id, quantity: 5, baseQuantity: 5,
+      manufacturerBatchId: 'GENERAL', expiryDate: '2099-01-01' };
+    const [receipt, retry] = await Promise.all([addInventoryEntry(entry), addInventoryEntry(entry)]);
+    expect(receipt).toMatchObject({ pending: true, newStock: 0, batch: null });
+    expect(retry).toMatchObject({ duplicate: true, pending: true });
+    expect(await db.table(STORES.MENU).get(general.id)).toEqual(general);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX).toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload).toMatchObject({ cloudInventoryEntry: true, entry: { batchId: null, quantity: 5 } });
+    expect(rows[0].payload.cloudPharmacyReceipt).toBeUndefined();
+    await expect(addInventoryEntry({ ...entry, operationId: 'new-entry' }))
+      .rejects.toMatchObject({ code: 'PHARMACY_RECEIPT_PENDING' });
+
+    // A pre-upgrade optimistic entry must block both payment paths while queued.
+    await db.table(STORES.INVENTORY_EVENTS).update('inventory-entry:cloud-general-entry', { syncDisposition: 'actor_bound' });
+    await expect(assertNoPendingGeneralPharmacyStock([general]))
+      .rejects.toMatchObject({ code: 'PHARMACY_GENERAL_STOCK_SYNC_PENDING' });
+    await markInventoryEntrySynced(entry.operationId);
+    await expect(assertNoPendingGeneralPharmacyStock([general])).resolves.toBeUndefined();
   });
 
   it('stages a single immutable operation without exposing stock or creating a local batch', async () => {

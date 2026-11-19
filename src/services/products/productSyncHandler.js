@@ -277,6 +277,9 @@ export const productSyncHandler = {
     const expectedVersion = getExpectedVersion(operation);
     const idempotencyKey = operation.idempotencyKey || operation.id;
     const op = operation.operation;
+    const cloudInventoryEntry = operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY
+      && payload.cloudInventoryEntry === true;
+    const cloudConfirmation = cloudInventoryEntry || payload.cloudPharmacyReceipt === true;
     const pharmacyReceipt = operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY
       && (payload.cloudPharmacyReceipt === true || Boolean(payload.entry?.metadata?.pharmacyReceipt));
     const mutationRequirements = getProductInventoryMutationRequirements(operation);
@@ -289,11 +292,11 @@ export const productSyncHandler = {
     // context at the RPC boundary without persisting it into the old row.
     if (mutationRequirements.length > 0 && operation.actorSensitivity === 'actor_bound') {
       try {
-        if (!pharmacyReceipt) assertProductInventoryOperationActorCurrent(operation);
+        if (!pharmacyReceipt && !cloudInventoryEntry) assertProductInventoryOperationActorCurrent(operation);
         actorHandle = captureProductInventoryMutation(actorRequirementFlags);
         // A restored session may verify or retry the same receipt as its
         // original actor. The request still checks live permissions on both ends.
-        if (pharmacyReceipt && operation.originActorKey !== actorHandle.actorKey) {
+        if ((pharmacyReceipt || cloudInventoryEntry) && operation.originActorKey !== actorHandle.actorKey) {
           assertProductInventoryOperationActorCurrent(operation);
         }
         assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
@@ -367,8 +370,8 @@ export const productSyncHandler = {
         notifyProductsChanged({ source: 'productSyncHandler.pharmacyReceiptReconciled', productId: operation.entityId });
         return response;
       }
-      if (cloudPharmacyReceipt && response?.success === false
-        && /^(PHARMACY_|PRODUCT_NOT_FOUND$|BATCH_PRODUCT_MISMATCH$|BATCH_NOT_FOUND$|INVALID_QUANTITY$|INVALID_UNIT_PRECISION$|STOCK_TRACKING_DISABLED$|VARIANT_REQUIRED$|IDEMPOTENCY_PAYLOAD_MISMATCH$)/.test(response.code)) {
+      if (cloudConfirmation && response?.success === false
+        && /^(PHARMACY_|PRODUCT_NOT_FOUND$|BATCH_PRODUCT_MISMATCH$|BATCH_NOT_FOUND$|INVALID_QUANTITY$|INVALID_UNIT_PRECISION$|STRICT_(EXPIRY|MANUFACTURER_BATCH)_REQUIRED$|STOCK_TRACKING_DISABLED$|VARIANT_REQUIRED$|IDEMPOTENCY_PAYLOAD_MISMATCH$)/.test(response.code)) {
         if (actorHandle) assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
         await markCloudPharmacyReceiptRejected(idempotencyKey, response.code);
         return response;
@@ -440,7 +443,7 @@ export const productSyncHandler = {
       response?.success !== true
       || !response?.inventory_movement?.id
       || response?.idempotency_key !== idempotencyKey
-      || (payload.cloudPharmacyReceipt && (
+      || (cloudConfirmation && (
         response.product?.id !== operation.entityId || !response.batch?.id
         || response.batch?.product_id !== operation.entityId
       ))
@@ -454,10 +457,10 @@ export const productSyncHandler = {
       return { conflict: staleResponse, success: false };
     }
 
-    const applied = payload.cloudPharmacyReceipt
+    const applied = cloudConfirmation
       ? await productLocalRepository.applyCloudCatalog(response, { requireInventoryProjection: true })
       : await productLocalRepository.applyCloudCatalog(response);
-    if (payload.cloudPharmacyReceipt && (applied?.rejected?.length || applied?.deferredInventory)) {
+    if (cloudConfirmation && (applied?.rejected?.length || applied?.deferredInventory)) {
       throw asError({ code: 'INVENTORY_RECEIPT_PROJECTION_PENDING' }, 'PRODUCT_PUSH_FAILED');
     }
 
@@ -466,7 +469,7 @@ export const productSyncHandler = {
     }
 
     const latestChangeSeq = normalizeChangeSeq(response, 0);
-    if (latestChangeSeq > 0 && !payload.cloudPharmacyReceipt) {
+    if (latestChangeSeq > 0 && !cloudConfirmation) {
       await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
     }
 

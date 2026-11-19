@@ -21,6 +21,8 @@ vi.mock('../../../services/utils', () => ({
 import { db, STORES } from '../../../services/db/dexie';
 import { actorRuntimeController, createActorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { useActiveOrders } from '../useActiveOrders';
+import { buildProcessedItemsAndDeductions } from '../../../services/sales/inventoryFlow';
+import { mapLocalCheckoutToCloudSale, mapLocalCreditCheckoutToCloudSale } from '../../../services/salesCloud/salesCloudCashierMapper';
 import { processSaleCore } from '../../../services/sales/processSaleCore';
 import { salesCloudCashierService } from '../../../services/salesCloud/salesCloudCashierService';
 
@@ -56,6 +58,52 @@ beforeEach(async () => {
 afterAll(async () => { vi.restoreAllMocks(); await db.delete(); });
 
 describe('selected-batch availability through real cart actions and Dexie', () => {
+  it('adds pharmacy units across valid lots and keeps each physical allocation at checkout', async () => {
+    const medicine = { ...product, price: 50, stock: 37, committedStock: 0, rubroContext: 'farmacia',
+      metadata: { pharmacy: { kind: 'medicine', status: 'confirmed', fraction: 'VI' } },
+      expirationMode: 'STRICT' };
+    await db.table(STORES.MENU).put(medicine);
+    const current = { ...batch, trackStock: true, stock: 10, committedStock: 0, expiryDate: '2099-01-01' };
+    const later = { ...current, id: 'lot-2', stock: 27, expiryDate: '2099-02-01' };
+    const lots = [current, later,
+      { ...current, id: 'expired', expiryDate: '2000-01-01' },
+      { ...current, id: 'missing-date', expiryDate: null },
+      { ...current, id: 'archived', status: 'archived' },
+      { ...current, id: 'empty', stock: 0 }
+    ];
+    await db.table(STORES.PRODUCT_BATCHES).bulkPut(lots);
+
+    expect(await state().addSmartItem(medicine, 'A')).toMatchObject({ success: true });
+    for (let i = 1; i < 15; i += 1) {
+      const firstLine = items('A')[0];
+      expect(await state().updateItemQuantity(firstLine.lineId, firstLine.quantity + 1, 'A'))
+        .toMatchObject({ success: true });
+    }
+    expect(items('A').map(({ batchId, quantity, price }) => [batchId, quantity, price]))
+      .toEqual([['lot-1', 10, 50], ['lot-2', 5, 50]]);
+    expect(new Set(items('A').map(({ lineId }) => lineId)).size).toBe(2);
+    const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
+      itemsToProcess: items('A'), allProducts: [medicine],
+      batchesMap: new Map([[medicine.id, lots]]), roundCurrency: Number
+    });
+    const allocations = [['lot-1', 10], ['lot-2', 5]];
+    expect(batchesToDeduct.map(({ batchId, quantity }) => [batchId, quantity])).toEqual(allocations);
+    for (const mapper of [mapLocalCheckoutToCloudSale, mapLocalCreditCheckoutToCloudSale]) {
+      const payload = mapper({ sale: { id: 'far-sale', total: 750 }, processedItems, inventoryEnabled: true });
+      expect(payload.items.map(({ batch_id, quantity }) => [batch_id, quantity])).toEqual(allocations);
+    }
+
+    expect(await state().addSmartItem(medicine, 'B')).toMatchObject({ success: true });
+    expect(items('B')[0].batchId).toBe('lot-2');
+    for (let i = 15; i < 36; i += 1) {
+      expect(await state().addSmartItem(medicine, 'A')).toMatchObject({ success: true });
+    }
+    expect(await state().addSmartItem(medicine, 'A')).toMatchObject({ success: false });
+    await state().removeItem(items('B')[0].lineId, 'B');
+    expect(await state().addSmartItem(medicine, 'A')).toMatchObject({ success: true });
+    expect(await state().addSmartItem(medicine, 'A')).toMatchObject({ success: false });
+  });
+
   it('allows exactly 5 - 2 = 3 units across A/B, then releases a provisional unit', async () => {
     expect(await state().addSmartItem(product, 'A')).toMatchObject({ success: true });
     expect(await state().addSmartItem(product, 'A')).toMatchObject({ success: true });

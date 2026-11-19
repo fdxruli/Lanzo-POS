@@ -124,6 +124,23 @@ describe('product sync repeated cutover safety', () => {
     expect(mocks.setMeta).not.toHaveBeenCalled();
   });
 
+  it('confirms a general pharmacy receipt through the generic RPC and requires its lot projection', async () => {
+    const op = { ...receiptOperation, payload: { cloudInventoryEntry: true,
+      entry: { productId: 'medicine-1', batchId: null } } };
+    const response = { success: true, idempotency_key: op.idempotencyKey, inventory_movement: { id: 'movement-1' },
+      product: { id: 'medicine-1' }, batch: { id: 'batch-1', product_id: 'medicine-1' } };
+    mocks.addInventoryEntry.mockResolvedValueOnce({ ...response, batch: null }).mockResolvedValueOnce(response);
+    await expect(productSyncHandler.pushOperation(op)).rejects.toMatchObject({ code: 'INVENTORY_RECEIPT_CONFIRMATION_MISSING' });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+    await expect(productSyncHandler.pushOperation(op)).resolves.toEqual(response);
+    for (const [args] of mocks.addInventoryEntry.mock.calls) {
+      expect(args).toMatchObject({ idempotencyKey: op.idempotencyKey, entry: op.payload.entry });
+      expect(args.cloudPharmacyReceipt).toBeUndefined();
+    }
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(response, { requireInventoryProjection: true });
+    expect(mocks.markReceiptSynced).toHaveBeenCalledWith(op.idempotencyKey, response);
+  });
+
   it('records a definitive validation rejection without applying a stock projection', async () => {
     mocks.addInventoryEntry.mockRejectedValueOnce({ code: 'P0001', message: 'BATCH_NOT_FOUND' });
     await expect(productSyncHandler.pushOperation(receiptOperation)).resolves.toMatchObject({

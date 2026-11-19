@@ -7,6 +7,7 @@ Run: python scripts/supabase/pharmacy_stage3_deferred_pg_regression.py --isolate
 Evidence: work/pharmacy-stage3[-current]-results.json. Container removed on exit.
 """
 import subprocess, json, datetime, sys, time, uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 FAR_001 = sys.argv[1:] == ['--isolated-fixture', '--current-financial', '--far-001']
 CURRENT_FINANCIAL = FAR_001 or sys.argv[1:] == ['--isolated-fixture', '--current-financial']
@@ -95,11 +96,19 @@ try:
     def state(name,pid):
      return json.loads(scalar("SELECT json_build_object('sales',(SELECT count(*) FROM public.pos_sales WHERE id="+lit(name)+"),'items',(SELECT count(*) FROM public.pos_sale_items WHERE sale_id="+lit(name)+"),'stock',(SELECT stock FROM public.pos_products WHERE id="+lit(pid)+"),'inventory',(SELECT count(*) FROM public.pos_inventory_movements WHERE sale_id="+lit(name)+"),'receipts',(SELECT count(*) FROM public.pos_financial_operations WHERE idempotency_key="+lit(name+'-key')+"),'dispensed_quantity',(SELECT coalesce(sum(quantity),0) FROM private.pharmacy_dispensations_v1 WHERE sale_id="+lit(name)+"),'cash_amount',(SELECT coalesce(sum(amount),0) FROM public.pos_cash_movements WHERE sale_id="+lit(name)+"),'cash',(SELECT count(*) FROM public.pos_cash_movements WHERE sale_id="+lit(name)+"),'payments',(SELECT count(*) FROM public.pos_sale_payments WHERE sale_id="+lit(name)+"),'dispensations',(SELECT count(*) FROM private.pharmacy_dispensations_v1 WHERE sale_id="+lit(name)+"))"))
 
-    def call(req,role='anon',op='sale.cashier_inventory'):
-     j=lit(json.dumps(req))+'::jsonb';name=req['sale']['id']
-     cash_binding = "NULL,'lab-station-a'" if op=='sale.layaway_complete' else "'lab-cash-a','lab-station-a'"
-     request_hash=scalar("SELECT private.financial_operation_hash("+lit(op)+",private.canonical_financial_request_v1("+lit(op)+","+j+"),'admin:00000000-0000-0000-0000-0000000000aa',"+cash_binding+")")
-     s="BEGIN; SET LOCAL ROLE "+role+"; SELECT public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',"+lit(name+'-key')+","+lit(request_hash)+","+lit(op)+","+j+")->>'success'; SELECT session_user,current_user; COMMIT;"
+    def call(req,role='anon',op='sale.cashier_inventory',*,full_response=False,staff=False):
+     j=lit(json.dumps(req))+'::jsonb';name=req['sale']['id'] if 'sale' in req else req['sale_id']+'-cancel'
+     actor_key = 'staff:00000000-0000-0000-0000-0000000000ab' if staff else 'admin:00000000-0000-0000-0000-0000000000aa'
+     station = 'lab-station-b' if staff else 'lab-station-a'
+     cash_binding = ('NULL,NULL' if op == 'sale.cancel' else
+                     f'NULL,{lit(station)}' if op == 'sale.layaway_complete' else
+                     f'{lit(req["cash_session_id"])},{lit(station)}')
+     request_hash=scalar("SELECT private.financial_operation_hash("+lit(op)+",private.canonical_financial_request_v1("+lit(op)+","+j+"),"+lit(actor_key)+","+cash_binding+")")
+     projection = "" if full_response else "->>'success'"
+     s="BEGIN; SET LOCAL ROLE "+role+"; SELECT public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',"+lit(name+'-key')+","+lit(request_hash)+","+lit(op)+","+j+")"+projection+"; SELECT session_user,current_user; COMMIT;"
+     if staff:
+      s = (s.replace('lab-device-a','lab-device-b').replace('lab-device-token-a','lab-device-token-b')
+           .replace('lab-admin-session','lab-staff-session'))
      return sql(s,False,user='authenticator')
 
     sql("INSERT INTO public.pos_customers(id,license_id,name,credit_limit) VALUES ('lab-p0-customer','00000000-0000-0000-0000-000000000001','Synthetic customer',200);")
@@ -218,10 +227,159 @@ try:
     assert scalar("SELECT count(*) FROM private.pharmacy_dispensations_v1 d JOIN public.pos_sale_items si ON si.id=d.sale_item_id JOIN public.pos_product_batches b ON b.id=d.batch_id WHERE d.batch_id IS DISTINCT FROM si.batch_id OR b.product_id<>d.product_id OR b.license_id<>d.license_id")=='0'
     if FAR_001:
      assert scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'") in ['8','8.00','8.0000']
-     assert scalar("SELECT count(*) FROM public.pos_inventory_movements WHERE product_id='far001-vi'") == '2'
+     # Exercise the same explicit physical lines that the candidate sends.
+     second_receipt = (params.replace('FAR001-LOT', 'FAR001-SECOND')
+                       .replace('2099-01-01', '2099-02-01')
+                       .replace('=>10', '=>27').replace('far001-qa', 'far001-second'))
+     sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_receive_pharmacy_inventory_v1("
+         +second_receipt+")->>'success'; COMMIT;", user='authenticator')
+     # The existing single-lot case already sold two units. Receive them again
+     # on the same physical lot so the scenario starts with exactly 10 + 27.
+     refill = params.replace('=>10', '=>2').replace('far001-qa', 'far001-refill')
+     sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_receive_pharmacy_inventory_v1("
+         +refill+",p_batch_id=>'batch-entry-far001-qa')->>'success'; COMMIT;", user='authenticator')
+     multi = request('far001-multi','far001-vi',batch='batch-entry-far001-qa',qty=15)
+     first = request('far001-multi-a','far001-vi',batch='batch-entry-far001-qa',qty=10)['items'][0]
+     second = request('far001-multi-b','far001-vi',batch='batch-entry-far001-second',qty=5)['items'][0]
+     multi['items'] = [first, second]
+     multi['payments'][0].update(received_amount=150, change_amount=0)
+     multi['sale'].update(change_amount=0)
+     assert float(scalar("SELECT stock FROM public.pos_products WHERE id='far001-vi'")) == 37
+     with ThreadPoolExecutor(max_workers=2) as pool:
+      replies = list(pool.map(call, [multi, multi]))
+     assert all(reply.returncode == 0 and 'true' in reply.stdout for reply in replies), replies
+     sold = state('far001-multi','far001-vi')
+     assert sold['sales'] == sold['payments'] == sold['receipts'] == sold['cash'] == 1, sold
+     assert sold['stock'] == 22 and sold['cash_amount'] == 150 and sold['inventory'] == 2, sold
+     assert scalar("SELECT string_agg(batch_id||':'||quantity::int,',' ORDER BY quantity DESC) "
+                   "FROM public.pos_inventory_movements WHERE sale_id='far001-multi'") == (
+                       'batch-entry-far001-qa:10,batch-entry-far001-second:5')
+     assert call(multi).returncode == 0 and state('far001-multi','far001-vi') == sold
+     print('far001 pharmacy multilote 10 + 27 -> 15 -> 22 PASS (concurrent same-key and replay)')
+
+     sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,is_active,batch_management,expiration_mode,requires_prescription,prescription_type) VALUES "
+         "('far001-other',"+lit(L)+",'General','general',10,4,0,true,'{\"pharmacy\":{\"kind\":\"other\",\"status\":\"pending\"}}',true,'{\"enabled\":true}','STRICT',false,'otc');")
+     sql("INSERT INTO public.pos_customers(id,license_id,name,credit_limit) VALUES ('far001-other-customer',"
+         +lit(L)+",'Synthetic FAR-001 credit',500);")
+     generic_batch = 'batch-entry-far001-other-entry'
+     credit = request('far001-other-credit','far001-other',batch=generic_batch)
+     credit['customer_id'] = 'far001-other-customer'
+     credit['sale'].update(customer_id=credit['customer_id'], payment_method='credit',
+                           amount_paid=0, balance_due=20, change_amount=0)
+     credit['payments'] = []
+     pending_credit = json.loads(json.dumps(credit))
+     del pending_credit['items'][0]['batch_id']
+     before_receipt = state('far001-other-credit','far001-other')
+     failure = call(pending_credit, op='sale.credit', full_response=True)
+     assert 'NO_CURRENT_BATCH_FOR_STRICT_PRODUCT' in (failure.stdout + failure.stderr), failure
+     assert state('far001-other-credit','far001-other') == before_receipt
+     print('far001 credit before Cloud receipt reproduces NO_CURRENT_BATCH_FOR_STRICT_PRODUCT without effects')
+     sql("BEGIN; SET LOCAL ROLE anon; SELECT public.pos_add_inventory_entry("
+         "'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',"
+         "p_product_id=>'far001-other', p_quantity=>10, p_base_quantity=>10,"
+         "p_manufacturer_batch_id=>'GENERAL',p_expiry_date=>'2099-01-01',"
+         "p_idempotency_key=>'far001-other-entry')->>'success'; COMMIT;", user='authenticator')
+     assert float(scalar("SELECT stock FROM public.pos_product_batches WHERE id="+lit(generic_batch))) == 10
+     generic_cash = request('far001-other-cash','far001-other',batch=generic_batch)
+     reply = call(generic_cash)
+     assert reply.returncode == 0 and 'true' in reply.stdout, reply
+     credit['sale']['id'] = 'far001-other-credit-confirmed'
+     credit['items'][0]['id'] = 'far001-other-credit-confirmed-line'
+     automatic_credit = json.loads(json.dumps(credit))
+     del automatic_credit['items'][0]['batch_id']
+     raw = lit(json.dumps(automatic_credit)) + '::jsonb'
+     trial = sql("BEGIN; SELECT private.financial_operation_hash('sale.credit',"
+                 "private.canonical_financial_request_v1('sale.credit',"+raw+"),"
+                 "'admin:00000000-0000-0000-0000-0000000000aa','lab-cash-a','lab-station-a') AS hash \\gset\n"
+                 "SET LOCAL ROLE anon; SELECT public.pos_execute_financial_operation_v1("
+                 "'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',"
+                 "'far001-other-credit-baseline',:'hash','sale.credit',"+raw+")->>'success'; ROLLBACK;",
+                 check=False)
+     assert trial.returncode == 0 and 'true' in trial.stdout, trial
+     print('far001 general credit baseline also succeeds with a valid STRICT lot in the fixture')
+     for _ in range(2):
+      reply = call(credit, op='sale.credit')
+      assert reply.returncode == 0 and 'true' in reply.stdout, reply
+     credited = state('far001-other-credit-confirmed','far001-other')
+     assert credited['stock'] == 6 and credited['sales'] == credited['inventory'] == credited['receipts'] == 1, credited
+     assert credited['cash'] == credited['payments'] == 0, credited
+     assert float(scalar("SELECT debt FROM public.pos_customers WHERE id='far001-other-customer'")) == 20
+     assert scalar("SELECT count(*) FROM public.pos_customer_ledger WHERE customer_id='far001-other-customer'") == '1'
+     assert float(scalar("SELECT stock FROM public.pos_product_batches WHERE id="+lit(generic_batch))) == 6
+     print('far001 general credit PASS (one debt, no cash payment and physical lot persisted across connections)')
+
+     def expect_rejected_without_effects(req, operation, expected):
+      name = req['sale']['id']
+      before = state(name,'far001-other')
+      reply = call(req, op=operation, full_response=True)
+      assert (reply.returncode != 0 or 'false' in reply.stdout) and expected in (reply.stdout + reply.stderr), reply
+      assert state(name,'far001-other') == before
+      assert float(scalar("SELECT debt FROM public.pos_customers WHERE id='far001-other-customer'")) == 20
+
+     # The historical receipt endpoint allowed existing STRICT lots to lack a date.
+     # Both payment routes must still reject that condition and expired stock.
+     for suffix, expiry, expected in [
+         ('missing-date', 'NULL', 'NO_CURRENT_BATCH_FOR_STRICT_PRODUCT'),
+         ('expired', "'2000-01-01'", 'STRICT_EXPIRED_BATCH_BLOCKED'),
+         ('archived', "'2099-01-01'", 'CLOUD_BATCH_NOT_AVAILABLE'),
+         ('empty', "'2099-01-01'", 'INSUFFICIENT_CLOUD_STOCK'),
+         ('foreign', "'2099-01-01'", 'CLOUD_BATCH_NOT_AVAILABLE')]:
+      bad_lot = 'far001-other-' + suffix
+      if suffix == 'foreign':
+       # A known existing lot from a different licensed tenant.
+       bad_lot = 'far001-foreign-lot'
+       foreign = '00000000-0000-0000-0000-000000000002'
+       sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,is_active,batch_management) "
+           "VALUES ('far001-foreign',"+lit(foreign)+",'Foreign','foreign',10,4,3,true,true,'{\"enabled\":true}');"
+           "INSERT INTO public.pos_product_batches(id,license_id,product_id,price,cost,stock,expiry_date) VALUES "
+           "('far001-foreign-lot',"+lit(foreign)+",'far001-foreign',10,4,3,'2099-01-01');")
+      else:
+       sql("INSERT INTO public.pos_product_batches(id,license_id,product_id,price,cost,stock,expiry_date,status,is_active) VALUES ("
+           +','.join([lit(bad_lot),lit(L),"'far001-other'",'10','4','0' if suffix=='empty' else '3',
+                      expiry,"'archived'" if suffix=='archived' else "'active'",
+                      'false' if suffix=='archived' else 'true'])+');')
+      expect_rejected_without_effects(request('far001-bad-cash-'+suffix,'far001-other',batch=bad_lot),
+                                      'sale.cashier_inventory',expected)
+      bad_credit = json.loads(json.dumps(credit))
+      bad_credit['sale']['id'] = 'far001-bad-credit-'+suffix
+      bad_credit['items'][0].update(id=bad_credit['sale']['id']+'-line',batch_id=bad_lot)
+      expect_rejected_without_effects(bad_credit,'sale.credit',expected)
+     print('far001 cash and credit reject missing expiry, expired, archived, empty and other-tenant lots PASS')
+
+     for _ in range(2):
+      reversal = call({'sale_id': 'far001-other-credit-confirmed', 'reason': 'Synthetic refund'},
+                      op='sale.cancel', full_response=True)
+      assert reversal.returncode == 0 and '"success": true' in reversal.stdout, reversal
+     assert float(scalar("SELECT debt FROM public.pos_customers WHERE id='far001-other-customer'")) == 0
+     assert float(scalar("SELECT stock FROM public.pos_product_batches WHERE id="+lit(generic_batch))) == 8
+     assert scalar("SELECT count(*) FROM public.pos_sale_cancellations WHERE sale_id='far001-other-credit-confirmed'") == '1'
+     assert scalar("SELECT count(*) FROM public.pos_cash_movements WHERE sale_id='far001-other-credit-confirmed'") == '0'
+     print('far001 credit cancellation restores the same lot and clears debt once with no cash effect PASS')
+     unauthorized = json.loads(json.dumps(credit))
+     unauthorized['sale']['id'] = 'far001-other-staff-denied'
+     unauthorized['items'][0]['id'] = 'far001-other-staff-denied-line'
+     unauthorized['cash_session_id'] = 'lab-cash-b'
+     denied_before = state(unauthorized['sale']['id'],'far001-other')
+     denied = call(unauthorized, op='sale.credit', staff=True, full_response=True)
+     assert 'POS_PERMISSION_DENIED:pos_credit_sales' in (denied.stderr + denied.stdout), denied
+     assert state(unauthorized['sale']['id'],'far001-other') == denied_before
+
+     competing = [request(f'far001-competing-{index}','far001-other',batch=generic_batch,qty=5)
+                  for index in range(2)]
+     with ThreadPoolExecutor(max_workers=2) as pool:
+      replies = list(pool.map(lambda req: call(req, full_response=True), competing))
+     assert sum(reply.returncode == 0 and '"success": true' in reply.stdout for reply in replies) == 1, replies
+     assert any('INSUFFICIENT_CLOUD_STOCK' in (reply.stdout + reply.stderr) for reply in replies), replies
+     assert float(scalar("SELECT stock FROM public.pos_product_batches WHERE id="+lit(generic_batch))) == 3
+     assert scalar("SELECT count(*) FROM public.pos_sales WHERE id LIKE 'far001-competing-%'") == '1'
+     assert scalar("SELECT count(*) FROM public.pos_cash_movements WHERE sale_id LIKE 'far001-competing-%'") == '1'
+     print('far001 staff credit permission and competing sales for the same lot PASS')
+
+
+     assert scalar("SELECT count(*) FROM public.pos_inventory_movements WHERE product_id='far001-vi'") == '6'
      sql("UPDATE public.plans SET features=features || '{\"cloud_layaways\":true}'::jsonb WHERE code='qa_real_lab';")
      for layaway_id, reserved in [('far001-layaway', True), ('far001-layaway-unconfirmed', False)]:
-      item = {'product_id':'far001-vi','product_name':'FAR001 VI','batch_id':'batch-entry-far001-qa',
+      item = {'product_id':'far001-vi','product_name':'FAR001 VI','batch_id':'batch-entry-far001-second',
               'quantity':2,'unit_price':10,'unit_cost':4,'line_subtotal':20,'line_total':20}
       normalized = scalar("SELECT private.normalize_layaway_items_v1("+lit(json.dumps([item]))+"::jsonb,20)->'items'")
       sql("INSERT INTO public.pos_layaways(id,license_id,total_amount,paid_amount,deadline,status,items,actor_key,actor_name)"
@@ -232,10 +390,10 @@ try:
           +",'cash',20,'admin:00000000-0000-0000-0000-0000000000aa','Synthetic cashier');")
       if reserved:
        sql("UPDATE public.pos_products SET committed_stock=2 WHERE id='far001-vi';"
-           " UPDATE public.pos_product_batches SET committed_stock=2 WHERE id='batch-entry-far001-qa';"
+           " UPDATE public.pos_product_batches SET committed_stock=2 WHERE id='batch-entry-far001-second';"
            " INSERT INTO public.pos_layaway_inventory_reservations"
            " (id,license_id,layaway_id,item_index,product_id,batch_id,quantity,unit_cost,actor_key,actor_name)"
-           " VALUES ('far001-reservation',"+lit(L)+","+lit(layaway_id)+",1,'far001-vi','batch-entry-far001-qa',2,4,"
+           " VALUES ('far001-reservation',"+lit(L)+","+lit(layaway_id)+",1,'far001-vi','batch-entry-far001-second',2,4,"
            "'admin:00000000-0000-0000-0000-0000000000aa','Synthetic cashier');")
       sale_id = layaway_id+'-sale'
       layaway_req = {'layaway_id':layaway_id,'sale':{'id':sale_id,'total':20},

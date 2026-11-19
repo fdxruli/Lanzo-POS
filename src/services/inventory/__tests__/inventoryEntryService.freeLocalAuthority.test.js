@@ -102,8 +102,10 @@ describe('inventoryEntryService FREE/local authority', () => {
     closeTestTenantRuntime();
   });
 
-  it('applies and deduplicates a STRICT FREE inventory entry without actor-bound outbox', async () => {
-    await db.table(STORES.MENU).put(strictProduct());
+  it('applies and deduplicates a general pharmacy STRICT FREE entry without an actor-bound outbox', async () => {
+    await db.table(STORES.MENU).put({ ...strictProduct(),
+      metadata: { pharmacy: { kind: 'other', status: 'pending' } }
+    });
 
     const request = {
       operationId: 'free-local-entry-strict',
@@ -244,7 +246,10 @@ describe('inventoryEntryService FREE/local authority', () => {
 
     const currentBatches = await db.table(STORES.PRODUCT_BATCHES).where('productId').equals(product.id).toArray();
     const allocation = buildProcessedItemsAndDeductions({
-      itemsToProcess: [{ id: product.id, productId: product.id, quantity: 15, price: 25 }],
+      itemsToProcess: [
+        { id: product.id, productId: product.id, quantity: 10, price: 25, batchId: first.batch.id, automaticPharmacyBatch: true },
+        { id: product.id, productId: product.id, quantity: 5, price: 25, batchId: second.batch.id, automaticPharmacyBatch: true }
+      ],
       allProducts: [product],
       batchesMap: new Map([[product.id, currentBatches]]),
       roundCurrency: (value) => Math.round(value * 100) / 100,
@@ -258,7 +263,7 @@ describe('inventoryEntryService FREE/local authority', () => {
     const sale = {
       id: 'free-pharmacy-multi-sale', status: 'closed', timestamp: new Date().toISOString(),
       paymentMethod: 'tarjeta', total: 375, abono: 375, saldoPendiente: 0,
-      items: allocation.processedItems.map((item) => ({ ...item, quantity: 15, price: 25 }))
+      items: allocation.processedItems
     };
     const result = await salesRepository.executeSaleTransaction(sale, allocation.batchesToDeduct);
     expect(result.success).toBe(true);
@@ -272,7 +277,8 @@ describe('inventoryEntryService FREE/local authority', () => {
     expect(storedBatches.reduce((sum, batch) => sum + batch.stock, 0)).toBe(22);
     expect(storedBatches.find((batch) => batch.id === first.batch.id).stock).toBe(0);
     expect(storedBatches.find((batch) => batch.id === second.batch.id).stock).toBe(22);
-    expect((await db.table(STORES.SALES).get(sale.id)).items[0].batchesUsed).toHaveLength(2);
+    expect((await db.table(STORES.SALES).get(sale.id)).items.map((item) => [item.batchId, item.quantity]))
+      .toEqual([[first.batch.id, 10], [second.batch.id, 5]]);
     expect(await db.table(STORES.INVENTORY_EVENTS).where('productId').equals(product.id)
       .filter((event) => event.type === 'INVENTORY_ENTRY').count()).toBe(2);
   });
