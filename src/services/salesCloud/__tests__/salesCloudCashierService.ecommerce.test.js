@@ -311,6 +311,69 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     });
   });
 
+  it.each([
+    ['tarjeta', 'card'],
+    ['transferencia', 'transfer']
+  ])('routes fully paid %s through the existing Cloud cashier inventory operation', async (paymentMethod, canonicalMethod) => {
+    const sale = {
+      id: `direct-${paymentMethod}`,
+      timestamp: '2026-11-18T09:30:00.000Z',
+      status: 'closed',
+      items: [{ id: 'product-1', name: 'Producto', quantity: 1, price: 150 }],
+      subtotal: '150',
+      total: '150',
+      paymentMethod,
+      abono: '150',
+      saldoPendiente: '0',
+      dueDate: null,
+      metadata: { origin: 'pos' }
+    };
+    const paymentData = {
+      paymentMethod,
+      amountPaid: '150',
+      receivedAmount: null,
+      changeAmount: '0',
+      saldoPendiente: '0',
+      dueDate: null,
+      cashSessionId: 'cash-session-1',
+      sendReceipt: false
+    };
+    mocks.createCloudCashierInventorySale.mockResolvedValue({
+      success: true,
+      financialIntentId: 'intent-direct-noncash',
+      sale: {
+        id: `cloud-${sale.id}`,
+        effects_status: 'payment_recorded',
+        inventory_effect_status: 'applied',
+        credit_effect_status: 'not_applied'
+      }
+    });
+
+    const decision = await salesCloudCashierService.shouldUseCloudCashierSale({
+      paymentData,
+      cart: sale.items
+    });
+    expect(decision).toMatchObject({ useCloud: true, mode: 'cloud_cashier_inventory' });
+
+    const result = await salesCloudCashierService.processCloudCashierSale({
+      sale,
+      processedItems: sale.items,
+      paymentData,
+      total: '150',
+      productCatalog: []
+    });
+
+    expect(result).toMatchObject({ success: true, creditSale: false, inventoryEnabled: true });
+    expect(mocks.createCloudCashierInventorySale).toHaveBeenCalledOnce();
+    expect(mocks.createCloudCashierSale).not.toHaveBeenCalled();
+    expect(mocks.createCloudCreditSale).not.toHaveBeenCalled();
+    expect(mocks.createCloudCashierInventorySale.mock.calls[0][0]).toMatchObject({
+      cashSessionId: 'cash-session-1',
+      sale: { payment_method: canonicalMethod, payment_status: 'paid', amount_paid: 150, change_amount: 0, balance_due: 0 },
+      payments: [{ method: canonicalMethod, amount: 150, received_amount: 150, change_amount: 0 }]
+    });
+  });
+
   it('uses the ecommerce business key without a device suffix', () => {
     const result = salesCloudCashierServiceInternals.buildCloudSaleIdempotencyKey({
       sale: {

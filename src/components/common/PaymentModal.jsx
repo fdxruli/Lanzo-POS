@@ -32,9 +32,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   useEffect(() => {
     if (show) {
       loadData(STORES.CUSTOMERS).then((customerData) => setCustomers(customerData || []));
-      if (paymentMethod === 'efectivo') setAmountPaid(Money.toNumber(Money.init(effectiveTotal)).toFixed(2).toString());
+      if (!isCreditPaymentMethod(paymentMethod)) setAmountPaid(Money.toNumber(Money.init(effectiveTotal)).toFixed(2).toString());
       else setAmountPaid('');
-      setIsSubmitting(false);
     } else {
       setAmountPaid('');
       setSelectedCustomerId(null);
@@ -71,6 +70,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const safeTotal = Money.init(effectiveTotal);
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = isCreditPaymentMethod(paymentMethod);
+  const isTarjeta = paymentMethod === 'tarjeta';
+  const isTransferencia = paymentMethod === 'transferencia';
+  const isDirectNonCash = isTarjeta || isTransferencia;
   const paidDraft = parseMoneyInputDraft(amountPaid, { allowEmpty: isFiado });
   const isAmountValid = paidDraft.status !== 'invalid' && paidDraft.cents !== null;
   const safePaid = Money.fromCents(paidDraft.cents ?? 0);
@@ -87,7 +89,13 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const todayStr = new Date().toISOString().split('T')[0];
   const requiresDueDate = isFiado && saldoPendiente.gt(0);
   const isDueDateValid = !requiresDueDate || Boolean(dueDate && dueDate >= todayStr);
-  const canConfirm = isAmountValid && (isEfectivo ? safePaid.gte(safeTotal) : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid));
+  const canConfirm = isAmountValid && (
+    isEfectivo
+      ? safePaid.gte(safeTotal)
+      : isDirectNonCash
+        ? safePaid.eq(safeTotal)
+        : selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid
+  );
 
   const handleAmountChange = (event) => {
     const val = event.target.value;
@@ -105,8 +113,9 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     setIsSubmitting(true);
 
     try {
+      const amountToRecord = isDirectNonCash ? safeTotal : safePaid;
       await onConfirm({
-        amountPaid: Money.toExactString(safePaid),
+        amountPaid: Money.toExactString(amountToRecord),
         receivedAmount: isEfectivo || (hasInitialCreditPayment && initialPaymentMethod === 'efectivo') ? Money.toExactString(safePaid) : null,
         changeAmount: isEfectivo ? Money.toExactString(safeChange) : '0',
         customerId: selectedCustomerId,
@@ -154,15 +163,15 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
     setInitialPaymentMethod('efectivo');
-    if (method === 'efectivo') {
-      setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
-      setDueDate('');
-      setHasOverdueCredit(false);
-    } else {
+    if (method === 'fiado') {
       setAmountPaid('');
       const defaultDate = new Date();
       defaultDate.setDate(defaultDate.getDate() + 15);
       setDueDate(defaultDate.toISOString().split('T')[0]);
+    } else {
+      setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString());
+      setDueDate('');
+      setHasOverdueCredit(false);
     }
   };
 
@@ -184,8 +193,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                   <div className="form-group">
                     <div id="payment-method-label" className="form-label">Método de Pago:</div>
                     <div className="payment-method-selector" role="group" aria-labelledby="payment-method-label">
-                      <button type="button" className={`btn-method ${isEfectivo ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('efectivo')}>Efectivo</button>
-                      <button type="button" className={`btn-method ${isFiado ? 'active' : ''}`} onClick={() => handlePaymentMethodChange('fiado')}>Fiado</button>
+                      <button type="button" className={`btn-method ${isEfectivo ? 'active' : ''}`} aria-pressed={isEfectivo} disabled={isSubmitting} onClick={() => handlePaymentMethodChange('efectivo')}>Efectivo</button>
+                      <button type="button" className={`btn-method ${isTarjeta ? 'active' : ''}`} aria-pressed={isTarjeta} disabled={isSubmitting} onClick={() => handlePaymentMethodChange('tarjeta')}>Tarjeta</button>
+                      <button type="button" className={`btn-method ${isTransferencia ? 'active' : ''}`} aria-pressed={isTransferencia} disabled={isSubmitting} onClick={() => handlePaymentMethodChange('transferencia')}>Transferencia</button>
+                      <button type="button" className={`btn-method ${isFiado ? 'active' : ''}`} aria-pressed={isFiado} disabled={isSubmitting} onClick={() => handlePaymentMethodChange('fiado')}>Fiado</button>
                     </div>
                   </div>
 
@@ -211,10 +222,20 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               </div>
 
               <div className="payment-col-right">
+                {isDirectNonCash && (
+                  <div className="payment-method-summary" role="status" aria-live="polite">
+                    <strong>Pago con {isTarjeta ? 'Tarjeta' : 'Transferencia'}</strong>
+                    <span>Total a cobrar: ${Money.toNumber(safeTotal).toFixed(2)}</span>
+                    <span>Saldo pendiente: $0.00</span>
+                    <p>Registra el pago externo que confirmas recibido. LANZO POS no procesa cargos bancarios.</p>
+                  </div>
+                )}
                 <div className="payment-details">
-                  <label className="payment-input-label" htmlFor="payment-amount">{isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}</label>
-                  <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onBlur={() => { const normalized = normalizeMoneyInputDraft(amountPaid, { allowEmpty: isFiado }); if (normalized !== null) setAmountPaid(normalized); }} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} aria-invalid={(amountPaid !== '' && !isAmountValid) || (isFiado && safePaid.gt(safeTotal))} aria-describedby={amountPaid !== '' && !isAmountValid ? 'payment-amount-error' : isFiado && safePaid.gt(safeTotal) ? 'payment-advance-error' : undefined} />
-                  {amountPaid !== '' && !isAmountValid && <p id="payment-amount-error" className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>}
+                  {!isDirectNonCash && <>
+                    <label className="payment-input-label" htmlFor="payment-amount">{isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}</label>
+                    <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onBlur={() => { const normalized = normalizeMoneyInputDraft(amountPaid, { allowEmpty: isFiado }); if (normalized !== null) setAmountPaid(normalized); }} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} aria-invalid={(amountPaid !== '' && !isAmountValid) || (isFiado && safePaid.gt(safeTotal))} aria-describedby={amountPaid !== '' && !isAmountValid ? 'payment-amount-error' : isFiado && safePaid.gt(safeTotal) ? 'payment-advance-error' : undefined} />
+                    {amountPaid !== '' && !isAmountValid && <p id="payment-amount-error" className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>}
+                  </>}
 
                   {hasInitialCreditPayment && <div className="form-group payment-initial-payment-method"><label className="form-label" htmlFor="initial-payment-method">Método del abono inicial:</label><select id="initial-payment-method" className="form-input" value={initialPaymentMethod} onChange={(event) => setInitialPaymentMethod(event.target.value)}><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option></select><p className="ui-inline-help payment-inline-message payment-inline-message--helper">Solo efectivo se reflejará en caja.</p></div>}
 
