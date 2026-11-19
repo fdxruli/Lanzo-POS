@@ -627,7 +627,7 @@ describe('Mini-phase 3D multi-device table recovery', () => {
       hasCashPayment: true,
       cashSales: '0',
       creditDeposits: '2',
-      expectedMovementTypes: ['abono', 'venta_tarjeta']
+      expectedMovementTypes: ['abono', 'venta_credito', 'venta_tarjeta']
     },
     {
       intent: 'custom_payment',
@@ -643,7 +643,7 @@ describe('Mini-phase 3D multi-device table recovery', () => {
       hasCashPayment: false,
       cashSales: '0',
       creditDeposits: '0',
-      expectedMovementTypes: ['venta_tarjeta']
+      expectedMovementTypes: ['venta_credito', 'venta_tarjeta']
     }
   ])('persiste $intent con pagos y caja atribuidos en Dexie', async ({ intent, tickets, paymentMethods, balance, debt, hasCashPayment, cashSales, creditDeposits, expectedMovementTypes }) => {
     const actor = actorRuntimeController.capture('pos');

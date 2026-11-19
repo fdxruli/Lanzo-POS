@@ -61,6 +61,32 @@ describe('CajaMovementsList cash movement semantics', () => {
     expect(screen.getByText('Merma')).toBeVisible();
   });
 
+  it('labels financed credit without a cash inflow sign and includes it in the no-cash filter', () => {
+    render(<CajaMovementsList movimientos={[
+      {
+        id: 'credit-sale:credit-info',
+        tipo: 'venta_credito',
+        monto: '120',
+        concepto: 'V-000003',
+        fecha: '2026-06-14T12:00:00.000Z',
+        sale: { id: 'credit-sale', folio: 'V-000003' }
+      }
+    ]} isCloudCash />);
+
+    expect(screen.getByText('Crédito/Fiado')).toBeVisible();
+    expect(screen.getByText('$120.00')).toBeVisible();
+    expect(screen.queryByText('+$120.00')).not.toBeInTheDocument();
+
+    setFilter('sin_efecto_efectivo');
+    expect(screen.getByText('1 de 1')).toBeVisible();
+    expect(screen.getByText('V-000003')).toBeVisible();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar movimientos por concepto' }), {
+      target: { value: 'V-000003' }
+    });
+    expect(screen.getByText('Crédito/Fiado')).toBeVisible();
+  });
+
   it('shows a sale movement in the business timezone', () => {
     const timestamp = '2026-11-18T09:30:00.000Z';
     const timeZone = 'America/Merida';

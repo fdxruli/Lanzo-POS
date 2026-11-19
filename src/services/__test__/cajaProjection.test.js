@@ -48,6 +48,120 @@ describe('loadCashSessionProjection', () => {
     ])).toEqual({ ventasContado: '125', abonosFiado: '0' });
   });
 
+  it.each([
+    ['Cloud', 'credit', 'V-000003'],
+    ['legacy', 'fiado', 'V-000007']
+  ])('projects %s credit sales as informational rows with historical references', (_source, paymentMethod, folio) => {
+    const sale = {
+      id: `credit-${folio}`,
+      status: 'closed',
+      paymentMethod,
+      paymentStatus: 'credit_pending',
+      total: '120',
+      saldoPendiente: '120',
+      folio,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      payments: []
+    };
+
+    const movements = normalizeSaleMovements([sale]);
+    expect(movements).toMatchObject([{
+      id: `${sale.id}:credit-info`,
+      tipo: 'venta_credito',
+      monto: '120',
+      concepto: folio,
+      referenceId: sale.id,
+      fecha: sale.timestamp
+    }]);
+    expect(movements.some((movement) => movement.tipo === 'venta_tarjeta')).toBe(false);
+    expect(calculateSessionTotals([sale])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+    expect(sale).toMatchObject({ paymentMethod, total: '120', saldoPendiente: '120', folio });
+  });
+
+  it('preserves the originally financed amount when a historical credit balance later changes', () => {
+    const sale = {
+      id: 'historical-credit-sale',
+      status: 'closed',
+      paymentMethod: 'fiado',
+      total: '120',
+      abono: '50',
+      saldoPendiente: '20'
+    };
+
+    expect(normalizeSaleMovements([sale])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tipo: 'abono', monto: '50' }),
+      expect.objectContaining({ tipo: 'venta_credito', monto: '70' })
+    ]));
+  });
+
+  it.each([
+    ['cash', 'venta', '120'],
+    ['efectivo', 'venta', '120'],
+    ['card', 'venta_tarjeta', '0'],
+    ['tarjeta', 'venta_tarjeta', '0'],
+    ['transfer', 'venta_tarjeta', '0'],
+    ['transferencia', 'venta_tarjeta', '0']
+  ])('keeps %s sales in their canonical Caja class', (paymentMethod, movementType, cashTotal) => {
+    const sale = {
+      id: `sale-${paymentMethod}`,
+      status: 'closed',
+      paymentMethod,
+      total: '120'
+    };
+
+    expect(normalizeSaleMovements([sale])).toMatchObject([
+      { tipo: movementType, monto: '120' }
+    ]);
+    expect(calculateSessionTotals([sale]).ventasContado).toBe(cashTotal);
+  });
+
+  it('shows a credit advance separately and keeps its financed balance outside cash totals', async () => {
+    const sale = {
+      id: 'credit-sale-with-advance',
+      cash_session_id: cashSession.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      paymentMethod: 'credit',
+      paymentStatus: 'partial',
+      total: '120',
+      abono: '50',
+      saldoPendiente: '70',
+      folio: 'V-000009',
+      payments: [
+        { method: 'cash', amount: '50', cash_movement_id: 'official-credit-advance' },
+        { method: 'credit', amount: '70' }
+      ]
+    };
+    const officialAdvance = {
+      id: 'official-credit-advance',
+      cash_session_id: cashSession.id,
+      tipo: 'abono_cliente',
+      monto: '50',
+      sale_id: sale.id,
+      fecha: sale.timestamp
+    };
+    await testDb.table('sales').add(sale);
+    await testDb.table('movimientos_caja').add(officialAdvance);
+
+    const projection = await loadCashSessionProjection(testDb, cashSession);
+
+    expect(projection.movements).toHaveLength(2);
+    expect(projection.movements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: officialAdvance.id, tipo: 'abono_cliente', monto: '50' }),
+      expect.objectContaining({
+        id: `${sale.id}:credit-info`,
+        tipo: 'venta_credito',
+        monto: '70',
+        referenceId: sale.id,
+        fecha: sale.timestamp
+      })
+    ]));
+    expect(projection.movements.some((movement) => movement.tipo === 'abono')).toBe(false);
+    expect(projection.totals).toEqual({ ventasContado: '0', abonosFiado: '50' });
+    expect(await testDb.table('sales').get(sale.id)).toEqual(sale);
+    expect(await testDb.table('movimientos_caja').get(officialAdvance.id)).toEqual(officialAdvance);
+  });
+
   it('uses legacy cash and credit fields when explicit payments are empty or absent', () => {
     expect(calculateSessionTotals([
       { id: 'legacy-cash-empty', status: 'closed', paymentMethod: 'cash', total: '100', payments: [] },
@@ -637,9 +751,11 @@ describe('loadCashSessionProjection', () => {
 
     expect(result.movements.map((movement) => movement.id)).toEqual([
       'later-payment',
-      'credit-sale'
+      'credit-sale',
+      'credit-sale:credit-info'
     ]);
     expect(result.movements[1]).toMatchObject({ tipo: 'abono', monto: '10' });
+    expect(result.movements[2]).toMatchObject({ tipo: 'venta_credito', monto: '40' });
   });
 
   it.each([
