@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   SANITARY_PAGE_SIZE,
   SANITARY_EXPORT_LIMIT,
+  SANITARY_MOVEMENT_TYPES,
+  LEGACY_SANITARY_MOVEMENT_TYPES,
   buildSanitaryCsv,
   collectSanitaryExport,
   getSanitaryRegisterPage,
@@ -17,10 +19,11 @@ const initialFilters = (timezone) => {
     to: getBusinessDateKey(today, timezone), search: '', movementType: '', batchId: '', traceStatus: '' };
 };
 const LABELS = {
-  receipt: 'Recepción', dispensation: 'Dispensación', waste: 'Merma',
+  receipt: 'Recepción', dispensation: 'Dispensación documentada', sale: 'Venta de medicamento', waste: 'Merma',
   return: 'Devolución', adjustment: 'Ajuste', other: 'Sin clasificación',
   complete: 'Documentado', incomplete: 'Dato incompleto', limited: 'Cobertura limitada'
 };
+const SALE_STATUS_LABELS = { closed: 'Confirmada', cancelled: 'Cancelada' };
 const dateLabel = (value, timezone) => (value && formatBusinessInstant(value, timezone, {
   dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23'
 })) || 'Fecha no verificable';
@@ -37,8 +40,12 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [cloudMovementTypesByKey, setCloudMovementTypesByKey] = useState({});
   const cursor = cursors[pageIndex];
   const canRead = Boolean(actorIdentity);
+  const capabilityKey = `${licenseKey || ''}:${actorIdentity || ''}`;
+  const cloudMovementTypes = cloudMovementTypesByKey[capabilityKey] || LEGACY_SANITARY_MOVEMENT_TYPES;
+  const movementOptions = cloud ? cloudMovementTypes : SANITARY_MOVEMENT_TYPES;
 
   useEffect(() => {
     if (!canRead) {
@@ -52,20 +59,29 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
     getSanitaryRegisterPage({
       licenseKey, cloud, actorIdentity, timezone, filters: applied, cursor, limit: SANITARY_PAGE_SIZE
     }).then((page) => {
-      if (active) setResult(page);
+      if (active) {
+        if (cloud) {
+          setCloudMovementTypesByKey((current) => ({
+            ...current,
+            [capabilityKey]: page.supportedMovementTypes || LEGACY_SANITARY_MOVEMENT_TYPES
+          }));
+        }
+        setResult(page);
+      }
     }).catch((cause) => {
       if (active) setError(cause?.message || 'No se pudo consultar el registro.');
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [licenseKey, cloud, actorIdentity, timezone, applied, cursor, canRead]);
+  }, [licenseKey, cloud, actorIdentity, timezone, applied, cursor, canRead, capabilityKey]);
 
   const summary = useMemo(() => {
     const rows = result?.rows || [];
     return {
       receipts: rows.filter((r) => r.movementType === 'receipt').length,
-      dispensations: rows.filter((r) => r.movementType === 'dispensation' && r.saleStatus === 'closed').length,
+      dispensations: rows.filter((r) => r.movementType === 'dispensation').length,
+      sales: rows.filter((r) => r.movementType === 'sale').length,
       other: rows.filter((r) => ['waste', 'return', 'adjustment', 'other'].includes(r.movementType)).length,
       issues: rows.filter((r) => r.traceStatus !== 'complete' || sanitaryIncidences(r).length > 0).length
     };
@@ -105,7 +121,7 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
     <section className="sanitary-register" aria-label="Registro sanitario auxiliar">
       <header className="sanitary-header">
         <h2>Registro sanitario</h2>
-        <p>Consulta movimientos de medicamentos, recetas e incidencias para revisión documental.</p>
+        <p>Consulta movimientos de medicamentos, dispensaciones documentadas, ventas e incidencias para revisión documental. Cada fila conserva su lote y puede compartir la misma venta.</p>
         <small>Registro auxiliar de LANZO POS. No sustituye libros oficiales ni documentación física requerida.</small>
       </header>
 
@@ -126,10 +142,11 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
           <select value={draft.movementType}
             onChange={(e) => setDraft((v) => ({ ...v, movementType: e.target.value }))}>
             <option value="">Todos</option>
-            {Object.entries(LABELS).filter(([key]) =>
-              ['receipt', 'dispensation', 'waste', 'return', 'adjustment', 'other'].includes(key)
-            ).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            {movementOptions.map((key) => <option key={key} value={key}>{LABELS[key] || key}</option>)}
           </select>
+          {cloud && !cloudMovementTypes.includes('sale') && (
+            <small>El contrato Cloud activo aún no anuncia este filtro. Se habilitará cuando la consulta confirme la versión SQL compatible.</small>
+          )}
         </label>
         <label>Lote (ID o fabricante)
           <input value={draft.batchId} placeholder="Opcional" maxLength={150}
@@ -167,8 +184,9 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
         <>
           <div className="sanitary-summary" aria-label="Resumen de la página">
             <span>Recepciones <strong>{summary.receipts}</strong></span>
-            <span>Dispensaciones <strong>{summary.dispensations}</strong></span>
-            <span>Otras salidas/ajustes <strong>{summary.other}</strong></span>
+            <span>Dispensaciones documentadas <strong>{summary.dispensations}</strong></span>
+            <span>Salidas por venta <strong>{summary.sales}</strong></span>
+            <span>Otras operaciones/incidencias <strong>{summary.other}</strong></span>
             <span>Registros a revisar <strong>{summary.issues}</strong></span>
           </div>
           <p className="sanitary-source">Indicadores de esta página ({result.rows.length} movimientos), no totales del periodo.</p>
@@ -189,12 +207,28 @@ export default function PharmacySanitaryRegister({ licenseKey, cloud, actorIdent
                     </span>
                   </summary>
                   <dl className="sanitary-details">
-                    <div><dt>Operación</dt><dd>{shown(row.operationId || row.id)}</dd></div>
+                    {row.movementType !== 'sale' && (
+                      <div><dt>Operación</dt><dd>{shown(row.operationId || row.id)}</dd></div>
+                    )}
+                    {row.movementType === 'sale' && (
+                      <>
+                        <div><dt>Venta de origen</dt><dd>{shown(row.saleReference)} · ID {shown(row.saleId)}</dd></div>
+                        <div><dt>Línea de venta</dt><dd>{shown(row.saleItemId)}</dd></div>
+                        <div><dt>Movimiento de origen</dt>
+                          <dd>{shown(row.movementId || (row.sourceMovementIds || []).join(', '))}
+                            {row.movementGranularity === 'product' ? ' · evento local agregado por producto' : ''}</dd>
+                        </div>
+                        <div><dt>Estado de venta</dt><dd>{SALE_STATUS_LABELS[row.saleStatus] || shown(row.saleStatus)}</dd></div>
+                      </>
+                    )}
                     <div><dt>Lote</dt><dd>{shown(row.batchNumber || row.batchId)}</dd></div>
                     <div><dt>Caducidad</dt><dd>{shown(row.expiryDate)}</dd></div>
+                    {row.batchSku && <div><dt>SKU de lote</dt><dd>{shown(row.batchSku)}</dd></div>}
                     {row.receiptAt && <div><dt>Recepción declarada</dt><dd>{dateLabel(row.receiptAt, timezone)}</dd></div>}
-                    <div><dt>Comprobante / receta</dt><dd>{shown(row.documentReference)}</dd></div>
-                    <div><dt>Venta</dt><dd>{shown(row.saleId)}</dd></div>
+                    {row.movementType === 'sale'
+                      ? <div><dt>Documentación sanitaria</dt><dd>Venta sin dispensación documentada asociada</dd></div>
+                      : <div><dt>Comprobante / receta</dt><dd>{shown(row.documentReference)}</dd></div>}
+                    {row.movementType !== 'sale' && <div><dt>Venta</dt><dd>{shown(row.saleId)}</dd></div>}
                     <div><dt>Responsable</dt><dd>{shown(row.actor)}</dd></div>
                     <div><dt>Origen</dt><dd>{shown(row.provenance)} · {shown(row.syncStatus)}</dd></div>
                     <div><dt>Nombre</dt><dd>{row.nameSource === 'current_catalog' ? 'Catálogo actual (no histórico)' : 'Registro de operación'}</dd></div>
