@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +77,94 @@ const startFiadoCheckout = async ({ total = 100, creditLimit = 0, debt = 500 } =
 };
 
 describe('PaymentModal', () => {
+  it('muestra los cuatro métodos de pago principales al abrir', async () => {
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={vi.fn()} total={150} />);
+
+    const methodGroup = await screen.findByRole('group', { name: 'Método de Pago:' });
+    const methods = ['Efectivo', 'Tarjeta', 'Transferencia', 'Fiado'];
+
+    methods.forEach((method) => expect(within(methodGroup).getByRole('button', { name: method })).toBeVisible());
+    expect(within(methodGroup).getByRole('button', { name: 'Efectivo' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(methodGroup).getByRole('button', { name: 'Tarjeta' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it.each([
+    ['Tarjeta', 'tarjeta'],
+    ['Transferencia', 'transferencia']
+  ])('confirma un pago directo completo con %s sin exigir cliente ni registrar efectivo', async (label, paymentMethod) => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={150} />);
+
+    const method = await screen.findByRole('button', { name: label });
+    await user.click(method);
+
+    expect(method).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent(`Pago con ${label}`);
+    expect(screen.getByRole('status')).toHaveTextContent('Total a cobrar: $150.00');
+    expect(screen.getByRole('status')).toHaveTextContent('Saldo pendiente: $0.00');
+    expect(screen.getByRole('status')).toHaveTextContent('LANZO POS no procesa cargos bancarios.');
+    expect(screen.queryByLabelText('Monto Recibido:')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Abono (Opcional):')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Exacto ($150.00)' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar Pago' }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      amountPaid: '150',
+      receivedAmount: null,
+      changeAmount: '0',
+      customerId: null,
+      paymentMethod,
+      initialPaymentMethod: null,
+      saldoPendiente: '0',
+      dueDate: null
+    });
+  });
+
+  it('limpia el estado financiero al cambiar entre los cuatro métodos', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={150} />);
+
+    const confirm = await screen.findByRole('button', { name: 'Confirmar Pago' });
+    const cashAmount = screen.getByLabelText('Monto Recibido:');
+    await user.clear(cashAmount);
+    await user.type(cashAmount, '200');
+    expect(screen.getByText('$50.00')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fiado' }));
+    expect(screen.getByLabelText('Abono (Opcional):')).toHaveValue('');
+    expect(screen.getByLabelText('Fecha de Vencimiento:')).toBeRequired();
+    expect(confirm).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Tarjeta' }));
+    expect(screen.queryByLabelText('Abono (Opcional):')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Fecha de Vencimiento:')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Asignar a Cliente (Opcional):')).toBeInTheDocument();
+    expect(confirm).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Transferencia' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Pago con Transferencia');
+    expect(confirm).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Efectivo' }));
+    expect(screen.getByLabelText('Monto Recibido:')).toHaveValue('150.00');
+    expect(screen.queryByLabelText('Fecha de Vencimiento:')).not.toBeInTheDocument();
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      amountPaid: '150', receivedAmount: '150', changeAmount: '0', customerId: null,
+      paymentMethod: 'efectivo', initialPaymentMethod: null, saldoPendiente: '0', dueDate: null
+    });
+  });
+
   it.each([
     ['below', 200, 50, true],
     ['equal', 150, 50, true],
@@ -173,21 +261,21 @@ it('routes a fully paid Fiado as paid sale even with historical debt and zero li
         show
         onClose={vi.fn()}
         onConfirm={onConfirm}
-        total={57}
+        total={150}
       />
     );
 
     const amountInput = await screen.findByLabelText('Monto Recibido:');
-    fireEvent.change(amountInput, { target: { value: '100' } });
+    fireEvent.change(amountInput, { target: { value: '200' } });
     const confirmButton = await screen.findByRole('button', { name: 'Confirmar Pago' });
     await waitFor(() => expect(confirmButton).toBeEnabled());
     fireEvent.click(confirmButton);
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
     const paymentData = onConfirm.mock.calls[0][0];
-    expect(Number(paymentData.amountPaid)).toBe(100);
-    expect(Number(paymentData.receivedAmount)).toBe(100);
-    expect(Number(paymentData.changeAmount)).toBe(43);
+    expect(Number(paymentData.amountPaid)).toBe(200);
+    expect(Number(paymentData.receivedAmount)).toBe(200);
+    expect(Number(paymentData.changeAmount)).toBe(50);
   });
 
   it('permite vaciar y pegar efectivo con coma sin cambiar la precisión del cambio', async () => {

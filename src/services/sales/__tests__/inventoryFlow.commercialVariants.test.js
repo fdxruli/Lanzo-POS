@@ -338,6 +338,10 @@ describe('Apparel sale and cancellation through processSaleCore and Dexie', () =
     expect(afterSaleBatches.map((batch) => batch.stock)).toEqual([3, 3, 4]);
     expect(afterSaleBatches.reduce((sum, batch) => sum + batch.stock, 0)).toBe(10);
     const persistedSale = await db.table(STORES.SALES).get(saleResult.saleId);
+    expect(persistedSale).toMatchObject({
+      paymentMethod: 'tarjeta', abono: '24', saldoPendiente: '0',
+      paymentStatus: 'paid', payments: [{ method: 'card', amount: '24' }], creditStatus: null
+    });
     expect(persistedSale.items[0]).toMatchObject({
       parentId: 'shirt',
       isVariant: true,

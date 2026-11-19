@@ -698,10 +698,16 @@ describe('salesCloudCashierMapper payment arithmetic contract', () => {
     expect(payload.payments[0]).toMatchObject({ received_amount: 100, change_amount: 0 });
   });
 
-  it('defaults non-cash payment receipt to the sale total with zero change', () => {
-    const payload = mapCheckout({ paymentMethod: 'tarjeta', amountPaid: 100 });
+  it.each([
+    ['tarjeta', 'card'],
+    ['transferencia', 'transfer']
+  ])('maps a direct %s payment as fully paid, without cash change or balance due', (paymentMethod, canonicalMethod) => {
+    const payload = mapCheckout({ paymentMethod, amountPaid: 100, receivedAmount: null, changeAmount: '0', saldoPendiente: '0' });
 
-    expect(payload.payments[0]).toMatchObject({ method: 'card', amount: 100, received_amount: 100, change_amount: 0 });
+    expect(payload.sale).toMatchObject({ payment_method: canonicalMethod, payment_status: 'paid', amount_paid: 100, change_amount: 0, balance_due: 0 });
+    expect(payload.payments).toEqual([
+      expect.objectContaining({ method: canonicalMethod, amount: 100, received_amount: 100, change_amount: 0 })
+    ]);
   });
 
   it('derives change for an explicit cash payment when only receipt is supplied', () => {

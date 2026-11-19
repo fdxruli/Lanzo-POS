@@ -122,6 +122,20 @@ describe('processSaleCore', () => {
             expected: { paymentStatus: 'paid', payments: [{ method: 'cash', amount: '50' }] }
         },
         {
+            label: 'card',
+            total: 50,
+            quantity: 5,
+            paymentData: { paymentMethod: 'tarjeta', amountPaid: 50, saldoPendiente: 0 },
+            expected: { paymentMethod: 'tarjeta', paymentStatus: 'paid', payments: [{ method: 'card', amount: '50' }], saldoPendiente: '0', creditStatus: null }
+        },
+        {
+            label: 'transfer',
+            total: 50,
+            quantity: 5,
+            paymentData: { paymentMethod: 'transferencia', amountPaid: 50, saldoPendiente: 0 },
+            expected: { paymentMethod: 'transferencia', paymentStatus: 'paid', payments: [{ method: 'transfer', amount: '50' }], saldoPendiente: '0', creditStatus: null }
+        },
+        {
             label: 'credit',
             total: 120,
             quantity: 12,
