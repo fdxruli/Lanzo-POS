@@ -359,7 +359,7 @@ try:
      assert scalar("SELECT count(*) FROM public.pos_sale_cancellations WHERE sale_id='far001-other-credit-confirmed'") == '1'
      assert scalar("SELECT count(*) FROM public.pos_cash_movements WHERE sale_id='far001-other-credit-confirmed'") == '0'
      print('far001 credit cancellation restores the same lot and clears debt once with no cash effect PASS')
-     sql("UPDATE public.license_staff_users SET permissions=permissions || '{\"customers\":true}' "
+     sql("UPDATE public.license_staff_users SET permissions=permissions || '{\"customers\":true,\"pos_credit_sales\":false}' "
          "WHERE id='00000000-0000-0000-0000-0000000000ab';")
      unauthorized = json.loads(json.dumps(credit))
      unauthorized['sale']['id'] = 'far001-other-staff-denied'
@@ -372,8 +372,11 @@ try:
 
      competing = [request(f'far001-competing-{index}','far001-other',batch=generic_batch,qty=5)
                   for index in range(2)]
+     competing[1]['cash_session_id'] = 'lab-cash-b'
      with ThreadPoolExecutor(max_workers=2) as pool:
-      replies = list(pool.map(lambda req: call(req, full_response=True), competing))
+      contenders = [pool.submit(call, req, staff=index == 1, full_response=True)
+                    for index, req in enumerate(competing)]
+      replies = [contender.result() for contender in contenders]
      assert sum(reply.returncode == 0 and '"success": true' in reply.stdout for reply in replies) == 1, replies
      assert any('INSUFFICIENT_CLOUD_STOCK' in (reply.stdout + reply.stderr) for reply in replies), replies
      assert float(scalar("SELECT stock FROM public.pos_product_batches WHERE id="+lit(generic_batch))) == 3
