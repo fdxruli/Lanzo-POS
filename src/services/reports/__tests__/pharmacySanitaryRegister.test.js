@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   auth: vi.fn(),
   state: { status: 'granted', actorType: 'admin', actorId: 'admin-1', sessionId: 's1' },
-  stores: { menu: [], sales: [], inventory_events: [], waste_logs: [] }
+  stores: { menu: [], sales: [], deleted_sales: [], inventory_events: [], waste_logs: [] }
 }));
 
 vi.mock('../../supabase', () => ({ supabaseClient: { rpc: mocks.rpc } }));
@@ -13,11 +13,17 @@ vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: { getState: () => mocks.state }
 }));
 vi.mock('../../db/dexie', () => ({
-  STORES: { MENU: 'menu', SALES: 'sales', INVENTORY_EVENTS: 'inventory_events', WASTE: 'waste_logs' },
+  STORES: { MENU: 'menu', SALES: 'sales', DELETED_SALES: 'deleted_sales', INVENTORY_EVENTS: 'inventory_events', WASTE: 'waste_logs' },
   db: {
     isOpen: () => true,
     table: (name) => ({
       toArray: async () => mocks.stores[name] || [],
+      bulkGet: async (ids) => ids.map((id) => (mocks.stores[name] || []).find((row) => row.id === id)),
+      toCollection: () => ({
+        filter: (predicate) => ({
+          limit: (limit) => ({ toArray: async () => (mocks.stores[name] || []).filter(predicate).slice(0, limit) })
+        })
+      }),
       where: () => ({
         between: () => ({
           limit: () => ({ toArray: async () => mocks.stores[name] || [] })
@@ -54,7 +60,7 @@ const item = (id, opts = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.state = { status: 'granted', actorType: 'admin', actorId: 'admin-1', sessionId: 's1' };
-  mocks.stores = { menu: [], sales: [], inventory_events: [], waste_logs: [] };
+  mocks.stores = { menu: [], sales: [], deleted_sales: [], inventory_events: [], waste_logs: [] };
   mocks.auth.mockResolvedValue({
     licenseKey: 'QA', deviceFingerprint: 'device-1',
     securityToken: 'secret', staffSessionToken: null
@@ -119,6 +125,19 @@ describe('pharmacy sanitary register', () => {
     expect(second.hasMore).toBe(false);
   });
 
+  it('keeps the sale movement filter invalid until the Cloud contract advertises version 2', async () => {
+    mocks.rpc.mockResolvedValue({ data: { success: true, rows: [], hasMore: false }, error: null });
+    const legacy = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
+    expect(legacy.supportedMovementTypes).not.toContain('sale');
+
+    mocks.rpc.mockResolvedValue({ data: {
+      success: true, rows: [], hasMore: false, contractVersion: 2,
+      supportedMovementTypes: ['receipt', 'dispensation', 'sale', 'waste', 'return', 'adjustment', 'other']
+    }, error: null });
+    const current = await getSanitaryRegisterPage({ cloud: true, licenseKey: 'QA', actorIdentity, filters });
+    expect(current.supportedMovementTypes).toContain('sale');
+  });
+
   it('does not turn missing historical proof into a confirmed incidence', () => {
     expect(sanitaryIncidences(item('x', {
       classificationAtOperation: null, nameSource: 'current_catalog'
@@ -168,6 +187,95 @@ describe('pharmacy sanitary register', () => {
     expect(page.rows.find((r) => r.movementType === 'dispensation').syncStatus)
       .toBe('local_not_cloud_confirmed');
     expect(page.source).toBe('local_device');
+  });
+
+  it('keeps real local batch allocations as rows under one sale and exports source references', async () => {
+    mocks.stores.menu = [{ id: 'medicine-1', name: 'MUSE-FAR-FINAL MULTILOTE A',
+      metadata: { pharmacy: { kind: 'medicine' } } }];
+    mocks.stores.inventory_events = [{
+      id: 'evt-sale-product-1', type: 'INVENTORY_DEDUCTION', saleId: 'sale-multi',
+      productId: 'medicine-1', delta: -15, timestamp: '2026-11-11T14:00:00.000Z'
+    }];
+    mocks.stores.sales = [{
+      id: 'sale-multi', folio: 'V-000005', timestamp: '2026-11-11T14:00:00.000Z', status: 'closed',
+      items: [
+        { lineId: 'line-a', productId: 'medicine-1', name: 'MUSE-FAR-FINAL MULTILOTE A',
+          quantity: 10, stockDeducted: 10,
+          batchesUsed: [{ batchId: 'batch-a', ingredientId: 'medicine-1', quantity: 10, batchSku: 'SKU-A', expiryDate: '2028-06-30' }] },
+        { lineId: 'line-b', productId: 'medicine-1', name: 'MUSE-FAR-FINAL MULTILOTE A',
+          quantity: 5, stockDeducted: 5,
+          batchesUsed: [{ batchId: 'batch-b', ingredientId: 'medicine-1', quantity: 5, batchSku: 'SKU-B', expiryDate: '2028-12-31' }] }
+      ]
+    }];
+
+    const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters, limit: 100 });
+    const sales = page.rows.filter((row) => row.movementType === 'sale');
+    expect(sales).toHaveLength(2);
+    expect(sales.map((row) => [row.saleId, row.saleItemId, row.batchId, row.quantity])).toEqual([
+      ['sale-multi', 'line-b', 'batch-b', 5],
+      ['sale-multi', 'line-a', 'batch-a', 10]
+    ]);
+    expect(sales.every((row) => row.traceStatus === 'limited')).toBe(true);
+    expect(sales.every((row) => row.sourceMovementIds[0] === 'evt-sale-product-1')).toBe(true);
+    expect(sales.every((row) => row.documentReference === null)).toBe(true);
+
+    const csv = buildSanitaryCsv(sales);
+    expect(csv).toContain('"ID movimiento origen","Referencia de venta"');
+    expect(csv).toContain('"sale"');
+    expect(csv).toContain('"V-000005"');
+    expect(csv).toContain('"batch-a"');
+    expect(csv).toContain('"batch-b"');
+    expect(csv).toContain('"evt-sale-product-1","V-000005"');
+  });
+
+  it('does not duplicate a documented local prescription and excludes products classified as other', async () => {
+    mocks.stores.menu = [
+      { id: 'medicine-1', name: 'Medicamento', metadata: { pharmacy: { kind: 'medicine' } } },
+      { id: 'general-1', name: 'Producto general', metadata: { pharmacy: { kind: 'other' } } }
+    ];
+    mocks.stores.inventory_events = [
+      { id: 'evt-rx-and-sale', type: 'INVENTORY_DEDUCTION', saleId: 'sale-rx', productId: 'medicine-1', delta: -2, timestamp: '2026-11-11T14:00:00.000Z' },
+      { id: 'evt-general', type: 'INVENTORY_DEDUCTION', saleId: 'sale-general', productId: 'general-1', delta: -1, timestamp: '2026-11-11T14:01:00.000Z' }
+    ];
+    mocks.stores.sales = [
+      { id: 'sale-rx', timestamp: '2026-11-11T14:00:00.000Z', status: 'closed', items: [
+        { lineId: 'rx-line', productId: 'medicine-1', name: 'Medicamento', quantity: 1, stockDeducted: 1,
+          batchId: 'batch-rx', pharmacyDispensationV1: { version: 1, reference: 'RX-1' } },
+        { lineId: 'sale-line', productId: 'medicine-1', name: 'Medicamento', quantity: 1, stockDeducted: 1,
+          batchesUsed: [{ batchId: 'batch-sale', ingredientId: 'medicine-1', quantity: 1 }] }
+      ] },
+      { id: 'sale-general', timestamp: '2026-11-11T14:01:00.000Z', status: 'closed', items: [
+        { lineId: 'general-line', productId: 'general-1', name: 'Producto general', quantity: 1, stockDeducted: 1,
+          batchId: 'batch-general' }
+      ] }
+    ];
+
+    const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters, limit: 100 });
+    expect(page.rows.filter((row) => row.saleId === 'sale-rx' && row.movementType === 'dispensation')).toHaveLength(1);
+    expect(page.rows.filter((row) => row.saleId === 'sale-rx' && row.movementType === 'sale')).toMatchObject([
+      { saleItemId: 'sale-line', batchId: 'batch-sale', quantity: 1 }
+    ]);
+    expect(page.rows.some((row) => row.saleId === 'sale-general')).toBe(false);
+  });
+
+  it('keeps archived cancelled local sales visible with limited coverage and a review warning', async () => {
+    mocks.stores.menu = [{ id: 'medicine-1', name: 'Medicamento',
+      metadata: { pharmacy: { kind: 'medicine' } } }];
+    mocks.stores.inventory_events = [{
+      id: 'evt-cancelled-sale', type: 'INVENTORY_DEDUCTION', saleId: 'sale-cancelled',
+      productId: 'medicine-1', delta: -2, timestamp: '2026-11-11T14:00:00.000Z'
+    }];
+    mocks.stores.deleted_sales = [{
+      id: 'sale-cancelled', timestamp: '2026-11-11T14:00:00.000Z', status: 'cancelled',
+      items: [{ lineId: 'line-1', productId: 'medicine-1', quantity: 2, stockDeducted: 2 }]
+    }];
+
+    const page = await getSanitaryRegisterPage({ cloud: false, actorIdentity, filters });
+    const sale = page.rows.find((row) => row.movementType === 'sale');
+    expect(sale).toMatchObject({ saleId: 'sale-cancelled', saleStatus: 'cancelled', quantity: 2, traceStatus: 'limited' });
+    expect(sanitaryIncidences(sale)).toContain('Venta cancelada; revisar la devolución asociada');
+    expect(sanitaryIncidences(sale)).toContain('La salida local no conserva una asignación de lote verificable');
+    expect(mocks.stores.deleted_sales).toHaveLength(1);
   });
 
   it('denies establishment-wide register to Staff without global audit permission', () => {
