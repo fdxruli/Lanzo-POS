@@ -71,12 +71,13 @@ const buildProjection = ({ product, batches, timestamp }) => {
   const stock = activeBatches.reduce((sum, batch) => sum + Math.max(0, asNumber(batch.stock, 0)), 0);
   const committedStock = batches.reduce((sum, batch) => sum + Math.max(0, asNumber(batch.committedStock ?? batch.committed_stock, 0)), 0);
   const variants = activeBatches.some(hasVariantAttributes);
+  const incompleteCost = activeBatches.some((batch) => batch.stock > 0 && (batch.cost ?? null) === null);
   const inventoryValue = activeBatches.reduce((sum, batch) => sum + (Math.max(0, asNumber(batch.stock, 0)) * Math.max(0, asNumber(batch.cost, 0))), 0);
   return {
     ...product,
     stock,
     committedStock,
-    cost: variants || stock <= 0 ? product.cost : Number((inventoryValue / stock).toFixed(4)),
+    cost: variants || stock <= 0 || incompleteCost ? product.cost : Number((inventoryValue / stock).toFixed(4)),
     hasBatches: true,
     updatedAt: timestamp
   };
@@ -92,7 +93,8 @@ const makeNewBatch = ({ product, operationId, entry, timestamp }) => {
     productId: product.id,
     stock: 0,
     committedStock: 0,
-    cost: Math.max(0, asNumber(entry.unitCost, asNumber(product.cost, 0))),
+    cost: entry.unitCost ?? product.cost ?? null,
+    costSource: entry.unitCost !== null ? 'receipt' : product.cost > 0 ? 'catalog_at_receipt' : null,
     price: Math.max(0, asNumber(product.price, 0)),
     supplier: entry.supplier || null,
     manufacturerBatchId: entry.manufacturerBatchId || null,
@@ -313,7 +315,9 @@ export const addInventoryEntry = async ({
       const updatedBatch = {
         ...target,
         stock: previousBatchStock + normalizedBaseQuantity,
-        cost: entry.unitCost ?? target.cost ?? product.cost ?? 0,
+        cost: entry.unitCost ?? target.cost ?? product.cost ?? null,
+        costSource: entry.unitCost !== null ? 'receipt' : target.costSource
+          ?? ((target.cost ?? null) === null && product.cost > 0 ? 'catalog_at_receipt' : null),
         supplier: entry.supplier || target.supplier || null,
         isActive: true,
         status: 'active',

@@ -151,7 +151,8 @@ export const createFinancialSalesAccumulator = (productCostMap = new Map()) => {
         const qty = Money.init(normalizeFinancialNumber(item.quantity || 0));
         const lineRevenue = getLineRevenue(item);
         const realId = item.parentId || item.id;
-        const rawCost = item.cost ?? productCostMap.get(realId);
+        const capturedInventoryCost = Object.hasOwn(item, 'inventoryCostTotal');
+        const rawCost = capturedInventoryCost ? item.inventoryCostTotal : item.cost ?? productCostMap.get(realId);
         const unitCost = normalizeFinancialNumber(rawCost, 0);
 
         totals.itemsSold = Money.add(totals.itemsSold, qty);
@@ -166,7 +167,7 @@ export const createFinancialSalesAccumulator = (productCostMap = new Map()) => {
           return;
         }
 
-        const lineCost = Money.multiply(unitCost, qty);
+        const lineCost = capturedInventoryCost ? Money.init(unitCost) : Money.multiply(unitCost, qty);
         totals.confirmedRevenue = Money.add(totals.confirmedRevenue, lineRevenue);
         totals.confirmedCost = Money.add(totals.confirmedCost, lineCost);
         totals.confirmedProfit = Money.add(totals.confirmedProfit, Money.subtract(lineRevenue, lineCost));

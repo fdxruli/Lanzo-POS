@@ -344,8 +344,10 @@ const buildLocalSalesProfitFallback = async (filters = {}, warnings = []) => {
       const lineTotal = numberOrNull(item.total ?? item.line_total ?? item.subtotal ?? item.net_total)
         ?? (unitPrice !== null ? unitPrice * quantity : 0);
       const unitCost = numberOrNull(item.cost ?? item.unit_cost ?? item.cost_snapshot ?? item.costPrice);
-      const costKnown = !isMissingUnitCost(unitCost);
-      const cogs = costKnown ? unitCost * quantity : null;
+      const capturedInventoryCost = Object.hasOwn(item, 'inventoryCostTotal');
+      const reportedCost = capturedInventoryCost ? numberOrNull(item.inventoryCostTotal) : unitCost;
+      const costKnown = !isMissingUnitCost(reportedCost);
+      const cogs = costKnown ? (capturedInventoryCost ? reportedCost : unitCost * quantity) : null;
       const grossProfit = costKnown ? lineTotal - cogs : null;
 
       allRows.push({
@@ -356,7 +358,7 @@ const buildLocalSalesProfitFallback = async (filters = {}, warnings = []) => {
         product_name: item.name ?? item.product_name ?? item.productName ?? item.description ?? 'Producto',
         quantity,
         line_total: lineTotal,
-        unit_cost: costKnown ? unitCost : null,
+        unit_cost: costKnown ? cogs / quantity : null,
         movement_cost: null,
         cogs,
         gross_profit: grossProfit,

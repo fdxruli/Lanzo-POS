@@ -102,6 +102,15 @@ describe('sales profitability data', () => {
     expect(previous.toExclusiveUtc).toBe(current.fromInclusiveUtc);
   });
 
+  it('keeps a reconstructed receipt cost separate from a recorded sale movement', () => {
+    expect(normalizeSalesProfitLine({
+      quantity: 2, line_total: 110, unit_cost: 30, movement_cost: 0,
+      cogs: 60, cost_source: 'inventory_receipt', profit_status: 'estimated'
+    })).toMatchObject({
+      lineCost: 60, costStatus: 'estimated', costSource: 'inventory_receipt', costKnown: true
+    });
+  });
+
   it('uses movement cost as definitive and snapshot cost as estimated', () => {
     expect(normalizeSalesProfitLine({
       quantity: 2,

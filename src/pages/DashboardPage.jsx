@@ -315,6 +315,7 @@ export default function DashboardPage() {
         : null;
       const shouldLoadCreditHistory = shouldLoadFinalHistory
         && Boolean(salesActorIdentity)
+        && overviewReport?.overview?.financial_coverage_version !== 1
         && overviewReport?.success !== false
         && overviewReport?.source?.mode === REPORT_SOURCE_MODES.CLOUD_FINAL
         && overviewReport?.source?.stale === false;

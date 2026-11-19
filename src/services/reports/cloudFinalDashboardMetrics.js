@@ -1,3 +1,4 @@
+import { getSaleInitialFinancialAmounts } from './salesHistoryExport';
 import { Money } from '../../utils/moneyMath';
 
 const FIELD_ALIASES = Object.freeze({
@@ -138,22 +139,22 @@ const summarizeCreditFromCloudSales = ({
   let creditTotal = Money.init(0);
   for (const sale of activeSales) {
     const total = Number(sale.total);
-    const amountPaidValue = sale.amount_paid ?? sale.paid_total;
-    const amountPaid = Number(amountPaidValue);
+    const { paidInitially: amountPaid, initialCredit } = getSaleInitialFinancialAmounts(sale);
     const creditEffectStatus = String(sale.creditEffectStatus || sale.credit_effect_status || '').toLowerCase();
     if (sale.source_mode !== 'cloud_committed'
       || !Number.isFinite(total) || total <= 0
-      || amountPaidValue === null || amountPaidValue === undefined || amountPaidValue === ''
       || !Number.isFinite(amountPaid) || amountPaid < 0 || amountPaid > total + 0.01) {
       return incomplete('cloud_sale_initial_payment_not_recorded');
     }
-    if (!['applied', 'not_required'].includes(creditEffectStatus)) {
+    if (creditEffectStatus === 'applied'
+      ? initialCredit !== null && Math.abs(initialCredit - (total - amountPaid)) > 0.01
+      : !['not_applied', 'not_required'].includes(creditEffectStatus) || Math.abs(total - amountPaid) > 0.01) {
       return incomplete('cloud_sale_credit_effect_not_confirmed');
     }
 
     salesTotal = Money.add(salesTotal, total);
     if (creditEffectStatus === 'applied') {
-      creditTotal = Money.add(creditTotal, Math.max(total - amountPaid, 0));
+      creditTotal = Money.add(creditTotal, initialCredit ?? Math.max(total - amountPaid, 0));
     }
   }
 
@@ -208,6 +209,27 @@ export const getCloudFinalDashboardMetrics = (
   const netSales = metrics.netSales.has
     ? (metrics.netSales.value >= 0 ? complete(metrics.netSales.value) : incomplete('negative_net_sales_total'))
     : unavailable('net_sales_not_in_report');
+
+  if (overview.financial_coverage_version === 1) {
+    const initial = readMetric(overview, ['initial_collected_total']);
+    const later = readMetric(overview, ['later_collected_total']);
+    const credit = readMetric(overview, ['originated_credit_total']);
+    const debt = readMetric(overview, ['current_debt_total']);
+    return {
+      netSales,
+      collected: initial.has && later.has
+        ? complete(Money.toNumber(Money.add(initial.value, later.value)))
+        : incomplete('cloud_collections_coverage_incomplete'),
+      initialCollected: initial.has ? complete(initial.value) : incomplete('initial_tender_not_reconciled'),
+      laterCollected: later.has ? complete(later.value) : incomplete('later_payment_coverage_incomplete'),
+      creditGenerated: credit.has ? complete(credit.value) : incomplete('originated_credit_not_reconciled'),
+      pendingDebt: debt.has && debt.value >= 0 && overview.current_debt_scope === 'license'
+        && reportData.source.mode !== 'cache' && !reportData.source.stale
+        ? complete(debt.value)
+        : unavailable('cloud_balance_not_available_for_scope'),
+      missingFields
+    };
+  }
 
   let collected = unavailable('payment_breakdown_not_in_report');
   const collectionInputs = [

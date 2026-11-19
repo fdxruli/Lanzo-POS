@@ -47,7 +47,7 @@ const saleTotal = (sale = {}) => normalizeFinancialNumber(
   firstValue(sale, ['total', 'net_total', 'net_sales_total']), Number.NaN
 );
 const initialPaidAmount = (sale = {}) => normalizeFinancialNumber(firstValue(sale, [
-  'initialAmountPaid', 'initial_amount_paid', 'amountPaid', 'amount_paid', 'abono'
+  'initialAmountPaid', 'initial_amount_paid', 'amountPaid', 'amount_paid', 'abono', 'paid_total'
 ]), Number.NaN);
 
 const getPaymentBreakdownEvidence = (sale = {}) => {

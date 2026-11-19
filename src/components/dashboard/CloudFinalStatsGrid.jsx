@@ -72,7 +72,10 @@ const getNetSalesNote = (metric) => {
 };
 
 const getCollectedNote = (metric) => {
-  if (metric.status === 'complete') return 'Pagos iniciales y abonos confirmados en este período.';
+  if (metric.status === 'complete') return 'Pagos iniciales de ventas vigentes y abonos posteriores del período.';
+  if (metric.reason === 'cloud_collections_coverage_incomplete') {
+    return 'Falta conciliar el cobro inicial o los abonos del período.';
+  }
   if (metric.reason === 'cancellation_or_reversal_requires_detail') {
     return 'Hay cancelaciones o devoluciones; falta conciliar los reversos antes de certificar cobros.';
   }
@@ -232,6 +235,12 @@ export default function CloudFinalStatsGrid({
             <span className="card-label">Cobrado</span>
             <h2 className="card-value-main">{isLoading ? 'Cargando' : metricDisplay(metrics.collected, formatCurrency)}</h2>
             <small className="text-muted">{getCollectedNote(metrics.collected)}</small>
+            {metrics.initialCollected && (
+              <small className="text-muted">
+                Inicial {metricDisplay(metrics.initialCollected, formatCurrency)} ·
+                Abonos {metricDisplay(metrics.laterCollected, formatCurrency)}
+              </small>
+            )}
           </div>
         </div>
 
@@ -254,7 +263,9 @@ export default function CloudFinalStatsGrid({
         <MetricCard
           label="Pendiente por cobrar"
           value={metricDisplay(metrics.pendingDebt, formatCurrency)}
-          note={!cloudFinalSource
+          note={metrics.pendingDebt.status === 'complete'
+            ? `Saldo actual ${customerId ? 'del cliente' : 'del negocio'} · fuera del filtro de fechas.`
+            : !cloudFinalSource
             ? 'No hay un reporte Cloud oficial confirmado para este periodo y alcance.'
             : 'Saldo actual no disponible para el alcance de este usuario o dispositivo.'}
           icon={<AlertTriangle size={18} className="icon-muted" />}
@@ -268,7 +279,7 @@ export default function CloudFinalStatsGrid({
             <span className="card-label">Ganancia bruta</span>
             <h2 className="card-value-main">{isLoading ? 'Cargando' : profitStatus === 'incomplete' ? 'Incompleto' : profit.has ? formatCurrency(profit.value) : 'No disponible'}</h2>
             <div className="card-mini-stats">
-              <span className="mini-stat-pill">Margen: <strong>{grossMargin.has ? formatPercent(grossMargin.value) : 'Sin dato'}</strong></span>
+              <span className="mini-stat-pill">Margen: <strong>{profitStatus !== 'incomplete' && grossMargin.has ? formatPercent(grossMargin.value) : 'Sin dato'}</strong></span>
             </div>
             <small className="text-muted">{getProfitNote(profitStatus)}</small>
           </div>
@@ -290,7 +301,8 @@ export default function CloudFinalStatsGrid({
 
         <MetricCard label="Ventas brutas" value={grossSales} note="Antes de cancelaciones" />
         <MetricCard label="Canceladas" value={cancelledSales} note="No inflan ventas netas" />
-        <MetricCard label="Costo de ventas" value={cogs} note="Costo de productos vendidos" />
+        <MetricCard label="Costo de ventas" value={profitStatus === 'incomplete' ? 'Incompleto' : cogs}
+          note={profitStatus === 'incomplete' ? 'Faltan costos verificables de unidades vendidas.' : 'Costo de productos vendidos'} />
       </div>
     </div>
   );

@@ -9,7 +9,8 @@ Evidence: work/pharmacy-stage3[-current]-results.json. Container removed on exit
 import subprocess, json, datetime, sys, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-FAR_001 = sys.argv[1:] == ['--isolated-fixture', '--current-financial', '--far-001']
+FINANCIAL_REPORTS = sys.argv[1:] == ['--isolated-fixture', '--current-financial', '--far-001-reports']
+FAR_001 = FINANCIAL_REPORTS or sys.argv[1:] == ['--isolated-fixture', '--current-financial', '--far-001']
 CURRENT_FINANCIAL = FAR_001 or sys.argv[1:] == ['--isolated-fixture', '--current-financial']
 if sys.argv[1:] != ['--isolated-fixture'] and not CURRENT_FINANCIAL:
     raise SystemExit('Explicit --isolated-fixture required')
@@ -120,7 +121,8 @@ try:
     results=[]
     if FAR_001:
      sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,is_active,batch_management,expiration_mode,requires_prescription,prescription_type) VALUES ('far001-vi',"+lit(L)+",'FAR001 VI','far001 vi',10,4,0,true,'{\"pharmacy\":{\"kind\":\"medicine\",\"status\":\"confirmed\",\"fraction\":\"VI\"}}',true,'{\"enabled\":true}','STRICT',false,'otc');")
-     result_path = Path('work/pharmacy-far001-current-financial-results.json')
+     result_path = Path('work/pharmacy-far001-financial-reports-results.json' if FINANCIAL_REPORTS
+                        else 'work/pharmacy-far001-current-financial-results.json')
     else:
      result_path = Path('work/pharmacy-stage3-current-results.json' if CURRENT_FINANCIAL else 'work/pharmacy-stage3-results.json')
 
@@ -419,6 +421,107 @@ try:
       results.append({'case':layaway_id,'operation':'sale.layaway_complete','passed':valid,
                       'stdout':response.stdout,'error':response.stderr,'before':before,'after':after})
       print(layaway_id,'PASS' if valid else 'FAIL',response.stderr.splitlines()[0] if response.stderr else '')
+    if FINANCIAL_REPORTS:
+     report_fixture = current_fixture/'far001-report-rpcs.sql'
+     sql(report_fixture.read_text())
+     sql("UPDATE public.plans SET features=features || "
+         "'{\"cloud_reports_sync\": true, \"cloud_sales_reports_final\": true}';")
+     endpoints = "'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session'"
+     window_start = scalar("SELECT clock_timestamp()")
+     # Use the old real writer to reproduce checkout's zero when omitted cost
+     # reached the numeric default. A separate existing lot keeps its own cost.
+     assert call(request('financial-historical','far001-vi',batch='batch-entry-far001-second',qty=2)).returncode == 0
+     assert float(scalar("SELECT total_cost FROM public.pos_inventory_movements WHERE sale_id='financial-historical'")) == 0
+     migration = next(Path('supabase/migrations').glob('*_far_001_pharmacy_financial_reports.sql'))
+     sql(migration.read_text())
+     def report(start, end=None, customer_id=None, profit=False, actor=endpoints):
+      function = 'pos_get_sales_profit_report' if profit else 'pos_get_sales_final_overview'
+      args = actor + ',p_date_from=>' + lit(start)
+      if end is not None: args += ',p_date_to=>' + lit(end)
+      if customer_id is not None: args += ',p_customer_id=>' + lit(customer_id)
+      payload = sql("SET ROLE anon; SELECT public."+function+"("+args+");", user='authenticator')
+      result = json.loads(payload.stdout.strip().splitlines()[-1])
+      assert result['success'], result
+      return result
+
+     assert call(request('financial-paid','far001-vi',batch='batch-entry-far001-second',qty=2)).returncode == 0
+     assert float(scalar("SELECT total_cost FROM public.pos_inventory_movements WHERE sale_id='financial-paid'")) == 8
+     assert scalar("SELECT metadata->>'cost_source' FROM public.pos_inventory_movements WHERE sale_id='financial-paid'") == 'lot_at_sale'
+     customer = 'far001-other-customer'
+     credit_request = request('financial-credit','far001-vi',batch='batch-entry-far001-second',qty=12)
+     credit_request['customer_id'] = customer
+     credit_request['sale'].update(customer_id=customer, payment_method='credit', amount_paid=0, balance_due=120, change_amount=0)
+     credit_request['payments'] = []
+     credit_response = call(credit_request, op='sale.credit')
+     assert credit_response.returncode == 0 and 'true' in credit_response.stdout, credit_response
+     paid_cancelled = request('financial-cancelled','far001-vi',batch='batch-entry-far001-second',qty=1)
+     assert call(paid_cancelled).returncode == 0
+     assert call({'sale_id':'financial-cancelled','reason':'Synthetic refund'}, op='sale.cancel').returncode == 0
+     assert scalar("SELECT count(*) FROM public.pos_inventory_movements WHERE sale_id='financial-cancelled' AND movement_type='return_in'") == '1'
+
+     payment_start = scalar("SELECT clock_timestamp()")
+     def payment(amount, method, key):
+      result = sql("SET ROLE anon; SELECT public.pos_record_customer_payment("+endpoints+","
+                   +lit(customer)+","+str(amount)+","+lit(method)+",NULL,NULL,'[]'::jsonb,"+lit(key)+");",
+                   user='authenticator')
+      assert json.loads(result.stdout.strip().splitlines()[-1])['success'], result.stdout
+
+     payment(50, 'transferencia', 'financial-payment-1')
+     first_payment_end = scalar("SELECT clock_timestamp()")
+     combined = report(window_start, first_payment_end)['overview']
+     assert combined['gross_sales_total'] == 170 and combined['cancelled_sales_total'] == 10
+     assert combined['net_sales_total'] == 160 and combined['cogs_total'] == 64, combined
+     assert combined['gross_profit_total'] == 96 and combined['gross_margin_percent'] == 60, combined
+     assert combined['initial_collected_total'] == 40 and combined['later_collected_total'] == 50, combined
+     assert combined['originated_credit_total'] == 120, combined
+     sales_period = report(window_start, payment_start, customer)['overview']
+     assert sales_period['originated_credit_total'] == 120 and sales_period['later_collected_total'] == 0
+     assert sales_period['current_debt_scope'] == 'license' and sales_period['current_debt_total'] == 70
+     later_period = report(payment_start, first_payment_end, customer)['overview']
+     assert later_period['net_sales_total'] == later_period['originated_credit_total'] == 0
+     assert later_period['later_collected_total'] == 50
+     assert scalar("SELECT count(*) FROM public.pos_cash_movements WHERE customer_ledger_id IN "
+                   "(SELECT id FROM public.pos_customer_ledger WHERE idempotency_key='financial-payment-1')") == '0'
+     payment(70, 'tarjeta', 'financial-payment-2')
+     payment(70, 'tarjeta', 'financial-payment-2')
+     settled = report(window_start, customer_id=customer)['overview']
+     assert settled['current_debt_total'] == 0 and settled['later_collected_total'] == 120
+     assert settled['originated_credit_total'] == 120 and settled['initial_collected_total'] == 0
+     assert scalar("SELECT count(*) FROM public.pos_customer_ledger WHERE idempotency_key='financial-payment-2'") == '1'
+     detail = report(window_start, profit=True)
+     historical = next(row for row in detail['rows'] if row['sale_id'] == 'financial-historical')
+     assert historical['cost_source'] == 'inventory_receipt' and historical['cogs'] == 8, detail
+     assert float(scalar("SELECT total_cost FROM public.pos_inventory_movements WHERE sale_id='financial-historical'")) == 0
+
+     # Zero catalog cost is ambiguous. The report must expose the gap, including
+     # when a confirmed movement is present with unknown cost.
+     sql("INSERT INTO public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock,metadata,is_active,batch_management,expiration_mode,requires_prescription,prescription_type) VALUES "
+         "('financial-unknown',"+lit(L)+",'Unknown','unknown',10,0,0,true,'{}',true,'{\"enabled\":true}','STRICT',false,'otc');")
+     sql("SET ROLE anon; SELECT public.pos_add_inventory_entry("+endpoints+",p_product_id=>'financial-unknown',"
+         "p_quantity=>2,p_base_quantity=>2,p_manufacturer_batch_id=>'NO-COST',p_expiry_date=>'2099-01-01',"
+         "p_idempotency_key=>'financial-no-cost-receipt');", user='authenticator')
+     assert call(request('financial-unknown-sale','financial-unknown',batch='batch-entry-financial-no-cost-receipt',qty=1)).returncode == 0
+     unknown = report(window_start)['overview']
+     assert unknown['cogs_missing_count'] == 1 and unknown['profit_status'] == 'incomplete', unknown
+     assert unknown['cogs_total'] is unknown['gross_profit_total'] is unknown['gross_margin_percent'] is None, unknown
+     mixed = report(scalar("SELECT now() - interval '1 day'"), customer_id='lab-p0-customer')['overview']
+     assert mixed['initial_collected_total'] == 10 and mixed['originated_credit_total'] == 30, mixed
+     assert mixed['later_collected_total'] == 0 and mixed['current_debt_total'] == 30, mixed
+
+     sql("UPDATE public.license_staff_users SET permissions=permissions || '{\"reportes\": true}' "
+         "WHERE id='00000000-0000-0000-0000-0000000000ab';")
+     staff = report(window_start, actor="'lab-license-a','lab-device-b','lab-device-token-b','lab-staff-session'")['overview']
+     assert staff['net_sales_total'] == 0 and staff['current_debt_total'] is None, staff
+     assert 'customer_debt_total' not in staff
+     foreign = sql("SET ROLE anon; SELECT public.pos_get_sales_final_overview("
+                   +endpoints.replace('lab-license-a','lab-license-b')+");",
+                   check=False, user='authenticator')
+     assert foreign.returncode != 0 or '"success": false' in foreign.stdout, foreign
+     assert scalar("SELECT has_function_privilege('anon',"
+                   "'public.pos_get_sales_final_overview_unlimited(text,text,text,text,timestamptz,timestamptz,text,uuid,uuid,text,text,text,text)',"
+                   "'EXECUTE')") == 'f'
+     results.append({'case':'far001_reports', 'passed':True, 'overview':combined})
+     print('FAR-001 reports: paid, mixed credit, reversal, periods, partial/full payment, unknown cost, ACL and tenant PASS')
     assert scalar("SELECT count(*) FROM public.pos_sale_payments WHERE sale_id LIKE 'after-%' AND sale_id NOT IN ('after-ordinary_credit','after-pharmacy_credit','after-far001_stock') AND (received_amount<>100 OR change_amount<>80 OR amount<>20)")=='0'
     assert scalar("SELECT count(*) FROM public.pos_financial_operations WHERE status<>'completed'")=='0'
     roles=scalar("SELECT string_agg(rolname||':'||rolsuper||':'||rolbypassrls,',' ORDER BY rolname) FROM pg_roles WHERE rolname IN ('postgres','anon','authenticated')")

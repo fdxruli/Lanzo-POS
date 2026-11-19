@@ -1,3 +1,4 @@
+import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
 import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
@@ -469,6 +470,8 @@ export const buildProcessedItemsAndDeductions = ({
         }
 
         let itemTotalCost = 0;
+        let missingInventoryCost = false;
+        const pharmacyCost = getPharmacyClassification(product).recorded || orderItem.automaticPharmacyBatch === true;
         const itemBatchesUsed = [];
         const nonBatchIngredientsUsed = [];
 
@@ -512,16 +515,21 @@ export const buildProcessedItemsAndDeductions = ({
 
                 virtualConsumptionTracker.set(batch.id, normalizeStock(alreadyConsumed + toDeduct));
 
+                const cost = pharmacyCost ? batch.cost ?? targetProduct?.cost : batch.cost;
+                if (pharmacyCost && !(Number(cost) > 0)) missingInventoryCost = true;
+
                 itemBatchesUsed.push({
                     batchId: batch.id,
                     ingredientId: targetId,
                     quantity: toDeduct,
-                    cost: batch.cost,
+                    cost,
+                    ...(pharmacyCost ? { costSource: Number(cost) > 0
+                        ? ((batch.cost ?? null) === null ? 'catalog_at_sale' : 'lot_at_sale') : null } : {}),
                     expiryDate: batch.expiryDate || null,
                     batchSku: batch.sku || null
                 });
 
-                itemTotalCost += roundCurrency((Number(batch.cost) || 0) * toDeduct);
+                itemTotalCost += roundCurrency((Number(cost) || 0) * toDeduct);
                 requiredQty = normalizeStock(requiredQty - toDeduct);
             }
 
@@ -535,6 +543,7 @@ export const buildProcessedItemsAndDeductions = ({
                     fromCommittedStock: false
                 });
                 // Account for the simple-stock ingredient just like a batch.
+                if (pharmacyCost && !(Number(targetProduct.cost) > 0)) missingInventoryCost = true;
                 itemTotalCost += roundCurrency((Number(targetProduct.cost) || 0) * requiredStart);
                 requiredQty = 0; // La transacción verifica y descuenta el stock físico vigente.
             }
@@ -569,7 +578,8 @@ export const buildProcessedItemsAndDeductions = ({
             ...orderItem,
             image: null,
             base64: null,
-            cost: calculatedAvgCost,
+            cost: missingInventoryCost ? null : calculatedAvgCost,
+            ...(pharmacyCost ? { inventoryCostTotal: missingInventoryCost ? null : itemTotalCost } : {}),
             batchesUsed: itemBatchesUsed,
             nonBatchIngredientsUsed,
             stockDeducted: quantityToDeduct
