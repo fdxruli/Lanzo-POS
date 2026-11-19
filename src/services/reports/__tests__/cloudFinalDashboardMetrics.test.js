@@ -53,6 +53,32 @@ const cloudSale = (overrides = {}) => ({
 });
 
 describe('getCloudFinalDashboardMetrics', () => {
+  it('uses authorized final coverage through cancellations and never conflates later payments with credit origin', () => {
+    const report = cloudReport({
+      net_sales_total: 280, cancelled_sales_count: 1, cash_reversal_total: -25,
+      financial_coverage_version: 1, initial_collected_total: 160,
+      originated_credit_total: 120, later_collected_total: 50,
+      current_debt_scope: 'license', current_debt_total: 70
+    });
+    expect(getCloudFinalDashboardMetrics(report)).toMatchObject({
+      netSales: { value: 280, status: 'complete' },
+      collected: { value: 210, status: 'complete' },
+      initialCollected: { value: 160, status: 'complete' },
+      laterCollected: { value: 50, status: 'complete' },
+      creditGenerated: { value: 120, status: 'complete' },
+      pendingDebt: { value: 70, status: 'complete' }
+    });
+    expect(getCloudFinalDashboardMetrics({ ...report, source: { mode: 'cache', final: true, stale: true } })
+      .pendingDebt.status).toBe('unavailable');
+    expect(getCloudFinalDashboardMetrics({ ...report, overview: {
+      ...report.overview, later_collected_total: null, current_debt_scope: null
+    } })).toMatchObject({
+      collected: { status: 'incomplete', value: null },
+      creditGenerated: { status: 'complete', value: 120 },
+      pendingDebt: { status: 'unavailable', value: null }
+    });
+  });
+
   it('does not treat a fully fiado sale or the credit payment category as collected cash', () => {
     const result = getCloudFinalDashboardMetrics(cloudReport(), {
       creditHistoryReport: historyReport([cloudSale()])

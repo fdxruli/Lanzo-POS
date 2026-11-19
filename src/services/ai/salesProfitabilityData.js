@@ -271,6 +271,12 @@ export const normalizeSalesProfitLine = (row = {}) => {
   if (!invalidEvidence && costSource === 'inventory_movement' && !isMissingUnitCost(movementCost)) {
     lineCost = movementCost;
     costStatus = 'definitive';
+  } else if (!invalidEvidence && costSource === 'inventory_receipt' && profitStatus === 'estimated') {
+    const receiptCost = positiveNumber(source.cogs);
+    if (receiptCost !== null) {
+      lineCost = receiptCost;
+      costStatus = 'estimated';
+    }
   } else if (!invalidEvidence && costSource === 'sale_item_snapshot' && !isMissingUnitCost(unitCost)) {
     lineCost = unitCost * quantity;
     costStatus = 'estimated';

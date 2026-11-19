@@ -574,7 +574,12 @@ export default function StatsGrid({
     const financialSummary = summarizeFinancialSales(filteredSales);
     const revenue = financialSummary.totalRevenue;
     const unreliableProfit = financialSummary.unreliableProfitDueToMissingCosts;
-    const profitConfirmed = financialSummary.confirmedProfit;
+    const pharmacyReport = activeRubros.includes('farmacia');
+    const incompletePharmacyCosts = pharmacyReport && (
+      financialSummary.missingCostItems > 0 || filteredSales.some((sale) => !sale.items?.length)
+    );
+    const profitConfirmed = pharmacyReport && !incompletePharmacyCosts
+      ? financialSummary.grossProfit : financialSummary.confirmedProfit;
     const confirmedRevenue = financialSummary.confirmedRevenue;
     const unconfirmedRevenue = financialSummary.unconfirmedRevenue;
     const localCustomerDebt = summarizeLocalCustomerDebt(financeEvents.customers, {
@@ -604,7 +609,8 @@ export default function StatsGrid({
     const totalWaste = summarizeWaste(filteredWasteLogs);
     const totalProfit = profitConfirmed;
     const avgTicket = orders > 0 ? revenue / orders : 0;
-    const marginPercent = financialSummary.confirmedMarginPct;
+    const marginPercent = pharmacyReport && !incompletePharmacyCosts && revenue > 0
+      ? (profitConfirmed / revenue) * 100 : financialSummary.confirmedMarginPct;
     const selectedMetricKey = customerId && selectedMetric === 'waste' ? 'revenue' : selectedMetric;
     const selectedMetricConfig = METRIC_OPTIONS[selectedMetricKey];
     const currentSummary = {
@@ -674,7 +680,9 @@ export default function StatsGrid({
       coveragePercent: financialSummary.reportReliabilityPct,
       missingCostRevenuePct: financialSummary.missingCostRevenuePct,
       qualityStatus: financialSummary.qualityStatus,
-      shouldWarnFinancialQuality: financialSummary.shouldWarn,
+      shouldWarnFinancialQuality: incompletePharmacyCosts || financialSummary.shouldWarn,
+      incompletePharmacyCosts,
+      pharmacyCostOfSales: pharmacyReport ? financialSummary.totalCost : null,
       shouldBlockProfitAnalysis: financialSummary.shouldBlockProfitAnalysis,
       inventory: useCloudInventory ? cloudInventoryMetric.value : localInventoryValue,
       inventorySource: useCloudInventory ? 'cloud' : 'local',
@@ -695,7 +703,7 @@ export default function StatsGrid({
       salesAttributionIncomplete,
       paymentAttributionIncomplete
     };
-  }, [businessTimezone, customerId, filteredSales, filteredWasteLogs, prevPeriodSales, previousSalesAttributionIncomplete, prevPeriodWasteLogs, financeEvents, effectiveReportStatus, selectedMetric, stats, timeRange, reportContext]);
+  }, [activeRubros, businessTimezone, customerId, filteredSales, filteredWasteLogs, prevPeriodSales, previousSalesAttributionIncomplete, prevPeriodWasteLogs, financeEvents, effectiveReportStatus, selectedMetric, stats, timeRange, reportContext]);
 
   useEffect(() => {
     if (customerId && selectedMetric === 'waste') setSelectedMetric('revenue');
@@ -888,11 +896,13 @@ export default function StatsGrid({
           <div className="card-content">
             <span className="card-label">Ganancia bruta confirmada</span>
             <h2 className="card-value-main">{metrics.financialDataStatus === 'ready'
-              ? (metrics.salesAttributionIncomplete ? 'Incompleto' : formatCurrency(metrics.profitConfirmed))
+              ? ((metrics.salesAttributionIncomplete || metrics.incompletePharmacyCosts) ? 'Incompleto' : formatCurrency(metrics.profitConfirmed))
               : metrics.financialDataStatus === 'loading' ? 'Cargando' : 'No disponible'}</h2>
 
             {metrics.salesAttributionIncomplete ? (
               <div className="financial-quality-warning"><AlertTriangle size={14} /><span>Hay ventas sin una relación de cliente confirmada.</span></div>
+            ) : metrics.incompletePharmacyCosts ? (
+              <div className="financial-quality-warning"><AlertTriangle size={14} /><span>Faltan costos verificables de unidades vendidas.</span></div>
             ) : metrics.shouldWarnFinancialQuality ? (
               <div className="financial-quality-warning">
                 <AlertTriangle size={14} />
@@ -915,6 +925,16 @@ export default function StatsGrid({
             {renderSourceBadges(reportContext.salesBadges)}
           </div>
         </div>
+
+        {metrics.pharmacyCostOfSales !== null && (
+          <div className={`stat-card-modern small-card ${metrics.incompletePharmacyCosts ? 'card-warning-state' : ''}`}>
+            <div className="card-header-small"><span className="card-label">Costo de ventas</span></div>
+            <div className="card-value-small">{metrics.financialDataStatus === 'ready'
+              ? (metrics.salesAttributionIncomplete || metrics.incompletePharmacyCosts
+                ? 'Incompleto' : formatCurrency(metrics.pharmacyCostOfSales))
+              : 'No disponible'}</div>
+          </div>
+        )}
 
         {/* TARJETA 3: UTILIDAD NO CONFIABLE */}
         <div className={`stat-card-modern small-card ${metrics.hasMissingCosts ? 'card-warning-state' : ''}`}>
