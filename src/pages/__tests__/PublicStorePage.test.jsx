@@ -617,6 +617,46 @@ describe('PublicStorePage', () => {
     expect(screen.queryByText(/No pudimos actualizar la tienda/)).not.toBeInTheDocument();
   });
 
+  it('keeps cached products visible offline and refreshes them after reconnecting', async () => {
+    const pendingRefresh = deferred();
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+      ...portalResult,
+      catalogRevision: 7,
+      cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 }
+    });
+    serviceMocks.getPublicCatalog
+      .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
+      .mockReturnValueOnce(pendingRefresh.promise);
+
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+
+    fireEvent.offline(window);
+    expect(await screen.findByText(/Sin conexión/)).toBeInTheDocument();
+    fireEvent.online(window);
+
+    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    expect(screen.getByText(/Actualizando catálogo/)).toBeInTheDocument();
+
+    await act(async () => {
+      pendingRefresh.resolve({
+        ...catalogResult,
+        catalogRevision: 7,
+        items: [makeProduct('reconnected', { name: 'Catálogo recuperado' })]
+      });
+      await pendingRefresh.promise;
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Catálogo recuperado' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sin conexión/)).not.toBeInTheDocument();
+    expect(serviceMocks.getPublicCatalog).toHaveBeenLastCalledWith(
+      'mi-negocio',
+      expect.objectContaining({ offset: 0, catalogRevision: 7, cacheStrategy: 'network-first' })
+    );
+  });
+
   it('deduplicates a persisted pageshow followed immediately by focus', async () => {
     let windowListenerSpy;
     let usingFakeTimers = false;
