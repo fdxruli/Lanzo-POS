@@ -170,6 +170,54 @@ function PublicProductConfigurationModal({
   const requiresConfiguration = product?.configuration?.requiresConfiguration === true
     || product?.configuration?.hasVariants === true
     || product?.configuration?.hasOptionGroups === true;
+  const hasSelectionCapabilities = axes.length > 0 || (detail?.groups?.length || 0) > 0;
+  const selectedVariantAttributes = axes
+    .map(({ attribute }) => ({
+      label: labelAttribute(attribute),
+      value: selectedAttributes[attribute] || ''
+    }))
+    .filter(({ value }) => value);
+  const selectedOptionGroups = (detail?.groups || []).map((group) => ({
+    id: group.id,
+    name: group.publicName,
+    options: (selectionMap[group.id] || [])
+      .map((optionId) => group.options.find((option) => option.id === optionId))
+      .filter(Boolean)
+  })).filter(({ options }) => options.length > 0);
+  const variantRequirement = validation.errors.variant
+    ? axes.length > 0 && selectedVariantAttributes.length === axes.length && !selectedVariant
+      ? 'La combinación seleccionada no está disponible.'
+      : validation.errors.variant
+    : '';
+  const groupRequirements = (detail?.groups || [])
+    .filter((group) => validation.errors[group.id])
+    .map((group) => `${group.publicName}: ${validation.errors[group.id]}`);
+  const selectionRequirement = validation.errors.configuration === 'Selecciona las opciones requeridas.'
+    && !variantRequirement
+    && groupRequirements.length === 0
+    ? validation.errors.configuration
+    : '';
+  const configurationDataError = validation.errors.configuration
+    && validation.errors.configuration !== 'Selecciona las opciones requeridas.'
+    ? validation.errors.configuration
+    : '';
+  const hasUnavailableSelectedOption = (detail?.groups || []).some((group) => {
+    const availableOptionIds = new Set(
+      group.options.filter((option) => option.isAvailable).map((option) => option.id)
+    );
+    return (selectionMap[group.id] || []).some((optionId) => !availableOptionIds.has(optionId));
+  });
+  const hasInvalidSelectionLimit = (detail?.groups || []).some((group) => {
+    const selectedCount = (selectionMap[group.id] || []).length;
+    return selectedCount > group.maxSelect
+      || (group.selectionType === 'single' && selectedCount > 1);
+  });
+  const hasInvalidPriceSelection = Boolean(
+    validation.errors.variant || hasUnavailableSelectedOption || hasInvalidSelectionLimit
+  );
+  const priceUnavailable = Boolean(configurationDataError || hasInvalidPriceSelection);
+  const pendingRequirements = [variantRequirement, ...groupRequirements, selectionRequirement]
+    .filter(Boolean);
 
   useEffect(() => {
     if (submitted && !validation.valid) firstErrorRef.current?.focus();
@@ -443,16 +491,18 @@ function PublicProductConfigurationModal({
                 );
               })}
 
-              <section className="public-product-config__pricing" aria-label="Resumen de precio">
-                <div><span>Precio base</span><strong>{formatCurrency(pricing.baseUnitPrice, detail.product.currency)}</strong></div>
-                {pricing.variantAdjustment !== 0 ? (
-                  <div><span>Ajuste de variante</span><strong>{formatCurrency(pricing.variantAdjustment, detail.product.currency)}</strong></div>
-                ) : null}
-                {pricing.optionsAdjustment > 0 ? (
-                  <div><span>Extras</span><strong>{formatCurrency(pricing.optionsAdjustment, detail.product.currency)}</strong></div>
-                ) : null}
-                <div className="is-total"><span>Precio unitario</span><strong>{formatCurrency(pricing.finalUnitPrice, detail.product.currency)}</strong></div>
-              </section>
+              {!priceUnavailable ? (
+                <section className="public-product-config__pricing" aria-label="Resumen de precio">
+                  <div><span>Precio base</span><strong>{formatCurrency(pricing.baseUnitPrice, detail.product.currency)}</strong></div>
+                  {pricing.variantAdjustment !== 0 ? (
+                    <div><span>Ajuste de variante</span><strong>{formatCurrency(pricing.variantAdjustment, detail.product.currency)}</strong></div>
+                  ) : null}
+                  {pricing.optionsAdjustment > 0 ? (
+                    <div><span>Extras</span><strong>{formatCurrency(pricing.optionsAdjustment, detail.product.currency)}</strong></div>
+                  ) : null}
+                  <div className="is-total"><span>Precio unitario</span><strong>{formatCurrency(pricing.finalUnitPrice, detail.product.currency)}</strong></div>
+                </section>
+              ) : null}
 
               <section className="public-product-config__quantity" aria-label="Cantidad">
                 <div>
@@ -491,15 +541,74 @@ function PublicProductConfigurationModal({
                   </button>
                 </div>
               </section>
+
+              {hasSelectionCapabilities ? (
+                <section className="public-product-config__summary" aria-label="Resumen de selección">
+                  <h3>Tu selección</h3>
+                  {configurationDataError ? (
+                    <p ref={firstErrorRef} className="public-product-config__summary-error" role="alert" tabIndex="-1">
+                      {configurationDataError}
+                    </p>
+                  ) : (
+                    <>
+                      {selectedVariantAttributes.length > 0 || selectedOptionGroups.length > 0 ? (
+                        <dl className="public-product-config__summary-items">
+                          {selectedVariantAttributes.map(({ label, value }) => (
+                            <div key={label}>
+                              <dt>{label}</dt>
+                              <dd>{value}</dd>
+                            </div>
+                          ))}
+                          {selectedOptionGroups.map((group) => (
+                            <div key={group.id}>
+                              <dt>{group.name}</dt>
+                              <dd>{group.options.map((option) => option.publicName).join(', ')}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : null}
+
+                      {pendingRequirements.length > 0 ? (
+                        <div className="public-product-config__summary-pending">
+                          <strong>Por completar</strong>
+                          <ul>
+                            {pendingRequirements.map((requirement) => (
+                              <li key={requirement}>{requirement}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      <div className="public-product-config__summary-totals">
+                        <div><span>Cantidad</span><strong>{quantity}</strong></div>
+                        <div className="is-total">
+                          <span>
+                            {priceUnavailable
+                              ? 'Precio pendiente'
+                              : validation.valid ? 'Total' : 'Importe parcial'}
+                          </span>
+                          <strong>
+                            {priceUnavailable ? '—' : formatCurrency(lineTotal, detail.product.currency)}
+                          </strong>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </section>
+              ) : null}
             </>
           ) : null}
         </div>
 
         <footer className="public-product-config__footer">
           <div>
-            <span>Total</span>
+            <span>
+              {configurationDataError
+                ? 'Precio no disponible'
+                : priceUnavailable ? 'Precio pendiente' : validation.valid ? 'Total' : 'Importe parcial'}
+            </span>
             <strong>
-              {status === 'ready' && detail
+              {status === 'ready' && detail && !priceUnavailable
                 ? formatCurrency(lineTotal, detail.product.currency || product?.currency)
                 : '—'}
             </strong>
