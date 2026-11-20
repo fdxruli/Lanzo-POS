@@ -48,7 +48,8 @@ vi.mock('../../../services/tenant/tenantScopedStorage', () => ({
   },
   getTenantStorageItem: (key) => runtime.storage.get(key) || null,
   setTenantStorageItem: (key, value) => runtime.storage.set(key, value),
-  registerTenantStorageHydrator: vi.fn(), suspendTenantStorageWrites: vi.fn()
+  registerTenantStorageHydrator: vi.fn(), suspendTenantStorageWrites: vi.fn(),
+  subscribeTenantStorage: () => () => {}
 }));
 vi.mock('../../../services/supabase', () => ({ getStableDeviceId: async () => 'device-a' }));
 vi.mock('../../../services/auth/refundsActorAuthorization', () => ({
