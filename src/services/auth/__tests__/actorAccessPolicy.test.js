@@ -96,7 +96,29 @@ describe('current actor route authority', () => {
     null
   ])('denies changed or unavailable live tenant %j', (tenant) => {
     tenantState.current = tenant;
-    expect(readActorAccess(state).canAccessPermission('pos')).toBe(false);
+    const access = readActorAccess(state);
+    expect(access.canAccessPermission('pos')).toBe(false);
+  });
+
+  it('does not treat a different active tenant as a recoverable readiness gap', () => {
+    tenantState.current = { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 };
+    expect(readActorAccess(state).isVerifyingAccess).toBe(false);
+  });
+
+  it('keeps the route protected but marks a same-session tenant readiness gap as verification pending', () => {
+    tenantState.current = null;
+    const access = readActorAccess(state);
+    expect(access.canAccessPermission('pos')).toBe(false);
+    expect(access.isAuthorizedActor).toBe(false);
+    expect(access.isVerifyingAccess).toBe(true);
+  });
+
+  it('requires a safe bootstrap after the same tenant runtime reopens with a new generation', () => {
+    const capturedTenant = { ...tenantState.current };
+    tenantState.current = { ...capturedTenant, generation: capturedTenant.generation + 1 };
+    const access = readActorAccess(state);
+    expect(access.canAccessPermission('pos')).toBe(false);
+    expect(access.isVerifyingAccess).toBe(true);
   });
 
   it('rejects the prior session snapshot after same-user reauthentication', () => {

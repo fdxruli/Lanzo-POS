@@ -71,6 +71,27 @@ describe('posSyncClient tenant isolation', () => {
     }));
   });
 
+  it('fails closed when the device token is absent and never turns an invalid token into success', async () => {
+    mocks.getSecurityToken.mockResolvedValueOnce(null);
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A' }))
+      .rejects.toThrow('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+
+    const invalidToken = Object.assign(new Error('DEVICE_TOKEN_INVALID'), { code: 'P0001' });
+    mocks.getSecurityToken.mockResolvedValueOnce('invalid-device-token');
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: invalidToken });
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A' })).rejects.toBe(invalidToken);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves tenant readiness errors instead of reporting them as a missing device credential', async () => {
+    const error = Object.assign(new Error('ACTOR_TENANT_NOT_READY'), { code: 'ACTOR_TENANT_NOT_READY' });
+    mocks.getSecurityToken.mockRejectedValueOnce(error);
+
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A' })).rejects.toBe(error);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it('surfaces a sanitized notice for an operational RPC failure and preserves the RPC error', async () => {
     const error = Object.assign(new Error('license_key=PRIVATE-LICENSE token=private-token'), {
       code: 'PGRST202',

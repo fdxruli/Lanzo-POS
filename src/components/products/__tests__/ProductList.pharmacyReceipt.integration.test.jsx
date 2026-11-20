@@ -225,7 +225,7 @@ describe('Cloud pharmacy receipt history', () => {
     await events.put(localEvent('first'));
     const { unmount } = render(view('A'));
     expect(await screen.findByText(/FAC-CLOUD.*Pendiente de sincronizar/)).toBeInTheDocument();
-    expect(list).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
     await act(() => markInventoryEntrySynced('first', {
       inventory_movement: { id: first.id, quantity: 10, actor_name: 'Responsable Cloud' }
     }));

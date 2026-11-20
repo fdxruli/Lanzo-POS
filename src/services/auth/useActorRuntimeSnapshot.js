@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { actorRuntimeController } from './actorRuntimeController';
+import { localTenantAccessController } from '../tenant/localTenantPolicy';
+import { subscribeTenantStorage } from '../tenant/tenantScopedStorage';
 
 /**
  * React subscription for the canonical actor authority.
@@ -15,11 +17,15 @@ export const useActorRuntimeSnapshot = () => {
   useEffect(() => {
     const unsubscribe = actorRuntimeController.subscribe(setSnapshot);
     const refresh = () => setSnapshot(actorRuntimeController.getState());
+    const unsubscribeTenant = localTenantAccessController.subscribe(refresh);
+    const unsubscribeTenantStorage = subscribeTenantStorage(refresh);
     refresh();
     globalThis.addEventListener?.('focus', refresh);
     globalThis.document?.addEventListener('visibilitychange', refresh);
     return () => {
       unsubscribe();
+      unsubscribeTenant();
+      unsubscribeTenantStorage();
       globalThis.removeEventListener?.('focus', refresh);
       globalThis.document?.removeEventListener('visibilitychange', refresh);
     };

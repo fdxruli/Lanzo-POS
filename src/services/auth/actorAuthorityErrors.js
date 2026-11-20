@@ -44,6 +44,32 @@ const getEvidence = (error) => {
   return { codes, reasons };
 };
 
+const hasSameTenantGenerationChange = (error) => {
+  const pending = [error];
+  const visited = new Set();
+  while (pending.length) {
+    const value = pending.shift();
+    if (!value || typeof value !== 'object' || visited.has(value)) continue;
+    visited.add(value);
+    if (value.code === 'ACTOR_CONTEXT_STALE') {
+      const captured = value.details?.capturedTenant;
+      const current = value.details?.currentTenant;
+      if (captured?.opaqueId && captured.opaqueId === current?.opaqueId
+        && captured.databaseName && captured.databaseName === current?.databaseName
+        && Number.isFinite(captured.generation) && Number.isFinite(current?.generation)
+        && captured.generation !== current.generation) return true;
+    }
+    pending.push(value.cause, value.originalError, value.error, value.response);
+  }
+  return false;
+};
+
+/** True only when a grant's tenant binding is temporarily unavailable or the same tenant reopened. */
+export const isRecoverableTenantReadinessError = (error) => {
+  const { codes } = getEvidence(error);
+  return codes.has('ACTOR_TENANT_NOT_READY') || hasSameTenantGenerationChange(error);
+};
+
 export const classifyActorAuthorityError = (error, runtimeState = null) => {
   const { codes, reasons } = getEvidence(error);
   const actorType = runtimeState?.actorType === 'staff' || runtimeState?.actorType === 'admin'
@@ -76,6 +102,12 @@ export const classifyActorAuthorityError = (error, runtimeState = null) => {
   }
   const actor = find(ACTOR_CODES);
   if (!actor) return null;
+  if (isRecoverableTenantReadinessError(error)) {
+    return result(
+      'tenant_verification_pending', actor, false, 'tenant_runtime_verification_pending',
+      'Estamos verificando el contexto seguro de este negocio. Los datos seguirán protegidos hasta confirmar la sesión.'
+    );
+  }
   if (reason === 'device_authorization_blocked') {
     return result('device_blocked', actor, false, reason, 'Este dispositivo ya no está autorizado. Pide al administrador revisar su acceso.');
   }

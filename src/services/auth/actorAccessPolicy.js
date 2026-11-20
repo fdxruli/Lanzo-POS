@@ -1,4 +1,5 @@
 import { actorRuntimeController } from './actorRuntimeController';
+import { isRecoverableTenantReadinessError } from './actorAuthorityErrors';
 import { getExplicitActorPermissions, resolveStableActorId } from './actorIdentity';
 
 const validId = (value) => (
@@ -16,13 +17,21 @@ export const evaluateActorAccess = ({
   const actorType = runtimeSnapshot?.actorType;
   const actor = actorType === 'admin' ? currentAdminUser : currentStaffUser;
   const actorId = resolveStableActorId(actorType, actor);
-  const isAuthorizedActor = runtimeSnapshot?.status === 'granted'
+  const runtimeCheck = inspectActorSnapshot(runtimeSnapshot);
+  const actorEvidenceMatchesRuntime = runtimeSnapshot?.status === 'granted'
     && ['admin', 'staff'].includes(actorType)
     && currentDeviceRole === actorType
     && validId(runtimeSnapshot.actorId)
     && validId(runtimeSnapshot.sessionId)
     && actorId !== null && actorId === String(runtimeSnapshot.actorId).trim();
-  const runtimePermissions = new Set(getExplicitActorPermissions('staff', runtimeSnapshot));
+  const isVerifyingAccess = Boolean(
+    actorEvidenceMatchesRuntime
+    && !runtimeCheck.current
+    && runtimeCheck.tenantReadinessIncomplete
+  );
+  const currentRuntimeSnapshot = runtimeCheck.current ? runtimeSnapshot : null;
+  const isAuthorizedActor = Boolean(currentRuntimeSnapshot && actorEvidenceMatchesRuntime);
+  const runtimePermissions = new Set(getExplicitActorPermissions('staff', currentRuntimeSnapshot));
   const storePermissions = getExplicitActorPermissions('staff', actor);
   const permissions = Object.freeze(storePermissions.filter((permission) => runtimePermissions.has(permission)));
   const isAdmin = isAuthorizedActor && actorType === 'admin';
@@ -33,6 +42,7 @@ export const evaluateActorAccess = ({
 
   return Object.freeze({
     isAuthorizedActor,
+    isVerifyingAccess,
     isAdmin,
     actorType: isAuthorizedActor ? actorType : null,
     actorId: isAuthorizedActor ? actorId : null,
@@ -59,19 +69,26 @@ export const evaluateActorAccess = ({
   });
 };
 
+const inspectActorSnapshot = (snapshot) => {
+  if (snapshot?.status !== 'granted') {
+    return { current: false, tenantReadinessIncomplete: false };
+  }
+  try {
+    actorRuntimeController.assertCurrent(snapshot);
+    return { current: true, tenantReadinessIncomplete: false };
+  } catch (error) {
+    return {
+      current: false,
+      tenantReadinessIncomplete: isRecoverableTenantReadinessError(error)
+    };
+  }
+};
+
 /** Revalidate the captured generation, session, device and live tenant binding. */
 export const isActorSnapshotCurrent = (snapshot) => {
-  try {
-    if (snapshot?.status === 'granted') {
-      actorRuntimeController.assertCurrent(snapshot);
-      return true;
-    }
-  } catch {
-    // Locked, expired and obsolete contexts must never use the last grant.
-  }
-  return false;
+  return inspectActorSnapshot(snapshot).current;
 };
 
 export const readActorAccess = (state, snapshot = actorRuntimeController.getState()) => (
-  evaluateActorAccess({ ...state, runtimeSnapshot: isActorSnapshotCurrent(snapshot) ? snapshot : null })
+  evaluateActorAccess({ ...state, runtimeSnapshot: snapshot })
 );

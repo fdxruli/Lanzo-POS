@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyActorAuthorityError } from '../actorAuthorityErrors';
+import { classifyActorAuthorityError, isRecoverableTenantReadinessError } from '../actorAuthorityErrors';
 
 describe('actor authority error classification', () => {
   it.each(['DEVICE_TOKEN_INVALID', 'DEVICE_TOKEN_REQUIRED'])('recognizes PostgREST P0001 %s and wrapped RPC errors', (code) => {
@@ -20,6 +20,43 @@ describe('actor authority error classification', () => {
 
   it.each(['ACTOR_CONTEXT_STALE', 'ACTOR_SESSION_REQUIRED', 'STAFF_SESSION_INVALID', 'ADMIN_SESSION_EXPIRED'])('requires real authentication for %s', (code) => {
     expect(classifyActorAuthorityError({ code })?.requiresReauthentication).toBe(true);
+  });
+
+  it('keeps an incomplete tenant readiness check separate from session revocation', () => {
+    expect(classifyActorAuthorityError({ code: 'ACTOR_TENANT_NOT_READY' }, {
+      actorType: 'admin', reason: 'authenticated_session_granted'
+    })).toMatchObject({
+      kind: 'tenant_verification_pending',
+      requiresReauthentication: false,
+      reason: 'tenant_runtime_verification_pending'
+    });
+  });
+
+  it('keeps a revoked session outside tenant-readiness recovery', () => {
+    expect(classifyActorAuthorityError({ code: 'ADMIN_SESSION_REVOKED' }, {
+      actorType: 'admin', reason: 'authenticated_session_granted'
+    })).toMatchObject({ kind: 'session_required', requiresReauthentication: true });
+    expect(isRecoverableTenantReadinessError({ code: 'ADMIN_SESSION_REVOKED' })).toBe(false);
+  });
+
+  it('only treats a same-tenant runtime generation change as readiness recovery', () => {
+    const sameTenantReopen = {
+      code: 'ACTOR_CONTEXT_STALE',
+      details: {
+        capturedTenant: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_a', generation: 4 },
+        currentTenant: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_a', generation: 5 }
+      }
+    };
+    expect(classifyActorAuthorityError(sameTenantReopen)).toMatchObject({
+      kind: 'tenant_verification_pending', requiresReauthentication: false
+    });
+    expect(classifyActorAuthorityError({
+      code: 'ACTOR_CONTEXT_STALE',
+      details: {
+        capturedTenant: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_a', generation: 4 },
+        currentTenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_b', generation: 5 }
+      }
+    })?.requiresReauthentication).toBe(true);
   });
 
   it.each(['NETWORK_ERROR', 'RATE_LIMITED', 'INSUFFICIENT_STOCK', 'BUSINESS_ERROR'])('does not turn %s into identity loss', (code) => {

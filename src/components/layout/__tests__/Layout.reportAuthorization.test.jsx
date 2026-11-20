@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 
 const mocks = vi.hoisted(() => ({
   runtime: null,
@@ -204,13 +205,11 @@ const renderLayoutIsolation = () => render(
   </MemoryRouter>
 );
 
-const adminRuntime = (generation = 1) => ({
-  status: 'granted',
+const adminRuntime = (sessionId = 'admin-session-1') => grantTestActor({
   actorType: 'admin',
   actorId: 'admin-1',
-  sessionId: 'admin-session-1',
-  permissions: ['*'],
-  generation,
+  sessionId,
+  permissions: ['*']
 });
 
 const staffRuntime = (permissions, generation = 1) => ({
@@ -292,7 +291,7 @@ describe('Layout report authorization', () => {
     await user.click(screen.getByRole('button', { name: 'Cerrar aviso' }));
     expect(screen.queryByRole('complementary', { name: 'Zona horaria pendiente' })).not.toBeInTheDocument();
 
-    mocks.runtime = { ...mocks.runtime, sessionId: 'admin-session-2' };
+    mocks.runtime = adminRuntime('admin-session-2');
     view.rerender(renderLayoutTree());
     expect(screen.getByRole('complementary', { name: 'Zona horaria pendiente' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cerrar aviso' }));

@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   writeDeviceRegistryValue: vi.fn(),
   getLicenseFromStorage: vi.fn(),
   saveLicenseToStorage: vi.fn(),
-  getLocalTenantBinding: vi.fn()
+  getLocalTenantBinding: vi.fn(),
+  tenantReady: true
 }));
 
 vi.mock('@fingerprintjs/fingerprintjs', () => ({
@@ -43,7 +44,10 @@ vi.mock('../device/deviceRegistry', () => ({
 
 vi.mock('../db/tenantRuntimeRouter', () => ({
   db: { table: () => ({ get: async () => null }) },
-  getTenantRuntimeReadiness: () => ({ ready: true, runtime: { opaqueId: 'tenant-fixture', databaseName: 'LanzoDB_fixture', generation: 1 } }),
+  getTenantRuntimeReadiness: () => (mocks.tenantReady
+    ? { ready: true, runtime: { opaqueId: 'tenant-fixture', databaseName: 'LanzoDB_fixture', generation: 1 } }
+    : { ready: false, runtime: null }),
+  isTenantRuntimeError: (error) => String(error?.code || '').startsWith('TENANT_RUNTIME_'),
   getActiveTenantRuntime: () => ({ opaqueId: 'tenant-fixture', databaseName: 'LanzoDB_fixture', generation: 1 })
 }));
 
@@ -116,9 +120,37 @@ describe('activation storage boundary', () => {
     mocks.fingerprintGet.mockResolvedValue({ visitorId: 'fingerprint-fresh' });
     mocks.fingerprintLoad.mockResolvedValue({ get: mocks.fingerprintGet });
     mocks.rpc.mockResolvedValue({ data: { success: false, code: 'LICENSE_NOT_FOUND' }, error: null });
+    mocks.tenantReady = true;
     mocks.readDeviceRegistryValue.mockRejectedValue(new Error('forced registry read failure'));
     mocks.writeDeviceRegistryValue.mockRejectedValue(new Error('forced registry write failure'));
     mocks.getLocalTenantBinding.mockResolvedValue({ tenantAliases: ['license-id:fixture-license'] });
+  });
+
+  it('keeps tenant runtime incompleteness distinct from an absent device token', async () => {
+    mocks.tenantReady = false;
+    const supabase = await import('../supabase');
+
+    await expect(supabase.getDeviceSecurityToken()).rejects.toMatchObject({
+      code: 'ACTOR_TENANT_NOT_READY'
+    });
+    expect(mocks.loadData).not.toHaveBeenCalled();
+
+    mocks.tenantReady = true;
+    mocks.loadData.mockResolvedValueOnce(null);
+    await expect(supabase.getDeviceSecurityToken()).resolves.toBeNull();
+    expect(mocks.loadData).toHaveBeenCalledWith('sync_cache', 'device_security_token');
+  });
+
+  it('does not return a token read across a tenant runtime closure', async () => {
+    const supabase = await import('../supabase');
+    mocks.loadData.mockImplementationOnce(async () => {
+      mocks.tenantReady = false;
+      return { value: 'stale-device-token' };
+    });
+
+    await expect(supabase.getDeviceSecurityToken()).rejects.toMatchObject({
+      code: 'ACTOR_TENANT_NOT_READY'
+    });
   });
 
   afterEach(() => {
