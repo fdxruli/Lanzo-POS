@@ -568,6 +568,38 @@ body.public-store-body {
   color: var(--ui-text-muted);
 }
 
+.public-product-card__image-trigger {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.public-product-card__detail-trigger:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid color-mix(in srgb, var(--ui-text-brand) 45%, transparent);
+  outline-offset: -3px;
+}
+
+.public-product-card__name-trigger {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
 .public-product-card__image.public-safe-image--fallback .public-safe-image__logo-mark {
   width: 3.25rem;
   height: 3.25rem;

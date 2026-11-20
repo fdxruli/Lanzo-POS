@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -45,7 +45,7 @@ const publicDetail = {
 
 const props = {
   isOpen: true, slug: 'mi-negocio', product: {
-    id: 'product-1', name: 'Playera Urban', price: 100, currency: 'MXN',
+    id: 'product-1', name: 'Playera Urban', description: 'Algodón', price: 100, currency: 'MXN',
     configuration: { type: 'variant_parent', version: 3, hasVariants: true, hasOptionGroups: true, requiresConfiguration: true }
   },
   catalogRevision: 7, offline: false, maxItemQuantity: 9,
@@ -126,11 +126,68 @@ describe('PublicProductConfigurationModal', () => {
     expect(props.onAdd.mock.calls[0][1]).toEqual({ replaceLineKey: 'old-line' });
   });
 
+  it('keeps restaurant option groups and their price adjustments in the existing configurator', async () => {
+    const restaurantDetail = {
+      ...publicDetail,
+      product: {
+        ...publicDetail.product,
+        id: 'pizza-1', name: 'Pizza de verduras', description: 'Masa horneada al momento.',
+        configurationType: 'option_groups', configurationVersion: 1,
+        configurationRevision: 'c'.repeat(64), requiresConfiguration: true,
+        hasVariants: false, hasOptionGroups: true
+      },
+      variants: [],
+      groups: [
+        {
+          id: 'g-size', publicName: 'Tamaño', selectionType: 'single', required: true,
+          minSelect: 1, maxSelect: 1, options: [
+            { id: 'o-medium', publicName: 'Mediana', priceDelta: 30, isAvailable: true }
+          ]
+        },
+        {
+          id: 'g-extra', publicName: 'Extras', selectionType: 'multiple', required: false,
+          minSelect: 0, maxSelect: 1, options: [
+            { id: 'o-cheese', publicName: 'Queso extra', priceDelta: 20, isAvailable: true }
+          ]
+        }
+      ]
+    };
+    serviceMocks.getPublicProductConfiguration.mockResolvedValueOnce(restaurantDetail);
+    const onAdd = vi.fn(() => true);
+    const user = userEvent.setup();
+    render(<PublicProductConfigurationModal
+      {...props}
+      product={{
+        id: 'pizza-1', name: 'Pizza de verduras', price: 100, currency: 'MXN',
+        configuration: { requiresConfiguration: true, hasOptionGroups: true, version: 1 }
+      }}
+      onAdd={onAdd}
+    />);
+
+    await user.click(await screen.findByRole('radio', { name: /Mediana/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Queso extra/ }));
+    expect(screen.getAllByText('$150.00', { selector: 'strong' }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir al carrito' }));
+    expect(onAdd.mock.calls[0][0]).toMatchObject({
+      success: true,
+      productId: 'pizza-1',
+      selections: expect.arrayContaining([
+        { groupId: 'g-size', optionIds: ['o-medium'] },
+        { groupId: 'g-extra', optionIds: ['o-cheese'] }
+      ]),
+      estimatedUnitPrice: 150
+    });
+  });
+
   it('keeps unexpected load failures public-safe and offers retry', async () => {
     serviceMocks.getPublicProductConfiguration.mockRejectedValueOnce(new Error('network secret'));
     const user = userEvent.setup();
     render(<PublicProductConfigurationModal {...props} offline />);
     expect(await screen.findByText('No se pudo cargar la configuración')).toBeInTheDocument();
+    expect(screen.getByText('Algodón')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar configuración' })).toBeEnabled();
+    expect(screen.getAllByText('—')).toHaveLength(1);
     expect(screen.queryByText('network secret')).not.toBeInTheDocument();
     serviceMocks.getPublicProductConfiguration.mockResolvedValueOnce(publicDetail);
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));

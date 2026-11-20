@@ -5,6 +5,7 @@ import {
   isPublicProductAvailable
 } from '../../../services/ecommerce/ecommercePublicProductRules';
 import PublicProductCard from './PublicProductCard';
+import PublicProductDetailModal from './PublicProductDetailModal';
 import PublicStoreState from './PublicStoreState';
 
 const PublicProductConfigurationModal = lazy(() => import('./PublicProductConfigurationModal'));
@@ -22,6 +23,7 @@ const requiresPublicConfiguration = (product) => (
 
 function PublicCatalog({
   slug = '',
+  storeId = '',
   products,
   filteredProducts,
   categories,
@@ -39,6 +41,9 @@ function PublicCatalog({
   catalogRevision,
   offline = false,
   maxItemQuantity = 99,
+  maxOrderItems = 30,
+  cartItems = [],
+  interactive = true,
   showSearch = true,
   showCategories = true,
   initialViewMode = 'grid'
@@ -46,7 +51,9 @@ function PublicCatalog({
   const resolvedCatalogRevision = normalizeCatalogRevision(catalogRevision);
   const resolvedOffline = offline === true;
   const resolvedMaxItemQuantity = Math.max(1, Math.floor(Number(maxItemQuantity) || 99));
-  const [configurationProduct, setConfigurationProduct] = useState(null);
+  const storeIdentity = `${String(storeId).trim().toLowerCase()}:${String(slug).trim().toLowerCase()}`;
+  const [configurationTarget, setConfigurationTarget] = useState(null);
+  const [detailTarget, setDetailTarget] = useState(null);
   const [initialLine, setInitialLine] = useState(null);
   const [viewMode, setViewMode] = useState(initialViewMode === 'list' ? 'list' : 'grid');
 
@@ -59,21 +66,33 @@ function PublicCatalog({
     [products]
   );
 
+  const configurationIsCurrent = configurationTarget?.storeIdentity === storeIdentity;
+  const detailIsCurrent = detailTarget?.storeIdentity === storeIdentity;
+  const configurationProduct = configurationIsCurrent
+    ? productMap.get(configurationTarget.productId) || null
+    : null;
+  const detailProduct = detailIsCurrent
+    ? productMap.get(detailTarget.productId) || null
+    : null;
+
   useEffect(() => {
     const handleEdit = (event) => {
+      if (!interactive) return;
       const line = event.detail;
       const product = productMap.get(line?.productId);
       if (!line?.lineKey || !product || !requiresPublicConfiguration(product)) return;
+      setDetailTarget(null);
       setInitialLine(line);
-      setConfigurationProduct(product);
+      setConfigurationTarget({ productId: product.id, storeIdentity, returnFocusElement: null });
     };
     window.addEventListener('lanzo:ecommerce:edit-configured-line', handleEdit);
     return () => window.removeEventListener('lanzo:ecommerce:edit-configured-line', handleEdit);
-  }, [productMap]);
+  }, [interactive, productMap, storeIdentity]);
 
   useEffect(() => {
     const closeTransientOverlays = () => {
-      setConfigurationProduct(null);
+      setConfigurationTarget(null);
+      setDetailTarget(null);
       setInitialLine(null);
     };
     window.addEventListener(
@@ -86,23 +105,66 @@ function PublicCatalog({
     );
   }, []);
 
-  const openConfiguration = (product) => {
+  useEffect(() => {
+    setConfigurationTarget(null);
+    setDetailTarget(null);
     setInitialLine(null);
-    setConfigurationProduct(product);
+  }, [storeIdentity]);
+
+  useEffect(() => {
+    if (configurationTarget?.storeIdentity !== storeIdentity) return;
+    if (!configurationProduct || !requiresPublicConfiguration(configurationProduct)) {
+      setConfigurationTarget(null);
+      setInitialLine(null);
+    }
+  }, [configurationProduct, configurationTarget?.storeIdentity, storeIdentity]);
+
+  useEffect(() => {
+    if (detailTarget?.storeIdentity !== storeIdentity) return;
+    if (!detailProduct || requiresPublicConfiguration(detailProduct)) setDetailTarget(null);
+  }, [detailProduct, detailTarget?.storeIdentity, storeIdentity]);
+
+  const openConfiguration = (product, event = null) => {
+    if (!interactive) return;
+    setDetailTarget(null);
+    setInitialLine(null);
+    setConfigurationTarget({
+      productId: product.id,
+      storeIdentity,
+      returnFocusElement: event?.currentTarget || null
+    });
   };
 
-  const handleProductAction = (product) => {
+  const handleOpenProduct = (product, event) => {
+    if (!interactive) return;
     if (requiresPublicConfiguration(product)) {
-      openConfiguration(product);
+      openConfiguration(product, event);
+      return;
+    }
+    setConfigurationTarget(null);
+    setInitialLine(null);
+    setDetailTarget({
+      productId: product.id,
+      storeIdentity,
+      returnFocusElement: event?.currentTarget || null
+    });
+  };
+
+  const handleProductAction = (product, event) => {
+    if (!interactive) return;
+    if (requiresPublicConfiguration(product)) {
+      openConfiguration(product, event);
       return;
     }
     onAdd(product);
   };
 
   const closeConfiguration = () => {
-    setConfigurationProduct(null);
+    setConfigurationTarget(null);
     setInitialLine(null);
   };
+
+  const closeDetail = () => setDetailTarget(null);
 
   if (isLoading) {
     return (
@@ -241,6 +303,7 @@ function PublicCatalog({
                 isAvailable={isPublicProductAvailable(product)}
                 stockLabel={getPublicProductStockLabel(product)}
                 onPrimaryAction={handleProductAction}
+                onOpenProduct={handleOpenProduct}
               />
             ))}
           </div>
@@ -260,20 +323,34 @@ function PublicCatalog({
         ) : null}
       </section>
 
-      {configurationProduct ? (
+      {interactive && configurationProduct ? (
         <Suspense fallback={null}>
           <PublicProductConfigurationModal
             isOpen
             slug={slug}
+            key={`${storeIdentity}:${configurationProduct.id}`}
             product={configurationProduct}
             catalogRevision={resolvedCatalogRevision}
             offline={resolvedOffline}
             initialLine={initialLine}
             maxItemQuantity={resolvedMaxItemQuantity}
+            returnFocusElement={configurationTarget.returnFocusElement}
             onClose={closeConfiguration}
             onAdd={onAdd}
           />
         </Suspense>
+      ) : null}
+      {interactive && detailProduct ? (
+        <PublicProductDetailModal
+          key={`${storeIdentity}:${detailProduct.id}`}
+          product={detailProduct}
+          maxItemQuantity={resolvedMaxItemQuantity}
+          maxOrderItems={maxOrderItems}
+          cartItems={cartItems}
+          returnFocusElement={detailTarget.returnFocusElement}
+          onAdd={onAdd}
+          onClose={closeDetail}
+        />
       ) : null}
     </>
   );

@@ -15,23 +15,39 @@ export default function PublicProductCard({
   isConfigurable,
   isAvailable,
   stockLabel,
-  onPrimaryAction
+  onPrimaryAction,
+  onOpenProduct
 }) {
   const isUnavailableStockLabel = stockLabel === 'Agotado' || stockLabel === 'No disponible';
   const buttonLabel = isConfigurable ? 'Seleccionar opciones' : 'Agregar';
 
   return (
     <article className="public-product-card ui-card">
-      <PublicSafeImage
-        src={product.imageUrl}
-        alt={product.name}
-        fallbackLabel={`${product.name} sin imagen`}
-        className="public-product-card__image"
-      />
+      <button
+        type="button"
+        className="public-product-card__detail-trigger public-product-card__image-trigger"
+        onClick={(event) => onOpenProduct(product, event)}
+        aria-label={`Ver detalle de ${product.name}`}
+      >
+        <PublicSafeImage
+          src={product.imageUrl}
+          alt=""
+          fallbackLabel={`${product.name} sin imagen`}
+          className="public-product-card__image"
+        />
+      </button>
       <div className="public-product-card__body">
         <div className="public-product-card__copy">
           {product.categoryName ? <p className="public-product-card__category">{product.categoryName}</p> : null}
-          <h3>{product.name}</h3>
+          <h3>
+            <button
+              type="button"
+              className="public-product-card__detail-trigger public-product-card__name-trigger"
+              onClick={(event) => onOpenProduct(product, event)}
+            >
+              {product.name}
+            </button>
+          </h3>
           {product.description ? <p className="public-product-card__description">{product.description}</p> : null}
         </div>
         <div className="public-product-card__footer">
@@ -59,7 +75,7 @@ export default function PublicProductCard({
             type="button"
             className="ui-button ui-button--primary public-product-card__add"
             disabled={!isAvailable}
-            onClick={() => onPrimaryAction(product)}
+            onClick={(event) => onPrimaryAction(product, event)}
             aria-label={isAvailable ? `${buttonLabel} ${product.name}` : `${product.name} no disponible`}
           >
             <Plus aria-hidden="true" size={18} />

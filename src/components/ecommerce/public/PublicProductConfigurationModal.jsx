@@ -10,6 +10,10 @@ import {
   reconcileEcommerceVariantAttributes,
   validateEcommerceConfiguration
 } from '../../../utils/ecommerceConfiguredProduct';
+import {
+  getPublicProductStockLabel,
+  isPublicProductAvailable
+} from '../../../services/ecommerce/ecommercePublicProductRules';
 import PublicSafeImage from './PublicSafeImage';
 import {
   lockPublicDocumentScroll,
@@ -41,6 +45,7 @@ function PublicProductConfigurationModal({
   offline,
   initialLine,
   maxItemQuantity,
+  returnFocusElement = null,
   onClose,
   onAdd
 }) {
@@ -48,6 +53,7 @@ function PublicProductConfigurationModal({
   const closeButtonRef = useRef(null);
   const firstErrorRef = useRef(null);
   const requestIdRef = useRef(0);
+  const onCloseRef = useRef(onClose);
   const [status, setStatus] = useState('idle');
   const [detail, setDetail] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -56,11 +62,16 @@ function PublicProductConfigurationModal({
   const [quantity, setQuantity] = useState(1);
   const [submitted, setSubmitted] = useState(false);
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   const loadConfiguration = useCallback(async () => {
     if (!product?.id || !slug) return;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setStatus('loading');
+    setDetail(null);
     setLoadError(null);
 
     try {
@@ -105,7 +116,7 @@ function PublicProductConfigurationModal({
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab' || !dialogRef.current) return;
@@ -128,8 +139,9 @@ function PublicProductConfigurationModal({
     return () => {
       unlockPublicDocumentScroll('public-product-configuration');
       window.removeEventListener('keydown', handleKeyDown);
+      if (returnFocusElement?.isConnected) returnFocusElement.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, returnFocusElement]);
 
   const axes = useMemo(() => getEcommerceVariantAxes(detail), [detail]);
   const selectedVariant = useMemo(
@@ -146,7 +158,18 @@ function PublicProductConfigurationModal({
     selections
   }), [detail, selectedVariant?.id, selections]);
   const lineTotal = Number((pricing.finalUnitPrice * quantity).toFixed(2));
-  const displayedImage = selectedVariant?.imageUrl || detail?.product?.imageUrl || product?.imageUrl;
+  const displayedProduct = detail?.product || product;
+  const displayedImage = selectedVariant?.imageUrl || displayedProduct?.imageUrl || product?.imageUrl;
+  const catalogAvailability = getPublicProductStockLabel(product);
+  const displayedAvailability = catalogAvailability || (
+    isPublicProductAvailable(product) ? detail?.product?.availability?.message : ''
+  );
+  const wholesaleTiers = product?.wholesaleEnabled === true && Array.isArray(product.wholesaleTiers)
+    ? product.wholesaleTiers
+    : [];
+  const requiresConfiguration = product?.configuration?.requiresConfiguration === true
+    || product?.configuration?.hasVariants === true
+    || product?.configuration?.hasOptionGroups === true;
 
   useEffect(() => {
     if (submitted && !validation.valid) firstErrorRef.current?.focus();
@@ -179,7 +202,13 @@ function PublicProductConfigurationModal({
 
   const submit = () => {
     setSubmitted(true);
-    if (!detail || !validation.valid || detail.product.isAvailable !== true) return;
+    if (
+      status !== 'ready'
+      || !detail
+      || !validation.valid
+      || detail.product.isAvailable !== true
+      || !isPublicProductAvailable(product)
+    ) return;
     const configuredLine = buildEcommerceConfiguredCartLine(detail, {
       variantId: selectedVariant?.id || null,
       selections,
@@ -227,6 +256,37 @@ function PublicProductConfigurationModal({
         </header>
 
         <div className="public-product-config__body">
+          <div className="public-product-config__hero">
+            <PublicSafeImage
+              src={displayedImage}
+              alt={displayedProduct?.name || product?.name || 'Producto'}
+              fallbackLabel={`${displayedProduct?.name || product?.name || 'Producto'} sin imagen`}
+              className="public-product-config__image"
+            />
+            <div>
+              {product?.categoryName ? <p className="public-product-config__category">{product.categoryName}</p> : null}
+              {displayedProduct?.description ? (
+                <p className="public-product-config__description">{displayedProduct.description}</p>
+              ) : null}
+              <strong>
+                {detail?.product?.requiresConfiguration ?? requiresConfiguration ? 'Desde ' : ''}
+                {formatCurrency(detail?.product?.basePrice ?? product?.price, detail?.product?.currency || product?.currency)}
+              </strong>
+              {displayedAvailability ? <span>{displayedAvailability}</span> : null}
+              {wholesaleTiers.map((tier) => (
+                <small key={tier.sourceTierRef || tier.minQuantity}>
+                  Compra {tier.minQuantity} o más: {formatCurrency(tier.unitPrice, product.currency)} c/u
+                </small>
+              ))}
+            </div>
+          </div>
+
+          {(!isPublicProductAvailable(product) || detail?.product?.isAvailable === false) ? (
+            <div className="public-product-config__error" role="status">
+              Este producto no puede comprarse por el momento.
+            </div>
+          ) : null}
+
           {status === 'loading' ? (
             <div className="public-product-config__state" role="status">
               <span className="public-product-config__spinner" aria-hidden="true" />
@@ -252,29 +312,6 @@ function PublicProductConfigurationModal({
               {offline ? (
                 <div className="public-product-config__notice" role="status">
                   Estás viendo una configuración guardada. El pedido se validará al recuperar la conexión.
-                </div>
-              ) : null}
-
-              <div className="public-product-config__hero">
-                <PublicSafeImage
-                  src={displayedImage}
-                  alt={detail.product.name}
-                  fallbackLabel={`${detail.product.name} sin imagen`}
-                  className="public-product-config__image"
-                />
-                <div>
-                  <p>{detail.product.description}</p>
-                  <strong>
-                    {detail.product.requiresConfiguration ? 'Desde ' : ''}
-                    {formatCurrency(detail.product.basePrice, detail.product.currency)}
-                  </strong>
-                  <span>{detail.product.availability.message || 'Disponibilidad sujeta a validación'}</span>
-                </div>
-              </div>
-
-              {!detail.product.isAvailable ? (
-                <div className="public-product-config__error" role="alert">
-                  Este producto no puede configurarse por el momento.
                 </div>
               ) : null}
 
@@ -461,12 +498,16 @@ function PublicProductConfigurationModal({
         <footer className="public-product-config__footer">
           <div>
             <span>Total</span>
-            <strong>{formatCurrency(lineTotal, detail?.product?.currency || product?.currency)}</strong>
+            <strong>
+              {status === 'ready' && detail
+                ? formatCurrency(lineTotal, detail.product.currency || product?.currency)
+                : '—'}
+            </strong>
           </div>
           <button
             type="button"
             className="ui-button ui-button--primary"
-            disabled={status !== 'ready' || detail?.product?.isAvailable !== true}
+            disabled={status !== 'ready' || detail?.product?.isAvailable !== true || !isPublicProductAvailable(product)}
             onClick={submit}
           >
             {initialLine ? 'Guardar cambios' : 'Añadir al carrito'}
