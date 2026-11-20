@@ -177,7 +177,10 @@ describe('PublicProductConfigurationModal', () => {
     expect(within(summary).getByText('Blanco')).toBeInTheDocument();
     expect(within(summary).getByText('L')).toBeInTheDocument();
     expect(within(summary).getByText('La combinación seleccionada no está disponible.')).toBeInTheDocument();
-    expect(within(summary).getByText('Importe parcial')).toBeInTheDocument();
+    expect(within(summary).getByText('Precio pendiente')).toBeInTheDocument();
+    expect(within(summary).queryByText('$200.00')).not.toBeInTheDocument();
+    expect(screen.getByText('Precio pendiente', { selector: '.public-product-config__footer span' })).toBeInTheDocument();
+    expect(screen.getByText('—', { selector: '.public-product-config__footer strong' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Guardar cambios' }));
     expect(props.onAdd).not.toHaveBeenCalled();

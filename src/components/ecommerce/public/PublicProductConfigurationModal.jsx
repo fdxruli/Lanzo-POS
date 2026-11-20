@@ -201,6 +201,21 @@ function PublicProductConfigurationModal({
     && validation.errors.configuration !== 'Selecciona las opciones requeridas.'
     ? validation.errors.configuration
     : '';
+  const hasUnavailableSelectedOption = (detail?.groups || []).some((group) => {
+    const availableOptionIds = new Set(
+      group.options.filter((option) => option.isAvailable).map((option) => option.id)
+    );
+    return (selectionMap[group.id] || []).some((optionId) => !availableOptionIds.has(optionId));
+  });
+  const hasInvalidSelectionLimit = (detail?.groups || []).some((group) => {
+    const selectedCount = (selectionMap[group.id] || []).length;
+    return selectedCount > group.maxSelect
+      || (group.selectionType === 'single' && selectedCount > 1);
+  });
+  const hasInvalidPriceSelection = Boolean(
+    validation.errors.variant || hasUnavailableSelectedOption || hasInvalidSelectionLimit
+  );
+  const priceUnavailable = Boolean(configurationDataError || hasInvalidPriceSelection);
   const pendingRequirements = [variantRequirement, ...groupRequirements, selectionRequirement]
     .filter(Boolean);
 
@@ -476,7 +491,7 @@ function PublicProductConfigurationModal({
                 );
               })}
 
-              {!configurationDataError ? (
+              {!priceUnavailable ? (
                 <section className="public-product-config__pricing" aria-label="Resumen de precio">
                   <div><span>Precio base</span><strong>{formatCurrency(pricing.baseUnitPrice, detail.product.currency)}</strong></div>
                   {pricing.variantAdjustment !== 0 ? (
@@ -567,8 +582,14 @@ function PublicProductConfigurationModal({
                       <div className="public-product-config__summary-totals">
                         <div><span>Cantidad</span><strong>{quantity}</strong></div>
                         <div className="is-total">
-                          <span>{validation.valid ? 'Total' : 'Importe parcial'}</span>
-                          <strong>{formatCurrency(lineTotal, detail.product.currency)}</strong>
+                          <span>
+                            {priceUnavailable
+                              ? 'Precio pendiente'
+                              : validation.valid ? 'Total' : 'Importe parcial'}
+                          </span>
+                          <strong>
+                            {priceUnavailable ? '—' : formatCurrency(lineTotal, detail.product.currency)}
+                          </strong>
                         </div>
                       </div>
                     </>
@@ -584,10 +605,10 @@ function PublicProductConfigurationModal({
             <span>
               {configurationDataError
                 ? 'Precio no disponible'
-                : validation.valid ? 'Total' : 'Importe parcial'}
+                : priceUnavailable ? 'Precio pendiente' : validation.valid ? 'Total' : 'Importe parcial'}
             </span>
             <strong>
-              {status === 'ready' && detail && !configurationDataError
+              {status === 'ready' && detail && !priceUnavailable
                 ? formatCurrency(lineTotal, detail.product.currency || product?.currency)
                 : '—'}
             </strong>
