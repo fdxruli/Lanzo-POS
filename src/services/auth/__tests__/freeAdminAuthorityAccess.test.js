@@ -1,23 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { grantTestActor } from './actorAccessTestHarness';
 import { canReadSalesReports } from '../salesPermissionPolicy';
 import { evaluateSettingsAccess } from '../settingsAccessPolicy';
 
-const modernFreeAdminRuntime = Object.freeze({
-  status: 'granted',
+const modernFreeAdminRuntime = () => grantTestActor({
   actorType: 'admin',
   actorId: 'admin-free-owner',
-  actorKey: 'admin:admin-free-owner',
-  sessionId: 'session-free-owner',
   permissions: ['*'],
-  generation: 4,
-  tenant: { opaqueId: 'tenant-free-modern' },
-  deviceRef: 'device-free-modern'
+  sessionId: 'session-free-owner'
 });
 
 describe('modern FREE Admin access after actor runtime restore', () => {
   it('allows Settings only because the real Admin ActorRuntime is granted', () => {
+    const runtimeSnapshot = modernFreeAdminRuntime();
     const access = evaluateSettingsAccess({
-      runtimeSnapshot: modernFreeAdminRuntime,
+      runtimeSnapshot,
       currentDeviceRole: 'admin',
       currentAdminUser: { id: 'admin-free-owner' },
       currentStaffUser: null,
@@ -30,7 +27,7 @@ describe('modern FREE Admin access after actor runtime restore', () => {
   });
 
   it('allows Sales reports only because the real Admin ActorRuntime is granted', () => {
-    expect(canReadSalesReports(modernFreeAdminRuntime)).toBe(true);
+    expect(canReadSalesReports(modernFreeAdminRuntime())).toBe(true);
   });
 
   it('does not introduce a FREE bypass when ActorRuntime is locked', () => {

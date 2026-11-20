@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { grantTestActor } from './actorAccessTestHarness';
 import {
   evaluateSettingsAccess,
   resolveAllowedSettingsTab
@@ -8,13 +9,9 @@ const runtime = ({
   actorType = 'staff',
   actorId = 'staff-a',
   permissions = []
-} = {}) => ({
-  status: 'granted',
+} = {}) => grantTestActor({
   actorType,
   actorId,
-  actorKey: `${actorType}:${actorId}`,
-  sessionId: `${actorId}-session`,
-  generation: 7,
   permissions: actorType === 'admin' ? ['*'] : permissions
 });
 
