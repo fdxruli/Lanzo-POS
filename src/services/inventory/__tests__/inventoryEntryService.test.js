@@ -318,7 +318,10 @@ describe('pharmacy Cloud receipt authority', () => {
     await openTestTenantRuntime();
     previousLicenseDetails = useAppStore.getState().licenseDetails;
     useAppStore.setState({ licenseDetails });
-    await db.table(STORES.MENU).put(medicine());
+    await db.table(STORES.MENU).put(medicine({
+      syncStatus: 'synced', serverVersion: 1,
+      lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: null
+    }));
   });
 
   afterEach(() => {
@@ -371,5 +374,46 @@ describe('pharmacy Cloud receipt authority', () => {
       .rejects.toMatchObject({ code: 'PHARMACY_RECEIPT_PENDING' });
     await expect(addInventoryEntry({ ...request, quantity: 9, baseQuantity: 9 }))
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_PAYLOAD_MISMATCH' });
+  });
+
+  it.each([
+    ['local', { syncStatus: 'local', serverVersion: null, lastSyncedAt: null }],
+    ['pending', { syncStatus: 'pending', serverVersion: 1, lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: 'product-sync-op' }],
+    ['pending operation', { syncStatus: 'synced', serverVersion: 1, lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: 'product-sync-op' }],
+    ['conflicted', { syncStatus: 'conflict', serverVersion: 1, lastSyncedAt: '2026-11-19T12:00:00.000Z' }]
+  ])('does not stage a Cloud medicine receipt while the product is %s', async (_label, sync) => {
+    const unreadyMedicine = medicine(sync);
+    await db.table(STORES.MENU).put(unreadyMedicine);
+    const request = pharmacyEntry({
+      operationId: `unready-${_label}`, quantity: 5, invoice: 'FAC-UNREADY',
+      manufacturerBatchId: 'UNREADY-LOT', expiryDate: '2099-10-31'
+    });
+
+    await expect(addInventoryEntry(request)).rejects.toMatchObject({ code: 'PHARMACY_PRODUCT_NOT_SYNCED' });
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(0);
+    expect(await db.table(STORES.PRODUCT_BATCHES).count()).toBe(0);
+    expect(await db.table(STORES.MENU).get('product-1')).toMatchObject({ stock: 0, syncStatus: sync.syncStatus });
+  });
+
+  it('keeps an earlier pending operation identity available for verification after product sync regresses', async () => {
+    const request = pharmacyEntry({
+      operationId: 'cloud-pending-operation', quantity: 5, invoice: 'FAC-PENDING',
+      manufacturerBatchId: 'PENDING-LOT', expiryDate: '2099-10-31'
+    });
+    const first = await addInventoryEntry(request);
+    expect(first).toMatchObject({ success: true, pending: true, operationId: 'cloud-pending-operation' });
+
+    await db.table(STORES.MENU).update('product-1', {
+      syncStatus: 'local', lastSyncedAt: null, pendingOperationId: null
+    });
+    await expect(addInventoryEntry({ ...request, operationId: 'new-cloud-operation' }))
+      .rejects.toMatchObject({ code: 'PHARMACY_RECEIPT_PENDING' });
+    const retry = await addInventoryEntry(request);
+
+    expect(retry).toMatchObject({ duplicate: true, pending: true, operationId: 'cloud-pending-operation' });
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(1);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(1);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).get('cloud-pending-operation')).toBeTruthy();
   });
 });

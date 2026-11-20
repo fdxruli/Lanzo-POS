@@ -280,4 +280,64 @@ describe('Cloud pharmacy receipt history', () => {
     await act(() => afterClose.resolve(result(canonical('C'))));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('blocks a new receipt for an unsynced Cloud medicine while keeping the form closable', async () => {
+    list.mockResolvedValue(result());
+    await db.table(STORES.MENU).put(medicine('A'));
+    render(<InventoryEntryModal product={{
+      ...medicine('A'), syncStatus: 'synced', serverVersion: 4,
+      lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: null
+    }} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Este medicamento aún no está disponible en Nube.');
+    expect(screen.getByRole('button', { name: 'Confirmar recepción' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
+    expect(screen.queryByText('La recepción se confirmará en Nube.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }));
+    expect(await db.table(STORES.INVENTORY_EVENTS).count()).toBe(0);
+  });
+
+  it('reacts to the existing Dexie product sync update while the modal stays open', async () => {
+    list.mockResolvedValue(result());
+    await db.table(STORES.MENU).put(medicine('A'));
+    render(view('A'));
+    const confirm = await screen.findByRole('button', { name: 'Confirmar recepción' });
+    expect(confirm).toBeDisabled();
+
+    await act(async () => {
+      await db.table(STORES.MENU).update('A', {
+        syncStatus: 'synced', serverVersion: 4,
+        lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: null
+      });
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.queryByText(/aún no está disponible en Nube/)).not.toBeInTheDocument();
+  });
+
+  it('keeps verification of an earlier pending receipt available while blocking a new one', async () => {
+    list.mockResolvedValue(result());
+    await db.table(STORES.MENU).put(medicine('A'));
+    await db.table(STORES.INVENTORY_EVENTS).put(localEvent('existing-pending'));
+    render(view('A'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/aún no está disponible en Nube/);
+    expect(await screen.findByRole('button', { name: 'Verificar recepción' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Confirmar recepción' })).not.toBeInTheDocument();
+    expect(screen.getByText(/FAC-CLOUD.*Pendiente de sincronizar/)).toBeInTheDocument();
+  });
+
+  it('does not treat a temporary Cloud history read failure as an unsynced product', async () => {
+    list.mockRejectedValue(new Error('offline'));
+    await db.table(STORES.MENU).put({
+      ...medicine('A'), syncStatus: 'synced', serverVersion: 4,
+      lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: null
+    });
+    render(view('A'));
+
+    const confirm = await screen.findByRole('button', { name: 'Confirmar recepción' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(await screen.findByText(/No se pudo actualizar el historial Cloud/)).toBeInTheDocument();
+    expect(screen.queryByText(/aún no está disponible en Nube/)).not.toBeInTheDocument();
+  });
 });
