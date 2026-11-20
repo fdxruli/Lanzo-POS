@@ -284,7 +284,10 @@ describe('Cloud pharmacy receipt history', () => {
   it('blocks a new receipt for an unsynced Cloud medicine while keeping the form closable', async () => {
     list.mockResolvedValue(result());
     await db.table(STORES.MENU).put(medicine('A'));
-    render(view('A'));
+    render(<InventoryEntryModal product={{
+      ...medicine('A'), syncStatus: 'synced', serverVersion: 4,
+      lastSyncedAt: '2026-11-19T12:00:00.000Z', pendingOperationId: null
+    }} onClose={vi.fn()} />);
 
     expect(await screen.findByRole('alert'))
       .toHaveTextContent('Este medicamento aún no está disponible en Nube.');

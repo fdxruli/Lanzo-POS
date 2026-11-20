@@ -55,7 +55,8 @@ export default function InventoryEntryModal({ product: productProp, onClose, onC
     () => db.table(STORES.MENU).get(productProp.id),
     [productProp.id]
   );
-  const product = localProduct?.id === productProp.id ? localProduct : productProp;
+  const productLoaded = localProduct?.id === productProp.id;
+  const product = productLoaded ? localProduct : productProp;
   const businessTimezone = useAppStore((state) => state.companyProfile?.timezone);
   const pharmacy = getPharmacyClassification(product);
   const medicine = pharmacy.recorded && pharmacy.kind === 'medicine';
@@ -82,8 +83,8 @@ export default function InventoryEntryModal({ product: productProp, onClose, onC
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const cloudMedicine = medicine && isPharmacyCloudAuthorityRequired(licenseDetails);
   const cloudConfirmation = cloudMedicine || isCloudGeneralPharmacyBatchEntry(product, licenseDetails);
-  const cloudProductNotReady = cloudMedicine
-    && resolveProductCloudSyncBadge(product).status !== PRODUCT_CLOUD_SYNC_BADGE_STATUS.SYNCED;
+  const cloudProductNotReady = cloudMedicine && (!productLoaded
+    || resolveProductCloudSyncBadge(product).status !== PRODUCT_CLOUD_SYNC_BADGE_STATUS.SYNCED);
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const productId = product.id;
   const historyScope = useMemo(() => ({ productId, licenseKey }), [productId, licenseKey]);
