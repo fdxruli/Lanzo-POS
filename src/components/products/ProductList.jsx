@@ -18,6 +18,7 @@ import InventoryEntryModal from './InventoryEntryModal';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { canAddInventoryEntry } from '../../services/inventory/inventoryEntryEligibility';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
+import IndividualProductRecoveryDialog from './IndividualProductRecoveryDialog';
 import './ProductList.css';
 
 // --- ICONOS SVG REUTILIZABLES ---
@@ -78,6 +79,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
   const [productForInventoryEntry, setProductForInventoryEntry] = useState(null);
+  const [productForRecovery, setProductForRecovery] = useState(null);
   const [batchSummaries, setBatchSummaries] = useState(() => new Map());
 
   // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
@@ -469,6 +471,17 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         <span>＋</span> <span>{isMedicine ? 'Recibir medicamento' : 'Agregar existencia'}</span>
                       </button>
                     )}
+                    {canManageProducts && isActive && (
+                      item.syncStatus !== 'synced' || !item.serverVersion || !item.lastSyncedAt
+                    ) && (
+                      <button
+                        className="ui-button ui-button--neutral ui-button--sm btn-action btn-product-recovery"
+                        onClick={() => setProductForRecovery(item)}
+                        title="Verificar el producto local y sus lotes sin escribir datos"
+                      >
+                        Verificar Cloud
+                      </button>
+                    )}
                     {canManageProducts && (
                     <button className="ui-button ui-button--ghost ui-button--sm btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
@@ -615,6 +628,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
       <WasteModal show={showWaste} onClose={handleCloseWaste} product={productForWaste} onConfirm={handleWasteConfirmed} />
       {productForInventoryEntry && <InventoryEntryModal key={productForInventoryEntry.id} product={productForInventoryEntry} onClose={() => setProductForInventoryEntry(null)} onCompleted={refreshData} />}
+      {productForRecovery && <IndividualProductRecoveryDialog product={productForRecovery} onClose={() => setProductForRecovery(null)} />}
     </div>
   );
 }

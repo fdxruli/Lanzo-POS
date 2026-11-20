@@ -17,13 +17,15 @@ const mocks = vi.hoisted(() => ({
   saveConflict: vi.fn(),
   applyCloudCatalog: vi.fn(),
   getCatalogRecordForSync: vi.fn(),
+  listUnsyncedLocalCatalogForCloud: vi.fn(),
   setMeta: vi.fn(),
   getMeta: vi.fn(),
   pullCatalogChanges: vi.fn(),
   getProductInventoryMutationRequirements: vi.fn(),
   assertProductInventoryOperationActorCurrent: vi.fn(),
   captureProductInventoryMutation: vi.fn(),
-  assertProductInventoryMutationCurrent: vi.fn()
+  assertProductInventoryMutationCurrent: vi.fn(),
+  runWithTenantLease: vi.fn()
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -64,7 +66,8 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
 } }));
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   applyCloudCatalog: mocks.applyCloudCatalog,
-  getCatalogRecordForSync: mocks.getCatalogRecordForSync
+  getCatalogRecordForSync: mocks.getCatalogRecordForSync,
+  listUnsyncedLocalCatalogForCloud: mocks.listUnsyncedLocalCatalogForCloud
 } }));
 vi.mock('../productConflictService', () => ({ productConflictService: {
   isConflictResponse: (response) => response?.code === 'VERSION_CONFLICT',
@@ -79,6 +82,10 @@ vi.mock('../../Logger', () => ({ default: {
   log: vi.fn(),
   warn: vi.fn()
 } }));
+vi.mock('../../tenant/localTenantGuard', () => ({
+  isLocalTenantAccessError: vi.fn(() => false),
+  runWithLocalTenantSyncLease: mocks.runWithTenantLease
+}));
 
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 import { productSyncHandler, pullCatalogChanges } from '../productSyncHandler';
@@ -98,7 +105,11 @@ describe('product sync repeated cutover safety', () => {
     mocks.runRecovery.mockResolvedValue({ success: true, skipped: true, reason: 'no_unsynced_catalog' });
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
     mocks.getCatalogRecordForSync.mockResolvedValue(null);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValue({
+      categories: [], products: [], batches: [], deletes: { categories: [], products: [], batches: [] }
+    });
     mocks.getMeta.mockResolvedValue(12);
+    mocks.runWithTenantLease.mockImplementation(async (_source, _options, operation) => operation());
     mocks.pullCatalogSnapshot.mockResolvedValue({ success: true, categories: [], has_more: false });
   });
 
@@ -243,6 +254,111 @@ describe('product sync repeated cutover safety', () => {
     });
 
     expect(mocks.runMigration).toHaveBeenCalledWith({ licenseKey: 'CUTOVER-HANDLER' });
+    expect(mocks.runRecovery).not.toHaveBeenCalled();
+  });
+
+  it('defers broad recovery on the Products route when a migrated tenant has unsynced local catalog rows', async () => {
+    mocks.getMeta.mockResolvedValueOnce(true);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
+      categories: [],
+      products: [{ id: 'local-only-product' }],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+
+    const result = await productSyncHandler.onStart({
+      licenseKey: 'CUTOVER-HANDLER',
+      reason: 'route_demand'
+    });
+    expect(result.error?.message).toBeUndefined();
+    expect(result).toMatchObject({
+      success: true,
+      skipped: true,
+      deferred: true,
+      reason: 'local_catalog_recovery_requires_selection',
+      pendingCount: 1
+    });
+
+    expect(mocks.runMigration).not.toHaveBeenCalled();
+    expect(mocks.runRecovery).not.toHaveBeenCalled();
+  });
+
+  it('defers the initial catalog migration when Cloud already has records but the local marker is missing', async () => {
+    mocks.getMeta.mockResolvedValueOnce(false);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
+      categories: [],
+      products: [{ id: 'local-only-product' }],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true,
+      categories: [],
+      products: [{ id: 'existing-cloud-product' }],
+      batches: [],
+      total: 14,
+      has_more: true
+    });
+
+    await expect(productSyncHandler.onStart({
+      licenseKey: 'CUTOVER-HANDLER',
+      reason: 'route_demand'
+    })).resolves.toMatchObject({
+      success: true,
+      skipped: true,
+      deferred: true,
+      reason: 'local_catalog_recovery_requires_selection',
+      pendingCount: 1
+    });
+
+    expect(mocks.runWithTenantLease).toHaveBeenCalledWith(
+      { license_key: 'CUTOVER-HANDLER' },
+      { reason: 'product_route_recovery_gate' },
+      expect.any(Function)
+    );
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'CUTOVER-HANDLER', entityType: 'all', limit: 1, includeDeleted: true, force: true
+    }));
+    expect(mocks.runMigration).not.toHaveBeenCalled();
+    expect(mocks.runRecovery).not.toHaveBeenCalled();
+  });
+
+  it('allows first migration for a tenant whose Cloud catalog is empty', async () => {
+    mocks.getMeta.mockResolvedValueOnce(false);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
+      categories: [],
+      products: [{ id: 'first-product' }],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [], products: [], batches: [], total: 0, has_more: false
+    });
+
+    await expect(productSyncHandler.onStart({
+      licenseKey: 'CUTOVER-HANDLER',
+      reason: 'route_demand'
+    })).resolves.toMatchObject({ success: true, recovery: { recovered: 1 } });
+
+    expect(mocks.runMigration).toHaveBeenCalledWith({ licenseKey: 'CUTOVER-HANDLER' });
+  });
+
+  it('fails closed on an incomplete route preflight rather than starting broad recovery', async () => {
+    mocks.getMeta.mockResolvedValueOnce(false);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
+      categories: [],
+      products: [{ id: 'local-only-product' }],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: false, code: 'READ_FAILED' });
+
+    await expect(productSyncHandler.onStart({
+      licenseKey: 'CUTOVER-HANDLER',
+      reason: 'route_demand'
+    })).resolves.toMatchObject({ success: false, diagnostic: expect.any(Object) });
+
+    expect(mocks.runMigration).not.toHaveBeenCalled();
     expect(mocks.runRecovery).not.toHaveBeenCalled();
   });
 

@@ -19,6 +19,7 @@ import { productMigrationService } from './productMigrationService';
 import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { productConflictService } from './productConflictService';
 import {
+  buildProductsMigratedMetaKey,
   PRODUCT_CATALOG_ENTITY_TYPES,
   PRODUCT_CATALOG_LAST_SEQ_KEY,
   PRODUCT_SYNC_STATUS
@@ -26,7 +27,7 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../inventory/inventoryEntryService';
-import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { isLocalTenantAccessError, runWithLocalTenantSyncLease } from '../tenant/localTenantGuard';
 import {
   assertProductInventoryMutationCurrent,
   assertProductInventoryOperationActorCurrent,
@@ -224,6 +225,65 @@ export const productSyncHandler = {
     }
 
     try {
+      if (reason === 'route_demand') {
+        const routeGate = await runWithLocalTenantSyncLease(
+          { license_key: licenseKey },
+          { reason: 'product_route_recovery_gate' },
+          async () => {
+            const migrated = await syncMetaService.getMeta(
+              buildProductsMigratedMetaKey(licenseKey),
+              false,
+              { licenseKey }
+            );
+            const localChanges = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
+            const pendingCount = (localChanges.categories?.length || 0)
+              + (localChanges.products?.length || 0)
+              + (localChanges.batches?.length || 0)
+              + Object.values(localChanges.deletes || {}).reduce((count, records) => count + (records?.length || 0), 0);
+            if (pendingCount > 0) {
+              let cloudCatalogExists = Boolean(migrated);
+              if (!cloudCatalogExists) {
+                const cloudProbe = await productCloudRepository.pullCatalogSnapshot({
+                  licenseKey,
+                  entityType: 'all',
+                  offset: 0,
+                  limit: 1,
+                  includeDeleted: true,
+                  force: true
+                });
+                if (cloudProbe?.success !== true
+                  || !Array.isArray(cloudProbe.categories)
+                  || !Array.isArray(cloudProbe.products)
+                  || !Array.isArray(cloudProbe.batches)) {
+                  throw Object.assign(new Error(cloudProbe?.message || 'No se pudo verificar si el catálogo Cloud ya existe.'), {
+                    code: cloudProbe?.code || 'PRODUCT_ROUTE_CATALOG_PREFLIGHT_FAILED'
+                  });
+                }
+                cloudCatalogExists = cloudProbe.categories.length > 0
+                  || cloudProbe.products.length > 0
+                  || cloudProbe.batches.length > 0
+                  || Number(cloudProbe.total || 0) > 0
+                  || cloudProbe.has_more === true
+                  || cloudProbe.hasMore === true;
+              }
+
+              if (cloudCatalogExists) {
+                Logger.log('[Products/Sync] Recuperación general diferida: hay cambios locales que requieren selección individual.');
+                return {
+                  success: true,
+                  skipped: true,
+                  deferred: true,
+                  reason: 'local_catalog_recovery_requires_selection',
+                  pendingCount
+                };
+              }
+            }
+            return null;
+          }
+        );
+        if (routeGate) return routeGate;
+      }
+
       const canMigrateProducts = canMigrateProductCatalog();
 
       if (!canMigrateProducts) {

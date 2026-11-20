@@ -18,6 +18,7 @@ import { validateLocalCatalogForMigration } from './productMigrationValidation';
 import { validateMigrationBatchResponse } from './productMigrationResponseValidation';
 import { PRODUCTS_UNSYNCED_RESCUE_META_KEY } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
+import { runWithProductCatalogRecoveryLock } from './productCatalogRecoveryLock';
 
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -443,6 +444,14 @@ export const productLocalCatalogRecovery = {
   },
 
   async runUnsyncedCatalogRecovery({ licenseKey, canMigrateProducts = true } = {}) {
+    if (!licenseKey) return { skipped: true, reason: 'missing_license' };
+    return runWithProductCatalogRecoveryLock({
+      licenseKey,
+      operation: () => this.runUnsyncedCatalogRecoveryWithoutLock({ licenseKey, canMigrateProducts })
+    });
+  },
+
+  async runUnsyncedCatalogRecoveryWithoutLock({ licenseKey, canMigrateProducts = true } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };
     if (!canMigrateProducts) return this.savePermissionBlockedWarning({ licenseKey });
