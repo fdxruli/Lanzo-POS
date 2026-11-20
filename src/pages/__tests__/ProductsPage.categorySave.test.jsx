@@ -154,6 +154,7 @@ describe('ProductsPage category save flow', () => {
     shared.app = {
       companyProfile: { business_type: [] },
       licenseDetails: null,
+      initializeApp: vi.fn().mockResolvedValue({ status: 'ready' }),
       canAccess: vi.fn(() => true)
     };
     shared.actorAccess = {
@@ -179,6 +180,89 @@ describe('ProductsPage category save flow', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('offers the existing verification recovery and keeps product fields after a tenant preflight block', async () => {
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+
+    const description = screen.getByLabelText('Descripción del producto');
+    fireEvent.change(description, { target: { value: 'Descripción conservada' } });
+    shared.repository.saveProduct.mockResolvedValueOnce({
+      success: false,
+      code: 'ACTOR_TENANT_NOT_READY',
+      phase: 'actor_preflight',
+      recoveryAction: 'retry_tenant_verification'
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(shared.showMessageModal).toHaveBeenCalledOnce());
+    const [message, , options] = shared.showMessageModal.mock.calls[0];
+    expect(message).toMatch(/contexto seguro de este negocio/i);
+    expect(options).toMatchObject({ type: 'warning' });
+    expect(options.extraButton.text).toBe('Reintentar verificación');
+    await act(async () => options.extraButton.action());
+
+    expect(shared.app.initializeApp).toHaveBeenCalledWith({ force: true });
+    expect(description).toHaveValue('Descripción conservada');
+  });
+
+  it('reports a successful product save when the later list refresh fails', async () => {
+    let failRefresh = false;
+    shared.catalog.loadInitialProducts.mockImplementation(async () => {
+      if (failRefresh) throw new Error('tenant runtime temporarily unavailable');
+      return undefined;
+    });
+    shared.repository.saveProduct.mockResolvedValueOnce({
+      success: true,
+      productId: 'soap-qa',
+      inventoryValue: 0
+    });
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    fireEvent.change(screen.getByLabelText('Descripción del producto'), { target: { value: 'Descripción guardada' } });
+    failRefresh = true;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(shared.showMessageModal).toHaveBeenCalledOnce());
+    const [message, , options] = shared.showMessageModal.mock.calls[0];
+    expect(message).toMatch(/actualizado exitosamente/i);
+    expect(message).toMatch(/sí quedó guardado, pero la lista no pudo actualizarse/i);
+    expect(options.type).toBe('warning');
+    expect(message).not.toMatch(/Error inesperado/i);
+  });
+
+  it('keeps a confirmed Cloud write pending until verification and catalog refresh, without inventory adjustment', async () => {
+    shared.repository.saveProduct.mockResolvedValueOnce({
+      success: true,
+      pending: true,
+      cloudConfirmed: true,
+      localReconciliationPending: true,
+      productId: 'soap-qa',
+      inventoryValue: 125,
+      message: 'Nube confirmó el producto. No vuelvas a guardar este cambio.'
+    });
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    shared.catalog.loadInitialProducts.mockClear();
+    shared.catalog.refreshCategories.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(shared.showMessageModal).toHaveBeenCalledOnce());
+    expect(shared.stats.adjustInventoryValue).not.toHaveBeenCalled();
+    expect(shared.catalog.loadInitialProducts).not.toHaveBeenCalled();
+    expect(shared.catalog.refreshCategories).not.toHaveBeenCalled();
+    const [, , options] = shared.showMessageModal.mock.calls[0];
+    expect(options.extraButton.text).toBe('Verificar y sincronizar catálogo');
+
+    await act(async () => options.extraButton.action());
+
+    expect(shared.app.initializeApp).toHaveBeenCalledWith({ force: true });
+    expect(shared.catalog.loadInitialProducts).toHaveBeenCalledOnce();
+    expect(shared.catalog.refreshCategories).toHaveBeenCalledOnce();
+  });
 
   it('opens Categories from the tab using the current actor permission without a false denial', async () => {
     renderPage('/productos');

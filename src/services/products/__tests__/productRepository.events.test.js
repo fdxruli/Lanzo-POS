@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   licenseDetails: {},
   appStatus: 'ready',
   assertProductActorCurrent: vi.fn(),
+  captureProductActor: vi.fn(),
   notify: vi.fn(),
   enqueue: vi.fn(),
   prepareProduct: vi.fn(),
@@ -39,7 +40,10 @@ vi.mock('../../Logger', () => ({
   default: { warn: vi.fn(), error: vi.fn() }
 }));
 vi.mock('../../utils', () => ({ generateID: vi.fn(() => 'generated-id') }));vi.mock('../../auth/actorRuntimeController', () => ({
-  ACTOR_RUNTIME_ERROR_CODES: { CONTEXT_STALE: 'ACTOR_CONTEXT_STALE' },
+  ACTOR_RUNTIME_ERROR_CODES: {
+    CONTEXT_STALE: 'ACTOR_CONTEXT_STALE',
+    TENANT_NOT_READY: 'ACTOR_TENANT_NOT_READY'
+  },
   ActorRuntimeError: class ActorRuntimeError extends Error {
     constructor(code, details = {}) {
       super(code);
@@ -48,13 +52,7 @@ vi.mock('../../utils', () => ({ generateID: vi.fn(() => 'generated-id') }));vi.m
     }
   },
   actorRuntimeController: {
-    capture: vi.fn(() => ({
-      actorType: 'admin',
-      actorId: 'admin-test',
-      actorKey: 'admin:admin-test',
-      generation: 1,
-      assertCurrent: mocks.assertProductActorCurrent
-    }))
+    capture: mocks.captureProductActor
   }
 }));
 vi.mock('../../../store/useAppStore', () => ({
@@ -175,6 +173,13 @@ beforeEach(() => {
   mocks.licenseDetails = {};
   mocks.appStatus = 'ready';
   mocks.assertProductActorCurrent.mockReset();
+  mocks.captureProductActor.mockReset().mockImplementation(() => ({
+    actorType: 'admin',
+    actorId: 'admin-test',
+    actorKey: 'admin:admin-test',
+    generation: 1,
+    assertCurrent: mocks.assertProductActorCurrent
+  }));
   mocks.prepareProduct.mockResolvedValue(preparedProduct(false));
   mocks.findSkuConflicts.mockResolvedValue([]);
   mocks.saveCategoryLocal.mockResolvedValue({ success: true, id: 'category-local', name: 'Local' });
@@ -206,6 +211,81 @@ beforeEach(() => {
 });
 
 describe('productRepository directed catalog events', () => {
+  it('blocks a product save before local or Cloud writes while tenant verification is pending', async () => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    mocks.captureProductActor.mockImplementationOnce(() => {
+      throw Object.assign(new Error('ACTOR_TENANT_NOT_READY'), { code: 'ACTOR_TENANT_NOT_READY' });
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Jabón QA' });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'ACTOR_TENANT_NOT_READY',
+      phase: 'actor_preflight',
+      recoveryAction: 'retry_tenant_verification'
+    });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.savePreparedProductLocal).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['revoked session', 'ADMIN_SESSION_REVOKED', 'session_required', /sesión cambió/i],
+    ['denied product permission', 'ACTOR_PERMISSION_DENIED', 'permission_denied', /no tienes permiso/i]
+  ])('keeps %s distinct from recoverable tenant readiness', async (_caseName, code, authorityKind, messagePattern) => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    mocks.captureProductActor.mockImplementationOnce(() => {
+      throw Object.assign(new Error(code), { code });
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Jabón QA' });
+
+    expect(result).toMatchObject({
+      success: false,
+      code,
+      phase: 'actor_preflight',
+      authorityKind,
+      recoveryAction: null
+    });
+    expect(result.message).toMatch(messagePattern);
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.savePreparedProductLocal).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('reports a confirmed Cloud write as local reconciliation pending without resubmitting it', async () => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    mocks.upsertProduct.mockResolvedValueOnce({
+      success: true,
+      product: { id: 'product-1', category_id: null },
+      clientLocalReconciliationPending: true,
+      clientIdempotencyKey: 'operation-id',
+      clientAuthorityErrorCode: 'ACTOR_TENANT_NOT_READY',
+      clientAuthorityErrorKind: 'tenant_verification_pending'
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Product' });
+
+    expect(result).toMatchObject({
+      success: true,
+      pending: true,
+      cloudConfirmed: true,
+      localReconciliationPending: true,
+      productId: 'product-1',
+      code: 'ACTOR_TENANT_NOT_READY',
+      authorityKind: 'tenant_verification_pending'
+    });
+    expect(result.message).toMatch(/Nube confirmó.*No vuelvas a guardar/i);
+    expect(mocks.upsertProduct).toHaveBeenCalledOnce();
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(mocks.savePreparedProductLocal).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+
   it('rejects category recovery when the current staff actor lacks product permission', async () => {
     mocks.cloudEnabled = true;
     mocks.licenseDetails = { valid: true, license_key: 'license-key' };

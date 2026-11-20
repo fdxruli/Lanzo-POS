@@ -11,6 +11,7 @@ import {
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { assertProductInventoryMutationCurrent, captureProductInventoryMutation, hasInitialProductStock } from '../auth/productInventoryAuthority';
+import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
 const parseRpcPayload = (data) => {
@@ -82,12 +83,33 @@ const getMutationRequirementsForRpc = (rpcName, args = {}) => {
   return {};
 };
 
-const callCatalogMutationRpc = async (rpcName, licenseKey, args, actorHandle = null, requirementsOverride = null) => {
+const callCatalogMutationRpc = async (rpcName, licenseKey, args, actorHandle = null, requirementsOverride = null, options = {}) => {
   const requirements = { ...getMutationRequirementsForRpc(rpcName, args), ...(requirementsOverride || {}) };
   const handle = actorHandle || captureProductInventoryMutation(requirements);
   assertProductInventoryMutationCurrent(handle, requirements);
   const response = await callRpc(rpcName, args);
-  assertProductInventoryMutationCurrent(handle, requirements);
+  try {
+    assertProductInventoryMutationCurrent(handle, requirements);
+  } catch (error) {
+    // The RPC has already returned a receipt. Preserve it only when its
+    // idempotency identity matches the request; callers must not resubmit it.
+    const authority = classifyActorAuthorityError(error);
+    if (options.preserveConfirmedProductResponse === true
+      && response?.success === true
+      && args.p_idempotency_key
+      && response.idempotency_key === args.p_idempotency_key
+      && authority) {
+      invalidateCloudCacheAfterCatalogMutation(licenseKey);
+      return {
+        ...response,
+        clientLocalReconciliationPending: true,
+        clientIdempotencyKey: args.p_idempotency_key,
+        clientAuthorityErrorCode: authority.code,
+        clientAuthorityErrorKind: authority.kind
+      };
+    }
+    throw error;
+  }
   if (response?.success !== false) invalidateCloudCacheAfterCatalogMutation(licenseKey);
   return response;
 };
@@ -135,7 +157,9 @@ export const productCloudRepository = {
       p_initial_batches: initialBatches,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    }, actorHandle, { inventory: (Array.isArray(initialBatches) && initialBatches.length > 0) || (isNewProduct && hasInitialProductStock(product)) });
+    }, actorHandle, { inventory: (Array.isArray(initialBatches) && initialBatches.length > 0) || (isNewProduct && hasInitialProductStock(product)) }, {
+      preserveConfirmedProductResponse: true
+    });
   },
 
   async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey, actorHandle = null }) {

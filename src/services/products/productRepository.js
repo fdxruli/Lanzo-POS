@@ -43,6 +43,7 @@ import {
   captureProductInventoryMutation,
   getProductInventoryMutationRequirements
 } from '../auth/productInventoryAuthority';
+import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const nowIso = () => new Date().toISOString();
@@ -725,7 +726,24 @@ export const productRepository = {
       inventory: productRequirements.includes('inventory')
         || Boolean(prepared.apparelVariantDelta && Object.values(prepared.apparelVariantDelta).some((items) => Array.isArray(items) && items.length > 0))
     };
-    const actorHandle = captureProductInventoryMutation(mutationRequirements);
+    let actorHandle;
+    try {
+      actorHandle = captureProductInventoryMutation(mutationRequirements);
+    } catch (error) {
+      const classification = classifyActorAuthorityError(error);
+      if (!classification) throw error;
+      const tenantVerificationPending = classification.kind === 'tenant_verification_pending';
+      return {
+        success: false,
+        code: classification.code || error?.code || 'ACTOR_CONTEXT_LOCKED',
+        phase: 'actor_preflight',
+        authorityKind: classification.kind,
+        recoveryAction: tenantVerificationPending ? 'retry_tenant_verification' : null,
+        message: tenantVerificationPending
+          ? `${classification.message} El producto no se guardó; conserva los cambios y vuelve a intentarlo después de verificar la sesión.`
+          : `${classification.message} El producto no se guardó.`
+      };
+    }
 
     if (!mode.cloudEnabled) {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
@@ -820,14 +838,47 @@ export const productRepository = {
         };
       }
 
-      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
-      await applyResponseAndNotify(response, {
+      const localReconciliationPendingResult = (authority = null) => ({
+        success: true,
+        pending: true,
+        cloudConfirmed: true,
+        localReconciliationPending: true,
+        ...(authority?.code ? { code: authority.code } : {}),
+        ...(authority?.kind ? { authorityKind: authority.kind } : {}),
         productId: prepared.productId,
-        productIds: [prepared.productId],
-        operation,
-        source: 'productRepository.saveProduct'
+        inventoryValue: prepared.inventoryValue,
+        message: authority?.kind === 'tenant_verification_pending'
+          ? 'Nube confirmó el producto, pero el contexto del negocio aún se está verificando y la lista local no se actualizó. No vuelvas a guardar este cambio. Reintenta la verificación y sincroniza el catálogo.'
+          : authority?.kind === 'session_required'
+            ? 'Nube confirmó el producto antes de que la sesión cambiara, pero la lista local no se actualizó. No vuelvas a guardar este cambio; vuelve a validar el acceso y sincroniza el catálogo.'
+            : authority?.kind === 'permission_denied'
+              ? 'Nube confirmó el producto, pero el acceso cambió antes de actualizar la lista local. No vuelvas a guardar este cambio; solicita o verifica el permiso y sincroniza el catálogo.'
+              : authority
+                ? 'Nube confirmó el producto, pero el contexto de actor o negocio cambió antes de actualizar la lista local. No vuelvas a guardar este cambio; verifica el acceso y sincroniza el catálogo.'
+                : 'Nube confirmó el producto, pero no se pudo actualizar la lista local. No vuelvas a guardar este cambio; verifica la sesión y sincroniza el catálogo.'
       });
-      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+
+      if (response?.clientLocalReconciliationPending === true
+        && response.clientIdempotencyKey === idempotencyKey) {
+        return localReconciliationPendingResult({
+          code: response.clientAuthorityErrorCode,
+          kind: response.clientAuthorityErrorKind
+        });
+      }
+
+      try {
+        assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+        await applyResponseAndNotify(response, {
+          productId: prepared.productId,
+          productIds: [prepared.productId],
+          operation,
+          source: 'productRepository.saveProduct'
+        });
+        assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+      } catch (error) {
+        Logger.warn('[Products] Nube confirmó el producto; reconciliación local pendiente:', error);
+        return localReconciliationPendingResult(classifyActorAuthorityError(error));
+      }
       const variants = await saveApparelVariantDelta(prepared);
       if (!variants?.success) {
         return {

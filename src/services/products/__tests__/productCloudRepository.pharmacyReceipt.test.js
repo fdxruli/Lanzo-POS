@@ -48,4 +48,67 @@ describe('documented Cloud pharmacy receipt RPC', () => {
     }));
     expect(mocks.assertCurrent).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    ['tenant verification pending', 'ACTOR_TENANT_NOT_READY', 'tenant_verification_pending'],
+    ['revoked session', 'ADMIN_SESSION_REVOKED', 'session_required'],
+    ['obsolete actor context', 'ACTOR_CONTEXT_STALE', 'stale_actor']
+  ])('preserves a matching successful RPC receipt when %s after dispatch', async (_caseName, code, authorityKind) => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        product: { id: 'product-qa', category_id: 'category-hygiene' },
+        idempotency_key: 'product-edit-idempotency'
+      },
+      error: null
+    });
+    mocks.assertCurrent
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => { throw Object.assign(new Error(code), { code }); });
+
+    const response = await productCloudRepository.upsertProduct({
+      licenseKey: 'CLOUD-LICENSE',
+      product: { id: 'product-qa', category_id: 'category-hygiene' },
+      idempotencyKey: 'product-edit-idempotency',
+      actorHandle: { actorKey: 'admin:qa' }
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      clientLocalReconciliationPending: true,
+      clientIdempotencyKey: 'product-edit-idempotency',
+      clientAuthorityErrorCode: code,
+      clientAuthorityErrorKind: authorityKind,
+      product: { id: 'product-qa', category_id: 'category-hygiene' }
+    });
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.assertCurrent).toHaveBeenCalledTimes(2);
+    expect(mocks.invalidate).toHaveBeenCalledWith('CLOUD-LICENSE');
+  });
+
+  it('does not claim a post-RPC write as confirmed when its receipt idempotency key differs', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        product: { id: 'product-qa', category_id: 'category-hygiene' },
+        idempotency_key: 'another-operation'
+      },
+      error: null
+    });
+    mocks.assertCurrent
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error('ACTOR_TENANT_NOT_READY'), { code: 'ACTOR_TENANT_NOT_READY' });
+      });
+
+    await expect(productCloudRepository.upsertProduct({
+      licenseKey: 'CLOUD-LICENSE',
+      product: { id: 'product-qa', category_id: 'category-hygiene' },
+      idempotencyKey: 'product-edit-idempotency',
+      actorHandle: { actorKey: 'admin:qa' }
+    })).rejects.toMatchObject({ code: 'ACTOR_TENANT_NOT_READY' });
+
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
 });

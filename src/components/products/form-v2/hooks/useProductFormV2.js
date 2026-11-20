@@ -18,7 +18,7 @@ const comparableValues = (values) => JSON.stringify(values, (_key, value) => {
   return value;
 });
 
-export function useProductFormV2({ activeRubro, capabilities, productToEdit, onSave } = {}) {
+export function useProductFormV2({ activeRubro, capabilities, productToEdit, initialDraftValues = null, onSave } = {}) {
   const normalizedRubro = normalizeProductRubro(activeRubro);
   const productCost = productToEdit?.cost;
   const productPrice = productToEdit?.price;
@@ -26,7 +26,10 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
     const defaults = getProductFormDefaults({ activeRubro: normalizedRubro, capabilities, productToEdit });
     return productToEdit?.id ? defaults : { ...defaults, id: defaults.id || generateID('prod') };
   }, [normalizedRubro, capabilities, productToEdit]);
-  const [values, setValues] = useState(getDefaults);
+  const initialDefaults = useMemo(getDefaults, [getDefaults]);
+  const [values, setValues] = useState(() => (
+    initialDraftValues ? { ...initialDefaults, ...initialDraftValues } : initialDefaults
+  ));
   const [errors, setErrors] = useState({ fieldErrors: {}, globalErrors: [] });
   const [isSaving, setIsSaving] = useState(false);
   const submitInFlightRef = useRef(false);
@@ -35,7 +38,7 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const [cloudBarcodeConflict, setCloudBarcodeConflict] = useState(false);
   const [rebasedProduct, setRebasedProduct] = useState(null);
   const blobUrlRef = useRef(null);
-  const initialValuesRef = useRef(comparableValues(values));
+  const initialValuesRef = useRef(comparableValues(initialDefaults));
   const originalApparelBatchesRef = useRef([]);
 
   useEffect(() => { setRebasedProduct(null); }, [productToEdit?.id]);
