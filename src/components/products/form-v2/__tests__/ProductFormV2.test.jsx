@@ -122,6 +122,64 @@ describe('ProductFormV2', () => {
     }));
   });
 
+  it('shows a confirmed success when the save callback confirms the write', async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    renderForm({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Jabón QA' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '25' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('status')).toHaveTextContent('Producto guardado.');
+  });
+
+  it.each([
+    ['repository rejection without prior message', () => ({
+      success: false,
+      code: 'PRODUCT_REPOSITORY_REJECTED',
+      message: 'El repositorio rechazó el guardado.'
+    }), 'alert', 'El repositorio rechazó el guardado.'],
+    ['error object without an explicit success flag', () => ({
+      error: { code: 'PRODUCT_REPOSITORY_ERROR', message: 'El repositorio devolvió un error.' }
+    }), 'status', 'El repositorio devolvió un error.'],
+    ['bare false result', () => false, 'status', 'No recibimos confirmación del guardado.'],
+    ['missing result', () => undefined, 'status', 'No recibimos confirmación del guardado.'],
+    ['uncertain Cloud result', () => ({
+      success: false,
+      code: 'PRODUCT_SYNC_CONFIRMATION_MISSING'
+    }), 'status', 'Cloud no confirmó el resultado.'],
+    ['explicit cancellation', () => ({ success: false, cancelled: true }), 'status', 'Guardado cancelado. Conservamos los cambios del formulario.'],
+    ['thrown callback exception', () => { throw new Error('transport detail'); }, 'status', 'No pudimos confirmar el resultado del guardado.']
+  ])('keeps the draft visible for %s', async (_name, makeResult, role, message) => {
+    const onSave = vi.fn(makeResult);
+    const onDirtyChange = vi.fn();
+    renderForm({ onSave, onDirtyChange });
+    const name = screen.getByLabelText(/Nombre del producto/i);
+    fireEvent.change(name, { target: { value: 'Borrador conservado' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '25' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    expect(await screen.findByRole(role)).toHaveTextContent(message);
+    expect(name).toHaveValue('Borrador conservado');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true, expect.objectContaining({ name: 'Borrador conservado' }));
+  });
+
+  it('does not duplicate a failure message already presented by the page', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: false, errorPresented: true, code: 'ACTOR_TENANT_NOT_READY' });
+    renderForm({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Jabón QA' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '25' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Nombre del producto/i)).toHaveValue('Jabón QA');
+  });
+
   it('does not toggle inventory tracking when interacting with inventory fields or helper copy', () => {
     renderForm();
     const trackStock = screen.getByRole('checkbox', { name: /Controlar inventario/i });

@@ -62,20 +62,34 @@ vi.mock('../../services/utils', () => ({
 vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
   const React = await import('react');
   return {
-    default: function MockProductFormV2({ productToEdit, onOpenCategoryManager, onSave }) {
-      const [categoryId, setCategoryId] = React.useState(productToEdit?.categoryId || '');
-      const [productName, setProductName] = React.useState(productToEdit?.name || '');
-      const [description, setDescription] = React.useState(productToEdit?.description || '');
+    default: function MockProductFormV2({ productToEdit, initialDraftValues, onOpenCategoryManager, onSave, onCancel, onDirtyChange }) {
+      const [categoryId, setCategoryId] = React.useState(initialDraftValues?.categoryId || productToEdit?.categoryId || '');
+      const [productName, setProductName] = React.useState(initialDraftValues?.name || productToEdit?.name || '');
+      const [description, setDescription] = React.useState(initialDraftValues?.description || productToEdit?.description || '');
+
+      const changeField = (field, value) => {
+        const next = {
+          id: productToEdit?.id || 'product-new',
+          name: field === 'name' ? value : productName,
+          description: field === 'description' ? value : description,
+          categoryId: field === 'categoryId' ? value : categoryId
+        };
+        if (field === 'name') setProductName(value);
+        if (field === 'description') setDescription(value);
+        if (field === 'categoryId') setCategoryId(value);
+        onDirtyChange?.(true, next);
+      };
 
       return (
         <div>
+          <h2>{productToEdit?.id ? 'Editar producto' : 'Nuevo producto'}</h2>
           <label>
             Nombre del producto
-            <input aria-label="Nombre del producto" value={productName} onChange={(event) => setProductName(event.target.value)} />
+            <input aria-label="Nombre del producto" value={productName} onChange={(event) => changeField('name', event.target.value)} />
           </label>
           <label>
             Categoría del producto
-            <select aria-label="Categoría del producto" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <select aria-label="Categoría del producto" value={categoryId} onChange={(event) => changeField('categoryId', event.target.value)}>
               <option value="">Sin categoría</option>
               <option value="category-a">QA Categoría A</option>
               <option value="category-b">Categoría B</option>
@@ -84,7 +98,7 @@ vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
           </label>
           <label>
             Descripción del producto
-            <input aria-label="Descripción del producto" value={description} onChange={(event) => setDescription(event.target.value)} />
+            <input aria-label="Descripción del producto" value={description} onChange={(event) => changeField('description', event.target.value)} />
           </label>
           <button type="button" onClick={() => onSave({
             id: productToEdit?.id || 'product-new',
@@ -97,6 +111,7 @@ vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
           <button type="button" onClick={() => onOpenCategoryManager((category) => setCategoryId(category.id))}>
             Administrar categorías del producto
           </button>
+          <button type="button" onClick={onCancel}>Cancelar</button>
         </div>
       );
     }
@@ -262,6 +277,68 @@ describe('ProductsPage category save flow', () => {
     expect(shared.app.initializeApp).toHaveBeenCalledWith({ force: true });
     expect(shared.catalog.loadInitialProducts).toHaveBeenCalledOnce();
     expect(shared.catalog.refreshCategories).toHaveBeenCalledOnce();
+  });
+
+  it('reports an uncertain Cloud result without claiming the product was not saved or resubmitting', async () => {
+    shared.repository.saveProduct.mockResolvedValueOnce({
+      success: false,
+      code: 'PRODUCT_SYNC_CONFIRMATION_MISSING',
+      message: 'Cloud no devolvió confirmación del producto guardado.'
+    });
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    const description = screen.getByLabelText('Descripción del producto');
+    fireEvent.change(description, { target: { value: 'Borrador con respuesta incierta' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(shared.showMessageModal).toHaveBeenCalledOnce());
+    const [message, , options] = shared.showMessageModal.mock.calls[0];
+    expect(message).toMatch(/Cloud no confirmó el resultado del guardado/i);
+    expect(message).toMatch(/verifica el catálogo antes de volver a guardar/i);
+    expect(message).not.toMatch(/el producto no se guardó/i);
+    expect(options.type).toBe('warning');
+    expect(shared.repository.saveProduct).toHaveBeenCalledOnce();
+    expect(description).toHaveValue('Borrador con respuesta incierta');
+  });
+
+  it('keeps the product and fields intact when the user chooses to continue editing from Cancelar', async () => {
+    shared.showConfirmModal.mockResolvedValueOnce(false);
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    const description = screen.getByLabelText('Descripción del producto');
+    fireEvent.change(description, { target: { value: 'Borrador que debe conservarse' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    await waitFor(() => expect(shared.showConfirmModal).toHaveBeenCalledOnce());
+    expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      expect.stringMatching(/datos no guardados se perderán/i),
+      expect.objectContaining({
+        confirmButtonText: 'Sí, salir',
+        cancelButtonText: 'Continuar editando'
+      })
+    );
+    expect(screen.getByRole('heading', { name: 'Editar producto' })).toBeInTheDocument();
+    expect(description).toHaveValue('Borrador que debe conservarse');
+  });
+
+  it('clears the edited product and draft only after confirming exit', async () => {
+    shared.showConfirmModal.mockResolvedValueOnce(true);
+    renderPage('/productos?tab=list');
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    fireEvent.change(screen.getByLabelText('Descripción del producto'), { target: { value: 'Descartar este borrador' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Editar Jabón QA' })).toBeInTheDocument());
+    expect(screen.queryByRole('heading', { name: 'Editar producto' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar Producto' }));
+
+    expect(screen.getByRole('heading', { name: 'Nuevo producto' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre del producto')).toHaveValue('');
+    expect(screen.getByLabelText('Descripción del producto')).toHaveValue('');
+    expect(screen.getByLabelText('Categoría del producto')).toHaveValue('');
   });
 
   it('opens Categories from the tab using the current actor permission without a false denial', async () => {

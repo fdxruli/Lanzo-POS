@@ -90,7 +90,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
 
   const saveAndAddAnother = async () => {
     const result = await form.submit({ resetAfterSave: true });
-    if (result !== false && result?.success !== false) {
+    if (result === true || result?.success === true) {
       setSaveAnotherNotice(result?.message || 'Producto guardado. Puedes capturar el siguiente.');
       requestAnimationFrame(() => document.getElementById('product-v2-name')?.focus());
     }
@@ -100,6 +100,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     <header className="product-form-v2__header"><div><h2><PackagePlus size={23} aria-hidden="true" /> {isEditing ? 'Editar producto' : 'Nuevo producto'}</h2><p>Completa los datos principales; los ajustes avanzados son opcionales.</p></div></header>
     {!isEditing && rubros.length > 1 && <div className="product-form-v2__rubros" aria-label="Rubro del producto">{rubros.map((rubro) => <button type="button" key={rubro} className={activeRubro === rubro ? 'is-active' : ''} onClick={() => switchRubro(rubro)}>{getProductRubroConfig(rubro).label}</button>)}</div>}
     {saveAnotherNotice && <p className="product-form-v2__success" role="status">{saveAnotherNotice}</p>}
+    {form.saveOutcome && <p className={`product-form-v2__save-feedback product-form-v2__save-feedback--${form.saveOutcome.kind}`} role={form.saveOutcome.kind === 'error' ? 'alert' : 'status'}>{form.saveOutcome.message}</p>}
     <ProductFormSummary errors={form.errors} />
     <ProductTypeSelector options={config.productTypeOptions} value={classificationValue} onChange={selectClassification} disabled={isEditing && isRestaurant} />
     {supportsSaleSetup && <GrocerySaleSetupFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} />}

@@ -42,6 +42,17 @@ import {
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
 const PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX = 'lanzo:product-image-migration:';
+const PRODUCT_SAVE_RESULT_UNKNOWN_CODES = new Set([
+    'PRODUCT_SYNC_CONFIRMATION_MISSING',
+    'PRODUCT_CATEGORY_CONFIRMATION_MISSING',
+    'PRODUCT_CATEGORY_NOT_CONFIRMED'
+]);
+const getProductSaveErrorCode = (result, fallback) => {
+    const candidate = result?.code || result?.error?.code;
+    return typeof candidate === 'string' && /^[A-Z0-9_]{1,64}$/.test(candidate)
+        ? candidate
+        : fallback;
+};
 const getCategorySaveError = (result) => {
     const response = result?.response || result?.error?.details || result?.error?.response || {};
     const code = result?.code || result?.error?.code || response?.code;
@@ -172,6 +183,14 @@ export default function ProductsPage() {
         setShowCategoryModal(false);
     };
 
+    const discardProductFormChanges = useCallback(() => {
+        invalidateProductCategoryCreateRequest();
+        clearProductFormDraft(productFormDraftScope);
+        setProductFormDraftValues(null);
+        setEditingProduct(null);
+        setIsProductFormDirty(false);
+    }, [invalidateProductCategoryCreateRequest, productFormDraftScope]);
+
     useEffect(() => {
         if (activeTab === 'add-product') return;
         invalidateProductCategoryCreateRequest();
@@ -185,11 +204,7 @@ export default function ProductsPage() {
         message: PRODUCT_FORM_EXIT_MESSAGE,
         confirmButtonText: 'Sí, salir',
         cancelButtonText: 'Continuar editando',
-        onDiscard: () => {
-            invalidateProductCategoryCreateRequest();
-            setEditingProduct(null);
-            setIsProductFormDirty(false);
-        }
+        onDiscard: discardProductFormChanges
     });
 
     useEffect(() => {
@@ -547,6 +562,26 @@ export default function ProductsPage() {
 
     const handleSaveProduct = async (productData, productToEdit, options = {}) => {
         setIsLoading(true);
+        const presentSaveError = (result, fallbackCode = 'PRODUCT_SAVE_REJECTED') => {
+            const code = getProductSaveErrorCode(result, fallbackCode);
+            Logger.warn('[Products] Guardado de producto rechazado.', {
+                stage: 'product_repository_result',
+                code
+            });
+            return { success: false, errorPresented: true, code };
+        };
+        const presentUnknownSaveResult = (code = 'PRODUCT_SAVE_RESULT_MISSING') => {
+            Logger.warn('[Products] Guardado sin confirmación de resultado.', {
+                stage: 'product_repository_result',
+                code
+            });
+            showMessageModal(
+                `Cloud no confirmó el resultado del guardado. Conserva los cambios y verifica el catálogo antes de volver a guardar. Código: ${code}.`,
+                null,
+                { type: 'warning' }
+            );
+            return { success: false, errorPresented: true, outcome: 'unknown', code };
+        };
         try {
             let imagePreparation;
             try {
@@ -557,15 +592,20 @@ export default function ProductsPage() {
                     cloudEnabled: cloudProductImagesEnabled
                 });
             } catch (error) {
-                Logger.error('Error subiendo imagen pública del producto:', error);
+                const code = getProductSaveErrorCode(error, 'PRODUCT_IMAGE_PREPARATION_FAILED');
+                Logger.warn('[Products] Preparación de imagen de producto fallida.', {
+                    stage: 'image_preparation',
+                    code
+                });
                 showMessageModal(
                     error?.message || 'No se pudo subir la imagen del producto. Revisa tu conexión e intenta nuevamente.'
                 );
-                return false;
+                return { success: false, errorPresented: true, code };
             }
 
             const productPayload = imagePreparation.productPayload;
             let result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
+            if (!result || typeof result !== 'object') return presentUnknownSaveResult();
 
             if (result?.code === 'PRODUCT_CATEGORY_RECOVERY_REQUIRED') {
                 const category = result.category || result.error?.category;
@@ -573,7 +613,7 @@ export default function ProductsPage() {
                 const categoryName = category?.name || 'la categoría seleccionada';
                 if (!categoryId) {
                     handleActionableError(result);
-                    return false;
+                    return presentSaveError(result, 'PRODUCT_CATEGORY_RECOVERY_REQUIRED');
                 }
 
                 const confirmRecovery = await showConfirmModal(
@@ -584,7 +624,14 @@ export default function ProductsPage() {
                         cancelButtonText: 'Cancelar'
                     }
                 );
-                if (!confirmRecovery) return false;
+                if (!confirmRecovery) {
+                    return {
+                        success: false,
+                        cancelled: true,
+                        code: 'PRODUCT_CATEGORY_RECOVERY_CANCELLED',
+                        message: 'Guardado cancelado. Conservamos los cambios del formulario.'
+                    };
+                }
 
                 const recovery = await productRepository.confirmLocalCategoryInCloud(categoryId);
                 if (!recovery?.success || recovery.category?.id !== categoryId) {
@@ -592,7 +639,7 @@ export default function ProductsPage() {
                         success: false,
                         message: 'Cloud no confirmó el ID original de la categoría. El producto no se guardó.'
                     });
-                    return false;
+                    return presentSaveError(recovery, 'PRODUCT_CATEGORY_CONFIRMATION_FAILED');
                 }
 
                 await refreshCategories();
@@ -603,11 +650,24 @@ export default function ProductsPage() {
                     timestamp: Date.now()
                 });
                 result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
+                if (!result || typeof result !== 'object') return presentUnknownSaveResult();
+            }
+
+            const resultCode = getProductSaveErrorCode(result, '');
+            if (PRODUCT_SAVE_RESULT_UNKNOWN_CODES.has(resultCode)) {
+                return presentUnknownSaveResult(resultCode);
+            }
+            if (result?.success !== true && result?.success !== false && !result?.partial) {
+                return presentUnknownSaveResult(resultCode || 'PRODUCT_SAVE_RESULT_INVALID');
             }
 
             if (result?.partial) {
                 handleActionableError(result);
-                return result;
+                Logger.warn('[Products] Guardado de producto parcialmente aplicado.', {
+                    stage: 'product_repository_result',
+                    code: getProductSaveErrorCode(result, 'PRODUCT_SAVE_PARTIAL')
+                });
+                return { ...result, errorPresented: true };
             }
 
             if (result?.success && result.localReconciliationPending) {
@@ -632,7 +692,13 @@ export default function ProductsPage() {
                     }
                 });
                 runWithoutBlocking(() => handleTabChange('view-products'));
-                return true;
+                return {
+                    success: true,
+                    pending: true,
+                    localReconciliationPending: true,
+                    message: result.message,
+                    messageHandled: true
+                };
             }
 
             if (result?.success) {
@@ -689,16 +755,24 @@ export default function ProductsPage() {
                     else handleTabChange('view-products');
                 });
 
-                return true;
+                return { success: true, messageHandled: true };
             }
 
             if (['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result?.code || result?.error?.code)) return result;
             handleActionableError(result);
-            return false;
+            return presentSaveError(result);
         } catch (error) {
-            Logger.error('Error crítico guardando producto:', error);
-            showMessageModal(`Error inesperado: ${error.message}`);
-            return false;
+            const code = getProductSaveErrorCode(error, 'PRODUCT_SAVE_EXCEPTION');
+            Logger.warn('[Products] Guardado de producto sin resultado confirmado.', {
+                stage: 'product_repository_call',
+                code
+            });
+            showMessageModal(
+                `No pudimos confirmar el resultado del guardado. Conserva los cambios y verifica el catálogo antes de volver a guardar. Código: ${code}.`,
+                null,
+                { type: 'warning' }
+            );
+            return { success: false, errorPresented: true, outcome: 'unknown', code };
         } finally {
             setIsLoading(false);
         }
@@ -735,12 +809,15 @@ export default function ProductsPage() {
         handleTabChange('add-product');
     };
 
-    const handleCancelProductForm = () => {
-        clearProductFormDraft(productFormDraftScope);
-        setProductFormDraftValues(null);
-        setEditingProduct(null);
-        setIsProductFormDirty(false);
-        handleTabChange('view-products');
+    const handleCancelProductForm = async () => {
+        if (isProductFormDirty && !(await showConfirmModal(PRODUCT_FORM_EXIT_MESSAGE, {
+            title: '¿Salir del formulario?',
+            confirmButtonText: 'Sí, salir',
+            cancelButtonText: 'Continuar editando'
+        }))) return;
+
+        discardProductFormChanges();
+        runWithoutBlocking(() => handleTabChange('view-products'));
     };
 
     const handleDeleteProduct = async (product) => {
