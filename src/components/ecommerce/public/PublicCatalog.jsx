@@ -234,7 +234,11 @@ function PublicCatalog({
               ))}
             </select>
           </label>
-          <div className="public-catalog__category-chips" aria-label="Categorías">
+          <div
+            className="public-catalog__category-chips"
+            role="group"
+            aria-label="Categorías"
+          >
             <button
               type="button"
               className={selectedCategory === 'all' ? 'is-selected' : ''}
@@ -266,22 +270,28 @@ function PublicCatalog({
             <h2 id="public-catalog-title">Elige tus productos</h2>
             <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
           </div>
-          <div className="public-catalog__view-toggle" aria-label="Vista de productos">
+          <div
+            className="public-catalog__view-toggle"
+            role="group"
+            aria-label="Vista de productos"
+          >
             <button
               type="button"
+              aria-label="Cuadrícula"
               aria-pressed={viewMode === 'grid'}
               onClick={() => setViewMode('grid')}
             >
               <LayoutGrid aria-hidden="true" size={17} />
-              Cuadrícula
+              <span>Cuadrícula</span>
             </button>
             <button
               type="button"
+              aria-label="Lista"
               aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
             >
               <List aria-hidden="true" size={18} />
-              Lista
+              <span>Lista</span>
             </button>
           </div>
         </div>

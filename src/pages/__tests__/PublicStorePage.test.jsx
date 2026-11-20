@@ -472,6 +472,8 @@ describe('PublicStorePage', () => {
 
     const catalog = screen.getByRole('region', { name: 'Elige tus productos' });
     expect(catalog).toHaveClass('public-catalog--view-grid');
+    expect(screen.getByRole('group', { name: 'Vista de productos' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Categorías' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cuadrícula' })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: 'Lista' }));
     expect(catalog).toHaveClass('public-catalog--view-list');
