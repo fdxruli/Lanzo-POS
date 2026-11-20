@@ -29,12 +29,12 @@ import './ProductFormV2.css';
 const RUBRO_FIELDS = { abarrotes: GroceryProductFields, hardware: HardwareProductFields, 'verduleria/fruteria': ProduceProductFields, apparel: ApparelProductFields, farmacia: PharmacyProductFields, food_service: RestaurantProductFields, otro: GeneralProductFields };
 const ERROR_ACCORDIONS = { sanitaryFraction: 'specific', pharmacyKind: 'specific', maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific', purchaseCost: 'specific' };
 
-export default function ProductFormV2({ onSave, onCancel, onDirtyChange, productToEdit, categories = [], activeRubroContext, businessTypes, features: suppliedFeatures, onOpenCategoryManager, onOpenBatches, onOpenExisting }) {
+export default function ProductFormV2({ onSave, onCancel, onDirtyChange, productToEdit, initialDraftValues = null, categories = [], activeRubroContext, businessTypes, features: suppliedFeatures, onOpenCategoryManager, onOpenBatches, onOpenExisting }) {
   const rubros = useMemo(() => normalizeBusinessTypes(businessTypes || activeRubroContext || productToEdit?.rubroContext), [activeRubroContext, businessTypes, productToEdit?.rubroContext]);
   const [activeRubro, setActiveRubro] = useState(() => normalizeProductRubro(productToEdit?.rubroContext || activeRubroContext || rubros[0]));
   const storeFeatures = useFeatureConfig(activeRubro);
   const features = suppliedFeatures || storeFeatures;
-  const form = useProductFormV2({ activeRubro, capabilities: features, productToEdit, onSave });
+  const form = useProductFormV2({ activeRubro, capabilities: features, productToEdit, initialDraftValues, onSave });
   const [openAccordion, setOpenAccordion] = useState('details');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
@@ -79,7 +79,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
       setField('stock', '0');
     }
   }, [isEditing, isPharmacyMedicine, setField, stockValue]);
-  useEffect(() => { onDirtyChange?.(form.isDirty); }, [form.isDirty, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.(form.isDirty, form.values); }, [form.isDirty, form.values, onDirtyChange]);
   useEffect(() => {
     const firstError = Object.keys(form.errors.fieldErrors)[0];
     if (!firstError) return;

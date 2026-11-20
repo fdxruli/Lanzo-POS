@@ -31,6 +31,14 @@ import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 import { useActorAccess } from '../services/auth/useActorAccess';
+import { actorRuntimeController } from '../services/auth/actorRuntimeController';
+import { classifyActorAuthorityError } from '../services/auth/actorAuthorityErrors';
+import {
+    clearProductFormDraft,
+    createProductFormDraftScope,
+    readProductFormDraft,
+    saveProductFormDraft
+} from '../services/products/productFormDraftCache';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
 const PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX = 'lanzo:product-image-migration:';
@@ -74,13 +82,16 @@ const getProductImageMigrationSessionKey = (value) => {
 };
 
 export default function ProductsPage() {
-    const [showDailyPrice, setShowDailyPrice] = useState(false);
-    const [activeTab, setActiveTab] = useState('view-products');
     const [searchParams, setSearchParams] = useSearchParams();
+    const productFormDraftScope = createProductFormDraftScope(actorRuntimeController.getState());
+    const [productFormDraft] = useState(() => readProductFormDraft(productFormDraftScope));
+    const [showDailyPrice, setShowDailyPrice] = useState(false);
+    const [activeTab, setActiveTab] = useState(() => productFormDraft?.activeTab || 'view-products');
   usePublishBotScreen('/productos', ({ 'add-product': 'add', 'view-products': 'list', 'variants-view': 'variants' })[activeTab] || activeTab);
     const features = useFeatureConfig();
     const companyProfile = useAppStore(state => state.companyProfile);
     const licenseDetails = useAppStore(state => state.licenseDetails);
+    const initializeApp = useAppStore(state => state.initializeApp);
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
     // Subscribe to the actor runtime so a legitimate session restore/regrant
     // refreshes both the visible tab and its click-time permission check.
@@ -110,8 +121,23 @@ export default function ProductsPage() {
     const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
     const refreshCategories = useInventoryCatalogStore((state) => state.refreshCategories);
 
-    const [editingProduct, setEditingProduct] = useState(null);
-    const [isProductFormDirty, setIsProductFormDirty] = useState(false);
+    const retryTenantVerification = useCallback(async ({ refreshCatalog = false } = {}) => {
+        try {
+            const verification = await initializeApp?.({ force: true });
+            if (verification?.status !== 'ready') return false;
+            if (!refreshCatalog) return true;
+            const productsRefreshed = await refreshData();
+            const categoriesRefreshed = await refreshCategories();
+            return productsRefreshed !== false && categoriesRefreshed !== false;
+        } catch (retryError) {
+            Logger.warn('[Products] Verificación o reconciliación del catálogo pendiente:', retryError);
+            return false;
+        }
+    }, [initializeApp, refreshCategories, refreshData]);
+
+    const [editingProduct, setEditingProduct] = useState(() => productFormDraft?.productToEdit || null);
+    const [productFormDraftValues, setProductFormDraftValues] = useState(() => productFormDraft?.values || null);
+    const [isProductFormDirty, setIsProductFormDirty] = useState(() => Boolean(productFormDraft));
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectNewCategoryOnCreate, setSelectNewCategoryOnCreate] = useState(false);
@@ -333,6 +359,25 @@ export default function ProductsPage() {
 
     const handleActionableError = (errorResult) => {
         const error = errorResult?.error || errorResult;
+        const authority = classifyActorAuthorityError(error, actorAccess.runtimeSnapshot);
+        if (authority?.kind === 'tenant_verification_pending') {
+            const recoveryMessage = errorResult?.phase === 'actor_preflight'
+                ? errorResult.message
+                : authority.message;
+            showMessageModal(recoveryMessage || authority.message, () => {}, {
+                type: 'warning',
+                extraButton: {
+                    text: 'Reintentar verificación',
+                    action: async () => {
+                        const verified = await retryTenantVerification();
+                        if (!verified) {
+                            showMessageModal('La verificación sigue pendiente. Conservamos los cambios del formulario; vuelve a intentarlo cuando el contexto del negocio esté listo.', null, { type: 'warning' });
+                        }
+                    }
+                }
+            });
+            return;
+        }
         const message = error?.message || errorResult?.message || 'No se pudo completar la operación.';
         const details = error?.details || {};
 
@@ -356,6 +401,23 @@ export default function ProductsPage() {
             ...modalOptions
         });
     };
+
+    const handleProductFormDirtyChange = useCallback((isDirty, values) => {
+        setIsProductFormDirty(isDirty);
+        if (!productFormDraftScope) return;
+        if (!isDirty) {
+            clearProductFormDraft(productFormDraftScope);
+            setProductFormDraftValues(null);
+            return;
+        }
+        if (!values) return;
+        saveProductFormDraft(productFormDraftScope, {
+            activeTab: 'add-product',
+            productToEdit: editingProduct,
+            values
+        });
+        setProductFormDraftValues(values);
+    }, [editingProduct, productFormDraftScope]);
 
     const handleSaveCategory = async (categoryData) => {
         const isEditing = Boolean(categoryData.id);
@@ -548,16 +610,56 @@ export default function ProductsPage() {
                 return result;
             }
 
+            if (result?.success && result.localReconciliationPending) {
+                clearProductFormDraft(productFormDraftScope);
+                setProductFormDraftValues(null);
+                setEditingProduct(null);
+                setIsProductFormDirty(false);
+                showMessageModal(result.message, () => {}, {
+                    type: 'warning',
+                    extraButton: {
+                        text: 'Verificar y sincronizar catálogo',
+                        action: async () => {
+                            const refreshed = await retryTenantVerification({ refreshCatalog: true });
+                            showMessageModal(
+                                refreshed
+                                    ? 'El catálogo se actualizó después de verificar la sesión.'
+                                    : 'La verificación o actualización del catálogo sigue pendiente. No vuelvas a guardar este cambio.',
+                                null,
+                                { type: refreshed ? 'success' : 'warning' }
+                            );
+                        }
+                    }
+                });
+                runWithoutBlocking(() => handleTabChange('view-products'));
+                return true;
+            }
+
             if (result?.success) {
-                await refreshData();
-                await refreshCategories();
+                let refreshFailed = false;
+                try {
+                    if (await refreshData() === false) refreshFailed = true;
+                } catch (refreshError) {
+                    refreshFailed = true;
+                    Logger.warn('[Products] El producto se guardó, pero la lista local no se actualizó:', refreshError);
+                }
+                try {
+                    if (await refreshCategories() === false) refreshFailed = true;
+                } catch (refreshError) {
+                    refreshFailed = true;
+                    Logger.warn('[Products] El producto se guardó, pero las categorías locales no se actualizaron:', refreshError);
+                }
 
                 const valueDifference = Number(result.inventoryValue || 0);
                 if (valueDifference > 0) await adjustInventoryValue(valueDifference);
 
                 let successMessage = result.pending
-                    ? 'Producto guardado localmente. Se sincronizará al volver internet.'
+                    ? (result.message || 'Producto guardado localmente. Se sincronizará al volver internet.')
                     : (productToEdit ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
+
+                if (refreshFailed) {
+                    successMessage += '\n\nEl producto sí quedó guardado, pero la lista no pudo actualizarse. Verifica la sesión y sincroniza el catálogo antes de volver a editarlo.';
+                }
 
                 if (imagePreparation.requiresReselection) {
                     successMessage += '\n\nLa fotografía anterior no está guardada en este dispositivo. Vuelve a seleccionarla para publicarla en la tienda en línea.';
@@ -566,7 +668,7 @@ export default function ProductsPage() {
                 const keepFormOpen = options.intent === 'save_and_add_another' || options.keepFormOpen;
                 if (!keepFormOpen) {
                     showMessageModal(successMessage, null, {
-                        type: imagePreparation.requiresReselection ? 'warning' : 'success'
+                        type: imagePreparation.requiresReselection || refreshFailed ? 'warning' : 'success'
                     });
                 }
 
@@ -578,6 +680,8 @@ export default function ProductsPage() {
 
                 if (keepFormOpen) return { success: true, pending: result.pending, message: successMessage };
 
+                clearProductFormDraft(productFormDraftScope);
+                setProductFormDraftValues(null);
                 setEditingProduct(null);
                 setIsProductFormDirty(false);
                 runWithoutBlocking(() => {
@@ -607,20 +711,36 @@ export default function ProductsPage() {
             cancelButtonText: 'Seguir capturando'
         }))) return;
         invalidateProductCategoryCreateRequest();
+        clearProductFormDraft(productFormDraftScope);
+        setProductFormDraftValues(null);
         setIsProductFormDirty(false);
         setEditingProduct(product);
     };
 
     const handleEditProduct = (product) => {
         invalidateProductCategoryCreateRequest();
+        clearProductFormDraft(productFormDraftScope);
+        setProductFormDraftValues(null);
+        setIsProductFormDirty(false);
         setEditingProduct(product);
         handleTabChange('add-product');
     };
 
     const handleCreateIngredient = () => {
         invalidateProductCategoryCreateRequest();
+        clearProductFormDraft(productFormDraftScope);
+        setProductFormDraftValues(null);
+        setIsProductFormDirty(false);
         setEditingProduct({ name: '', productType: 'ingredient' });
         handleTabChange('add-product');
+    };
+
+    const handleCancelProductForm = () => {
+        clearProductFormDraft(productFormDraftScope);
+        setProductFormDraftValues(null);
+        setEditingProduct(null);
+        setIsProductFormDirty(false);
+        handleTabChange('view-products');
     };
 
     const handleDeleteProduct = async (product) => {
@@ -754,12 +874,13 @@ export default function ProductsPage() {
             <section className="ui-section products-workspace">
             {activeTab === 'add-product' && canManageProducts && (
                 <ProductForm
-                    key={editingProduct?.id || 'new-product'}
+                    key={`${productFormDraftScope || 'no-actor'}:${editingProduct?.id || 'new-product'}`}
                     onSave={handleSaveProduct}
-                    onCancel={() => handleTabChange('view-products')}
-                    onDirtyChange={setIsProductFormDirty}
+                    onCancel={handleCancelProductForm}
+                    onDirtyChange={handleProductFormDirtyChange}
                     onOpenExisting={handleOpenExistingFromBarcode}
                     productToEdit={editingProduct}
+                    initialDraftValues={productFormDraftValues}
                     categories={categories}
                     onOpenCategoryManager={handleOpenCategoryManagerFromProduct}
                     onOpenBatches={(product) => handleManageBatches(product.id)}

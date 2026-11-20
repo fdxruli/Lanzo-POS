@@ -87,6 +87,41 @@ describe('ProductFormV2', () => {
     expect(screen.getByRole('combobox', { name: 'Categoría' })).toHaveValue('legacy-category');
   });
 
+  it('restores an edit draft and keeps its description and category after tenant readiness blocks save', async () => {
+    const onSave = vi.fn().mockResolvedValue({
+      success: false,
+      code: 'ACTOR_TENANT_NOT_READY',
+      phase: 'actor_preflight'
+    });
+    const onDirtyChange = vi.fn();
+    renderForm({
+      onSave,
+      onDirtyChange,
+      productToEdit: {
+        id: 'soap-qa', name: 'Jabón QA', description: 'Descripción anterior',
+        categoryId: 'hygiene-qa', price: 20, cost: 8
+      },
+      initialDraftValues: {
+        id: 'soap-qa', name: 'Jabón QA', description: 'Descripción editada',
+        categoryId: 'hygiene-qa', price: '20', cost: '8'
+      },
+      categories: [{ id: 'hygiene-qa', name: 'Higiene QA', isActive: true }]
+    });
+
+    const description = screen.getByLabelText(/Descripción/i);
+    expect(description).toHaveValue('Descripción editada');
+    expect(screen.getByRole('combobox', { name: 'Categoría' })).toHaveValue('hygiene-qa');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(description).toHaveValue('Descripción editada');
+    expect(screen.getByRole('combobox', { name: 'Categoría' })).toHaveValue('hygiene-qa');
+    expect(onDirtyChange).toHaveBeenCalledWith(true, expect.objectContaining({
+      description: 'Descripción editada', categoryId: 'hygiene-qa'
+    }));
+  });
+
   it('does not toggle inventory tracking when interacting with inventory fields or helper copy', () => {
     renderForm();
     const trackStock = screen.getByRole('checkbox', { name: /Controlar inventario/i });
