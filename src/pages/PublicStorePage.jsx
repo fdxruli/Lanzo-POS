@@ -21,7 +21,8 @@ import {
 } from '../services/ecommerce/ecommerceCheckoutIdempotency';
 import {
   getAvailabilityDetail,
-  getAvailabilityLabel
+  getAvailabilityLabel,
+  getAvailabilityRefreshDelay
 } from '../utils/ecommerceAvailability';
 import {
   buildAcceptedEcommerceOrderItems,
@@ -33,11 +34,15 @@ import {
 import {
   normalizeEcommerceSiteDocument
 } from '../utils/ecommerceSiteDocument';
+import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
 import { resetPublicDocumentScroll } from '../utils/publicDocumentScroll';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
 const DEFAULT_META_DESCRIPTION = 'Consulta el catálogo de esta tienda online.';
+const REVISION_REVALIDATION_INTERVAL_MS = 60_000;
+const FULL_RECOVERY_HIDDEN_THRESHOLD_MS = 30_000;
+const RESUME_EVENT_COALESCE_MS = 75;
 const AVAILABILITY_ERROR_CODES = new Set([
   'ECOMMERCE_ORDERS_PAUSED',
   'ECOMMERCE_STORE_CLOSED',
@@ -60,6 +65,8 @@ function PublicStorePage() {
   const activeCheckoutPromiseRef = useRef(null);
   const checkoutOpeningPromiseRef = useRef(null);
   const checkoutStatusRef = useRef('idle');
+  const hiddenAtRef = useRef(null);
+  const resumeTimerRef = useRef(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -118,6 +125,8 @@ function PublicStorePage() {
     loadNextCatalogPage,
     retryCatalog,
     revalidateCatalogRevision,
+    recoverPublicStore,
+    markOffline,
     getCurrentCatalogContext,
     isCurrentCatalogContext,
     getCurrentAvailability
@@ -142,6 +151,7 @@ function PublicStorePage() {
       mountedRef.current = false;
       activeCheckoutPromiseRef.current = null;
       checkoutOpeningPromiseRef.current = null;
+      window.clearTimeout(resumeTimerRef.current);
     };
   }, []);
 
@@ -164,6 +174,77 @@ function PublicStorePage() {
     setCheckoutObservedItems(null);
     setCheckoutRequestUncertain(false);
   }, [slug, storeReloadKey]);
+
+  useEffect(() => {
+    if (!portal) return undefined;
+
+    const handleOnline = () => {
+      void recoverPublicStore('online');
+    };
+    const handleFocus = () => {
+      window.clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = window.setTimeout(() => {
+        void revalidateCatalogRevision('focus');
+      }, RESUME_EVENT_COALESCE_MS);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      const hiddenFor = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      window.clearTimeout(resumeTimerRef.current);
+      if (hiddenFor >= FULL_RECOVERY_HIDDEN_THRESHOLD_MS) {
+        void recoverPublicStore('visibility-long', { closeOverlays: true });
+      } else {
+        resumeTimerRef.current = window.setTimeout(() => {
+          void revalidateCatalogRevision('visibility-short');
+        }, RESUME_EVENT_COALESCE_MS);
+      }
+    };
+    const handlePageShow = (event) => {
+      preparePublicStoreDocument();
+      if (event.persisted) {
+        window.clearTimeout(resumeTimerRef.current);
+        void recoverPublicStore('pageshow-bfcache', { closeOverlays: true });
+      }
+    };
+    const handleControlledRecovery = () => {
+      void recoverPublicStore('manual-controlled', { closeOverlays: true });
+    };
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void revalidateCatalogRevision('visible-interval');
+      }
+    }, REVISION_REVALIDATION_INTERVAL_MS);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', markOffline);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('lanzo:public-store-recover', handleControlledRecovery);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', markOffline);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('lanzo:public-store-recover', handleControlledRecovery);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearTimeout(resumeTimerRef.current);
+    };
+  }, [markOffline, portal, recoverPublicStore, revalidateCatalogRevision]);
+
+  useEffect(() => {
+    if (!portal || !availability?.nextChangeAt) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      void revalidateCatalogRevision('availability-next-change');
+    }, getAvailabilityRefreshDelay(availability));
+    return () => window.clearTimeout(timeoutId);
+  }, [availability, portal, revalidateCatalogRevision]);
 
   useEffect(() => {
     if (!portal) return undefined;

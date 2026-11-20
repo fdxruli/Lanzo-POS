@@ -5,14 +5,10 @@ import {
   getPublicCatalog,
   getPublicPortalBySlug
 } from '../../services/ecommerce/ecommercePublicService';
-import { getAvailabilityRefreshDelay } from '../../utils/ecommerceAvailability';
 import { preparePublicStoreDocument } from '../../router/preparePublicStoreDocument';
 import { isValidStoreSlug } from '../../../store/api/_storeSlug';
 
 const INITIAL_PAGINATION = { offset: 0, limit: 100, hasMore: false };
-const REVISION_REVALIDATION_INTERVAL_MS = 60_000;
-const FULL_RECOVERY_HIDDEN_THRESHOLD_MS = 30_000;
-const RESUME_EVENT_COALESCE_MS = 75;
 
 const isOnlineNow = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const normalizeRevision = (value) => {
@@ -50,8 +46,6 @@ function usePublicStoreCatalog({
   const productsRef = useRef([]);
   const revisionRevalidationPromiseRef = useRef(null);
   const recoveryPromiseRef = useRef(null);
-  const hiddenAtRef = useRef(null);
-  const resumeTimerRef = useRef(null);
   const revisionRestartCountRef = useRef(0);
 
   const [portalResult, setPortalResult] = useState(null);
@@ -119,7 +113,6 @@ function usePublicStoreCatalog({
       requestGenerationRef.current += 1;
       revisionRevalidationPromiseRef.current = null;
       recoveryPromiseRef.current = null;
-      window.clearTimeout(resumeTimerRef.current);
     };
   }, []);
 
@@ -255,7 +248,6 @@ function usePublicStoreCatalog({
     cachePolicyRef.current = null;
     revisionRevalidationPromiseRef.current = null;
     recoveryPromiseRef.current = null;
-    hiddenAtRef.current = null;
 
     setStoreStatus('loading');
     setPausedContactUrl('');
@@ -332,6 +324,7 @@ function usePublicStoreCatalog({
   }, [applyAuthoritativePortalStatus, loadCatalog, slug, storeReloadKey]);
 
   const revalidateCatalogRevision = useCallback((reason = 'visible', { forceCatalog = false } = {}) => {
+    if (reason === 'online') setConnectionOnline(true);
     if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
     if (!portal || !isOnlineNow()) {
       setConnectionOnline(false);
@@ -496,83 +489,6 @@ function usePublicStoreCatalog({
     return request;
   }, [applyAuthoritativePortalStatus, closeTransientOverlays, portal]);
 
-  useEffect(() => {
-    if (!portal) return undefined;
-
-    const handleOnline = () => {
-      setConnectionOnline(true);
-      void recoverPublicStore('online');
-    };
-    const handleOffline = () => {
-      setConnectionOnline(false);
-      setOfflineCatalog(true);
-      setCatalogValidated(false);
-    };
-    const handleFocus = () => {
-      window.clearTimeout(resumeTimerRef.current);
-      resumeTimerRef.current = window.setTimeout(() => {
-        void revalidateCatalogRevision('focus');
-      }, RESUME_EVENT_COALESCE_MS);
-    };
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        hiddenAtRef.current = Date.now();
-        return;
-      }
-      const hiddenFor = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
-      hiddenAtRef.current = null;
-      window.clearTimeout(resumeTimerRef.current);
-      if (hiddenFor >= FULL_RECOVERY_HIDDEN_THRESHOLD_MS) {
-        void recoverPublicStore('visibility-long', { closeOverlays: true });
-      } else {
-        resumeTimerRef.current = window.setTimeout(() => {
-          void revalidateCatalogRevision('visibility-short');
-        }, RESUME_EVENT_COALESCE_MS);
-      }
-    };
-    const handlePageShow = (event) => {
-      preparePublicStoreDocument();
-      if (event.persisted) {
-        window.clearTimeout(resumeTimerRef.current);
-        void recoverPublicStore('pageshow-bfcache', { closeOverlays: true });
-      }
-    };
-    const handleControlledRecovery = () => {
-      void recoverPublicStore('manual-controlled', { closeOverlays: true });
-    };
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void revalidateCatalogRevision('visible-interval');
-      }
-    }, REVISION_REVALIDATION_INTERVAL_MS);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('pageshow', handlePageShow);
-    window.addEventListener('lanzo:public-store-recover', handleControlledRecovery);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('pageshow', handlePageShow);
-      window.removeEventListener('lanzo:public-store-recover', handleControlledRecovery);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.clearTimeout(resumeTimerRef.current);
-    };
-  }, [portal, recoverPublicStore, revalidateCatalogRevision]);
-
-  useEffect(() => {
-    if (!portal || !availability?.nextChangeAt) return undefined;
-    const timeoutId = window.setTimeout(() => {
-      void revalidateCatalogRevision('availability-next-change');
-    }, getAvailabilityRefreshDelay(availability));
-    return () => window.clearTimeout(timeoutId);
-  }, [availability, portal, revalidateCatalogRevision]);
-
   const loadNextCatalogPage = useCallback(() => {
     const currentPagination = paginationRef.current;
     if (!currentPagination.hasMore) return false;
@@ -606,6 +522,12 @@ function usePublicStoreCatalog({
       offline: offlineCatalog
     });
   }, [catalogError, loadCatalog, offlineCatalog]);
+
+  const markOffline = useCallback(() => {
+    setConnectionOnline(false);
+    setOfflineCatalog(true);
+    setCatalogValidated(false);
+  }, []);
 
   const getCurrentCatalogContext = useCallback(() => ({
     slug: activeSlugRef.current,
@@ -647,6 +569,8 @@ function usePublicStoreCatalog({
     loadNextCatalogPage,
     retryCatalog,
     revalidateCatalogRevision,
+    recoverPublicStore,
+    markOffline,
     getCurrentCatalogContext,
     isCurrentCatalogContext,
     getCurrentAvailability
