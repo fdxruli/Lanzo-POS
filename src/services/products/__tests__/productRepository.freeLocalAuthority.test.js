@@ -278,6 +278,24 @@ describe('productRepository FREE/local authority', () => {
     expect(mocks.actorCapture).not.toHaveBeenCalled();
   });
 
+  it('preserves a selected category in FREE without reading or writing Cloud', async () => {
+    mocks.prepareProduct.mockResolvedValueOnce({
+      productId: 'product-free',
+      product: { id: 'product-free', name: 'Alitas', categoryId: 'category-free' },
+      batches: [], editing: false, inventoryValue: 0
+    });
+
+    await expect(productRepository.saveProduct({ name: 'Alitas', categoryId: 'category-free' }))
+      .resolves.toMatchObject({ success: true });
+
+    expect(mocks.savePreparedProductLocal).toHaveBeenCalledWith(
+      expect.objectContaining({ product: expect.objectContaining({ categoryId: 'category-free' }) }),
+      { syncStatus: 'local' }
+    );
+    expect(mocks.cloud.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+
   it('keeps product status/delete and batch CRUD local without cloud RPC or actor-bound outbox', async () => {
     const product = { id: 'product-free', isActive: true, stock: 8 };
     const batch = { id: 'batch-free', productId: 'product-free', stock: 8 };

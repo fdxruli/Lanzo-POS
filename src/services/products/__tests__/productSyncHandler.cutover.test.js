@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   markReceiptRejected: vi.fn(),
   upsertCategory: vi.fn(),
   upsertProductBatch: vi.fn(),
+  pullCatalogSnapshot: vi.fn(),
   deleteProduct: vi.fn(),
   deleteCategory: vi.fn(),
   deleteProductBatch: vi.fn(),
@@ -55,6 +56,7 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   addInventoryEntry: mocks.addInventoryEntry,
   upsertCategory: mocks.upsertCategory,
   upsertProductBatch: mocks.upsertProductBatch,
+  pullCatalogSnapshot: mocks.pullCatalogSnapshot,
   deleteProduct: mocks.deleteProduct,
   deleteCategory: mocks.deleteCategory,
   deleteProductBatch: mocks.deleteProductBatch,
@@ -97,6 +99,7 @@ describe('product sync repeated cutover safety', () => {
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
     mocks.getCatalogRecordForSync.mockResolvedValue(null);
     mocks.getMeta.mockResolvedValue(12);
+    mocks.pullCatalogSnapshot.mockResolvedValue({ success: true, categories: [], has_more: false });
   });
 
   const receiptOperation = {
@@ -396,6 +399,27 @@ describe('product sync repeated cutover safety', () => {
 
     expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'operation-k' }));
     expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(response);
+  });
+
+  it('holds a product outbox operation when Cloud does not confirm its selected category', async () => {
+    const response = { success: true, product: { id: 'product-category', category_id: null } };
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [{ id: 'category-qa', is_active: true }], has_more: false
+    });
+    mocks.upsertProduct.mockResolvedValue(response);
+
+    await expect(productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPSERT,
+      entityId: 'product-category',
+      id: 'product-category-operation',
+      idempotencyKey: 'product-category-operation',
+      payload: { product: { id: 'product-category', category_id: 'category-qa' } }
+    })).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_NOT_CONFIRMED' });
+
+    expect(mocks.upsertProduct).toHaveBeenCalledOnce();
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
   });
 
   it('allows a same-operation retry when the local mutation matches operation.id', async () => {

@@ -18,6 +18,10 @@ import {
 } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
+import {
+  ensureCloudProductCategory,
+  getProductCloudConfirmationError
+} from './productCategoryCloudGate';
 import { createApparelSkuCandidate, resolveProductRubroContext } from './apparelSku';
 import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
@@ -707,6 +711,11 @@ export const productRepository = {
 
     try {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+      await ensureCloudProductCategory({
+        licenseKey: mode.licenseKey,
+        categoryId: payload.product.category_id ?? payload.product.categoryId,
+        actorHandle
+      });
       const response = await productCloudRepository.upsertProduct({
         actorHandle,
         licenseKey: mode.licenseKey,
@@ -724,6 +733,15 @@ export const productRepository = {
           localPayload: prepared.product
         });
         return normalizeCloudFailure(response, 'PRODUCT_SYNC_FAILED');
+      }
+
+      const confirmationError = getProductCloudConfirmationError(response, payload.product);
+      if (confirmationError) {
+        return {
+          success: false,
+          ...confirmationError,
+          error: confirmationError
+        };
       }
 
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
@@ -758,7 +776,12 @@ export const productRepository = {
       if (isRetryableCloudError(error)) {
         return savePending('Producto guardado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.');
       }
-      return { success: false, message: error?.message || 'Error al guardar producto cloud.', error };
+      return {
+        success: false,
+        code: error?.code || 'PRODUCT_CLOUD_ERROR',
+        message: error?.message || 'Error al guardar producto cloud.',
+        error
+      };
     }
   },
 
