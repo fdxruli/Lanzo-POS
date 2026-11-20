@@ -12,6 +12,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, isPharmacyCloudAuthorityRequired } from '../../services/sync/syncConstants';
 import { isBatchArchived } from '../../services/products/batchStatus';
 import { isBatchExpiredForSale } from '../../services/products/fefoUtils';
+import { PRODUCT_CLOUD_SYNC_BADGE_STATUS, resolveProductCloudSyncBadge } from '../../services/products/productConstants';
 
 import { formatBusinessDateTimeInput, formatBusinessInstant, isValidTimeZone, parseBusinessDateTimeInput } from '../../utils/businessTime';
 
@@ -49,7 +50,12 @@ const mergeReceiptHistory = (local, cloud, submittedOperationId) => {
     && item.status === 'Sincronizado en Cloud'));
 };
 
-export default function InventoryEntryModal({ product, onClose, onCompleted }) {
+export default function InventoryEntryModal({ product: productProp, onClose, onCompleted }) {
+  const localProduct = useLiveQuery(
+    () => db.table(STORES.MENU).get(productProp.id),
+    [productProp.id]
+  );
+  const product = localProduct?.id === productProp.id ? localProduct : productProp;
   const businessTimezone = useAppStore((state) => state.companyProfile?.timezone);
   const pharmacy = getPharmacyClassification(product);
   const medicine = pharmacy.recorded && pharmacy.kind === 'medicine';
@@ -76,6 +82,8 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const cloudMedicine = medicine && isPharmacyCloudAuthorityRequired(licenseDetails);
   const cloudConfirmation = cloudMedicine || isCloudGeneralPharmacyBatchEntry(product, licenseDetails);
+  const cloudProductNotReady = cloudMedicine
+    && resolveProductCloudSyncBadge(product).status !== PRODUCT_CLOUD_SYNC_BADGE_STATUS.SYNCED;
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const productId = product.id;
   const historyScope = useMemo(() => ({ productId, licenseKey }), [productId, licenseKey]);
@@ -119,10 +127,10 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
     () => Number(product?.stock || 0) + (Number(quantity) || 0),
     [product?.stock, quantity]
   );
-  const blocked = medicine && (
+  const blocked = (medicine && (
     special || pharmacy.status !== 'confirmed' || !batchManaged ||
     product?.conversionFactor?.enabled === true
-  );
+  )) || cloudProductNotReady;
 
   useEffect(() => {
     let active = true;
@@ -229,7 +237,8 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
             <span> · Fracción {pharmacy.fraction || 'pendiente'}{pharmacy.antibiotic ? ' · Antibiótico' : ''}</span>
           )}</p>
           {blocked && <div role="alert" className="ui-alert ui-alert--danger">
-            {special ? inventoryEntryErrors.PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE
+            {cloudProductNotReady ? inventoryEntryErrors.PHARMACY_PRODUCT_NOT_SYNCED
+              : special ? inventoryEntryErrors.PHARMACY_SPECIAL_RECEIPT_NOT_AVAILABLE
               : pharmacy.status !== 'confirmed' ? inventoryEntryErrors.PHARMACY_CLASSIFICATION_REQUIRED
                 : !batchManaged ? inventoryEntryErrors.PHARMACY_BATCHES_REQUIRED
                   : inventoryEntryErrors.INVALID_UNIT_PRECISION}
@@ -295,7 +304,9 @@ export default function InventoryEntryModal({ product, onClose, onCompleted }) {
           {legacyReview && <div role="alert" className="ui-alert ui-alert--danger">
             {inventoryEntryErrors.PHARMACY_INVENTORY_REVIEW_REQUIRED}
           </div>}
-          {cloudConfirmation && !legacyReview && <div role="status" className="ui-alert ui-alert--info">
+          {cloudConfirmation && !legacyReview
+            && (!cloudProductNotReady || pendingCloudReceipt || confirmedSubmission || cloudEvent?.rejectionCode)
+            && <div role="status" className="ui-alert ui-alert--info">
             {sending ? 'Enviando al servidor…' : pendingCloudReceipt ? 'Recepción pendiente de verificación.'
               : cloudEvent?.rejectionCode ? inventoryEntryErrors[cloudEvent.rejectionCode] || 'Recepción rechazada. Revisa los datos.'
                 : confirmedSubmission
