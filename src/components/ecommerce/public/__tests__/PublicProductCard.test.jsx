@@ -65,6 +65,16 @@ describe('PublicProductCard', () => {
     expect(screen.getByRole('button', { name: 'Seleccionar opciones Producto sencillo' })).toBeEnabled();
   });
 
+  it('keeps unusually long product names and descriptions in the accessible card content', () => {
+    const longName = `Producto ${'extraordinario'.repeat(8)}`;
+    const longDescription = 'Descripción completa del producto. '.repeat(18).trim();
+    renderCard({ product: { ...product, name: longName, description: longDescription } });
+
+    expect(screen.getByRole('heading', { name: longName })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Ver detalle de ${longName}` })).toBeInTheDocument();
+    expect(screen.getByText(longDescription)).toBeInTheDocument();
+  });
+
   it('opens the product detail from the keyboard-focusable name', async () => {
     const user = userEvent.setup();
     const onOpenProduct = vi.fn();

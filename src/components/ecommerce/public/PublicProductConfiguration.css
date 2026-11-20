@@ -18,13 +18,14 @@
 .public-product-config {
   position: relative;
   display: flex;
-  width: min(100%, 760px);
-  max-height: 94dvh;
+  width: min(100%, 840px);
+  max-height: min(94vh, 56rem);
+  max-height: min(94dvh, 56rem);
   flex-direction: column;
   overflow: hidden;
-  border-radius: 24px 24px 0 0;
-  background: var(--public-surface, #fff);
-  color: var(--public-text, #172033);
+  border-radius: var(--store-radius-panel, 24px) var(--store-radius-panel, 24px) 0 0;
+  background: var(--store-surface, var(--public-surface, #fff));
+  color: var(--store-text-strong, var(--public-text, #172033));
   box-shadow: 0 -20px 60px rgba(15, 23, 42, 0.24);
 }
 
@@ -35,11 +36,12 @@
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  background: var(--public-surface, #fff);
+  background: var(--store-surface, var(--public-surface, #fff));
 }
 
 .public-product-config__header {
-  border-bottom: 1px solid rgba(100, 116, 139, 0.18);
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--store-border, rgba(100, 116, 139, 0.18));
 }
 
 .public-product-config__header h2 {
@@ -50,7 +52,8 @@
 }
 
 .public-product-config__body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 18px;
@@ -116,15 +119,16 @@
   width: 96px;
   height: 96px;
   overflow: hidden;
-  border-radius: 16px;
-  object-fit: cover;
+  border-radius: var(--store-radius-media, 16px);
+  object-fit: contain;
+  background: var(--store-surface-muted, #f1f5f9);
 }
 
 .public-product-config__hero p {
   display: -webkit-box;
   margin: 0 0 7px;
   overflow: hidden;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.9rem;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -132,7 +136,7 @@
 
 .public-product-config__hero .public-product-config__category {
   margin: 0 0 5px;
-  color: var(--public-primary, #2563eb);
+  color: var(--store-text-brand, var(--public-primary, #2563eb));
   font-size: 0.77rem;
   font-weight: 750;
   text-transform: uppercase;
@@ -155,14 +159,14 @@
 
 .public-product-config__hero span {
   margin-top: 4px;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.8rem;
 }
 
 .public-product-config__hero small {
   display: block;
   margin-top: 4px;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.78rem;
 }
 
@@ -187,15 +191,15 @@
 .public-product-config__group legend span {
   border-radius: 999px;
   padding: 3px 8px;
-  background: rgba(100, 116, 139, 0.1);
-  color: var(--public-muted, #64748b);
+  background: color-mix(in srgb, var(--store-text-muted, #64748b) 10%, var(--store-surface, #fff));
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.72rem;
   font-weight: 650;
 }
 
 .public-product-config__group > p {
   margin: 5px 0 12px;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.83rem;
 }
 
@@ -208,9 +212,9 @@
 .public-product-config__chip {
   min-height: 44px;
   border: 1px solid rgba(100, 116, 139, 0.28);
-  border-radius: 12px;
+  border-radius: var(--store-radius-button, 12px);
   padding: 9px 14px;
-  background: var(--public-surface, #fff);
+  background: var(--store-surface, var(--public-surface, #fff));
   color: inherit;
   font: inherit;
   font-weight: 650;
@@ -218,9 +222,9 @@
 }
 
 .public-product-config__chip.is-selected {
-  border-color: var(--public-primary, #2563eb);
-  background: color-mix(in srgb, var(--public-primary, #2563eb) 10%, white);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--public-primary, #2563eb) 18%, transparent);
+  border-color: var(--store-primary, var(--public-primary, #2563eb));
+  background: color-mix(in srgb, var(--store-primary, var(--public-primary, #2563eb)) 10%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--store-primary, var(--public-primary, #2563eb)) 18%, transparent);
 }
 
 .public-product-config__chip:disabled {
@@ -248,20 +252,20 @@
   align-items: center;
   gap: 11px;
   border: 1px solid rgba(100, 116, 139, 0.2);
-  border-radius: 13px;
+  border-radius: var(--store-radius-button, 13px);
   padding: 10px 12px;
   cursor: pointer;
 }
 
 .public-product-config__option:has(input:checked) {
-  border-color: var(--public-primary, #2563eb);
-  background: color-mix(in srgb, var(--public-primary, #2563eb) 8%, white);
+  border-color: var(--store-primary, var(--public-primary, #2563eb));
+  background: color-mix(in srgb, var(--store-primary, var(--public-primary, #2563eb)) 8%, white);
 }
 
 .public-product-config__option input {
   width: 19px;
   height: 19px;
-  accent-color: var(--public-primary, #2563eb);
+  accent-color: var(--store-primary, var(--public-primary, #2563eb));
 }
 
 .public-product-config__option span,
@@ -272,11 +276,13 @@
 
 .public-product-config__option small {
   margin-top: 2px;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
 }
 
 .public-product-config__option b {
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
   font-size: 0.86rem;
 }
 
@@ -289,9 +295,9 @@
   display: grid;
   gap: 8px;
   margin-top: 4px;
-  border-radius: 15px;
+  border-radius: var(--store-radius-card, 15px);
   padding: 14px;
-  background: rgba(100, 116, 139, 0.07);
+  background: var(--store-surface-muted, color-mix(in srgb, var(--store-text-muted, #64748b) 7%, var(--store-surface, #fff)));
 }
 
 .public-product-config__pricing div {
@@ -323,7 +329,7 @@
 
 .public-product-config__quantity > div:first-child span {
   margin-top: 3px;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.78rem;
 }
 
@@ -332,9 +338,9 @@
   gap: 10px;
   margin-top: 14px;
   border: 1px solid rgba(100, 116, 139, 0.2);
-  border-radius: 14px;
+  border-radius: var(--store-radius-card, 14px);
   padding: 12px 14px;
-  background: color-mix(in srgb, var(--public-primary, #2563eb) 4%, var(--public-surface, #fff));
+  background: color-mix(in srgb, var(--store-primary, var(--public-primary, #2563eb)) 4%, var(--store-surface, var(--public-surface, #fff)));
 }
 
 .public-product-config__summary h3 {
@@ -360,7 +366,7 @@
 
 .public-product-config__summary-items dt {
   flex: 0 1 38%;
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.84rem;
 }
 
@@ -413,7 +419,7 @@
 }
 
 .public-product-config__summary-totals span {
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
 }
 
 .public-product-config__summary-totals strong {
@@ -422,14 +428,16 @@
 }
 
 .public-product-config__summary-totals .is-total strong {
-  color: var(--public-text, #172033);
+  color: var(--store-text-strong, var(--public-text, #172033));
   font-size: 1.02rem;
 }
 
 .public-product-config__footer {
   position: sticky;
   bottom: 0;
-  border-top: 1px solid rgba(100, 116, 139, 0.18);
+  flex: 0 0 auto;
+  border-top: 1px solid var(--store-border, rgba(100, 116, 139, 0.18));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
   box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.08);
 }
 
@@ -439,7 +447,7 @@
 }
 
 .public-product-config__footer > div span {
-  color: var(--public-muted, #64748b);
+  color: var(--store-text-muted, var(--public-muted, #64748b));
   font-size: 0.75rem;
 }
 
@@ -450,7 +458,9 @@
 
 .public-product-config__footer .ui-button {
   min-height: 48px;
-  min-width: 170px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .public-cart-item__configuration {
@@ -493,8 +503,10 @@
   }
 
   .public-product-config {
-    max-height: min(88dvh, 820px);
-    border-radius: 24px;
+    max-height: min(88vh, 860px);
+    max-height: min(88dvh, 860px);
+    width: min(100%, 900px);
+    border-radius: var(--store-radius-panel, 24px);
   }
 
   .public-product-config__header,
@@ -520,4 +532,12 @@
   .public-product-config__spinner {
     animation: none;
   }
+}
+
+.public-product-config__header button:focus-visible,
+.public-product-config__footer button:focus-visible,
+.public-product-config__body button:focus-visible,
+.public-product-config__body input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--store-focus-ring, var(--store-primary, #2563eb)) 38%, transparent);
+  outline-offset: 2px;
 }

@@ -10,11 +10,21 @@ const previewModalStyles = readFileSync(
   new URL('../../components/ecommerce/site-builder/EcommerceSiteBuilderPreviewModal.css', import.meta.url),
   'utf8'
 );
+const detailModalStyles = readFileSync(
+  new URL('../../components/ecommerce/public/PublicProductDetailModal.css', import.meta.url),
+  'utf8'
+);
+const configurationModalStyles = readFileSync(
+  new URL('../../components/ecommerce/public/PublicProductConfiguration.css', import.meta.url),
+  'utf8'
+);
 
 const compactWhitespace = (value) => value.replace(/\s+/g, ' ');
 const normalizedPublicStyles = compactWhitespace(publicStyles);
 const normalizedPreviewStyles = compactWhitespace(previewStyles);
 const normalizedPreviewModalStyles = compactWhitespace(previewModalStyles);
+const normalizedDetailModalStyles = compactWhitespace(detailModalStyles);
+const normalizedConfigurationModalStyles = compactWhitespace(configurationModalStyles);
 const sharedRendererSelectors = publicStyles.match(/^[^\n{]*\.ecommerce-site-renderer[^\n{]*\{/gm) || [];
 
 describe('public ecommerce site layout styles', () => {
@@ -54,12 +64,30 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPublicStyles).toContain('grid-template-columns: 7rem minmax(0, 1fr)');
   });
 
-  it('uses the shared renderer container to collapse grid to one column on mobile', () => {
+  it('keeps the selected grid view compact on mobile and the list view single-column', () => {
     expect(normalizedPublicStyles).toContain('container-name: ecommerce-site');
-    expect(normalizedPublicStyles).toContain('@container ecommerce-site (max-width: 34rem)');
     expect(normalizedPublicStyles).toMatch(
-      /@container ecommerce-site \(max-width: 34rem\).*?catalog.*?grid-template-columns: minmax\(0, 1fr\)/
+      /data-site-section="catalog"\] \.public-catalog\.public-catalog--view-grid \.public-catalog__grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/
     );
+    expect(normalizedPublicStyles).toMatch(
+      /data-site-section="catalog"\] \.public-catalog\.public-catalog--view-list \.public-catalog__grid \{ grid-template-columns: minmax\(0, 1fr\)/
+    );
+    expect(normalizedPublicStyles).toContain('flex-wrap: wrap');
+    expect(normalizedPublicStyles).toContain('overflow: visible');
+    expect(normalizedPublicStyles).toContain('-webkit-line-clamp: 2');
+    expect(normalizedPublicStyles).toContain('min-height: 2.75rem');
+  });
+
+  it('fits product detail and configuration dialogs to the viewport and keeps purchase footers visible', () => {
+    expect(normalizedDetailModalStyles).toContain('max-height: min(94dvh, 56rem)');
+    expect(normalizedDetailModalStyles).toContain('position: sticky');
+    expect(normalizedDetailModalStyles).toContain('env(safe-area-inset-bottom)');
+    expect(normalizedDetailModalStyles).toContain('grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr)');
+    expect(normalizedConfigurationModalStyles).toContain('max-height: min(94dvh, 56rem)');
+    expect(normalizedConfigurationModalStyles).toContain('position: sticky');
+    expect(normalizedConfigurationModalStyles).toContain('object-fit: contain');
+    expect(normalizedConfigurationModalStyles).toContain('--store-primary');
+    expect(normalizedConfigurationModalStyles).toContain('env(safe-area-inset-bottom)');
   });
 
   it('uses renderer container queries for virtual desktop and mobile content layouts', () => {

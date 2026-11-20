@@ -153,35 +153,37 @@ function PublicProductDetailModal({
             eager
           />
 
-          {product.categoryName ? <p className="public-product-detail__category">{product.categoryName}</p> : null}
-          {product.description ? <p className="public-product-detail__description">{product.description}</p> : null}
+          <div className="public-product-detail__content">
+            {product.categoryName ? <p className="public-product-detail__category">{product.categoryName}</p> : null}
+            {product.description ? <p className="public-product-detail__description">{product.description}</p> : null}
 
-          <div className="public-product-detail__price-block">
-            <strong>{formatCurrency(product.price, product.currency)}</strong>
-            {stockLabel ? (
-              <span className={`public-product-detail__availability${isAvailable ? '' : ' is-unavailable'}`}>
-                {stockLabel}
-              </span>
+            <div className="public-product-detail__price-block">
+              <strong>{formatCurrency(product.price, product.currency)}</strong>
+              {stockLabel ? (
+                <span className={`public-product-detail__availability${isAvailable ? '' : ' is-unavailable'}`}>
+                  {stockLabel}
+                </span>
+              ) : null}
+            </div>
+
+            {productHasWholesale ? (
+              <div className="public-product-detail__wholesale" aria-label="Precios por mayoreo">
+                <h3>Precios por mayoreo</h3>
+                {product.wholesaleTiers.map((tier) => (
+                  <p key={tier.sourceTierRef || tier.minQuantity}>
+                    <span>{tier.minQuantity} o más</span>
+                    <strong>{formatCurrency(tier.unitPrice, product.currency)} c/u</strong>
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            {!isAvailable ? (
+              <p className="public-product-detail__unavailable" role="status">
+                Puedes consultar el producto, pero no está disponible para compra.
+              </p>
             ) : null}
           </div>
-
-          {productHasWholesale ? (
-            <div className="public-product-detail__wholesale" aria-label="Precios por mayoreo">
-              <h3>Precios por mayoreo</h3>
-              {product.wholesaleTiers.map((tier) => (
-                <p key={tier.sourceTierRef || tier.minQuantity}>
-                  <span>{tier.minQuantity} o más</span>
-                  <strong>{formatCurrency(tier.unitPrice, product.currency)} c/u</strong>
-                </p>
-              ))}
-            </div>
-          ) : null}
-
-          {!isAvailable ? (
-            <p className="public-product-detail__unavailable" role="status">
-              Puedes consultar el producto, pero no está disponible para compra.
-            </p>
-          ) : null}
         </div>
 
         <footer className="public-product-detail__footer">
