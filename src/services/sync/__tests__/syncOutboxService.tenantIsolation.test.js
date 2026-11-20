@@ -34,7 +34,7 @@ beforeEach(async () => {
 
   database = new Dexie(`lanzo-outbox-isolation-${crypto.randomUUID()}`);
   database.version(1).stores({
-    sync_outbox: 'id,[status+createdAt],status,licenseKey'
+    sync_outbox: 'id,[status+createdAt],status,licenseKey,entityType'
   });
   await database.open();
 
@@ -62,6 +62,18 @@ afterEach(async () => {
 });
 
 describe('syncOutboxService tenant isolation', () => {
+  it('asserts the local tenant before an explicit category recovery read', async () => {
+    await expect(syncOutboxService.assertTenantAccess({ licenseKey: 'TENANT-B' })).resolves.toBe(true);
+    expect(assertLocalTenantSyncAccess).toHaveBeenCalledWith(
+      { license_key: 'TENANT-B' },
+      { reason: 'outbox_tenant_assertion' }
+    );
+
+    activeLicenseKey = 'TENANT-A';
+    await expect(syncOutboxService.assertTenantAccess({ licenseKey: 'TENANT-B' }))
+      .rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
+  });
+
   it('pauses only the affected protocol family without consuming retries and resumes after compatibility', async () => {
     const customer = {
       ...row({ id: 'customer-op', licenseKey: 'TENANT-B' }),
@@ -114,6 +126,17 @@ describe('syncOutboxService tenant isolation', () => {
       status: 'pending',
       licenseKey: null
     });
+  });
+
+  it('refuses category recovery when a same-ID outbox operation has another tenant owner', async () => {
+    await database.table('sync_outbox').bulkPut([
+      { ...row({ id: 'foreign-category-op', licenseKey: 'TENANT-A' }), entityType: 'category', entityId: 'category-1' },
+      { ...row({ id: 'active-category-op', licenseKey: 'TENANT-B' }), entityType: 'category', entityId: 'category-1' }
+    ]);
+
+    await expect(syncOutboxService.listOperationsForEntity({
+      licenseKey: 'TENANT-B', entityType: 'category', entityId: 'category-1'
+    })).rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
   });
 
   it('resets stuck processing rows only for the active tenant', async () => {

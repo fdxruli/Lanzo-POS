@@ -227,6 +227,12 @@ export const productLocalRepository = {
     return loadData(STORES.CATEGORIES, categoryId);
   },
 
+  async getDeletedCategoryById(categoryId) {
+    if (!categoryId) return null;
+    await ensureOpen();
+    return db.table(STORES.DELETED_CATEGORIES).get(categoryId);
+  },
+
   async getProductById(productId) {
     if (!productId) return null;
     return loadData(STORES.MENU, productId);

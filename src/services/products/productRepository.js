@@ -20,7 +20,8 @@ import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
 import {
   ensureCloudProductCategory,
-  getProductCloudConfirmationError
+  getProductCloudConfirmationError,
+  recoverLocalCategoryInCloud
 } from './productCategoryCloudGate';
 import { createApparelSkuCandidate, resolveProductRubroContext } from './apparelSku';
 import { productConflictService } from './productConflictService';
@@ -545,6 +546,44 @@ export const productRepository = {
     }
   },
 
+  async confirmLocalCategoryInCloud(categoryId) {
+    const mode = getMode();
+    if (!mode.cloudEnabled || mode.licenseDetails?.valid !== true || mode.appStatus !== 'ready') {
+      return {
+        success: false,
+        code: 'PRODUCT_CATEGORY_RECOVERY_LICENSE_INACTIVE',
+        message: 'Se requiere una licencia activa y sincronización de Productos en la nube para confirmar esta categoría.'
+      };
+    }
+
+    try {
+      const actorHandle = captureProductInventoryMutation({ products: true });
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+      await syncOutboxService.assertTenantAccess({ licenseKey: mode.licenseKey });
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+
+      const category = await recoverLocalCategoryInCloud({
+        licenseKey: mode.licenseKey,
+        categoryId,
+        actorHandle
+      });
+
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+      notifyProductsChanged({
+        source: 'productRepository.confirmLocalCategoryInCloud',
+        categoryId
+      });
+      return { success: true, category, id: category?.id };
+    } catch (error) {
+      return {
+        success: false,
+        code: error?.code || 'PRODUCT_CATEGORY_RECOVERY_FAILED',
+        message: error?.message || 'No se pudo confirmar la categoría en la nube.',
+        error
+      };
+    }
+  },
+
   async deleteCategory(categoryId, options = {}) {
     const mode = getMode();
     const actorHandle = captureProductInventoryMutation({ products: true });
@@ -779,6 +818,7 @@ export const productRepository = {
       return {
         success: false,
         code: error?.code || 'PRODUCT_CLOUD_ERROR',
+        category: error?.category || null,
         message: error?.message || 'Error al guardar producto cloud.',
         error
       };
