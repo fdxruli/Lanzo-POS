@@ -148,6 +148,21 @@ describe('EcommerceSiteRenderer', () => {
     expect(document.querySelector('[data-site-section="catalog"][data-site-layout="compact"]')).toBeTruthy();
   });
 
+  it.each(['classic', 'showcase', 'compact'])('keeps the shared header available in the %s template and preview', (templateCode) => {
+    const siteDocument = createDefaultEcommerceSiteDocument({ templateCode });
+    renderSite({
+      siteDocument,
+      portal: { ...portal, templateCode },
+      mode: 'preview'
+    });
+
+    expect(document.querySelector(`[data-site-template="${templateCode}"]`)).toBeTruthy();
+    expect(document.querySelector('[data-site-section="header"] [data-cover-orientation="landscape"]')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Tienda' })).toBeTruthy();
+    expect(screen.getByText('Información')).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
+  });
+
   it('uses the same derived profile for preview and public render modes without global styles', () => {
     const siteDocument = createDefaultEcommerceSiteDocument({
       templateCode: 'showcase',

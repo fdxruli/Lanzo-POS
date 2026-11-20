@@ -18,6 +18,8 @@ function PublicSafeImage({
   className = '',
   fallbackLabel = 'Imagen no disponible',
   eager = false,
+  onLoad,
+  onError,
 }) {
   const [failedSrc, setFailedSrc] = useState(null);
   const safeSrc = isSafePublicImageUrl(src) ? src : null;
@@ -37,7 +39,11 @@ function PublicSafeImage({
       src={safeSrc}
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
-      onError={() => setFailedSrc(safeSrc)}
+      onLoad={onLoad}
+      onError={(event) => {
+        setFailedSrc(safeSrc);
+        onError?.(event);
+      }}
     />
   );
 }
