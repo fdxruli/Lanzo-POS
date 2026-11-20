@@ -327,6 +327,105 @@
   font-size: 0.78rem;
 }
 
+.public-product-config__summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border: 1px solid rgba(100, 116, 139, 0.2);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--public-primary, #2563eb) 4%, var(--public-surface, #fff));
+}
+
+.public-product-config__summary h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.public-product-config__summary-items {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.public-product-config__summary-items > div,
+.public-product-config__summary-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.public-product-config__summary-items dt {
+  flex: 0 1 38%;
+  color: var(--public-muted, #64748b);
+  font-size: 0.84rem;
+}
+
+.public-product-config__summary-items dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.public-product-config__summary-pending {
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(217, 119, 6, 0.09);
+  color: #854d0e;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.public-product-config__summary-pending ul {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.public-product-config__summary-error {
+  margin: 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: rgba(220, 38, 38, 0.09);
+  color: #b91c1c;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  outline: none;
+}
+
+.public-product-config__summary-totals {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid rgba(100, 116, 139, 0.18);
+  padding-top: 8px;
+  font-size: 0.86rem;
+}
+
+.public-product-config__summary-totals > div {
+  align-items: baseline;
+}
+
+.public-product-config__summary-totals span {
+  color: var(--public-muted, #64748b);
+}
+
+.public-product-config__summary-totals strong {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.public-product-config__summary-totals .is-total strong {
+  color: var(--public-text, #172033);
+  font-size: 1.02rem;
+}
+
 .public-product-config__footer {
   position: sticky;
   bottom: 0;
