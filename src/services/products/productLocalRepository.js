@@ -560,11 +560,15 @@ export const productLocalRepository = {
     }, { ...sync, deletionPending: true, lastSyncedAt: null });
   },
 
-  async applyCloudCategory(category) {
+  async applyCloudCategory(category, { beforeWrite = null } = {}) {
     if (!category?.id) return null;
     await ensureOpen();
     const existing = await db.table(STORES.CATEGORIES).get(category.id);
     const local = cloudCategoryToLocal(category, existing);
+    // Callers performing an actor-bound Cloud mutation can revalidate their
+    // captured authority after this method's async reads and immediately
+    // before the Dexie write.
+    if (typeof beforeWrite === 'function') await beforeWrite();
     await db.table(STORES.CATEGORIES).put(local);
     return local;
   },

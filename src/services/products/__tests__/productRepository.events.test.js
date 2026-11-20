@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getDeletedCategoryById: vi.fn(),
   getOperation: vi.fn(),
   listOperationsForEntity: vi.fn(),
+  assertTenantAccess: vi.fn(),
   markSynced: vi.fn(),
   saveBatchLocal: vi.fn(),
   saveCategoryLocal: vi.fn(),
@@ -71,11 +72,12 @@ vi.mock('../../sync/syncOutboxService', () => ({
     enqueueOperation: mocks.enqueue,
     getOperation: mocks.getOperation,
     listOperationsForEntity: mocks.listOperationsForEntity,
+    assertTenantAccess: mocks.assertTenantAccess,
     markSynced: mocks.markSynced
   }
 }));
 vi.mock('../../sync/syncConstants', () => ({
-  getLicenseKeyFromDetails: () => 'license-key',
+  getLicenseKeyFromDetails: (details) => details?.license_key || details?.licenseKey || 'license-key',
   isCloudProductsSyncEnabled: () => mocks.cloudEnabled,
   SYNC_ENTITY_TYPES: {
     CATEGORY: 'category',
@@ -183,6 +185,7 @@ beforeEach(() => {
   mocks.getDeletedCategoryById.mockResolvedValue(null);
   mocks.getOperation.mockResolvedValue(null);
   mocks.listOperationsForEntity.mockResolvedValue([]);
+  mocks.assertTenantAccess.mockResolvedValue(true);
   mocks.markSynced.mockResolvedValue(undefined);
   mocks.getBatchById.mockResolvedValue(null);
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
@@ -216,6 +219,75 @@ describe('productRepository directed catalog events', () => {
     });
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
     expect(mocks.getCategoryById).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the captured actor after the Cloud category query before any write', async () => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    mocks.getCategoryById.mockResolvedValueOnce({ id: 'category-legacy', name: 'Generales QA', isActive: true });
+    let actorRevoked = false;
+    mocks.assertProductActorCurrent.mockImplementation(() => {
+      if (actorRevoked) throw Object.assign(new Error('permission revoked'), { code: 'ACTOR_PERMISSION_DENIED' });
+    });
+    mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
+      actorRevoked = true;
+      return { success: true, categories: [], has_more: false };
+    });
+
+    await expect(productRepository.confirmLocalCategoryInCloud('category-legacy')).resolves.toMatchObject({
+      success: false,
+      code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED',
+      message: expect.stringMatching(/sesión o negocio cambió/i)
+    });
+
+    expect(mocks.assertTenantAccess).toHaveBeenCalledWith({ licenseKey: 'license-key' });
+    expect(mocks.upsertCategory).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it('does not project a Cloud category after the active local tenant changes during the query', async () => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    const category = { id: 'category-legacy', name: 'Generales QA', is_active: true };
+    mocks.getCategoryById.mockResolvedValueOnce({ id: category.id, name: category.name, isActive: true });
+    let tenantChanged = false;
+    mocks.assertTenantAccess.mockImplementation(async () => {
+      if (tenantChanged) throw new Error('LOCAL_TENANT_SYNC_BLOCKED');
+      return true;
+    });
+    mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
+      tenantChanged = true;
+      return { success: true, categories: [category], has_more: false };
+    });
+
+    await expect(productRepository.confirmLocalCategoryInCloud(category.id)).resolves.toMatchObject({
+      success: false,
+      code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED',
+      message: expect.stringMatching(/verifica su estado en Cloud/i)
+    });
+
+    expect(mocks.upsertCategory).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it('rejects recovery after the active license changes during the Cloud query', async () => {
+    mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
+    mocks.getCategoryById.mockResolvedValueOnce({ id: 'category-legacy', name: 'Generales QA', isActive: true });
+    mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
+      mocks.licenseDetails = { valid: true, license_key: 'other-license' };
+      return { success: true, categories: [], has_more: false };
+    });
+
+    await expect(productRepository.confirmLocalCategoryInCloud('category-legacy')).resolves.toMatchObject({
+      success: false,
+      code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+    });
+
+    expect(mocks.upsertCategory).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
   });
 
   it('explains pending medical classification before attempting activation', async () => {
@@ -607,6 +679,7 @@ describe('productRepository directed catalog events', () => {
 
   it('syncs an authorized pending category for this tenant before the product RPC', async () => {
     mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
     mocks.prepareProduct.mockResolvedValueOnce({
       ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
     });
@@ -643,6 +716,7 @@ describe('productRepository directed catalog events', () => {
 
   it('does not call the product RPC or show success when Cloud rejects its pending category', async () => {
     mocks.cloudEnabled = true;
+    mocks.licenseDetails = { valid: true, license_key: 'license-key' };
     mocks.prepareProduct.mockResolvedValueOnce({
       ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
     });

@@ -152,7 +152,25 @@ const inspectRecoveryCloudCatalog = async ({ licenseKey, categoryId, categoryNam
   return existing;
 };
 
-const syncPendingCategory = async ({ licenseKey, categoryId, actorHandle }) => {
+const requireCurrentCategoryContext = async (assertContextCurrent) => {
+  if (typeof assertContextCurrent !== 'function') {
+    throw categoryConfirmationFailure(
+      'No se pudo validar la sesión y el negocio actuales. Verifica la categoría antes de continuar.',
+      'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+    );
+  }
+  await assertContextCurrent();
+};
+
+const applyConfirmedRecoveryCategory = async (category, assertContextCurrent) => {
+  await requireCurrentCategoryContext(assertContextCurrent);
+  await productLocalRepository.applyCloudCategory(category, {
+    beforeWrite: () => requireCurrentCategoryContext(assertContextCurrent)
+  });
+  return category;
+};
+
+const syncPendingCategory = async ({ licenseKey, categoryId, actorHandle, assertContextCurrent }) => {
   const localCategory = await productLocalRepository.getCategoryById(categoryId);
   if (!localCategory || !categoryIsActive(localCategory)) {
     throw categoryConfirmationFailure('La categoría seleccionada no está activa en este negocio. Actualiza las categorías e inténtalo de nuevo.');
@@ -219,6 +237,7 @@ const syncPendingCategory = async ({ licenseKey, categoryId, actorHandle }) => {
     assertProductInventoryOperationActorCurrent(operation);
   }
 
+  await requireCurrentCategoryContext(assertContextCurrent);
   const response = await productCloudRepository.upsertCategory({
     licenseKey,
     category: categoryPayload,
@@ -236,24 +255,27 @@ const syncPendingCategory = async ({ licenseKey, categoryId, actorHandle }) => {
     );
   }
 
+  // Keep the outbox receipt and local category projection bound to the actor
+  // and tenant that authorized the pending operation.
+  await requireCurrentCategoryContext(assertContextCurrent);
   await syncOutboxService.markSynced(operation.id || operation.idempotencyKey, response, { licenseKey });
-  await productLocalRepository.applyCloudCategory(savedCategory);
-  return savedCategory;
+  return applyConfirmedRecoveryCategory(savedCategory, assertContextCurrent);
 };
 
 const recoveryIdempotencyKey = (categoryId) => (
   `product:category:recovery:${encodeURIComponent(categoryId)}`
 );
 
-const applyConfirmedRecoveryCategory = async (category) => {
-  await productLocalRepository.applyCloudCategory(category);
-  return category;
-};
-
-export const recoverLocalCategoryInCloud = async ({ licenseKey, categoryId, actorHandle = null } = {}) => {
+export const recoverLocalCategoryInCloud = async ({
+  licenseKey,
+  categoryId,
+  actorHandle = null,
+  assertContextCurrent
+} = {}) => {
   if (!licenseKey || !categoryId) {
     throw categoryConfirmationFailure('No se pudo comprobar el negocio o la categoría local.', 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_MISSING');
   }
+  await requireCurrentCategoryContext(assertContextCurrent);
 
   const localCategory = await productLocalRepository.getCategoryById(categoryId);
   if (!localCategory || !categoryIsActive(localCategory) || !String(localCategory.name || '').trim()) {
@@ -293,22 +315,28 @@ export const recoverLocalCategoryInCloud = async ({ licenseKey, categoryId, acto
   if (categoryOperations.length > 0) {
     // A newer tab may have queued or synced the original operation since the
     // product form offered recovery. Reuse the existing PR #568 gate.
-    const confirmed = await ensureCloudProductCategory({ licenseKey, categoryId, actorHandle });
+    const confirmed = await ensureCloudProductCategory({
+      licenseKey, categoryId, actorHandle, assertContextCurrent
+    });
     return confirmed.category;
   }
 
+  await requireCurrentCategoryContext(assertContextCurrent);
   const existingCloudCategory = await inspectRecoveryCloudCatalog({
     licenseKey,
     categoryId,
     categoryName: localCategory.name
   });
-  if (existingCloudCategory) return applyConfirmedRecoveryCategory(existingCloudCategory);
+  if (existingCloudCategory) {
+    return applyConfirmedRecoveryCategory(existingCloudCategory, assertContextCurrent);
+  }
 
   const payload = categoryToCloudPayload(localCategory);
   const idempotencyKey = recoveryIdempotencyKey(categoryId);
   let response;
 
   try {
+    await requireCurrentCategoryContext(assertContextCurrent);
     response = await productCloudRepository.upsertCategory({
       licenseKey,
       category: payload,
@@ -321,16 +349,21 @@ export const recoverLocalCategoryInCloud = async ({ licenseKey, categoryId, acto
     });
   } catch (error) {
     if (!isRetryableCategoryMutationError(error)) throw error;
+    // Do not continue a timeout reconciliation in a new actor or tenant.
+    await requireCurrentCategoryContext(assertContextCurrent);
     const confirmedAfterTimeout = await inspectRecoveryCloudCatalog({
       licenseKey,
       categoryId,
       categoryName: localCategory.name
     });
-    if (confirmedAfterTimeout) return applyConfirmedRecoveryCategory(confirmedAfterTimeout);
+    if (confirmedAfterTimeout) {
+      return applyConfirmedRecoveryCategory(confirmedAfterTimeout, assertContextCurrent);
+    }
 
     // A read confirmed the ID is still absent. Retry once with the same key;
     // the server receipt makes a delayed first request idempotent.
     try {
+      await requireCurrentCategoryContext(assertContextCurrent);
       response = await productCloudRepository.upsertCategory({
         licenseKey,
         category: payload,
@@ -340,12 +373,15 @@ export const recoverLocalCategoryInCloud = async ({ licenseKey, categoryId, acto
       });
     } catch (retryError) {
       if (!isRetryableCategoryMutationError(retryError)) throw retryError;
+      await requireCurrentCategoryContext(assertContextCurrent);
       const confirmedAfterRetryTimeout = await inspectRecoveryCloudCatalog({
         licenseKey,
         categoryId,
         categoryName: localCategory.name
       });
-      if (confirmedAfterRetryTimeout) return applyConfirmedRecoveryCategory(confirmedAfterRetryTimeout);
+      if (confirmedAfterRetryTimeout) {
+        return applyConfirmedRecoveryCategory(confirmedAfterRetryTimeout, assertContextCurrent);
+      }
       throw retryError;
     }
   }
@@ -363,10 +399,15 @@ export const recoverLocalCategoryInCloud = async ({ licenseKey, categoryId, acto
     );
   }
 
-  return applyConfirmedRecoveryCategory(savedCategory);
+  return applyConfirmedRecoveryCategory(savedCategory, assertContextCurrent);
 };
 
-export const ensureCloudProductCategory = async ({ licenseKey, categoryId, actorHandle = null } = {}) => {
+export const ensureCloudProductCategory = async ({
+  licenseKey,
+  categoryId,
+  actorHandle = null,
+  assertContextCurrent
+} = {}) => {
   if (!categoryId) return { success: true, category: null };
 
   const cloudCategory = await findCloudCategory(licenseKey, categoryId);
@@ -377,7 +418,7 @@ export const ensureCloudProductCategory = async ({ licenseKey, categoryId, actor
     return { success: true, category: cloudCategory };
   }
 
-  const category = await syncPendingCategory({ licenseKey, categoryId, actorHandle });
+  const category = await syncPendingCategory({ licenseKey, categoryId, actorHandle, assertContextCurrent });
   return { success: true, category };
 };
 

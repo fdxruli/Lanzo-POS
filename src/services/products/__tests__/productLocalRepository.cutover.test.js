@@ -148,6 +148,28 @@ describe('product local catalog cutover intent', () => {
     expect(tables.get('menu').where).toHaveBeenCalledWith('categoryId');
   });
 
+  it('revalidates the recovery context after the category read and before Dexie writes', async () => {
+    rows.categories.push({ id: 'category-recovery', name: 'Local', isActive: true });
+    const categoriesTable = tableFor('categories');
+    tables.set('categories', categoriesTable);
+    let contextCurrent = true;
+    categoriesTable.get.mockImplementationOnce(async (id) => {
+      contextCurrent = false;
+      return rows.categories.find((row) => row.id === id) || null;
+    });
+    const beforeWrite = vi.fn(() => {
+      if (!contextCurrent) throw new Error('PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED');
+    });
+
+    await expect(productLocalRepository.applyCloudCategory({
+      id: 'category-recovery', name: 'Cloud', is_active: true
+    }, { beforeWrite })).rejects.toThrow('PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED');
+
+    expect(beforeWrite).toHaveBeenCalledOnce();
+    expect(categoriesTable.put).not.toHaveBeenCalled();
+    expect(rows.categories[0].name).toBe('Local');
+  });
+
   it('exposes active mutations and product/category/batch tombstones to cutover recovery', async () => {
     rows.menu.push({ id: 'updated-product', name: 'Updated', syncStatus: 'local', serverVersion: 4 });
     rows.menu.push({

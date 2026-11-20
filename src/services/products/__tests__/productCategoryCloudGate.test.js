@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listOperationsForEntity: vi.fn(),
   markSynced: vi.fn(),
   assertOperationActorCurrent: vi.fn(),
+  assertContextCurrent: vi.fn(),
   upsertCategory: vi.fn(),
   applyCloudCategory: vi.fn()
 }));
@@ -55,8 +56,21 @@ beforeEach(() => {
   mocks.listOperationsForEntity.mockResolvedValue([]);
   mocks.markSynced.mockResolvedValue(undefined);
   mocks.assertOperationActorCurrent.mockReturnValue(undefined);
+  mocks.assertContextCurrent.mockResolvedValue(undefined);
   mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'cat-qa', is_active: true } });
-  mocks.applyCloudCategory.mockResolvedValue({ id: 'cat-qa' });
+  mocks.applyCloudCategory.mockImplementation(async (category, { beforeWrite } = {}) => {
+    if (beforeWrite) await beforeWrite();
+    return category;
+  });
+});
+
+const ensureCategory = (args) => ensureCloudProductCategory({
+  ...args,
+  assertContextCurrent: args.assertContextCurrent || mocks.assertContextCurrent
+});
+const recoverCategory = (args) => recoverLocalCategoryInCloud({
+  ...args,
+  assertContextCurrent: args.assertContextCurrent || mocks.assertContextCurrent
 });
 
 describe('product category Cloud gate', () => {
@@ -64,7 +78,7 @@ describe('product category Cloud gate', () => {
     const category = { id: 'cat-qa', is_active: true };
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [category], has_more: false });
 
-    await expect(ensureCloudProductCategory({ licenseKey: 'qa-license', categoryId: 'cat-qa' }))
+    await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-qa' }))
       .resolves.toEqual({ success: true, category });
     expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       licenseKey: 'qa-license', entityType: 'categories', force: true, includeDeleted: true
@@ -92,7 +106,7 @@ describe('product category Cloud gate', () => {
     mocks.getOperation.mockResolvedValueOnce(operation);
     mocks.listOperationsForEntity.mockResolvedValueOnce([operation]);
 
-    await expect(ensureCloudProductCategory({
+    await expect(ensureCategory({
       licenseKey: 'qa-license', categoryId: 'cat-qa', actorHandle: { actorId: 'staff-1' }
     })).resolves.toMatchObject({ success: true, category: { id: 'cat-qa' } });
 
@@ -100,16 +114,20 @@ describe('product category Cloud gate', () => {
     expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
       licenseKey: 'qa-license', category, idempotencyKey: 'category-operation', actorHandle: { actorId: 'staff-1' }
     }));
-    expect(mocks.applyCloudCategory).toHaveBeenCalledWith({ id: 'cat-qa', is_active: true });
+    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(
+      { id: 'cat-qa', is_active: true },
+      expect.objectContaining({ beforeWrite: expect.any(Function) })
+    );
     expect(mocks.markSynced).toHaveBeenCalledWith('category-operation', expect.objectContaining({ success: true }), {
       licenseKey: 'qa-license'
     });
+    expect(mocks.assertContextCurrent).toHaveBeenCalled();
   });
 
   it('offers explicit recovery for an active local category with no outbox operation', async () => {
     mocks.getCategoryById.mockResolvedValueOnce({ id: 'cat-stale', name: 'Stale', syncStatus: 'synced', serverVersion: 2 });
 
-    await expect(ensureCloudProductCategory({ licenseKey: 'qa-license', categoryId: 'cat-stale' }))
+    await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-stale' }))
       .rejects.toMatchObject({
         code: 'PRODUCT_CATEGORY_RECOVERY_REQUIRED',
         category: { id: 'cat-stale', name: 'Stale' }
@@ -123,7 +141,7 @@ describe('product category Cloud gate', () => {
     });
     mocks.listOperationsForEntity.mockRejectedValueOnce(Object.assign(new Error('OUTBOX_TENANT_MISMATCH'), { code: 'OUTBOX_TENANT_MISMATCH' }));
 
-    await expect(ensureCloudProductCategory({ licenseKey: 'qa-license', categoryId: 'cat-other' }))
+    await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-other' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_TENANT_UNVERIFIED' });
     expect(mocks.getOperation).not.toHaveBeenCalled();
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
@@ -145,9 +163,45 @@ describe('product category Cloud gate', () => {
       throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
     });
 
-    await expect(ensureCloudProductCategory({ licenseKey: 'qa-license', categoryId: 'cat-qa' }))
+    await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-qa' }))
       .rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a pending category synced or project it after its actor changes', async () => {
+    let actorCurrent = true;
+    const assertContextCurrent = vi.fn(() => {
+      if (!actorCurrent) {
+        throw Object.assign(new Error('actor context changed'), {
+          code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+        });
+      }
+    });
+    const category = { id: 'cat-pending-revoked', name: 'Generales QA', is_active: true };
+    mocks.getCategoryById.mockResolvedValueOnce({
+      ...category, isActive: true, syncStatus: 'pending', pendingOperationId: 'pending-category-op'
+    });
+    const operation = {
+      id: 'pending-category-op', idempotencyKey: 'pending-category-op', licenseKey: 'qa-license',
+      entityType: 'category', operation: 'upsert', entityId: category.id, status: 'pending',
+      payload: { category, expectedVersion: 0 }
+    };
+    mocks.getOperation.mockResolvedValueOnce(operation);
+    mocks.listOperationsForEntity.mockResolvedValueOnce([operation]);
+    mocks.upsertCategory.mockImplementationOnce(async () => {
+      actorCurrent = false;
+      return { success: true, category };
+    });
+
+    await expect(ensureCategory({
+      licenseKey: 'qa-license', categoryId: category.id, assertContextCurrent
+    })).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED' });
+
+    expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: 'pending-category-op'
+    }));
+    expect(mocks.markSynced).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
   });
 
   it('does not treat a partial product receipt as category confirmation', () => {
@@ -177,7 +231,7 @@ describe('product category Cloud gate', () => {
       idempotency_key: idempotencyKey
     }));
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-legacy' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-legacy' }))
       .resolves.toMatchObject({ id: 'cat-legacy', name: 'Generales QA', is_active: true });
 
     expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
@@ -186,7 +240,68 @@ describe('product category Cloud gate', () => {
       expectedVersion: 0,
       idempotencyKey: 'product:category:recovery:cat-legacy'
     }));
-    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 'cat-legacy' }));
+    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'cat-legacy' }),
+      expect.objectContaining({ beforeWrite: expect.any(Function) })
+    );
+    expect(mocks.assertContextCurrent).toHaveBeenCalled();
+  });
+
+  it('does not project a successful RPC after the actor changes', async () => {
+    let actorCurrent = true;
+    const assertContextCurrent = vi.fn(() => {
+      if (!actorCurrent) {
+        throw Object.assign(new Error('actor context changed'), {
+          code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+        });
+      }
+    });
+    const localCategory = { id: 'cat-after-rpc', name: 'Generales QA', isActive: true };
+    mocks.getCategoryById.mockResolvedValueOnce(localCategory);
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.upsertCategory.mockImplementationOnce(async ({ category, idempotencyKey }) => {
+      actorCurrent = false;
+      return {
+        success: true,
+        category: { ...category, is_active: true, server_version: 1 },
+        idempotency_key: idempotencyKey
+      };
+    });
+
+    await expect(recoverCategory({
+      licenseKey: 'qa-license', categoryId: localCategory.id, assertContextCurrent
+    })).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED' });
+
+    expect(mocks.upsertCategory).toHaveBeenCalledOnce();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
+  });
+
+  it('does not query or apply after a timeout when the actor changed before reconciliation', async () => {
+    let actorCurrent = true;
+    const assertContextCurrent = vi.fn(() => {
+      if (!actorCurrent) {
+        throw Object.assign(new Error('actor context changed'), {
+          code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+        });
+      }
+    });
+    const localCategory = { id: 'cat-timeout-revoked', name: 'Higiene QA', isActive: true };
+    mocks.getCategoryById.mockResolvedValueOnce(localCategory);
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.upsertCategory.mockImplementationOnce(async () => {
+      actorCurrent = false;
+      const error = new Error('network timeout after commit');
+      error.code = '57014';
+      throw error;
+    });
+
+    await expect(recoverCategory({
+      licenseKey: 'qa-license', categoryId: localCategory.id, assertContextCurrent
+    })).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED' });
+
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledOnce();
+    expect(mocks.upsertCategory).toHaveBeenCalledOnce();
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
   });
 
   it('never restores an ID that Cloud returns as deleted, including through explicit recovery', async () => {
@@ -197,9 +312,9 @@ describe('product category Cloud gate', () => {
       has_more: false
     });
 
-    await expect(ensureCloudProductCategory({ licenseKey: 'qa-license', categoryId: 'cat-deleted' }))
+    await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-deleted' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_NOT_AVAILABLE' });
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-deleted' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-deleted' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_CLOUD_DELETED' });
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
   });
@@ -209,7 +324,7 @@ describe('product category Cloud gate', () => {
       id: 'cat-other', name: 'Otra tienda', isActive: true, licenseKey: 'other-license'
     });
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-other' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-other' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_TENANT_MISMATCH' });
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
   });
@@ -218,7 +333,7 @@ describe('product category Cloud gate', () => {
     mocks.getCategoryById.mockResolvedValueOnce({ id: 'cat-local-deleted', name: 'Higiene QA', isActive: true });
     mocks.getDeletedCategoryById.mockResolvedValueOnce({ id: 'cat-local-deleted', deletionPending: true });
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-local-deleted' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-local-deleted' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_LOCAL_DELETED' });
     expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
@@ -231,7 +346,7 @@ describe('product category Cloud gate', () => {
       entityId: 'cat-delete-pending', status: 'pending'
     }]);
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-delete-pending' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-delete-pending' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_DELETE_PENDING' });
     expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
@@ -245,7 +360,7 @@ describe('product category Cloud gate', () => {
       has_more: false
     });
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-local' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-local' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_CLOUD_DUPLICATE' });
     expect(mocks.upsertCategory).not.toHaveBeenCalled();
   });
@@ -267,8 +382,8 @@ describe('product category Cloud gate', () => {
     });
 
     const results = await Promise.all([
-      recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-concurrent' }),
-      recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-concurrent' })
+      recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-concurrent' }),
+      recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-concurrent' })
     ]);
 
     expect(results).toHaveLength(2);
@@ -277,6 +392,77 @@ describe('product category Cloud gate', () => {
     expect(mocks.upsertCategory.mock.calls.every(([args]) => (
       args.idempotencyKey === 'product:category:recovery:cat-concurrent'
     ))).toBe(true);
+  });
+
+  it('keeps a stale second tab from projecting the category confirmed by the current tab', async () => {
+    const localCategory = { id: 'cat-cross-tab', name: 'Generales QA', isActive: true };
+    const cloudCategories = [];
+    let releaseCurrentTab;
+    let releaseStaleTab;
+    let resolveCurrentReady;
+    let resolveStaleReady;
+    let resolveCloudRead;
+    let signalCloudRead;
+    let currentChecks = 0;
+    let staleChecks = 0;
+    let staleTabCurrent = true;
+    const currentBarrier = new Promise((resolve) => { releaseCurrentTab = resolve; });
+    const staleBarrier = new Promise((resolve) => { releaseStaleTab = resolve; });
+    const currentReady = new Promise((resolve) => { resolveCurrentReady = resolve; });
+    const staleReady = new Promise((resolve) => { resolveStaleReady = resolve; });
+    const cloudReadStarted = new Promise((resolve) => { signalCloudRead = resolve; });
+    mocks.getCategoryById.mockResolvedValue(localCategory);
+    mocks.pullCatalogSnapshot.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCloudRead = resolve;
+      signalCloudRead();
+    }));
+    mocks.upsertCategory.mockImplementation(async ({ category, idempotencyKey }) => {
+      let confirmed = cloudCategories.find((item) => item.id === category.id);
+      if (!confirmed) {
+        confirmed = { ...category, is_active: true, server_version: 1 };
+        cloudCategories.push(confirmed);
+      }
+      return { success: true, category: confirmed, idempotency_key: idempotencyKey };
+    });
+    const currentTabGuard = vi.fn(async () => {
+      currentChecks += 1;
+      if (currentChecks === 2) {
+        resolveCurrentReady();
+        await currentBarrier;
+      }
+    });
+    const staleTabGuard = vi.fn(async () => {
+      staleChecks += 1;
+      if (staleChecks === 2) {
+        resolveStaleReady();
+        await staleBarrier;
+      }
+      if (!staleTabCurrent) {
+        throw Object.assign(new Error('stale tab context'), {
+          code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+        });
+      }
+    });
+
+    const currentTab = recoverCategory({
+      licenseKey: 'qa-license', categoryId: localCategory.id, assertContextCurrent: currentTabGuard
+    });
+    const staleTab = recoverCategory({
+      licenseKey: 'qa-license', categoryId: localCategory.id, assertContextCurrent: staleTabGuard
+    });
+    await Promise.all([currentReady, staleReady]);
+    releaseCurrentTab();
+    await cloudReadStarted;
+    resolveCloudRead({ success: true, categories: [], has_more: false });
+    await expect(currentTab).resolves.toMatchObject({ id: localCategory.id });
+
+    staleTabCurrent = false;
+    releaseStaleTab();
+    await expect(staleTab).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED' });
+
+    expect(mocks.upsertCategory).toHaveBeenCalledOnce();
+    expect(cloudCategories).toHaveLength(1);
+    expect(mocks.applyCloudCategory).toHaveBeenCalledOnce();
   });
 
   it('checks Cloud after a timeout before retrying the same recovery identity', async () => {
@@ -293,12 +479,80 @@ describe('product category Cloud gate', () => {
       throw error;
     });
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-timeout' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-timeout' }))
       .resolves.toMatchObject({ id: 'cat-timeout', name: 'Higiene QA' });
 
     expect(mocks.upsertCategory).toHaveBeenCalledOnce();
     expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
-    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(expect.objectContaining({ id: 'cat-timeout' }));
+    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'cat-timeout' }),
+      expect.objectContaining({ beforeWrite: expect.any(Function) })
+    );
+  });
+
+  it('reconciles the same identity after a second timeout while the original context is still authorized', async () => {
+    const localCategory = { id: 'cat-second-timeout', name: 'Higiene QA', isActive: true };
+    let cloudCategory = null;
+    mocks.getCategoryById.mockResolvedValueOnce(localCategory);
+    mocks.pullCatalogSnapshot.mockImplementation(async () => ({
+      success: true, categories: cloudCategory ? [cloudCategory] : [], has_more: false
+    }));
+    mocks.upsertCategory.mockImplementation(async ({ category, idempotencyKey }) => {
+      if (mocks.upsertCategory.mock.calls.length === 1) {
+        const error = new Error('network timeout before commit');
+        error.code = '57014';
+        throw error;
+      }
+      cloudCategory = { ...category, is_active: true, server_version: 1 };
+      const error = new Error('network timeout after commit');
+      error.code = '57014';
+      error.idempotencyKey = idempotencyKey;
+      throw error;
+    });
+
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: localCategory.id }))
+      .resolves.toMatchObject({ id: localCategory.id, name: localCategory.name });
+
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(3);
+    expect(mocks.upsertCategory).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertCategory.mock.calls.map(([args]) => args.idempotencyKey)).toEqual([
+      'product:category:recovery:cat-second-timeout',
+      'product:category:recovery:cat-second-timeout'
+    ]);
+    expect(mocks.applyCloudCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ id: localCategory.id }),
+      expect.objectContaining({ beforeWrite: expect.any(Function) })
+    );
+  });
+
+  it('stops before the second timeout query when the actor changes during the retry', async () => {
+    let actorCurrent = true;
+    const assertContextCurrent = vi.fn(() => {
+      if (!actorCurrent) {
+        throw Object.assign(new Error('actor context changed'), {
+          code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED'
+        });
+      }
+    });
+    const localCategory = { id: 'cat-second-timeout-revoked', name: 'Higiene QA', isActive: true };
+    let upsertCount = 0;
+    mocks.getCategoryById.mockResolvedValueOnce(localCategory);
+    mocks.pullCatalogSnapshot.mockResolvedValue({ success: true, categories: [], has_more: false });
+    mocks.upsertCategory.mockImplementation(async () => {
+      upsertCount += 1;
+      if (upsertCount === 2) actorCurrent = false;
+      const error = new Error('network timeout');
+      error.code = '57014';
+      throw error;
+    });
+
+    await expect(recoverCategory({
+      licenseKey: 'qa-license', categoryId: localCategory.id, assertContextCurrent
+    })).rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED' });
+
+    expect(mocks.upsertCategory).toHaveBeenCalledTimes(2);
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
   });
 
   it('does not apply a successful-looking response with a different category ID or recovery receipt', async () => {
@@ -310,7 +564,7 @@ describe('product category Cloud gate', () => {
       idempotency_key: 'another-operation'
     });
 
-    await expect(recoverLocalCategoryInCloud({ licenseKey: 'qa-license', categoryId: 'cat-original' }))
+    await expect(recoverCategory({ licenseKey: 'qa-license', categoryId: 'cat-original' }))
       .rejects.toMatchObject({ code: 'PRODUCT_CATEGORY_RECOVERY_NOT_CONFIRMED' });
     expect(mocks.applyCloudCategory).not.toHaveBeenCalled();
   });

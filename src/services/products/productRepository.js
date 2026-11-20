@@ -275,6 +275,41 @@ const getMode = () => {
   };
 };
 
+const createProductCategoryContextAssertion = (actorHandle, licenseKey) => async () => {
+  const assertCapturedAuthority = () => {
+    const currentMode = getMode();
+    if (
+      currentMode.licenseKey !== licenseKey
+      || currentMode.licenseDetails?.valid !== true
+      || currentMode.appStatus !== 'ready'
+      || !currentMode.cloudEnabled
+    ) {
+      const error = new Error(
+        'Tu sesión o negocio cambió durante la recuperación. La categoría no se aplicó localmente; verifica su estado en Cloud antes de continuar.'
+      );
+      error.code = 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED';
+      throw error;
+    }
+    assertProductInventoryMutationCurrent(actorHandle, { products: true });
+  };
+
+  try {
+    assertCapturedAuthority();
+    await syncOutboxService.assertTenantAccess({ licenseKey });
+    // The tenant guard is asynchronous. Recheck actor, permission, active
+    // license and the actor's tenant binding after it completes.
+    assertCapturedAuthority();
+  } catch (cause) {
+    if (cause?.code === 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED') throw cause;
+    const error = new Error(
+      'Tu sesión o negocio cambió durante la recuperación. La categoría no se aplicó localmente; verifica su estado en Cloud antes de continuar.'
+    );
+    error.code = 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED';
+    error.cause = cause;
+    throw error;
+  }
+};
+
 const makeIdempotencyKey = ({ entityType, operation, entityId }) => generateIdempotencyKey({
   entityType,
   operation,
@@ -558,17 +593,17 @@ export const productRepository = {
 
     try {
       const actorHandle = captureProductInventoryMutation({ products: true });
-      assertProductInventoryMutationCurrent(actorHandle, { products: true });
-      await syncOutboxService.assertTenantAccess({ licenseKey: mode.licenseKey });
-      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+      const assertContextCurrent = createProductCategoryContextAssertion(actorHandle, mode.licenseKey);
+      await assertContextCurrent();
 
       const category = await recoverLocalCategoryInCloud({
         licenseKey: mode.licenseKey,
         categoryId,
-        actorHandle
+        actorHandle,
+        assertContextCurrent
       });
 
-      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+      await assertContextCurrent();
       notifyProductsChanged({
         source: 'productRepository.confirmLocalCategoryInCloud',
         categoryId
@@ -750,10 +785,12 @@ export const productRepository = {
 
     try {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+      const assertCategoryContextCurrent = createProductCategoryContextAssertion(actorHandle, mode.licenseKey);
       await ensureCloudProductCategory({
         licenseKey: mode.licenseKey,
         categoryId: payload.product.category_id ?? payload.product.categoryId,
-        actorHandle
+        actorHandle,
+        assertContextCurrent: assertCategoryContextCurrent
       });
       const response = await productCloudRepository.upsertProduct({
         actorHandle,
