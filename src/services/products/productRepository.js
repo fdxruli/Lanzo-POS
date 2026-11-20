@@ -20,7 +20,8 @@ import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
 import {
   ensureCloudProductCategory,
-  getProductCloudConfirmationError
+  getProductCloudConfirmationError,
+  recoverLocalCategoryInCloud
 } from './productCategoryCloudGate';
 import { createApparelSkuCandidate, resolveProductRubroContext } from './apparelSku';
 import { productConflictService } from './productConflictService';
@@ -272,6 +273,41 @@ const getMode = () => {
     businessTypes: state?.companyProfile?.business_type,
     cloudEnabled: Boolean(licenseKey && isCloudProductsSyncEnabled(licenseDetails))
   };
+};
+
+const createProductCategoryContextAssertion = (actorHandle, licenseKey) => async () => {
+  const assertCapturedAuthority = () => {
+    const currentMode = getMode();
+    if (
+      currentMode.licenseKey !== licenseKey
+      || currentMode.licenseDetails?.valid !== true
+      || currentMode.appStatus !== 'ready'
+      || !currentMode.cloudEnabled
+    ) {
+      const error = new Error(
+        'Tu sesión o negocio cambió durante la recuperación. La categoría no se aplicó localmente; verifica su estado en Cloud antes de continuar.'
+      );
+      error.code = 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED';
+      throw error;
+    }
+    assertProductInventoryMutationCurrent(actorHandle, { products: true });
+  };
+
+  try {
+    assertCapturedAuthority();
+    await syncOutboxService.assertTenantAccess({ licenseKey });
+    // The tenant guard is asynchronous. Recheck actor, permission, active
+    // license and the actor's tenant binding after it completes.
+    assertCapturedAuthority();
+  } catch (cause) {
+    if (cause?.code === 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED') throw cause;
+    const error = new Error(
+      'Tu sesión o negocio cambió durante la recuperación. La categoría no se aplicó localmente; verifica su estado en Cloud antes de continuar.'
+    );
+    error.code = 'PRODUCT_CATEGORY_RECOVERY_CONTEXT_CHANGED';
+    error.cause = cause;
+    throw error;
+  }
 };
 
 const makeIdempotencyKey = ({ entityType, operation, entityId }) => generateIdempotencyKey({
@@ -545,6 +581,44 @@ export const productRepository = {
     }
   },
 
+  async confirmLocalCategoryInCloud(categoryId) {
+    const mode = getMode();
+    if (!mode.cloudEnabled || mode.licenseDetails?.valid !== true || mode.appStatus !== 'ready') {
+      return {
+        success: false,
+        code: 'PRODUCT_CATEGORY_RECOVERY_LICENSE_INACTIVE',
+        message: 'Se requiere una licencia activa y sincronización de Productos en la nube para confirmar esta categoría.'
+      };
+    }
+
+    try {
+      const actorHandle = captureProductInventoryMutation({ products: true });
+      const assertContextCurrent = createProductCategoryContextAssertion(actorHandle, mode.licenseKey);
+      await assertContextCurrent();
+
+      const category = await recoverLocalCategoryInCloud({
+        licenseKey: mode.licenseKey,
+        categoryId,
+        actorHandle,
+        assertContextCurrent
+      });
+
+      await assertContextCurrent();
+      notifyProductsChanged({
+        source: 'productRepository.confirmLocalCategoryInCloud',
+        categoryId
+      });
+      return { success: true, category, id: category?.id };
+    } catch (error) {
+      return {
+        success: false,
+        code: error?.code || 'PRODUCT_CATEGORY_RECOVERY_FAILED',
+        message: error?.message || 'No se pudo confirmar la categoría en la nube.',
+        error
+      };
+    }
+  },
+
   async deleteCategory(categoryId, options = {}) {
     const mode = getMode();
     const actorHandle = captureProductInventoryMutation({ products: true });
@@ -711,10 +785,12 @@ export const productRepository = {
 
     try {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
+      const assertCategoryContextCurrent = createProductCategoryContextAssertion(actorHandle, mode.licenseKey);
       await ensureCloudProductCategory({
         licenseKey: mode.licenseKey,
         categoryId: payload.product.category_id ?? payload.product.categoryId,
-        actorHandle
+        actorHandle,
+        assertContextCurrent: assertCategoryContextCurrent
       });
       const response = await productCloudRepository.upsertProduct({
         actorHandle,
@@ -779,6 +855,7 @@ export const productRepository = {
       return {
         success: false,
         code: error?.code || 'PRODUCT_CLOUD_ERROR',
+        category: error?.category || null,
         message: error?.message || 'Error al guardar producto cloud.',
         error
       };

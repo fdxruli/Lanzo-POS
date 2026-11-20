@@ -503,7 +503,45 @@ export default function ProductsPage() {
             }
 
             const productPayload = imagePreparation.productPayload;
-            const result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
+            let result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
+
+            if (result?.code === 'PRODUCT_CATEGORY_RECOVERY_REQUIRED') {
+                const category = result.category || result.error?.category;
+                const categoryId = category?.id || productPayload.categoryId || productPayload.category_id;
+                const categoryName = category?.name || 'la categoría seleccionada';
+                if (!categoryId) {
+                    handleActionableError(result);
+                    return false;
+                }
+
+                const confirmRecovery = await showConfirmModal(
+                    `«${categoryName}» solo existe en este dispositivo. Para guardar el producto, confirma esta categoría en la nube conservando su ID actual.`,
+                    {
+                        title: 'Confirmar categoría local',
+                        confirmButtonText: 'Confirmar categoría en Nube',
+                        cancelButtonText: 'Cancelar'
+                    }
+                );
+                if (!confirmRecovery) return false;
+
+                const recovery = await productRepository.confirmLocalCategoryInCloud(categoryId);
+                if (!recovery?.success || recovery.category?.id !== categoryId) {
+                    handleActionableError(recovery?.success === false ? recovery : {
+                        success: false,
+                        message: 'Cloud no confirmó el ID original de la categoría. El producto no se guardó.'
+                    });
+                    return false;
+                }
+
+                await refreshCategories();
+                broadcastDBChange({
+                    action: 'category-cloud-confirmed',
+                    categoryId,
+                    categoryName: recovery.category.name || categoryName,
+                    timestamp: Date.now()
+                });
+                result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
+            }
 
             if (result?.partial) {
                 handleActionableError(result);

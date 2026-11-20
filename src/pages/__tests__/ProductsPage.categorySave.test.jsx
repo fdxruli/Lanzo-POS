@@ -11,6 +11,8 @@ const shared = vi.hoisted(() => ({
   stats: null,
   repository: {
     saveCategory: vi.fn(),
+    saveProduct: vi.fn(),
+    confirmLocalCategoryInCloud: vi.fn(),
     deleteCategory: vi.fn(),
     getCategoryProductCounts: vi.fn()
   },
@@ -43,6 +45,13 @@ vi.mock('../../hooks/useBotScreenContext', () => ({
 vi.mock('../../services/products/productRepository', () => ({
   productRepository: shared.repository
 }));
+vi.mock('../../services/products/productImageMigrationService', () => ({
+  migrateLegacyProductImages: vi.fn(),
+  prepareProductImageForCloud: vi.fn(async ({ productData }) => ({
+    productPayload: productData,
+    requiresReselection: false
+  }))
+}));
 vi.mock('../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: shared.broadcastDBChange
 }));
@@ -53,9 +62,10 @@ vi.mock('../../services/utils', () => ({
 vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
   const React = await import('react');
   return {
-    default: function MockProductFormV2({ productToEdit, onOpenCategoryManager }) {
-      const [categoryId, setCategoryId] = React.useState('');
+    default: function MockProductFormV2({ productToEdit, onOpenCategoryManager, onSave }) {
+      const [categoryId, setCategoryId] = React.useState(productToEdit?.categoryId || '');
       const [productName, setProductName] = React.useState(productToEdit?.name || '');
+      const [description, setDescription] = React.useState(productToEdit?.description || '');
 
       return (
         <div>
@@ -72,6 +82,18 @@ vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
               <option value="category-b-created">QA Categoría B</option>
             </select>
           </label>
+          <label>
+            Descripción del producto
+            <input aria-label="Descripción del producto" value={description} onChange={(event) => setDescription(event.target.value)} />
+          </label>
+          <button type="button" onClick={() => onSave({
+            id: productToEdit?.id || 'product-new',
+            name: productName,
+            description,
+            categoryId: categoryId || productToEdit?.categoryId || ''
+          }, productToEdit || null)}>
+            Guardar producto
+          </button>
           <button type="button" onClick={() => onOpenCategoryManager((category) => setCategoryId(category.id))}>
             Administrar categorías del producto
           </button>
@@ -82,7 +104,14 @@ vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
 });
 vi.mock('../../components/products/ProductList', () => ({
   default: function MockProductList({ onEdit }) {
-    return <button type="button" onClick={() => onEdit({ id: 'product-b', name: 'Producto B' })}>Editar producto B</button>;
+    return (
+      <div>
+        <button type="button" onClick={() => onEdit({ id: 'product-b', name: 'Producto B' })}>Editar producto B</button>
+        <button type="button" onClick={() => onEdit({
+          id: 'soap-qa', name: 'Jabón QA', description: 'Descripción anterior', categoryId: 'hygiene-qa'
+        })}>Editar Jabón QA</button>
+      </div>
+    );
   }
 }));
 
@@ -140,6 +169,8 @@ describe('ProductsPage category save flow', () => {
     };
     shared.stats = { adjustInventoryValue: vi.fn() };
     shared.repository.saveCategory.mockReset();
+    shared.repository.saveProduct.mockReset();
+    shared.repository.confirmLocalCategoryInCloud.mockReset();
     shared.repository.deleteCategory.mockReset().mockResolvedValue({ success: true });
     shared.repository.getCategoryProductCounts.mockReset().mockResolvedValue({ complete: false, counts: {} });
     shared.broadcastDBChange.mockReset();
@@ -235,6 +266,44 @@ describe('ProductsPage category save flow', () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
     expect(categorySelect).toHaveValue('category-b-created');
+  });
+
+  it('offers authorized category recovery before retrying a categorized description edit', async () => {
+    shared.app.licenseDetails = { ...PRO_LICENSE, valid: true };
+    shared.repository.saveProduct
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'PRODUCT_CATEGORY_RECOVERY_REQUIRED',
+        category: { id: 'hygiene-qa', name: 'Higiene QA' },
+        message: 'La categoría local necesita confirmación.'
+      })
+      .mockResolvedValueOnce({ success: true, productId: 'soap-qa', response: { product: { id: 'soap-qa' } } });
+    shared.repository.confirmLocalCategoryInCloud.mockResolvedValueOnce({
+      success: true,
+      category: { id: 'hygiene-qa', name: 'Higiene QA' }
+    });
+    renderPage('/productos');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar Jabón QA' }));
+    const description = await screen.findByRole('textbox', { name: 'Descripción del producto' });
+    fireEvent.change(description, { target: { value: 'Descripción corregida' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+
+    await waitFor(() => expect(shared.repository.confirmLocalCategoryInCloud).toHaveBeenCalledWith('hygiene-qa'));
+    expect(shared.showConfirmModal).toHaveBeenCalledWith(
+      expect.stringContaining('confirma esta categoría en la nube'),
+      expect.objectContaining({
+        title: 'Confirmar categoría local',
+        confirmButtonText: 'Confirmar categoría en Nube',
+        cancelButtonText: 'Cancelar'
+      })
+    );
+    await waitFor(() => expect(shared.repository.saveProduct).toHaveBeenCalledTimes(2));
+    expect(shared.repository.confirmLocalCategoryInCloud.mock.invocationCallOrder[0])
+      .toBeLessThan(shared.repository.saveProduct.mock.invocationCallOrder[1]);
+    expect(shared.repository.saveProduct.mock.calls[1][0]).toMatchObject({
+      id: 'soap-qa', description: 'Descripción corregida', categoryId: 'hygiene-qa'
+    });
   });
 
   it('selects a category created in the current form session and preserves other product fields', async () => {

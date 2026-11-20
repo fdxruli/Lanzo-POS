@@ -130,6 +130,16 @@ const computeRetryAt = (attempts = 0) => {
 };
 
 export const syncOutboxService = {
+  async assertTenantAccess({ licenseKey = null } = {}) {
+    if (!licenseKey) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_license_missing'
+      });
+    }
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_tenant_assertion' });
+    return true;
+  },
+
   async enqueueOperation({
     licenseKey,
     entityType,
@@ -328,6 +338,27 @@ export const syncOutboxService = {
   async getOperation(id, { licenseKey = null } = {}) {
     const row = await assertOperationOwnership(id, licenseKey);
     return row;
+  },
+
+  async listOperationsForEntity({ licenseKey = null, entityType = null, entityId = null } = {}) {
+    if (!licenseKey || !entityType || !entityId) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_entity_identity_missing'
+      });
+    }
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_entity_read' });
+    await ensureOpen();
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX)
+      .where('entityType')
+      .equals(entityType)
+      .filter((row) => row.entityId === entityId)
+      .toArray();
+    if (rows.some((row) => row.licenseKey !== licenseKey)) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_entity_tenant_mismatch'
+      });
+    }
+    return rows;
   },
 
   async rebaseProcessingCustomerOperation(id, {
