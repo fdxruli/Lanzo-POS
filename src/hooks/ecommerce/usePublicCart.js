@@ -131,6 +131,19 @@ function getMaximumNotice(product, effectiveMaximum, portalMaximum) {
   return `La cantidad máxima por producto es ${effectiveMaximum}.`;
 }
 
+function getAddQuantityNotice(product, remainingQuantity, portalMaximum) {
+  if (remainingQuantity <= 0) {
+    if (product?.stock?.mode === 'exact') {
+      return 'Ya tienes todas las unidades disponibles de este producto en el carrito.';
+    }
+    return `La cantidad máxima por producto es ${portalMaximum}.`;
+  }
+  if (product?.stock?.mode === 'exact') {
+    return `Solo puedes agregar ${remainingQuantity} ${remainingQuantity === 1 ? 'unidad' : 'unidades'} más de este producto.`;
+  }
+  return `Solo puedes agregar ${remainingQuantity} ${remainingQuantity === 1 ? 'unidad' : 'unidades'} más. El máximo por producto es ${portalMaximum}.`;
+}
+
 const entriesChanged = (before, after) => (
   before.length !== after.length
   || before.some((entry, index) => (
@@ -364,12 +377,17 @@ export default function usePublicCart({
     const configured = input?.success === true
       && asText(input?.lineKey)
       && asText(input?.productId);
-    const product = configured ? productMap.get(input.productId) : input;
+    const catalogProduct = productMap.get(configured ? input.productId : input?.id);
+    const product = catalogProduct || (configured ? null : input);
+    if (!configured && catalogReady && !catalogProduct) {
+      setNotice('Este producto ya no está disponible en el catálogo.');
+      return false;
+    }
     const lineKey = configured ? input.lineKey : product?.id;
     const replaceLineKey = asText(options.replaceLineKey);
     const requestedQuantity = configured
       ? Math.max(1, Math.floor(Number(input.quantity) || 1))
-      : 1;
+      : Math.max(1, Math.floor(Number(options.quantity) || 1));
     const configurationRevision = configured
       ? asConfigurationRevision(
           input.configurationRevision || input.configurationSnapshot?.configurationRevision
@@ -417,6 +435,14 @@ export default function usePublicCart({
     const existingIndex = nextEntries.findIndex((current) => current.lineKey === lineKey);
     if (existingIndex >= 0) {
       const existing = nextEntries[existingIndex];
+      if (!configured && existing.quantity + requestedQuantity > effectiveMaximum) {
+        setNotice(getAddQuantityNotice(
+          product,
+          Math.max(0, effectiveMaximum - existing.quantity),
+          safeMaxItemQuantity
+        ));
+        return false;
+      }
       const nextQuantity = Math.min(effectiveMaximum, existing.quantity + requestedQuantity);
       if (nextQuantity === existing.quantity) {
         setNotice(getMaximumNotice(product, effectiveMaximum, safeMaxItemQuantity));
@@ -429,6 +455,11 @@ export default function usePublicCart({
       return true;
     }
 
+    if (!configured && requestedQuantity > effectiveMaximum) {
+      setNotice(getAddQuantityNotice(product, effectiveMaximum, safeMaxItemQuantity));
+      return false;
+    }
+
     if (nextEntries.length >= safeMaxOrderItems) {
       setNotice(`Puedes agregar hasta ${safeMaxOrderItems} productos distintos.`);
       return false;
@@ -436,11 +467,11 @@ export default function usePublicCart({
 
     commitEntries([
       ...nextEntries,
-      { ...entry, quantity: Math.min(requestedQuantity, effectiveMaximum) }
+      { ...entry, quantity: configured ? Math.min(requestedQuantity, effectiveMaximum) : requestedQuantity }
     ]);
     setNotice(replaceLineKey ? 'Configuración actualizada.' : 'Producto agregado al carrito.');
     return true;
-  }, [commitEntries, productMap, safeMaxItemQuantity, safeMaxOrderItems]);
+  }, [catalogReady, commitEntries, productMap, safeMaxItemQuantity, safeMaxOrderItems]);
 
   const setQuantity = useCallback((lineKey, quantity) => {
     const parsedQuantity = Math.floor(Number(quantity));

@@ -21,6 +21,7 @@ export default function EcommerceSiteRenderer({
   features,
   mode = 'public',
   slug,
+  storeId = '',
   catalogProps = {},
   catalogChrome = null,
   children = null
@@ -59,6 +60,8 @@ export default function EcommerceSiteRenderer({
             availability={availability}
             features={features}
             slug={slug}
+            storeId={storeId || portal?.id || ''}
+            mode={mode}
             catalogProps={catalogProps}
             chrome={catalogChrome}
           />

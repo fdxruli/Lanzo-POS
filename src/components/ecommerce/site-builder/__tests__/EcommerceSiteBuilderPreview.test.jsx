@@ -39,6 +39,8 @@ describe('EcommerceSiteBuilderPreview', () => {
     expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('data-preview-viewport', 'desktop');
     expect(container.querySelector('.ecommerce-site-renderer')).toHaveClass('ecommerce-site-visual-surface');
     fireEvent.click(screen.getByRole('button', { name: 'Agregar Producto de muestra' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle de Producto de muestra' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Producto de muestra' }));
     expect(dispatch).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });

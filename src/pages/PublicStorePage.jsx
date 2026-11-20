@@ -642,13 +642,15 @@ function PublicStorePage() {
         availability={availability}
         features={features}
         slug={slug}
+        storeId={portalResult?.portalId || portal?.id || ''}
         catalogProps={{
           products, filteredProducts, categories, searchTerm, selectedCategory,
           onSearchChange: setSearchTerm, onCategoryChange: setSelectedCategory,
           onAdd: cart.addProduct, isLoading: catalogLoading, error: catalogError?.error || null,
           onRetry: retryCatalog, hasMore: pagination.hasMore, onLoadMore: loadNextCatalogPage,
           isLoadingMore: catalogLoadingMore, catalogRevision, offline: offlineCatalog,
-          maxItemQuantity: portal.maxItemQuantity
+          maxItemQuantity: portal.maxItemQuantity, maxOrderItems: portal.maxOrderItems,
+          cartItems: cart.items
         }}
         catalogChrome={<>
         {catalogRefreshing ? (

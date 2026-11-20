@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import EcommerceSiteRenderer from '../EcommerceSiteRenderer';
 import { createDefaultEcommerceSiteDocument } from '../../../../utils/ecommerceSiteDocument';
 
@@ -160,6 +160,29 @@ describe('EcommerceSiteRenderer', () => {
     const previewRenderer = document.querySelector('.ecommerce-site-renderer');
     expect(previewRenderer.getAttribute('style')).toBe(publicTokens);
     expect(document.documentElement.style.getPropertyValue('--store-primary')).toBe('');
+  });
+
+  it('keeps product actions inert in preview mode even for configurable products', () => {
+    const configuredProduct = {
+      id: 'shirt', name: 'Playera', price: 100, isAvailable: true,
+      configuration: { requiresConfiguration: true, hasVariants: true }
+    };
+    const onAdd = vi.fn();
+    renderSite({
+      mode: 'preview',
+      catalogProps: {
+        ...catalogProps,
+        products: [configuredProduct],
+        filteredProducts: [configuredProduct],
+        onAdd
+      }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle de Playera' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar opciones Playera' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
   it('applies showSearch and showCategories from the delivered document', () => {

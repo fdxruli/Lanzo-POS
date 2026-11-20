@@ -46,6 +46,7 @@
   margin: 2px 0 0;
   font-size: 1.2rem;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .public-product-config__body {
@@ -129,6 +130,24 @@
   -webkit-line-clamp: 3;
 }
 
+.public-product-config__hero .public-product-config__category {
+  margin: 0 0 5px;
+  color: var(--public-primary, #2563eb);
+  font-size: 0.77rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.public-product-config__hero .public-product-config__description {
+  display: block;
+  margin-bottom: 7px;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  white-space: pre-line;
+  -webkit-line-clamp: unset;
+}
+
 .public-product-config__hero strong,
 .public-product-config__hero span {
   display: block;
@@ -138,6 +157,13 @@
   margin-top: 4px;
   color: var(--public-muted, #64748b);
   font-size: 0.8rem;
+}
+
+.public-product-config__hero small {
+  display: block;
+  margin-top: 4px;
+  color: var(--public-muted, #64748b);
+  font-size: 0.78rem;
 }
 
 .public-product-config__group {

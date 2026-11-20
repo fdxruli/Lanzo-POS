@@ -187,6 +187,17 @@ describe('usePublicCart', () => {
     act(() => result.current.addProduct(products[4]));
     expect(result.current.items).toHaveLength(0);
     expect(result.current.notice).toMatch(/no está disponible/i);
+
+    let staleAddResult;
+    act(() => {
+      staleAddResult = result.current.addProduct({
+        ...products[4],
+        isAvailable: true,
+        stock: { mode: 'hidden', status: null }
+      });
+    });
+    expect(staleAddResult).toBe(false);
+    expect(result.current.items).toHaveLength(0);
   });
 
   it('limits restoration, increment and manual editing by exact stock', async () => {
@@ -205,6 +216,44 @@ describe('usePublicCart', () => {
 
     act(() => result.current.setQuantity('exact-3', 10));
     expect(result.current.items[0].quantity).toBe(3);
+  });
+
+  it('adds an explicit simple-product quantity in one line and rejects amounts above remaining stock', async () => {
+    const { result } = renderCart({ maxItemQuantity: 5 });
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+
+    let added;
+    act(() => {
+      added = result.current.addProduct(products[3], { quantity: 2 });
+    });
+    expect(added).toBe(true);
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0]).toMatchObject({ quantity: 2, lineTotal: '100.00' });
+
+    let rejected;
+    act(() => {
+      rejected = result.current.addProduct(products[3], { quantity: 2 });
+    });
+    expect(rejected).toBe(false);
+    expect(result.current.items[0].quantity).toBe(2);
+    expect(result.current.notice).toMatch(/puedes agregar 1 unidad más/i);
+
+    act(() => result.current.addProduct(products[3]));
+    expect(result.current.items[0].quantity).toBe(3);
+  });
+
+  it('uses existing wholesale calculations for an explicitly added quantity', async () => {
+    const { result } = renderCart({ maxItemQuantity: 20 });
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+
+    act(() => result.current.addProduct(products[5], { quantity: 6 }));
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0]).toMatchObject({
+      quantity: 6,
+      appliedUnitPrice: 21,
+      pricingMode: 'wholesale',
+      lineTotal: '126.00'
+    });
   });
 
   it('respects maximum distinct lines and keeps carts separated by slug', async () => {
