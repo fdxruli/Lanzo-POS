@@ -1,19 +1,13 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { LayoutGrid, List, Plus, Search } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { LayoutGrid, List, Search } from 'lucide-react';
 import {
   getPublicProductStockLabel,
   isPublicProductAvailable
 } from '../../../services/ecommerce/ecommercePublicProductRules';
-import PublicSafeImage from './PublicSafeImage';
+import PublicProductCard from './PublicProductCard';
 import PublicStoreState from './PublicStoreState';
 
 const PublicProductConfigurationModal = lazy(() => import('./PublicProductConfigurationModal'));
-
-const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
-  style: 'currency',
-  currency
-}).format(Number(value) || 0);
 
 const normalizeCatalogRevision = (value) => {
   const revision = Number(value);
@@ -26,65 +20,8 @@ const requiresPublicConfiguration = (product) => (
   || product?.configuration?.hasOptionGroups === true
 );
 
-function PublicProductCard({ product, onAdd, onConfigure }) {
-  const isAvailable = isPublicProductAvailable(product);
-  const stockLabel = getPublicProductStockLabel(product);
-  const isUnavailableStockLabel = stockLabel === 'Agotado' || stockLabel === 'No disponible';
-  const configurable = requiresPublicConfiguration(product);
-  const buttonLabel = configurable ? 'Seleccionar opciones' : 'Agregar';
-
-  return (
-    <article className="public-product-card ui-card">
-      <PublicSafeImage
-        src={product.imageUrl}
-        alt={product.name}
-        fallbackLabel={`${product.name} sin imagen`}
-        className="public-product-card__image"
-      />
-      <div className="public-product-card__body">
-        <div className="public-product-card__copy">
-          {product.categoryName ? <p className="public-product-card__category">{product.categoryName}</p> : null}
-          <h3>{product.name}</h3>
-          {product.description ? <p className="public-product-card__description">{product.description}</p> : null}
-        </div>
-        <div className="public-product-card__footer">
-          <div>
-            <strong>
-              {configurable ? 'Desde ' : ''}
-              {formatCurrency(product.price, product.currency)}
-            </strong>
-            {product.wholesaleEnabled && product.wholesaleTiers?.length > 0 ? (
-              <span className="public-product-card__wholesale">
-                {product.wholesaleTiers.map((tier) => (
-                  <small key={tier.sourceTierRef || tier.minQuantity}>
-                    Compra {tier.minQuantity} o más: {formatCurrency(tier.unitPrice, product.currency)} c/u
-                  </small>
-                ))}
-              </span>
-            ) : null}
-            {stockLabel ? (
-              <span className={`public-product-card__stock${isUnavailableStockLabel ? ' is-unavailable' : ''}`}>
-                {stockLabel}
-              </span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="ui-button ui-button--primary public-product-card__add"
-            disabled={!isAvailable}
-            onClick={() => (configurable ? onConfigure(product) : onAdd(product))}
-            aria-label={isAvailable ? `${buttonLabel} ${product.name}` : `${product.name} no disponible`}
-          >
-            <Plus aria-hidden="true" size={18} />
-            {isAvailable ? buttonLabel : 'No disponible'}
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function PublicCatalog({
+  slug = '',
   products,
   filteredProducts,
   categories,
@@ -106,7 +43,6 @@ function PublicCatalog({
   showCategories = true,
   initialViewMode = 'grid'
 }) {
-  const { slug = '' } = useParams();
   const resolvedCatalogRevision = normalizeCatalogRevision(catalogRevision);
   const resolvedOffline = offline === true;
   const resolvedMaxItemQuantity = Math.max(1, Math.floor(Number(maxItemQuantity) || 99));
@@ -153,6 +89,14 @@ function PublicCatalog({
   const openConfiguration = (product) => {
     setInitialLine(null);
     setConfigurationProduct(product);
+  };
+
+  const handleProductAction = (product) => {
+    if (requiresPublicConfiguration(product)) {
+      openConfiguration(product);
+      return;
+    }
+    onAdd(product);
   };
 
   const closeConfiguration = () => {
@@ -293,8 +237,10 @@ function PublicCatalog({
               <PublicProductCard
                 key={product.id}
                 product={product}
-                onAdd={onAdd}
-                onConfigure={openConfiguration}
+                isConfigurable={requiresPublicConfiguration(product)}
+                isAvailable={isPublicProductAvailable(product)}
+                stockLabel={getPublicProductStockLabel(product)}
+                onPrimaryAction={handleProductAction}
               />
             ))}
           </div>

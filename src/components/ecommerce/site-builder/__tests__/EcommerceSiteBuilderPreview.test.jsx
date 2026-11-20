@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultEcommerceSiteDocument } from '../../../../utils/ecommerceSiteDocument';
 import { setCatalogVisibility, setSectionLayout } from '../../../../utils/ecommerceSiteBuilderDocument';
@@ -12,9 +11,7 @@ const portal = {
   theme: { primaryColor: '#14532d', secondaryColor: '#166534', cornerStyle: 'square', fontStyle: 'editorial' }
 };
 const renderPreview = (props = {}) => render(
-  <MemoryRouter>
-    <EcommerceSiteBuilderPreview document={createDefaultEcommerceSiteDocument()} viewport="desktop" portal={portal} {...props} />
-  </MemoryRouter>
+  <EcommerceSiteBuilderPreview document={createDefaultEcommerceSiteDocument()} viewport="desktop" portal={portal} {...props} />
 );
 
 describe('EcommerceSiteBuilderPreview', () => {
