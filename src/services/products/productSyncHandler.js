@@ -11,6 +11,10 @@ import {
 } from '../sync/syncConstants';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
+import {
+  ensureCloudProductCategory,
+  getProductCloudConfirmationError
+} from './productCategoryCloudGate';
 import { productMigrationService } from './productMigrationService';
 import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { productConflictService } from './productConflictService';
@@ -410,6 +414,11 @@ export const productSyncHandler = {
         idempotencyKey
       });
     } else {
+      await ensureCloudProductCategory({
+        licenseKey,
+        categoryId: payload.product?.category_id ?? payload.product?.categoryId,
+        actorHandle
+      });
       response = await productCloudRepository.upsertProduct({
         actorHandle,
         licenseKey,
@@ -435,6 +444,13 @@ export const productSyncHandler = {
 
     if (response?.success === false) {
       throw asError(response, 'PRODUCT_PUSH_FAILED');
+    }
+
+    if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
+      && op !== SYNC_OPERATIONS.DELETE
+      && op !== SYNC_OPERATIONS.TOGGLE_STATUS) {
+      const confirmationError = getProductCloudConfirmationError(response, payload.product || {});
+      if (confirmationError) throw asError(confirmationError, 'PRODUCT_PUSH_FAILED');
     }
 
     // A timeout or malformed RPC reply never proves that a receipt committed.

@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   prepareProduct: vi.fn(),
   findSkuConflicts: vi.fn(),
   getBatchById: vi.fn(),
+  getCategoryById: vi.fn(),
+  getOperation: vi.fn(),
+  markSynced: vi.fn(),
   saveBatchLocal: vi.fn(),
   saveCategoryLocal: vi.fn(),
   savePreparedProductLocal: vi.fn(),
@@ -57,7 +60,7 @@ vi.mock('../../sync/idempotency', () => ({
   generateIdempotencyKey: vi.fn(() => 'operation-id')
 }));
 vi.mock('../../sync/syncOutboxService', () => ({
-  syncOutboxService: { enqueueOperation: mocks.enqueue }
+  syncOutboxService: { enqueueOperation: mocks.enqueue, getOperation: mocks.getOperation, markSynced: mocks.markSynced }
 }));
 vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: () => 'license-key',
@@ -72,12 +75,16 @@ vi.mock('../../sync/syncConstants', () => ({
     DELETE: 'delete',
     TOGGLE_STATUS: 'toggle_status'
   },
+  OUTBOX_STATUS: { PENDING: 'pending', PROCESSING: 'processing', FAILED: 'failed', SYNCED: 'synced' },
   SYNC_LIMITS: { MAX_PULL_LIMIT: 500 }
 }));
 vi.mock('../productMapper', () => ({
   batchToCloudPayload: (value) => value,
   categoryToCloudPayload: (value) => value,
-  productToCloudPayload: (value) => value,
+  productToCloudPayload: (value) => ({
+    ...value,
+    category_id: value.categoryId ?? value.category_id ?? null
+  }),
   normalizeSkuKey: (value) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '')
 }));
 vi.mock('../productCloudRepository', () => ({
@@ -101,6 +108,7 @@ vi.mock('../productLocalRepository', () => ({
     applyCloudCategory: mocks.applyCloudCategory,
     applyCloudCatalog: mocks.applyCloudCatalog,
     getProductById: mocks.getProductById,
+    getCategoryById: mocks.getCategoryById,
     getBatchById: mocks.getBatchById,
     findSkuConflicts: mocks.findSkuConflicts
   }
@@ -154,13 +162,16 @@ beforeEach(() => {
   mocks.savePreparedProductLocal.mockResolvedValue({ success: true, productId: 'product-1' });
   mocks.saveBatchLocal.mockResolvedValue({ success: true, batchId: 'batch-1' });
   mocks.getProductById.mockResolvedValue(null);
+  mocks.getCategoryById.mockResolvedValue(null);
+  mocks.getOperation.mockResolvedValue(null);
+  mocks.markSynced.mockResolvedValue(undefined);
   mocks.getBatchById.mockResolvedValue(null);
   mocks.deleteProductLocal.mockResolvedValue({ success: true });
   mocks.toggleProductStatusLocal.mockResolvedValue({ success: true });
   mocks.applyCloudCatalog.mockResolvedValue({ products: 1, categories: 0, batches: 0 });
   mocks.applyCloudCategory.mockResolvedValue({ id: 'category-1', name: 'Category', serverVersion: 1 });
   mocks.upsertCategory.mockResolvedValue({ success: true, category: { id: 'category-1', name: 'Category' } });
-  mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1' } });
+  mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1', category_id: null } });
   mocks.upsertProductBatch.mockResolvedValue({ success: true, batch: { id: 'batch-1' } });
   mocks.toggleProductStatus.mockResolvedValue({ success: true, product: { id: 'product-1' } });
   mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
@@ -432,6 +443,157 @@ describe('productRepository directed catalog events', () => {
     }));
   });
 
+  it.each([
+    ['create', false],
+    ['edit', true]
+  ])('confirms the selected commercial category in Cloud on %s', async (_label, editing) => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(editing),
+      product: {
+        id: 'product-1', name: 'Medicamento QA', categoryId: 'category-qa', price: 24,
+        rubroContext: 'farmacia', prescriptionType: 'otc', activeSubstance: 'Paracetamol QA',
+        presentation: 'Caja con 10 tabletas', serverVersion: editing ? 4 : null
+      }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
+    });
+    mocks.upsertProduct.mockResolvedValueOnce({
+      success: true,
+      product: {
+        id: 'product-1', category_id: 'category-qa', price: 24,
+        prescription_type: 'otc', active_substance: 'Paracetamol QA', presentation: 'Caja con 10 tabletas'
+      }
+    });
+
+    const result = await productRepository.saveProduct(
+      { name: 'Medicamento QA' },
+      editing ? { existingProduct: { id: 'product-1', serverVersion: 4 } } : {}
+    );
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({
+      product: expect.objectContaining({ category_id: 'category-qa' })
+    }));
+    expect(mocks.upsertProduct.mock.invocationCallOrder[0])
+      .toBeGreaterThan(mocks.pullCatalogSnapshot.mock.invocationCallOrder[0]);
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(expect.objectContaining({
+      product: expect.objectContaining({ id: 'product-1', category_id: 'category-qa' })
+    }));
+  });
+
+  it('preserves a legacy category while changing only price and when category is untouched', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(true),
+      product: { id: 'product-1', name: 'Medicamento heredado', categoryId: 'category-old', price: 28, serverVersion: 2 }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [{ id: 'category-old', name: 'Higiene QA', is_active: true }], has_more: false
+    });
+    mocks.upsertProduct.mockResolvedValueOnce({
+      success: true, product: { id: 'product-1', category_id: 'category-old', price: 28 }
+    });
+
+    const result = await productRepository.saveProduct(
+      { name: 'Medicamento heredado', price: 28 },
+      { existingProduct: { id: 'product-1', categoryId: 'category-old', serverVersion: 2 } }
+    );
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({
+      product: expect.objectContaining({ category_id: 'category-old', price: 28 })
+    }));
+  });
+
+  it('syncs an authorized pending category for this tenant before the product RPC', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.getCategoryById.mockResolvedValueOnce({
+      id: 'category-pending', name: 'Generales QA', isActive: true,
+      syncStatus: 'pending', pendingOperationId: 'category-operation'
+    });
+    mocks.getOperation.mockResolvedValueOnce({
+      id: 'category-operation', idempotencyKey: 'category-operation', licenseKey: 'license-key',
+      entityType: 'category', operation: 'upsert', entityId: 'category-pending', status: 'pending',
+      payload: { category: { id: 'category-pending', name: 'Generales QA', is_active: true }, expectedVersion: null }
+    });
+    mocks.upsertCategory.mockResolvedValueOnce({
+      success: true, category: { id: 'category-pending', name: 'Generales QA', is_active: true, server_version: 1 }
+    });
+    mocks.upsertProduct.mockResolvedValueOnce({
+      success: true, product: { id: 'product-1', category_id: 'category-pending' }
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Con categoría' });
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.upsertCategory.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.upsertProduct.mock.invocationCallOrder[0]);
+    expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'license-key', idempotencyKey: 'category-operation'
+    }));
+  });
+
+  it('does not call the product RPC or show success when Cloud rejects its pending category', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.getCategoryById.mockResolvedValueOnce({
+      id: 'category-pending', name: 'Generales QA', isActive: true,
+      syncStatus: 'pending', pendingOperationId: 'category-operation'
+    });
+    mocks.getOperation.mockResolvedValueOnce({
+      id: 'category-operation', licenseKey: 'license-key', entityType: 'category', operation: 'upsert',
+      entityId: 'category-pending', status: 'pending', idempotencyKey: 'category-operation',
+      payload: { category: { id: 'category-pending', name: 'Generales QA', is_active: true } }
+    });
+    mocks.upsertCategory.mockResolvedValueOnce({ success: false, code: 'STAFF_PERMISSION_DENIED' });
+
+    const result = await productRepository.saveProduct({ name: 'Con categoría' });
+
+    expect(result).toMatchObject({ success: false, code: 'STAFF_PERMISSION_DENIED' });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('does not apply a partial Cloud product response or report category success', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValueOnce({
+      ...preparedProduct(true), product: { id: 'product-1', name: 'Medicamento QA', categoryId: 'category-qa', price: 28, serverVersion: 2 }
+    });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
+    });
+    mocks.upsertProduct.mockResolvedValueOnce({ success: true, product: { id: 'product-1', price: 28 } });
+
+    const result = await productRepository.saveProduct(
+      { name: 'Medicamento QA', price: 28 },
+      { existingProduct: { id: 'product-1', categoryId: 'category-qa', serverVersion: 2 } }
+    );
+
+    expect(result).toMatchObject({ success: false, code: 'PRODUCT_CATEGORY_CONFIRMATION_MISSING' });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('does not report success or reconcile local state when Cloud rejects the product', async () => {
+    mocks.cloudEnabled = true;
+    mocks.upsertProduct.mockResolvedValueOnce({
+      success: false, code: 'STAFF_PERMISSION_DENIED', message: 'No autorizado.'
+    });
+
+    const result = await productRepository.saveProduct({ name: 'Rechazado' });
+
+    expect(result).toMatchObject({ success: false, code: 'STAFF_PERMISSION_DENIED' });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
   it('keeps the RPC confirmation in PRO category results and rejects an unconfirmed response', async () => {
     mocks.cloudEnabled = true;
     mocks.upsertCategory.mockResolvedValueOnce({
@@ -511,8 +673,8 @@ describe('productRepository directed catalog events', () => {
       .mockResolvedValueOnce(apparelPreparedProduct({ serverVersion: 10, updated: [batchA, batchB] }))
       .mockResolvedValueOnce(apparelPreparedProduct({ serverVersion: 12, updated: [batchB] }));
     mocks.upsertProduct
-      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', serverVersion: 11 } })
-      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', serverVersion: 13 } });
+      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', category_id: null, serverVersion: 11 } })
+      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', category_id: null, serverVersion: 13 } });
     const saveBatch = vi.spyOn(productRepository, 'saveBatch')
       .mockResolvedValueOnce({ success: true, response: { batch: { id: 'batch-a', server_version: 2 }, product: { id: 'product-1', serverVersion: 12 } } })
       .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' })
