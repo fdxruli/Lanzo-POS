@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateRuntimeMocks = vi.hoisted(() => ({
+  DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
   isLocalDatabasePreparationActive: vi.fn(() => false),
   ensureLocalDatabaseReady: vi.fn(),
   retryLocalDatabaseRecovery: vi.fn()

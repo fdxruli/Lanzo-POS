@@ -50,7 +50,7 @@ const SAFE_MIGRATION_PHASES = new Set([
   'validation_failed'
 ]);
 
-const describeRecovery = (state, hasActiveNativeRequest) => {
+const describeRecovery = (state, hasActiveNativeRequest, hasActivePreparation) => {
   if (
     state.status === DATABASE_RECOVERY_STATUS.IDLE
     || state.status === DATABASE_RECOVERY_STATUS.CHECKING
@@ -102,6 +102,28 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
       body: hasActiveNativeRequest
         ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine antes de intentar otra recuperación.'
         : 'La solicitud anterior ya terminó. Puedes reintentar la recuperación de forma segura o recargar Lanzo.',
+      icon: 'warning'
+    };
+  }
+
+  if (state.errorCode === 'DB_TIMEOUT') {
+    return {
+      title: 'La apertura de la base local no terminó',
+      body: hasActiveNativeRequest
+        ? 'El navegador todavía mantiene una solicitud de IndexedDB activa. No reintentes ni reinicies Lanzo mientras siga activa.'
+        : hasActivePreparation
+          ? 'La preparación anterior sigue pendiente. Espera a que termine antes de reiniciar Lanzo o iniciar otra recuperación.'
+          : 'Lanzo no pudo confirmar que el almacenamiento local esté disponible. El acceso sigue bloqueado para proteger tus datos.',
+      advice: 'No borres los datos del navegador. Copia el diagnóstico y solicita una revisión antes de intentar otra recuperación.',
+      icon: 'warning'
+    };
+  }
+
+  if (state.errorCode === 'DB_OPERATION_FAILED') {
+    return {
+      title: 'No se pudo comprobar la base local',
+      body: 'La preparación terminó con un error y Lanzo no puede confirmar que los datos estén listos. El acceso permanece bloqueado.',
+      advice: 'Tus datos locales no se eliminaron. Copia el diagnóstico y solicita una revisión antes de volver a intentar.',
       icon: 'warning'
     };
   }
@@ -186,10 +208,9 @@ export default function DatabaseRecoveryGate({
   if (!BLOCKING_STATUSES.has(recovery.status)) return children;
 
   const hasActiveNativeRequest = nativeOperations.length > 0;
-  const copy = describeRecovery(recovery, hasActiveNativeRequest);
-  const operationActive = retrying
-    || hasActiveNativeRequest
-    || isLocalDatabasePreparationActive();
+  const hasActivePreparation = isLocalDatabasePreparationActive();
+  const operationActive = retrying || hasActiveNativeRequest || hasActivePreparation;
+  const copy = describeRecovery(recovery, hasActiveNativeRequest, hasActivePreparation);
   const canRetry = (
     recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
     || (
@@ -199,7 +220,7 @@ export default function DatabaseRecoveryGate({
   )
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
-  const canReload = !hasActiveNativeRequest && (
+  const canReload = !operationActive && (
     recovery.errorCode === 'DB_OPEN_TIMEOUT'
     || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT'
   );

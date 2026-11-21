@@ -22,6 +22,7 @@ const readyImportMocks = vi.hoisted(() => ({
 }));
 
 const runtimeMocks = vi.hoisted(() => ({
+  DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
   isLocalDatabasePreparationActive: vi.fn(() => true),
   prepareLocalDatabase: vi.fn(),
   ensureLocalDatabaseReady: vi.fn(),

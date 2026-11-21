@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateRuntimeMocks = vi.hoisted(() => ({
+  DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
   isLocalDatabasePreparationActive: vi.fn(() => false),
   ensureLocalDatabaseReady: vi.fn(),
   retryLocalDatabaseRecovery: vi.fn()
@@ -24,6 +25,7 @@ vi.mock('../../../services/Logger', () => ({ default: loggerMocks }));
 
 import PosApplicationBootstrap, {
   getAdminBootErrorCode,
+  INITIAL_DATABASE_PREPARATION_TIMEOUT_MS,
   resetPosApplicationBootstrapForTests,
   runStorageManagerBestEffort
 } from '../PosApplicationBootstrap';
@@ -143,6 +145,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   closeTenantRuntime();
   resetPosApplicationBootstrapForTests();
   clearDatabaseRecoveryState();
@@ -187,6 +190,92 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
     expect(loadReadyRuntime).not.toHaveBeenCalled();
     expect(prepareLocalDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces a preparation promise that never settles with a safe bounded result', async () => {
+    vi.useFakeTimers();
+    const operation = deferred();
+    const prepareLocalDatabase = vi.fn(() => {
+      setRecovery(DATABASE_RECOVERY_STATUS.CHECKING);
+      return operation.promise;
+    });
+    const loadReadyRuntime = vi.fn();
+
+    renderBootstrap({ prepareLocalDatabase, loadReadyRuntime });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('heading', { name: /comprobando la base local/i })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(INITIAL_DATABASE_PREPARATION_TIMEOUT_MS);
+    });
+
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'DB_TIMEOUT',
+      isRetryable: false
+    });
+    expect(screen.getByRole('heading', { name: /apertura de la base local no terminó/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reintentar recuperación|reiniciar lanzo/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
+    expect(loadReadyRuntime).not.toHaveBeenCalled();
+
+    operation.resolve({ ready: true });
+    await act(async () => { await operation.promise; });
+  });
+
+  it('also bounds the idle state while development cleanup is still pending', async () => {
+    vi.useFakeTimers();
+    const cleanupOperation = deferred();
+    const prepareLocalDatabase = vi.fn();
+
+    renderBootstrap({
+      prepareLocalDatabase,
+      cleanupDevelopmentServiceWorkers: vi.fn(() => cleanupOperation.promise)
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getDatabaseRecoveryState().status).toBe(DATABASE_RECOVERY_STATUS.IDLE);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(INITIAL_DATABASE_PREPARATION_TIMEOUT_MS);
+    });
+
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'DB_TIMEOUT',
+      isRetryable: false
+    });
+    expect(screen.getByRole('heading', { name: /apertura de la base local no terminó/i })).toBeInTheDocument();
+    expect(prepareLocalDatabase).not.toHaveBeenCalled();
+
+    cleanupOperation.resolve(false);
+    await act(async () => { await cleanupOperation.promise; });
+  });
+
+  it('turns a rejected preparation into a terminal recovery state', async () => {
+    const prepareLocalDatabase = vi.fn(() => {
+      setRecovery(DATABASE_RECOVERY_STATUS.CHECKING);
+      return Promise.reject(new Error('unclassified local preparation failure'));
+    });
+
+    renderBootstrap({ prepareLocalDatabase, loadReadyRuntime: vi.fn() });
+
+    expect(await screen.findByRole('heading', { name: /no se pudo comprobar la base local/i }))
+      .toBeInTheDocument();
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'DB_OPERATION_FAILED',
+      isRetryable: false
+    });
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
   });
 
   it('shows slow migration progress before mounting App and starting POS Sync', async () => {
@@ -478,11 +567,12 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     });
 
     expect(await screen.findByRole('heading', {
-      name: /comprobando la base local/i
+      name: /no se pudo comprobar la base local/i
     })).toBeInTheDocument();
     expect(cleanupDevelopmentServiceWorkers).toHaveBeenCalledTimes(1);
     expect(prepareLocalDatabase).not.toHaveBeenCalled();
     expect(loadReadyRuntime).not.toHaveBeenCalled();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
   });
 });
