@@ -10,6 +10,7 @@ export const ACTOR_HANDOFF_CHECKOUT_OWNED = 'ACTOR_HANDOFF_CHECKOUT_OWNED';
 
 const pendingOperations = new Map();
 const checkoutOwnership = new Map();
+const activityListeners = new Set();
 // The raw unlock is private and used solely to compensate this attempt's
 // acquired lock. Re-registering discount wrappers must not turn compensation
 // into a new protected request from the actor that has just lost authority.
@@ -20,6 +21,15 @@ let operationalDb = null;
 let operationalStores = null;
 let activeOrdersRegistration = null;
 let orderStoreRegistration = null;
+
+const notifyActorOperationalActivity = () => activityListeners.forEach((listener) => {
+  try { listener(); } catch { /* Activity observers must not interfere with operations. */ }
+});
+
+export const subscribeActorOperationalActivity = (listener) => {
+  activityListeners.add(listener);
+  return () => activityListeners.delete(listener);
+};
 
 const nextOperationId = (label) => `${label}:${++operationSequence}`;
 
@@ -86,6 +96,7 @@ export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } =
     .filter((sale) => sale?.isLockedForCheckout === true)
     .toArray();
   const persistedIds = new Set(lockedSales.map((sale) => sale.id).filter(Boolean));
+  let changed = false;
 
   for (const [orderId, ownership] of checkoutOwnership.entries()) {
     if (
@@ -94,6 +105,7 @@ export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } =
       && !persistedIds.has(orderId)
     ) {
       checkoutOwnership.delete(orderId);
+      changed = true;
     }
   }
 
@@ -116,6 +128,7 @@ export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } =
         tenantOpaqueId: tenant?.opaqueId || existing.tenantOpaqueId || existing.handle.tenant?.opaqueId || null,
         tenantGeneration: tenant?.generation ?? existing.tenantGeneration ?? existing.handle.tenant?.generation ?? null
       });
+      changed = true;
       continue;
     }
 
@@ -129,7 +142,10 @@ export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } =
       acquiredAt: sale.checkoutLockedAt || sale.updatedAt || null,
       persisted: true
     });
+    changed = true;
   }
+
+  if (changed) notifyActorOperationalActivity();
 
   return getActorCheckoutOwnerships();
 };
@@ -181,6 +197,7 @@ export const runTrackedActorOperationWithHandle = async (
     handle,
     startedAt: new Date().toISOString()
   });
+  notifyActorOperationalActivity();
 
   const assertCurrent = (requiredPermission = permission) => handle.assertCurrent(requiredPermission);
   const guardedWrite = (write, requiredPermission = permission) => {
@@ -196,6 +213,7 @@ export const runTrackedActorOperationWithHandle = async (
     return result;
   } finally {
     pendingOperations.delete(id);
+    notifyActorOperationalActivity();
   }
 };
 
@@ -333,6 +351,7 @@ export const rebindActorOperationalOwnership = ({ actorKey, tenant, handle } = {
       rebound += 1;
     }
   }
+  if (rebound > 0) notifyActorOperationalActivity();
   return rebound;
 };
 
@@ -411,6 +430,7 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
                 acquiredAt: new Date().toISOString(),
                 persisted: true
               });
+              notifyActorOperationalActivity();
             }
           } catch (error) {
             // Compensate only the lock this attempt just acquired; no sale,
@@ -448,6 +468,7 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
               // is ignored by persisted checkout inspection.
             }
             checkoutOwnership.delete(orderId);
+            notifyActorOperationalActivity();
           }
           return result;
         }
@@ -467,7 +488,9 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
         async ({ assertCurrent }) => {
           const result = await originalRemove(orderId, ...args);
           assertCurrent();
-          if (result?.success !== false && orderId) checkoutOwnership.delete(orderId);
+          if (result?.success !== false && orderId && checkoutOwnership.delete(orderId)) {
+            notifyActorOperationalActivity();
+          }
           return result;
         }
       );

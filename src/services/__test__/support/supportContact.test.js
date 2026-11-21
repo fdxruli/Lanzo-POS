@@ -87,6 +87,53 @@ describe('supportContact', () => {
     expect(report).not.toMatch(/license key|token|password|\bpin\b/i);
   });
 
+  it('incluye fase y actividad técnica conocida del fallo sin serializar datos sensibles', () => {
+    const report = buildDatabaseRecoverySupportReport({
+      status: 'failed',
+      errorCode: 'DB_OPERATION_FAILED',
+      databaseName: 'LanzoDB_t_opaque-business-id',
+      isRetryable: false,
+      failure: {
+        id: 12,
+        phase: 'dexie_open',
+        category: 'dexie',
+        errorType: 'DatabaseError',
+        errorCode: 'token=license-secret',
+        durationMs: 15032.8,
+        nativeRequestState: 'timed_out_waiting_native_settlement',
+        preflightActive: true,
+        restartContext: {
+          runtimeGeneration: 47,
+          actorGeneration: 22,
+          actorStatus: 'granted',
+          tenantOpaqueId: 'opaque-business-id',
+          sessionId: 'session-secret'
+        },
+        message: 'customer=Ana total=9876.50 token=secret'
+      }
+    }, {
+      appVersion: '4.2.0',
+      buildCommit: 'a84df28',
+      userAgent: 'Mozilla/5.0 Chrome/126.1',
+      path: '/productos',
+      now: new Date('2026-11-21T10:09:00.000Z')
+    });
+
+    expect(report).toContain('DB_OPERATION_FAILED');
+    expect(report).toContain('Commit: a84df28');
+    expect(report).toContain('Fase de fallo: Apertura de Dexie');
+    expect(report).toContain('Categoría técnica: Dexie');
+    expect(report).toContain('Tipo técnico detectado: DatabaseError');
+    expect(report).toContain('Timeout público; solicitud nativa aún activa');
+    expect(report).toContain('Preflight activo al fallar: Sí');
+    expect(report).toContain('Duración aproximada de preparación: 15033 ms');
+    expect(report).not.toContain('opaque-business-id');
+    expect(report).not.toContain('session-secret');
+    expect(report).not.toContain('license-secret');
+    expect(report).not.toContain('Ana');
+    expect(report).not.toContain('9876.50');
+  });
+
   it('construye un reporte de inicio administrativo con metadatos acotados y sin secretos', () => {
     const report = buildAdminBootSupportReport({
       errorCode: 'TENANT_RUNTIME_NOT_READY',

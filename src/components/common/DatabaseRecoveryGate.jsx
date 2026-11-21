@@ -6,11 +6,9 @@ import {
   subscribeDatabaseRecoveryState
 } from '../../services/db/databaseRecoveryState';
 import {
-  getActiveNativeOpenOperations,
-  subscribeNativeOpenOperations
-} from '../../services/db/indexedDbPreflight';
-import {
-  isLocalDatabasePreparationActive,
+  getLocalDatabaseActivityRevision,
+  getLocalDatabaseActivitySnapshot,
+  subscribeLocalDatabaseActivity,
   retryLocalDatabaseRecovery
 } from '../../services/db/databaseRuntime';
 import {
@@ -26,11 +24,48 @@ const useDatabaseRecoveryState = () => useSyncExternalStore(
   getDatabaseRecoveryState
 );
 
-export const useNativeDatabaseOperationState = () => useSyncExternalStore(
-  subscribeNativeOpenOperations,
-  getActiveNativeOpenOperations,
-  getActiveNativeOpenOperations
+const useLocalDatabaseActivityRevision = () => useSyncExternalStore(
+  subscribeLocalDatabaseActivity,
+  getLocalDatabaseActivityRevision,
+  getLocalDatabaseActivityRevision
 );
+
+const RESTART_BUSY_REASONS = new Set([
+  'local_database_active',
+  'write_active',
+  'business_operation_active',
+  'checkout_active',
+  'backup_active',
+  'sync_active',
+  'draft_active',
+  'bootstrap_active'
+]);
+
+const RESTART_BLOCKER_COPY = Object.freeze({
+  local_database_active: 'El navegador todavía mantiene una solicitud de IndexedDB activa o una preparación local en curso. Espera a que termine.',
+  write_active: 'Hay cambios locales guardándose. Espera a que terminen.',
+  business_operation_active: 'Hay una operación del negocio en curso.',
+  checkout_active: 'Hay un cobro u otra operación comercial en curso.',
+  backup_active: 'Hay un respaldo o restauración en curso.',
+  sync_active: 'Hay una sincronización en curso.',
+  draft_active: 'Hay cambios locales o una operación pendiente. Resuélvela antes de reiniciar.',
+  bootstrap_active: 'Lanzo todavía está completando una operación de inicio.',
+  context_unverified: 'No se pudo confirmar que la base local corresponda al negocio activo.',
+  context_changed: 'La sesión o el negocio cambió desde que ocurrió el error.',
+  restart_unverified: 'No se pudo confirmar que este error permita reiniciar de forma segura.',
+  safety_unverified: 'No se pudo confirmar que sea seguro reiniciar en este momento.'
+});
+
+const SAFE_FAILURE_PHASE_COPY = Object.freeze({
+  runtime_resolution: 'Resolución del runtime local',
+  database_resolution: 'Resolución de la base local',
+  database_state_check: 'Comprobación del estado de Dexie',
+  dexie_open: 'Apertura de Dexie',
+  ready_confirmation: 'Confirmación de preparación',
+  startup_interrupted: 'Preparación inicial interrumpida',
+  unknown: 'No determinada'
+});
+const NOOP_SUBSCRIBE = () => () => {};
 
 const BLOCKING_STATUSES = new Set([
   DATABASE_RECOVERY_STATUS.IDLE,
@@ -120,11 +155,32 @@ const describeRecovery = (state, hasActiveNativeRequest, hasActivePreparation) =
   }
 
   if (state.errorCode === 'DB_OPERATION_FAILED') {
+    const restartBlockerCopy = RESTART_BLOCKER_COPY[state.restartBlockReason]
+      || RESTART_BLOCKER_COPY.safety_unverified;
+    if (RESTART_BUSY_REASONS.has(state.restartBlockReason)) {
+      return {
+        title: 'No se pudo comprobar la base local',
+        body: 'Todavía existe una operación local en curso. Espera a que termine antes de reiniciar Lanzo.',
+        advice: restartBlockerCopy,
+        icon: 'warning',
+        restartState: 'busy'
+      };
+    }
+    if (state.restartBlockReason) {
+      return {
+        title: 'No se pudo comprobar la base local',
+        body: 'No se puede confirmar que sea seguro reiniciar en este momento. El acceso permanece bloqueado.',
+        advice: restartBlockerCopy,
+        icon: 'warning',
+        restartState: 'unverified'
+      };
+    }
     return {
       title: 'No se pudo comprobar la base local',
-      body: 'La preparación terminó con un error y Lanzo no puede confirmar que los datos estén listos. El acceso permanece bloqueado.',
-      advice: 'Tus datos locales no se eliminaron. Copia el diagnóstico y solicita una revisión antes de volver a intentar.',
-      icon: 'warning'
+      body: 'Lanzo no pudo completar la comprobación de los datos locales. Puedes reiniciar la aplicación para intentar abrirla nuevamente.',
+      advice: 'No borres los datos del navegador. Reiniciar Lanzo no elimina el almacenamiento local.',
+      icon: 'warning',
+      restartState: 'available'
     };
   }
 
@@ -178,17 +234,40 @@ const MigrationDetails = ({ migration }) => {
 export default function DatabaseRecoveryGate({
   children,
   reloadPage = () => window.location.reload(),
-  openSupportMailto = (url) => { window.location.href = url; }
+  openSupportMailto = (url) => { window.location.href = url; },
+  getRestartBlockReason = () => 'safety_unverified',
+  subscribeRestartSafety = NOOP_SUBSCRIBE
 }) {
   const recovery = useDatabaseRecoveryState();
-  const nativeOperations = useNativeDatabaseOperationState();
+  useLocalDatabaseActivityRevision();
+  const databaseActivity = getLocalDatabaseActivitySnapshot();
+  const restartBlockReason = useSyncExternalStore(
+    subscribeRestartSafety,
+    () => {
+      if (recovery.errorCode !== 'DB_OPERATION_FAILED') return null;
+      try {
+        const reason = getRestartBlockReason(recovery.failure?.id);
+        return reason === null ? null : typeof reason === 'string' ? reason : 'safety_unverified';
+      } catch {
+        return 'safety_unverified';
+      }
+    },
+    () => recovery.errorCode === 'DB_OPERATION_FAILED' ? 'safety_unverified' : null
+  );
   const [retrying, setRetrying] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartActionBlockReason, setRestartActionBlockReason] = useState(null);
   const [retryError, setRetryError] = useState('');
   const [supportActionError, setSupportActionError] = useState('');
   const [copied, setCopied] = useState(false);
   const [isOnline, setIsOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const retryPromiseRef = useRef(null);
+  const restartStartedRef = useRef(false);
   const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    setRestartActionBlockReason(null);
+  }, [restartBlockReason]);
 
   useEffect(() => {
     const updateOnlineState = () => setIsOnline(globalThis.navigator?.onLine !== false);
@@ -207,10 +286,13 @@ export default function DatabaseRecoveryGate({
 
   if (!BLOCKING_STATUSES.has(recovery.status)) return children;
 
-  const hasActiveNativeRequest = nativeOperations.length > 0;
-  const hasActivePreparation = isLocalDatabasePreparationActive();
-  const operationActive = retrying || hasActiveNativeRequest || hasActivePreparation;
-  const copy = describeRecovery(recovery, hasActiveNativeRequest, hasActivePreparation);
+  const hasActiveNativeRequest = databaseActivity.hasActiveNativeRequest;
+  const hasActivePreparation = databaseActivity.preparationActive
+    || databaseActivity.preflightActive
+    || databaseActivity.migrationActive;
+  const operationActive = retrying || isRestarting || hasActiveNativeRequest || hasActivePreparation;
+  const effectiveRestartBlockReason = restartActionBlockReason || restartBlockReason;
+  const copy = describeRecovery({ ...recovery, restartBlockReason: effectiveRestartBlockReason }, hasActiveNativeRequest, hasActivePreparation);
   const canRetry = (
     recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
     || (
@@ -220,9 +302,12 @@ export default function DatabaseRecoveryGate({
   )
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
+  const isDatabaseOperationFailed = recovery.status === DATABASE_RECOVERY_STATUS.FAILED
+    && recovery.errorCode === 'DB_OPERATION_FAILED';
   const canReload = !operationActive && (
     recovery.errorCode === 'DB_OPEN_TIMEOUT'
     || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT'
+    || (isDatabaseOperationFailed && effectiveRestartBlockReason === null)
   );
 
   const sendSupportReport = () => {
@@ -273,6 +358,28 @@ export default function DatabaseRecoveryGate({
     return operation;
   };
 
+  const restartAfterOperationFailure = () => {
+    if (restartStartedRef.current || !isDatabaseOperationFailed) return;
+    let finalBlockReason = 'safety_unverified';
+    try {
+      finalBlockReason = getRestartBlockReason(recovery.failure?.id);
+    } catch {
+      finalBlockReason = 'safety_unverified';
+    }
+    if (finalBlockReason !== null) {
+      const safeReason = typeof finalBlockReason === 'string' && RESTART_BLOCKER_COPY[finalBlockReason]
+        ? finalBlockReason
+        : 'safety_unverified';
+      setRestartActionBlockReason(safeReason);
+      return;
+    }
+
+    restartStartedRef.current = true;
+    setRestartActionBlockReason(null);
+    setIsRestarting(true);
+    reloadPage();
+  };
+
   const isChecking = recovery.status === DATABASE_RECOVERY_STATUS.IDLE
     || recovery.status === DATABASE_RECOVERY_STATUS.CHECKING
     || recovery.status === DATABASE_RECOVERY_STATUS.MIGRATING;
@@ -280,6 +387,8 @@ export default function DatabaseRecoveryGate({
     ? 'Comprobando almacenamiento local'
     : retrying
       ? 'Recuperación en curso'
+      : isRestarting
+        ? 'Reiniciando Lanzo'
       : recovery.status === DATABASE_RECOVERY_STATUS.READY
         ? 'Verificación completada'
         : 'Requiere revisión';
@@ -330,14 +439,35 @@ export default function DatabaseRecoveryGate({
           {canReload && (
             <button
               type="button"
-              className="ui-button ui-button--secondary"
-              onClick={reloadPage}
+              className={`ui-button ${isDatabaseOperationFailed ? 'ui-button--primary' : 'ui-button--secondary'}`}
+              onClick={isDatabaseOperationFailed ? restartAfterOperationFailure : reloadPage}
+              disabled={isRestarting}
             >
               <RotateCw size={18} aria-hidden="true" />
-              Reiniciar Lanzo
+              {isRestarting ? 'Reiniciando Lanzo…' : 'Reiniciar Lanzo'}
             </button>
           )}
-          {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !canRetry && (
+          {isDatabaseOperationFailed && (
+            <>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={sendSupportReport}
+              >
+                <Mail size={18} aria-hidden="true" />
+                Contactar a soporte
+              </button>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => { void copySupportReport(); }}
+              >
+                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+              </button>
+            </>
+          )}
+          {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !canRetry && !isDatabaseOperationFailed && (
             <button
               type="button"
               className="ui-button ui-button--primary"
@@ -360,6 +490,16 @@ export default function DatabaseRecoveryGate({
               {recovery.errorCode && (
                 <p><strong>Código técnico:</strong> {getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB)}</p>
               )}
+              {recovery.failure && (
+                <>
+                  <p><strong>Fase:</strong> {SAFE_FAILURE_PHASE_COPY[recovery.failure.phase] || SAFE_FAILURE_PHASE_COPY.unknown}</p>
+                  <p><strong>Tipo técnico:</strong> {recovery.failure.errorType}</p>
+                  {Number.isFinite(recovery.failure.durationMs) && (
+                    <p><strong>Duración aproximada:</strong> {recovery.failure.durationMs} ms</p>
+                  )}
+                  <p><strong>Solicitud nativa:</strong> {recovery.failure.nativeRequestState}</p>
+                </>
+              )}
               {Number.isFinite(recovery.detectedNativeVersion) && (
                 <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
               )}
@@ -379,14 +519,16 @@ export default function DatabaseRecoveryGate({
                 Abrir correo de soporte
               </button>
             )}
-            <button
-              type="button"
-              className="ui-button ui-button--secondary"
-              onClick={() => { void copySupportReport(); }}
-            >
-              {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
-              {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
-            </button>
+            {!isDatabaseOperationFailed && (
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => { void copySupportReport(); }}
+              >
+                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+              </button>
+            )}
             <p className="app-boot-recovery__note">
               El botón de correo abre tu aplicación de correo; revisa y envía el mensaje cuando estés listo.
             </p>

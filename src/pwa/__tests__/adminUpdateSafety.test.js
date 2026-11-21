@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
-import { describe, expect, it } from 'vitest';
-import { getAdminUpdateCartState, getAdminUpdateDraftBlockReason, hasAdminUpdateWrites, installAdminUpdateWriteTracking, registerAdminUpdateBlocker, setAdminUpdateCartStateReader } from '../adminUpdateSafety';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  getAdminUpdateCartState,
+  getAdminUpdateDraftBlockReason,
+  hasAdminUpdateWrites,
+  installAdminUpdateWriteTracking,
+  registerAdminUpdateBlocker,
+  setAdminUpdateCartStateReader,
+  subscribeAdminUpdateActivity
+} from '../adminUpdateSafety';
 
 describe('update protection around native IndexedDB commits', () => {
   it('reads a fresh cart snapshot without POS imports and fails closed on reader errors', () => {
@@ -20,19 +28,23 @@ describe('update protection around native IndexedDB commits', () => {
 
   it('tracks complete write transactions and preserves committed records', async () => {
     const db = new Dexie('qa-update-writes');
+    const activityListener = vi.fn();
+    const unsubscribe = subscribeAdminUpdateActivity(activityListener);
     db.version(1).stores({ sales: 'id' });
     installAdminUpdateWriteTracking(db);
     try {
       await db.transaction('rw', db.sales, async () => {
         await db.sales.put({ id: 'sale-1', total: 150 });
         expect(hasAdminUpdateWrites()).toBe(true);
+        expect(activityListener).toHaveBeenCalled();
       });
       expect(hasAdminUpdateWrites()).toBe(false);
+      expect(activityListener.mock.calls.length).toBeGreaterThan(1);
       expect(await db.sales.get('sale-1')).toEqual({ id: 'sale-1', total: 150 });
       await db.transaction('r', db.sales, async () => {
         expect(hasAdminUpdateWrites()).toBe(false);
       });
-    } finally { await db.delete(); }
+    } finally { unsubscribe(); await db.delete(); }
   });
 
   it('releases protection only when an aborted native transaction settles', async () => {
@@ -57,6 +69,8 @@ describe('update protection around native IndexedDB commits', () => {
   });
 
   it('keeps independent forms protected until each releases its blocker', () => {
+    const activityListener = vi.fn();
+    const unsubscribe = subscribeAdminUpdateActivity(activityListener);
     const releaseA = registerAdminUpdateBlocker('form-a');
     const releaseB = registerAdminUpdateBlocker('form-b');
     expect(getAdminUpdateDraftBlockReason()).toBe('form-a');
@@ -64,5 +78,7 @@ describe('update protection around native IndexedDB commits', () => {
     expect(getAdminUpdateDraftBlockReason()).toBe('form-b');
     releaseB();
     expect(getAdminUpdateDraftBlockReason()).toBeNull();
+    expect(activityListener).toHaveBeenCalledTimes(4);
+    unsubscribe();
   });
 });

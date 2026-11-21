@@ -63,6 +63,57 @@ const getRecoveryEnvironment = (environment = {}) => {
   };
 };
 
+const SAFE_RECOVERY_FAILURE_PHASES = Object.freeze({
+  runtime_resolution: 'Resolución del runtime local',
+  database_resolution: 'Resolución de la base local',
+  database_state_check: 'Comprobación del estado de Dexie',
+  dexie_open: 'Apertura de Dexie',
+  ready_confirmation: 'Confirmación de preparación',
+  startup_interrupted: 'Preparación inicial interrumpida',
+  unknown: 'Desconocida'
+});
+const SAFE_RECOVERY_FAILURE_CATEGORIES = Object.freeze({
+  indexeddb: 'IndexedDB',
+  dexie: 'Dexie',
+  unknown: 'Desconocida'
+});
+const SAFE_RECOVERY_NATIVE_STATES = Object.freeze({
+  none: 'Ninguna registrada',
+  multiple_active: 'Múltiples solicitudes activas',
+  opening: 'En apertura',
+  blocked: 'Bloqueada',
+  upgrading: 'Actualizando',
+  timed_out_waiting_native_settlement: 'Timeout público; solicitud nativa aún activa'
+});
+const SAFE_RECOVERY_ERROR_TYPES = new Set([
+  'Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'DOMException',
+  'AbortError', 'ConstraintError', 'DataError', 'InvalidStateError', 'NetworkError',
+  'NotAllowedError', 'QuotaExceededError', 'ReadOnlyError', 'TimeoutError',
+  'TransactionInactiveError', 'UnknownError', 'VersionError', 'DatabaseError',
+  'DatabaseClosedError', 'DatabaseOpenTimeoutError', 'OpenFailedError', 'UpgradeError'
+]);
+
+const getSafePreparationFailure = (failure) => {
+  if (!failure || typeof failure !== 'object') return null;
+  const phase = SAFE_RECOVERY_FAILURE_PHASES[failure.phase] || SAFE_RECOVERY_FAILURE_PHASES.unknown;
+  const category = SAFE_RECOVERY_FAILURE_CATEGORIES[failure.category] || SAFE_RECOVERY_FAILURE_CATEGORIES.unknown;
+  const nativeRequestState = SAFE_RECOVERY_NATIVE_STATES[failure.nativeRequestState]
+    || SAFE_RECOVERY_NATIVE_STATES.none;
+  const errorType = SAFE_RECOVERY_ERROR_TYPES.has(failure.errorType) ? failure.errorType : 'Error';
+  const durationMs = Number.isFinite(failure.durationMs)
+    ? Math.max(0, Math.min(900_000, Math.round(failure.durationMs)))
+    : null;
+
+  return {
+    phase,
+    category,
+    nativeRequestState,
+    errorType,
+    durationMs,
+    preflightActive: failure.preflightActive === true
+  };
+};
+
 /**
  * Builds a bounded technical report for a failure while loading the
  * administrative shell. It receives only boot metadata; tenant identity,
@@ -127,6 +178,7 @@ export function buildDatabaseRecoverySupportReport(recovery = {}, environment = 
 
   const allowedStates = new Set(['idle', 'checking', 'ready', 'migrating', 'recovery_required', 'failed']);
   const status = allowedStates.has(recovery.status) ? recovery.status : 'unknown';
+  const preparationFailure = getSafePreparationFailure(recovery.failure);
   const incident = classifyIncident({ code: recovery.errorCode }, { category: INCIDENT_CATEGORY.INDEXEDDB });
   const baseReport = buildSafeIncidentReport(
     { code: getSafeIncidentCode({ code: recovery.errorCode }, incident.category) },
@@ -145,6 +197,15 @@ export function buildDatabaseRecoverySupportReport(recovery = {}, environment = 
     baseReport,
     `Estado de recuperación: ${status}`,
     `Base local: ${getSafeDatabaseFamily(recovery.databaseName)}`,
+    ...(preparationFailure ? [
+      `Fase de fallo: ${preparationFailure.phase}`,
+      `Operación local: Preparación de base local`,
+      `Categoría técnica: ${preparationFailure.category}`,
+      `Tipo técnico detectado: ${preparationFailure.errorType}`,
+      `Solicitud nativa de IndexedDB: ${preparationFailure.nativeRequestState}`,
+      `Preflight activo al fallar: ${preparationFailure.preflightActive ? 'Sí' : 'No'}`,
+      `Duración aproximada de preparación: ${preparationFailure.durationMs === null ? 'No disponible' : `${preparationFailure.durationMs} ms`}`
+    ] : []),
     ...optionalVersions,
     `Requiere migración: ${recovery.requiresMigration === true ? 'Sí' : 'No'}`,
     `Reintentable: ${recovery.isRetryable === false ? 'No' : 'Sí'}`,

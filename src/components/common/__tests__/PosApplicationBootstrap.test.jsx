@@ -7,6 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateRuntimeMocks = vi.hoisted(() => ({
   DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
+  getLocalDatabaseActivitySnapshot: vi.fn(() => ({
+    preparationActive: false,
+    preflightActive: false,
+    nativeOperations: [],
+    hasActiveNativeRequest: false,
+    hasTimedOutNativeRequest: false,
+    migrationActive: false
+  })),
+  getLocalDatabaseActivityRevision: vi.fn(() => 0),
+  subscribeLocalDatabaseActivity: vi.fn(() => () => {}),
   isLocalDatabasePreparationActive: vi.fn(() => false),
   ensureLocalDatabaseReady: vi.fn(),
   retryLocalDatabaseRecovery: vi.fn()
@@ -39,10 +49,12 @@ import '../../../services/db/dexie';
 import { resolveActiveTenantIdentity } from '../../../services/tenant/localTenantGuard';
 import {
   closeTenantRuntime,
+  getActiveTenantRuntime,
   openTenantRuntime,
   resolveTenantRuntimeDirectory
 } from '../../../services/db/tenantRuntimeRouter';
 import { CURRENT_NATIVE_DATABASE_VERSION } from '../../../services/db/databaseSchema';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
@@ -275,7 +287,58 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       errorCode: 'DB_OPERATION_FAILED',
       isRetryable: false
     });
-    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/no se pudo confirmar que este error permita reiniciar/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /contactar a soporte/i })).toBeInTheDocument();
+  });
+
+  it('binds the restart action to the business runtime and actor context that produced DB_OPERATION_FAILED', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `DB-OP-RESTART-${crypto.randomUUID()}` });
+    const openedRuntime = await openTenantRuntime(identity);
+    const currentRuntime = getActiveTenantRuntime();
+    clearDatabaseRecoveryState();
+    actorRuntimeController.lock('db_operation_failed_restart_fixture');
+    const actor = actorRuntimeController.getState();
+    const operation = deferred();
+    const prepareLocalDatabase = vi.fn(() => {
+      setRecovery(DATABASE_RECOVERY_STATUS.CHECKING);
+      return operation.promise;
+    });
+    const reloadPage = vi.fn();
+
+    renderBootstrap({ prepareLocalDatabase, loadReadyRuntime: vi.fn(), reloadPage });
+    await screen.findByRole('heading', { name: /comprobando la base local/i });
+
+    act(() => setRecovery(DATABASE_RECOVERY_STATUS.FAILED, {
+      errorCode: 'DB_OPERATION_FAILED',
+      isRetryable: false,
+      requiresMigration: false,
+      databaseName: currentRuntime.databaseName,
+      failure: {
+        id: 41,
+        phase: 'dexie_open',
+        category: 'unknown',
+        errorType: 'Error',
+        durationMs: 120,
+        nativeRequestState: 'none',
+        preflightActive: false,
+        restartContext: {
+          runtimeGeneration: currentRuntime.generation,
+          actorGeneration: actor.generation,
+          actorStatus: actor.status
+        }
+      }
+    }));
+
+    expect(screen.getByRole('button', { name: 'Reiniciar Lanzo' })).toBeEnabled();
+    expect(openedRuntime.database.name).toBe(currentRuntime.databaseName);
+
+    act(() => actorRuntimeController.lock('actor_changed_after_database_failure'));
+
+    expect(screen.getByText(/la sesión o el negocio cambió desde que ocurrió el error/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+    expect(reloadPage).not.toHaveBeenCalled();
+    operation.resolve({ ready: true });
   });
 
   it('shows slow migration progress before mounting App and starting POS Sync', async () => {
@@ -573,6 +636,6 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(prepareLocalDatabase).not.toHaveBeenCalled();
     expect(loadReadyRuntime).not.toHaveBeenCalled();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /contactar a soporte/i })).toBeInTheDocument();
   });
 });

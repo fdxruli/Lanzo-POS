@@ -2,6 +2,16 @@
 const blockers = new Set();
 let activeWrites = 0;
 let readCartState = null;
+const activityListeners = new Set();
+
+const notifyActivityListeners = () => activityListeners.forEach((listener) => {
+  try { listener(); } catch { /* Activity observers must not interfere with writes. */ }
+});
+
+export const subscribeAdminUpdateActivity = (listener) => {
+  activityListeners.add(listener);
+  return () => activityListeners.delete(listener);
+};
 
 // POS registers the reader only when loaded. The PWA startup shell must
 // not directly import the cart, Dexie or checkout dependencies.
@@ -23,7 +33,10 @@ export function getAdminUpdateCartState() {
 export function registerAdminUpdateBlocker(reason) {
   const blocker = { reason };
   blockers.add(blocker);
-  return () => blockers.delete(blocker);
+  notifyActivityListeners();
+  return () => {
+    if (blockers.delete(blocker)) notifyActivityListeners();
+  };
 }
 export const getAdminUpdateDraftBlockReason = () => [...blockers][0]?.reason || null;
 export const hasAdminUpdateWrites = () => activeWrites > 0;
@@ -37,11 +50,13 @@ export function installAdminUpdateWriteTracking(database) {
         const transaction = down.transaction(stores, mode, options);
         if (mode === 'readwrite') {
           activeWrites += 1;
+          notifyActivityListeners();
           let settled = false;
           const finish = () => {
             if (settled) return;
             settled = true;
             activeWrites -= 1;
+            notifyActivityListeners();
           };
           transaction.addEventListener('complete', finish, { once: true });
           transaction.addEventListener('abort', finish, { once: true });

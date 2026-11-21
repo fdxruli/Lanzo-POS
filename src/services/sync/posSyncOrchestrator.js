@@ -25,6 +25,7 @@ import {
 import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
 const entityHandlers = new Map();
+const activityListeners = new Set();
 // Opt-in singleton ownership. Default callers never install this binding.
 let executionScope = null;
 let legacyWorkStarted = false;
@@ -57,6 +58,14 @@ const runtime = {
   realtimeStatus: SYNC_STATUS.DISABLED,
   realtimeTopic: null,
   onlineListener: null
+};
+
+const setActivityFlag = (name, value) => {
+  if (runtime[name] === value) return;
+  runtime[name] = value;
+  activityListeners.forEach((listener) => {
+    try { listener(); } catch { /* Activity observers must not interfere with sync work. */ }
+  });
 };
 
 const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -294,6 +303,10 @@ export const posSyncOrchestrator = {
   getUpdateActivity() {
     return runtime.startInProgress || runtime.pullInProgress || runtime.outboxInProgress;
   },
+  subscribeUpdateActivity(listener) {
+    activityListeners.add(listener);
+    return () => activityListeners.delete(listener);
+  },
   registerEntitySyncHandler(entityType, handler) {
     if (!entityType || !handler) {
       throw new Error('ENTITY_SYNC_HANDLER_INVALID');
@@ -322,7 +335,7 @@ export const posSyncOrchestrator = {
       };
     }
 
-    runtime.startInProgress = true;
+    setActivityFlag('startInProgress', true);
     const startAttempt = ++runtime.startAttempt;
     let startGeneration = null;
 
@@ -455,9 +468,9 @@ export const posSyncOrchestrator = {
       if (startGeneration !== null && isRuntimeGenerationCurrent(startGeneration, licenseKey)) {
         clearRealtimePullTimer();
         runtime.started = false;
-        runtime.pullInProgress = false;
+        setActivityFlag('pullInProgress', false);
         runtime.pendingPull = false;
-        runtime.outboxInProgress = false;
+        setActivityFlag('outboxInProgress', false);
         runtime.lastPullReason = null;
         detachOnlineListener();
 
@@ -474,7 +487,7 @@ export const posSyncOrchestrator = {
       }
       throw error;
     } finally {
-      if (runtime.startAttempt === startAttempt) runtime.startInProgress = false;
+      if (runtime.startAttempt === startAttempt) setActivityFlag('startInProgress', false);
     }
   },
 
@@ -483,10 +496,10 @@ export const posSyncOrchestrator = {
     const stopGeneration = ++runtime.generation;
     clearRealtimePullTimer();
     runtime.started = false;
-    runtime.startInProgress = false;
-    runtime.pullInProgress = false;
+    setActivityFlag('startInProgress', false);
+    setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;
-    runtime.outboxInProgress = false;
+    setActivityFlag('outboxInProgress', false);
     runtime.lastPullReason = null;
     detachOnlineListener();
 
@@ -609,7 +622,7 @@ export const posSyncOrchestrator = {
       };
     }
 
-    runtime.pullInProgress = true;
+    setActivityFlag('pullInProgress', true);
     runtime.lastPullReason = reason;
     runtime.lastPullStartedAt = Date.now();
 
@@ -736,7 +749,7 @@ export const posSyncOrchestrator = {
       return null;
     } finally {
       if (isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) {
-        runtime.pullInProgress = false;
+        setActivityFlag('pullInProgress', false);
         runtime.lastPullFinishedAt = Date.now();
 
         const pendingReason = runtime.pendingPull ? runtime.lastPullReason || 'pending' : null;
@@ -775,7 +788,7 @@ export const posSyncOrchestrator = {
       };
     }
 
-    runtime.outboxInProgress = true;
+    setActivityFlag('outboxInProgress', true);
 
     try {
       const pending = await syncOutboxService.getPendingOperations({
@@ -865,7 +878,7 @@ export const posSyncOrchestrator = {
       return { processed };
     } finally {
       if (isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) {
-        runtime.outboxInProgress = false;
+        setActivityFlag('outboxInProgress', false);
       }
     }
   },

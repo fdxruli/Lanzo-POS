@@ -67,6 +67,7 @@ import {
   rebindActorOperationalOwnership,
   registerActorOperationalActiveOrders,
   refreshPersistedActorCheckoutOwnership,
+  subscribeActorOperationalActivity,
   runCheckoutActorOperation,
   runTrackedActorOperationWithHandle
 } from '../actorOperationalHandoff';
@@ -109,6 +110,27 @@ describe('actor operational handoff barrier', () => {
     configureActorOperationalPersistence({ db: fixtures.db, salesStore: 'sales' });
     await installActorOperationalHandoffGuards();
     await refreshPersistedActorCheckoutOwnership({ tenant: TENANT });
+  });
+
+  it('notifies restart safety subscribers while a tracked actor operation starts and settles', async () => {
+    let finishOperation;
+    const pendingOperation = new Promise((resolve) => { finishOperation = resolve; });
+    const listener = vi.fn();
+    const unsubscribe = subscribeActorOperationalActivity(listener);
+
+    const operation = runTrackedActorOperationWithHandle(
+      createHandle(),
+      'qa.active_operation',
+      () => pendingOperation
+    );
+
+    expect(getPendingActorOperations()).toHaveLength(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    finishOperation({ success: true });
+    await expect(operation).resolves.toEqual({ success: true });
+    expect(getPendingActorOperations()).toHaveLength(0);
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 
   it('guards ActiveOrders table saving before any durable write while the actor is locked', async () => {

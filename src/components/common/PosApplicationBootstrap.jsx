@@ -1,9 +1,13 @@
-import { getAdminUpdateDraftBlockReason, hasAdminUpdateWrites } from '../../pwa/adminUpdateSafety';
+import {
+  getAdminUpdateDraftBlockReason,
+  hasAdminUpdateWrites,
+  subscribeAdminUpdateActivity
+} from '../../pwa/adminUpdateSafety';
 import {
   DATABASE_PREPARATION_TIMEOUT_MS,
   getLocalDatabaseActivitySnapshot
 } from '../../services/db/databaseRuntime';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Copy, Mail, RotateCw } from 'lucide-react';
 import DatabaseRecoveryGate from './DatabaseRecoveryGate';
 import Logger from '../../services/Logger';
@@ -23,11 +27,14 @@ import {
   initializeLocalTenantGuard,
   resetLocalTenantGuardForTests
 } from '../../services/tenant/localTenantGuard';
-import { getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
+import { getActiveTenantRuntime, getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
 import {
   getActorCheckoutOwnerships,
-  getPendingActorOperations
+  getPendingActorOperations,
+  subscribeActorOperationalActivity
 } from '../../services/auth/actorOperationalHandoff';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { localTenantAccessController } from '../../services/tenant/localTenantPolicy';
 import {
   buildAdminBootSupportReport,
   buildSupportMailtoUrl,
@@ -124,6 +131,18 @@ export const loadPosReadyRuntime = async () => {
   // it as another concurrent root can expose an uninitialized cyclic export.
   const { posSyncOrchestrator } = await import('../../services/sync/posSyncOrchestrator');
 
+  const getReadyRuntimeRestartBlockReason = () => {
+    const state = useAppStore.getState();
+    if (state._isInitializing) return 'business_operation_active';
+    if (getActorCheckoutOwnerships().length > 0) return 'checkout_active';
+    if (getPendingActorOperations().length > 0) return 'business_operation_active';
+    if (state.isBackupLoading) return 'backup_active';
+    if (hasAdminUpdateWrites()) return 'write_active';
+    if (posSyncOrchestrator.getUpdateActivity()) return 'sync_active';
+    if (getAdminUpdateDraftBlockReason()) return 'draft_active';
+    return null;
+  };
+
   function Thrower({ error }) {
     throw error;
   }
@@ -176,16 +195,17 @@ export const loadPosReadyRuntime = async () => {
     ReadyApplication: PosReadyApplication,
     activate: () => {
       setAdminServiceWorkerReloadGuard(() => {
-        if (getActorCheckoutOwnerships().length) return 'Termina o cancela el cobro en curso antes de actualizar.';
-        if (getPendingActorOperations().length) return 'Espera a que termine la operación en curso antes de actualizar.';
-        if (useAppStore.getState().isBackupLoading) return 'Espera a que termine el respaldo o la restauración antes de actualizar.';
-        if (hasAdminUpdateWrites()) return 'Estamos guardando información. Intenta actualizar en unos momentos.';
+        const appBlocker = getReadyRuntimeRestartBlockReason();
+        if (appBlocker === 'checkout_active') return 'Termina o cancela el cobro en curso antes de actualizar.';
+        if (appBlocker === 'business_operation_active') return 'Espera a que termine la operación en curso antes de actualizar.';
+        if (appBlocker === 'backup_active') return 'Espera a que termine el respaldo o la restauración antes de actualizar.';
+        if (appBlocker === 'write_active') return 'Estamos guardando información. Intenta actualizar en unos momentos.';
         const activity = getLocalDatabaseActivitySnapshot();
-        if (activity.preparationActive || activity.hasActiveNativeRequest || activity.preflightActive) {
+        if (activity.preparationActive || activity.hasActiveNativeRequest || activity.preflightActive || activity.migrationActive) {
           return 'Espera a que termine la preparación de los datos locales.';
         }
-        if (posSyncOrchestrator.getUpdateActivity()) return 'Espera a que termine la sincronización antes de actualizar.';
-        return getAdminUpdateDraftBlockReason() || true;
+        if (appBlocker === 'sync_active') return 'Espera a que termine la sincronización antes de actualizar.';
+        return appBlocker === 'draft_active' ? getAdminUpdateDraftBlockReason() || true : true;
       });
       installDevConsoleCapture();
       installDevConsolePreferences({
@@ -198,6 +218,14 @@ export const loadPosReadyRuntime = async () => {
       installProductStoreRecoveryGuard();
       startPosSyncAutoBootstrap();
       runStorageManagerBestEffort(storageManager);
+    },
+    getRestartActivityBlockReason: getReadyRuntimeRestartBlockReason,
+    subscribeRestartActivity: (listener) => {
+      const unsubscribers = [
+        useAppStore.subscribe(listener),
+        posSyncOrchestrator.subscribeUpdateActivity(listener)
+      ];
+      return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
     }
   };
 };
@@ -209,7 +237,7 @@ export const startInitialDatabasePreparation = ({
   if (initialPreparationPromise) return initialPreparationPromise;
 
   const generation = ++initialPreparationGeneration;
-  const publishIfStillPending = (errorCode, message) => {
+  const publishIfStillPending = (errorCode, message, failure = null) => {
     if (generation !== initialPreparationGeneration) return;
     const currentState = getDatabaseRecoveryState();
     if (![DATABASE_RECOVERY_STATUS.IDLE, DATABASE_RECOVERY_STATUS.CHECKING].includes(currentState.status)) return;
@@ -219,7 +247,8 @@ export const startInitialDatabasePreparation = ({
       databaseName: currentState.databaseName,
       isRetryable: false,
       requiresMigration: false,
-      message
+      message,
+      failure
     });
   };
 
@@ -244,7 +273,14 @@ export const startInitialDatabasePreparation = ({
       if (canContinueBoot === false) {
         publishIfStillPending(
           'DB_OPERATION_FAILED',
-          'La limpieza local solicitó reiniciar Lanzo, pero la página no se recargó.'
+          'La limpieza local solicitó reiniciar Lanzo, pero la página no se recargó.',
+          {
+            phase: 'startup_interrupted',
+            category: 'unknown',
+            errorType: 'Error',
+            nativeRequestState: 'none',
+            durationMs: null
+          }
         );
         return { ready: false, interruptedForCleanup: true };
       }
@@ -453,6 +489,7 @@ export default function PosApplicationBootstrap({
 }) {
   const recovery = useDatabaseRecoveryState();
   const [ReadyApplication, setReadyApplication] = useState(null);
+  const readyRuntimeSafetyRef = useRef(null);
   const [readyRuntimeError, setReadyRuntimeError] = useState(null);
   const [isRecoveringRuntime, setIsRecoveringRuntime] = useState(false);
   const [supportActionError, setSupportActionError] = useState('');
@@ -515,6 +552,7 @@ export default function PosApplicationBootstrap({
       .then((runtime) => {
         if (!active) return;
         completeStartupRecovery();
+        readyRuntimeSafetyRef.current = runtime;
         setReadyApplication(() => runtime.ReadyApplication);
         setReadyRuntimeError(null);
         setIsRecoveringRuntime(false);
@@ -579,6 +617,83 @@ export default function PosApplicationBootstrap({
     }
   };
 
+  const subscribeRestartSafety = useCallback((listener) => {
+    const unsubscribers = [
+      subscribeActorOperationalActivity(listener),
+      subscribeAdminUpdateActivity(listener),
+      actorRuntimeController.subscribe(listener),
+      localTenantAccessController.subscribe(listener)
+    ];
+    const readyRuntimeSafety = ReadyApplication ? readyRuntimeSafetyRef.current : null;
+    if (typeof readyRuntimeSafety?.subscribeRestartActivity === 'function') {
+      unsubscribers.push(readyRuntimeSafety.subscribeRestartActivity(listener));
+    }
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+  }, [ReadyApplication]);
+
+  const getRestartBlockReason = useCallback((expectedFailureId) => {
+    try {
+      const currentRecovery = getDatabaseRecoveryState();
+      const failure = currentRecovery.failure;
+      if (
+        currentRecovery.status !== DATABASE_RECOVERY_STATUS.FAILED
+        || currentRecovery.errorCode !== 'DB_OPERATION_FAILED'
+        || !Number.isSafeInteger(expectedFailureId)
+        || failure?.id !== expectedFailureId
+        || !['database_state_check', 'dexie_open'].includes(failure.phase)
+        || currentRecovery.requiresMigration
+        || currentRecovery.migration
+      ) return 'restart_unverified';
+
+      const activity = getLocalDatabaseActivitySnapshot();
+      if (
+        activity.preparationActive
+        || activity.preflightActive
+        || activity.hasActiveNativeRequest
+        || activity.hasTimedOutNativeRequest
+        || activity.migrationActive
+      ) return 'local_database_active';
+
+      const activeRuntime = getActiveTenantRuntime();
+      const restartContext = failure.restartContext;
+      if (
+        !activeRuntime
+        || !Number.isSafeInteger(activeRuntime.generation)
+        || activeRuntime.databaseName !== currentRecovery.databaseName
+        || activeRuntime.generation !== restartContext?.runtimeGeneration
+      ) return 'context_unverified';
+
+      const actor = actorRuntimeController.getState();
+      if (
+        !Number.isSafeInteger(restartContext?.actorGeneration)
+        || actor.generation !== restartContext.actorGeneration
+        || actor.status !== restartContext.actorStatus
+      ) return 'context_changed';
+      if (actor.status === 'authenticating' || actor.status === 'handoff_check') {
+        return 'business_operation_active';
+      }
+      if (actor.status === 'granted' && (
+        actor.tenant?.databaseName !== activeRuntime.databaseName
+        || actor.tenant?.generation !== activeRuntime.generation
+      )) return 'context_unverified';
+
+      const tenantAccess = localTenantAccessController.getState();
+      if (tenantAccess.enabled && tenantAccess.status !== 'granted') return 'context_unverified';
+      if (getActorCheckoutOwnerships().length > 0) return 'checkout_active';
+      if (getPendingActorOperations().length > 0) return 'business_operation_active';
+      if (hasAdminUpdateWrites()) return 'write_active';
+      if (getAdminUpdateDraftBlockReason()) return 'draft_active';
+
+      const readyRuntimeSafety = readyRuntimeSafetyRef.current;
+      const readyRuntimeBlock = readyRuntimeSafety?.getRestartActivityBlockReason?.();
+      if (readyRuntimeBlock) return readyRuntimeBlock;
+
+      return null;
+    } catch {
+      return 'safety_unverified';
+    }
+  }, []);
+
   const canRetryAdministrativeStart = () => {
     try {
       return runtimeRecoveryContextGuardRef.current?.() === true
@@ -620,7 +735,10 @@ export default function PosApplicationBootstrap({
   };
 
   return (
-    <DatabaseRecoveryGate>
+    <DatabaseRecoveryGate
+      getRestartBlockReason={getRestartBlockReason}
+      subscribeRestartSafety={subscribeRestartSafety}
+    >
       {ReadyApplication
         ? <ReadyApplication />
         : (

@@ -14,6 +14,15 @@ const tenantRuntimeMocks = vi.hoisted(() => ({
   getActiveTenantRuntime: vi.fn()
 }));
 
+const preflightMocks = vi.hoisted(() => ({
+  active: [],
+  listeners: new Set()
+}));
+
+const actorRuntimeMocks = vi.hoisted(() => ({
+  state: { generation: 3, status: 'granted' }
+}));
+
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
   request.onupgradeneeded = () => request.result.createObjectStore('sales', { keyPath: 'id' });
@@ -40,11 +49,19 @@ vi.mock('../databaseSchema', async () => {
 });
 
 vi.mock('../indexedDbPreflightCoordinator', () => ({
-  getActiveIndexedDbPreflightOperations: () => [],
+  getActiveIndexedDbPreflightOperations: () => preflightMocks.active,
+  subscribeIndexedDbPreflightOperations: (listener) => {
+    preflightMocks.listeners.add(listener);
+    return () => preflightMocks.listeners.delete(listener);
+  },
   preflightAndRepairIndexedDb: vi.fn()
 }));
 
 vi.mock('../tenantRuntimeRouter', () => tenantRuntimeMocks);
+
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: { getState: () => actorRuntimeMocks.state }
+}));
 
 vi.mock('../../Logger', () => ({
   default: {
@@ -56,8 +73,10 @@ vi.mock('../../Logger', () => ({
 import {
   DATABASE_PREPARATION_TIMEOUT_MS,
   getLocalDatabaseActivitySnapshot,
+  getLocalDatabaseActivityRevision,
   prepareLocalDatabase,
-  retryLocalDatabaseRecovery
+  retryLocalDatabaseRecovery,
+  subscribeLocalDatabaseActivity
 } from '../databaseRuntime';
 import {
   openNativeDatabase,
@@ -70,6 +89,9 @@ import {
 } from '../databaseRecoveryState';
 
 afterEach(() => {
+  preflightMocks.active = [];
+  preflightMocks.listeners.clear();
+  actorRuntimeMocks.state = { generation: 3, status: 'granted' };
   resetIndexedDbPreflightForTests();
   clearDatabaseRecoveryState();
   vi.useRealTimers();
@@ -80,6 +102,7 @@ beforeEach(() => {
   tenantRuntimeMocks.getActiveTenantDatabase.mockReset();
   tenantRuntimeMocks.getActiveTenantRuntime.mockReset();
   clearDatabaseRecoveryState();
+  preflightMocks.active = [];
 });
 
 describe('databaseRuntime native activity guard', () => {
@@ -174,9 +197,85 @@ describe('databaseRuntime native activity guard', () => {
       status: DATABASE_RECOVERY_STATUS.FAILED,
       errorCode: 'DB_OPERATION_FAILED',
       isRetryable: false,
-      databaseName: database.name
+      databaseName: database.name,
+      failure: {
+        phase: 'dexie_open',
+        category: 'unknown',
+        errorType: 'Error',
+        nativeRequestState: 'none',
+        preflightActive: false
+      }
     });
+    expect(getDatabaseRecoveryState().failure.durationMs).toEqual(expect.any(Number));
     expect(getLocalDatabaseActivitySnapshot().preparationActive).toBe(false);
+  });
+
+  it('binds the failure diagnostic to the actor context captured before async preparation', async () => {
+    let rejectOpen;
+    const database = {
+      name: 'LanzoDB_t_database_runtime_context_test',
+      isOpen: vi.fn(() => false),
+      on: vi.fn(() => ({ subscribe: vi.fn(), unsubscribe: vi.fn() })),
+      open: vi.fn(() => new Promise((_resolve, reject) => { rejectOpen = reject; }))
+    };
+    tenantRuntimeMocks.getActiveTenantRuntime.mockReturnValue({
+      databaseName: database.name,
+      generation: 12
+    });
+    tenantRuntimeMocks.getActiveTenantDatabase.mockReturnValue(database);
+
+    const preparation = prepareLocalDatabase();
+    await vi.waitFor(() => expect(rejectOpen).toEqual(expect.any(Function)));
+    actorRuntimeMocks.state = { generation: 4, status: 'granted' };
+    rejectOpen(new Error('open failed after actor change'));
+
+    await expect(preparation).rejects.toThrow('open failed after actor change');
+    expect(getDatabaseRecoveryState().failure.restartContext).toMatchObject({
+      runtimeGeneration: 12,
+      actorGeneration: 3,
+      actorStatus: 'granted'
+    });
+  });
+
+  it('publishes database activity changes as preparation starts and actually settles', async () => {
+    let resolveOpen;
+    const opening = new Promise((resolve) => { resolveOpen = resolve; });
+    const database = {
+      name: 'LanzoDB_t_database_runtime_activity_subscription',
+      isOpen: vi.fn(() => false),
+      on: vi.fn(() => ({ subscribe: vi.fn(), unsubscribe: vi.fn() })),
+      open: vi.fn(() => opening)
+    };
+    tenantRuntimeMocks.getActiveTenantRuntime.mockReturnValue({ databaseName: database.name, generation: 4 });
+    tenantRuntimeMocks.getActiveTenantDatabase.mockReturnValue(database);
+    const listener = vi.fn();
+    const unsubscribe = subscribeLocalDatabaseActivity(listener);
+    const startingRevision = getLocalDatabaseActivityRevision();
+
+    const preparation = prepareLocalDatabase();
+    expect(getLocalDatabaseActivityRevision()).toBeGreaterThan(startingRevision);
+    expect(getLocalDatabaseActivitySnapshot().preparationActive).toBe(true);
+
+    resolveOpen(database);
+    await expect(preparation).resolves.toMatchObject({ ready: true });
+    expect(getLocalDatabaseActivitySnapshot().preparationActive).toBe(false);
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it('publishes preflight activity when the coordinator starts and finishes', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeLocalDatabaseActivity(listener);
+
+    preflightMocks.active = ['LanzoDB_t_preflight-fixture'];
+    preflightMocks.listeners.forEach((currentListener) => currentListener());
+    expect(getLocalDatabaseActivitySnapshot().preflightActive).toBe(true);
+
+    preflightMocks.active = [];
+    preflightMocks.listeners.forEach((currentListener) => currentListener());
+    expect(getLocalDatabaseActivitySnapshot().preflightActive).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 
   it('bounds a pending database open without allowing a parallel retry', async () => {

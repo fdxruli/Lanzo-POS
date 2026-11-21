@@ -4,6 +4,13 @@ import { preflightAndRepairIndexedDb as runPreflightAndRepairIndexedDb } from '.
 const operationMaps = new Set();
 const operationsByFactory = new WeakMap();
 const fallbackOperations = new Map();
+const operationListeners = new Set();
+
+const notifyOperationListeners = () => {
+  operationListeners.forEach((listener) => {
+    try { listener(); } catch { /* Activity observers must not interrupt preflight work. */ }
+  });
+};
 
 const getOperationMap = (factory) => {
   if (!factory || (typeof factory !== 'object' && typeof factory !== 'function')) {
@@ -41,8 +48,11 @@ export const preflightAndRepairIndexedDb = (options = {}) => {
   }));
 
   operations.set(databaseName, operation);
+  notifyOperationListeners();
   const cleanup = () => {
-    if (operations.get(databaseName) === operation) operations.delete(databaseName);
+    if (operations.get(databaseName) !== operation) return;
+    operations.delete(databaseName);
+    notifyOperationListeners();
   };
   operation.then(cleanup, cleanup);
   return operation;
@@ -51,7 +61,13 @@ export const preflightAndRepairIndexedDb = (options = {}) => {
 export const getActiveIndexedDbPreflightOperations = () => Array.from(operationMaps)
   .flatMap((operations) => Array.from(operations.keys()));
 
+export const subscribeIndexedDbPreflightOperations = (listener) => {
+  operationListeners.add(listener);
+  return () => operationListeners.delete(listener);
+};
+
 export const resetIndexedDbPreflightCoordinatorForTests = () => {
   fallbackOperations.clear();
   operationMaps.forEach((operations) => operations.clear());
+  notifyOperationListeners();
 };
