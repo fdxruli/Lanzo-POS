@@ -15,7 +15,17 @@ import { getEcommercePortal, listPublishedProducts } from '../ecommerce/ecommerc
 import { syncConflictService } from '../sync/syncConflictService';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
-import { productToCloudPayload, batchToCloudPayload, categoryToCloudPayload, normalizeBarcodeKey, normalizeNameKey, normalizeSkuKey } from './productMapper';
+import {
+  productToCloudPayload,
+  batchToCloudPayload,
+  categoryToCloudPayload,
+  cloudProductToLocal,
+  cloudBatchToLocal,
+  cloudCategoryToLocal,
+  normalizeBarcodeKey,
+  normalizeNameKey,
+  normalizeSkuKey
+} from './productMapper';
 import { isBatchArchived } from './batchStatus';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
@@ -220,6 +230,35 @@ const checkBatchPayload = (local, cloud) => {
     && dateEqual(cloud.alert_target_date ?? cloud.alertTargetDate, expected.alert_target_date)
     && textEqual(cloud.alert_type ?? cloud.alertType, expected.alert_type);
 };
+
+const withoutCloudTimestamps = (payload) => {
+  const businessPayload = { ...(payload || {}) };
+  delete businessPayload.created_at;
+  delete businessPayload.updated_at;
+  for (const field of ['recipe', 'wholesale_tiers']) {
+    if (businessPayload[field] === null || businessPayload[field] === undefined) businessPayload[field] = [];
+  }
+  return businessPayload;
+};
+
+const completeCloudPayloadMatches = (local, cloud, toPayload, fromCloud) => Boolean(local && cloud)
+  && stableStringify(withoutCloudTimestamps(toPayload(local)))
+    === stableStringify(withoutCloudTimestamps(toPayload(fromCloud(cloud, null))));
+
+// Compare the full writable catalog payload after the canonical Cloud-to-local mapping.
+// This tolerates mapper normalization (for example null optional arrays) while checking
+// quantities, attributes, metadata, and every other field that recovery writes.
+const checkCompleteProductPayload = (local, cloud) => (
+  completeCloudPayloadMatches(local, cloud, productToCloudPayload, cloudProductToLocal)
+);
+
+const checkCompleteCategoryPayload = (local, cloud) => (
+  completeCloudPayloadMatches(local, cloud, categoryToCloudPayload, cloudCategoryToLocal)
+);
+
+const checkCompleteBatchPayload = (local, cloud) => (
+  completeCloudPayloadMatches(local, cloud, batchToCloudPayload, cloudBatchToLocal)
+);
 
 const hasCloudProductKeyConflict = (product, cloudProducts) => {
   const sku = normalizeSkuKey(product?.sku_normalized || product?.sku);
@@ -1087,6 +1126,211 @@ const assertReconciliationContextCurrent = (deps, { licenseKey, actorSessionId, 
   }
 };
 
+const sortedRecordIds = (records = []) => records.map((record) => String(record?.id ?? '')).sort();
+
+const sameRecordIds = (left = [], right = []) => {
+  const leftIds = sortedRecordIds(left);
+  const rightIds = sortedRecordIds(right);
+  return leftIds.length === rightIds.length
+    && leftIds.every((id, index) => Boolean(id) && id === rightIds[index]);
+};
+
+const hasExplicitTenantMismatch = (record, licenseKey) => {
+  const recordLicenseKey = record?.licenseKey || record?.license_key
+    || record?.metadata?.licenseKey || record?.metadata?.license_key;
+  return Boolean(recordLicenseKey && recordLicenseKey !== licenseKey);
+};
+
+const isSyncedToCloudVersion = (local, cloud, { allowTombstone = false } = {}) => {
+  const localVersion = Number(local?.serverVersion ?? local?.server_version);
+  const cloudVersion = Number(cloud?.server_version ?? cloud?.serverVersion);
+  return local?.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
+    && Number.isSafeInteger(localVersion) && localVersion > 0
+    && Number.isSafeInteger(cloudVersion) && cloudVersion === localVersion
+    && Boolean(local?.lastSyncedAt)
+    && !local?.pendingOperationId
+    && !local?.localMutationId
+    && !local?.conflictReason
+    && local?.deletionPending !== true
+    && (allowTombstone || (!isDeleted(local) && !isDeleted(cloud)));
+};
+
+const localSnapshotMatchesVerifiedCloud = async ({
+  deps,
+  context,
+  productId,
+  before,
+  initialBatches,
+  actorHandle,
+  requirements
+}) => {
+  const assertCurrent = () => assertReconciliationContextCurrent(deps, {
+    licenseKey: context.licenseKey,
+    actorSessionId: context.actorSessionId,
+    actorHandle,
+    requirements
+  });
+  const assertTenantAccess = async () => {
+    try {
+      await deps.assertTenantAccess(
+        { license_key: context.licenseKey },
+        { reason: 'individual_product_recovery_local_reconciliation' }
+      );
+    } catch (cause) {
+      throw Object.assign(new Error(RECOVERY_MESSAGES.ACTOR_CONTEXT_STALE), {
+        code: 'ACTOR_CONTEXT_STALE',
+        uncertain: true,
+        cause
+      });
+    }
+  };
+
+  assertCurrent();
+  await assertTenantAccess();
+  assertCurrent();
+  const freshContext = getRecoveryContext(deps, context.licenseKey);
+  if (!freshContext.requestedLicenseMatches) return null;
+
+  const verified = await loadAssessment(deps, {
+    ...freshContext,
+    licenseKey: context.licenseKey,
+    productId,
+    actorSessionId: context.actorSessionId
+  });
+  assertCurrent();
+
+  const { local, cloud, report } = verified;
+  const cloudPayloadIssues = new Set([
+    'CLOUD_PRODUCT_RECONCILIATION_REQUIRED',
+    'ACTIVE_BATCH_CLOUD_RECONCILIATION_REQUIRED',
+    'CLOUD_CATEGORY_ID_CONFLICT'
+  ]);
+  if (report.issues.some((issue) => !cloudPayloadIssues.has(issue.code))) return null;
+  if (String(local.product?.id ?? '') !== String(productId)
+    || String(before.local.product?.id ?? '') !== String(productId)
+    || local.productTombstone
+    || local.localCategoryTombstone
+    || hasExplicitTenantMismatch(local.product, context.licenseKey)) return null;
+
+  const expectedCategoryId = localCategoryId(before.local.product);
+  if (String(localCategoryId(local.product) ?? '') !== String(expectedCategoryId ?? '')) return null;
+
+  const cloudVerification = cloudRecoveryMatches({
+    product: before.local.product,
+    batches: initialBatches,
+    localBatches: before.local.localBatches.filter((batch) => localBatchProductId(batch) === String(productId)),
+    cloudProducts: cloud.cloudProducts,
+    cloudBatches: cloud.cloudBatches
+  });
+  if (!cloudVerification.success
+    || !isCloudActive(cloudVerification.product)
+    || !checkCompleteProductPayload(before.local.product, cloudVerification.product)
+    || !checkCompleteProductPayload(local.product, cloudVerification.product)
+    || !isSyncedToCloudVersion(local.product, cloudVerification.product)
+    || hasExplicitTenantMismatch(local.product, context.licenseKey)) return null;
+
+  const expectedBatchIds = before.local.localBatches.filter((batch) => localBatchProductId(batch) === String(productId));
+  const currentBatchIds = local.localBatches.filter((batch) => localBatchProductId(batch) === String(productId));
+  if (local.localBatches.some((batch) => localBatchProductId(batch) !== String(productId))
+    || !sameRecordIds(expectedBatchIds, currentBatchIds)
+    || !sameRecordIds(initialBatches, currentBatchIds.filter((batch) => !isArchived(batch)))) return null;
+
+  const cloudBatchesById = new Map();
+  for (const row of cloud.cloudBatches.filter((batch) => cloudBatchParentId(batch) === String(productId))) {
+    const matches = cloudBatchesById.get(cloudBatchId(row)) || [];
+    matches.push(row);
+    cloudBatchesById.set(cloudBatchId(row), matches);
+  }
+  for (const batch of currentBatchIds) {
+    const rows = cloudBatchesById.get(String(batch.id)) || [];
+    if (rows.length > 1 || hasExplicitTenantMismatch(batch, context.licenseKey)) return null;
+    if (isArchived(batch)) {
+      if (rows.length === 0) {
+        const beforeBatch = expectedBatchIds.find((candidate) => String(candidate.id) === String(batch.id));
+        if (stableStringify(beforeBatch) !== stableStringify(batch) || batch.deletionPending === true) return null;
+        continue;
+      }
+      const cloudBatch = rows[0];
+      if (!isArchived(cloudBatch)
+        || isDeleted(expectedBatchIds.find((candidate) => String(candidate.id) === String(batch.id))) !== isDeleted(cloudBatch)
+        || !checkCompleteBatchPayload(expectedBatchIds.find((candidate) => String(candidate.id) === String(batch.id)), cloudBatch)
+        || isDeleted(batch) !== isDeleted(cloudBatch)
+        || !checkCompleteBatchPayload(batch, cloudBatch)
+        || !isSyncedToCloudVersion(batch, cloudBatch, { allowTombstone: true })) return null;
+      continue;
+    }
+    const cloudBatch = rows[0];
+    if (!cloudBatch || !isCloudActive(cloudBatch)
+      || !checkCompleteBatchPayload(batch, cloudBatch)
+      || !isSyncedToCloudVersion(batch, cloudBatch)) return null;
+  }
+
+  if (expectedCategoryId) {
+    const categoryCheck = inspectCloudCategoryIdentity(before.local.localCategory, cloud.cloudCategories);
+    if (!categoryCheck.success || categoryCheck.absent
+      || !checkCompleteCategoryPayload(before.local.localCategory, categoryCheck.category)
+      || String(local.localCategory?.id ?? '') !== String(expectedCategoryId)
+      || !checkCompleteCategoryPayload(local.localCategory, categoryCheck.category)
+      || !isSyncedToCloudVersion(local.localCategory, categoryCheck.category)
+      || hasExplicitTenantMismatch(local.localCategory, context.licenseKey)) return null;
+  } else if (local.localCategory) {
+    return null;
+  }
+
+  const beforeIngredientIds = before.local.localIngredients.filter(Boolean).map((row) => String(row.id)).sort();
+  if (local.localIngredients.some((row) => !row)
+    || !sameRecordIds(before.local.localIngredients.filter(Boolean), local.localIngredients)) return null;
+  for (const ingredient of local.localIngredients.filter(Boolean)) {
+    const beforeIngredient = before.local.localIngredients.find((row) => String(row?.id) === String(ingredient.id));
+    const rows = cloud.cloudProducts.filter((row) => cloudProductId(row) === String(ingredient.id));
+    const tombstone = await deps.localRepository.getProductDeletionTombstoneById(ingredient.id);
+    if (rows.length !== 1 || tombstone || !isCloudActive(rows[0])
+      || !checkCompleteProductPayload(beforeIngredient, rows[0])
+      || !checkCompleteProductPayload(ingredient, rows[0])
+      || !isSyncedToCloudVersion(ingredient, rows[0])
+      || hasExplicitTenantMismatch(ingredient, context.licenseKey)) return null;
+  }
+  if (beforeIngredientIds.length !== local.localIngredients.length) return null;
+
+  const latestLocal = await readLocalProductSnapshot(deps, productId);
+  assertCurrent();
+  if (!sameLocalSnapshot(local, latestLocal)) return null;
+
+  const outboxRows = await readOutbox(
+    deps,
+    context.licenseKey,
+    productId,
+    latestLocal.localBatches,
+    localCategoryId(latestLocal.product)
+  );
+  if (outboxRows.some((row) => row?.status !== OUTBOX_STATUS.SYNCED)) return null;
+  const conflictEntities = [
+    { entityType: SYNC_ENTITY_TYPES.PRODUCT, entityId: productId },
+    ...latestLocal.localBatches.map((batch) => ({
+      entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+      entityId: String(batch.id)
+    })),
+    ...(localCategoryId(latestLocal.product) ? [{
+      entityType: SYNC_ENTITY_TYPES.CATEGORY,
+      entityId: String(localCategoryId(latestLocal.product))
+    }] : [])
+  ];
+  const conflictRows = (await Promise.all(conflictEntities.map(({ entityType, entityId }) => (
+    deps.conflictService.listConflictsForEntity({ licenseKey: context.licenseKey, entityType, entityId })
+  )))).flat();
+  if (conflictRows.some((row) => row?.status === CONFLICT_STATUS.PENDING)) return null;
+
+  const localOnlyEvents = await deps.listLocalOnlyInventoryEntries({ licenseKey: context.licenseKey });
+  const batchIds = new Set(latestLocal.localBatches.map((batch) => String(batch.id)));
+  if (localOnlyEvents.some((event) => String(event?.productId ?? event?.product_id ?? '') === String(productId)
+    || batchIds.has(String(event?.batchId ?? event?.batch_id ?? '')))) return null;
+
+  assertCurrent();
+  await assertTenantAccess();
+  assertCurrent();
+  return { local: latestLocal, cloudVerification };
+};
+
 const errorResult = (error, { uncertain = false } = {}) => ({
   success: false,
   blocked: true,
@@ -1334,9 +1578,6 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
             const cloudCheck = cloudOutcome.verification;
 
             const currentLocal = await readLocalProductSnapshot(deps, productId);
-            if (!sameLocalSnapshot(before.local, currentLocal)) {
-              return { ...errorResult(Object.assign(new Error('Los datos locales cambiaron durante la operación. Cloud requiere conciliación antes de aplicar una respuesta local.'), { code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' }), { uncertain: true }) };
-            }
             try {
               assertReconciliationContextCurrent(deps, {
                 licenseKey: context.licenseKey,
@@ -1348,32 +1589,63 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
               return { ...errorResult(error, { uncertain: true }), rpcResponse: response, rpcError };
             }
 
-            const applied = await deps.localRepository.applyCloudCatalog({
-              categories: categoryCheck.category ? [categoryCheck.category] : [],
-              product: cloudCheck.product,
-              batches: cloudCheck.batches
-            });
-            if (applied?.rejected?.length || applied?.deferredInventory
-              || applied?.products !== 1 || applied?.batches !== initialBatches.length
-              || applied?.categories !== (categoryCheck.category ? 1 : 0)) {
-              return { ...errorResult(Object.assign(new Error('La verificación Cloud fue correcta, pero la actualización de estado local no se completó.'), { code: 'PRODUCT_RECOVERY_LOCAL_APPLY_PARTIAL' }), { uncertain: true }), applied };
+            let localAfter = null;
+            let locallyReconciled = false;
+            let applied = null;
+            if (!sameLocalSnapshot(before.local, currentLocal)) {
+              let concurrentReconciliation = null;
+              try {
+                concurrentReconciliation = await localSnapshotMatchesVerifiedCloud({
+                  deps,
+                  context,
+                  productId,
+                  before,
+                  initialBatches,
+                  actorHandle,
+                  requirements
+                });
+              } catch {
+                // Any failed read or context check keeps the original local-change HOLD.
+              }
+              if (!concurrentReconciliation) {
+                return { ...errorResult(Object.assign(new Error('Los datos locales cambiaron durante la operación. Cloud requiere conciliación antes de aplicar una respuesta local.'), { code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' }), { uncertain: true }), rpcResponse: response, rpcError };
+              }
+              localAfter = concurrentReconciliation.local;
+              locallyReconciled = true;
+            } else {
+              applied = await deps.localRepository.applyCloudCatalog({
+                categories: categoryCheck.category ? [categoryCheck.category] : [],
+                product: cloudCheck.product,
+                batches: cloudCheck.batches
+              });
+              if (applied?.rejected?.length || applied?.deferredInventory
+                || applied?.products !== 1 || applied?.batches !== initialBatches.length
+                || applied?.categories !== (categoryCheck.category ? 1 : 0)) {
+                return { ...errorResult(Object.assign(new Error('La verificación Cloud fue correcta, pero la actualización de estado local no se completó.'), { code: 'PRODUCT_RECOVERY_LOCAL_APPLY_PARTIAL' }), { uncertain: true }), applied };
+              }
+              localAfter = await readLocalProductSnapshot(deps, productId);
             }
 
-            const localAfter = await readLocalProductSnapshot(deps, productId);
             const localProductVerified = localAfter.product?.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
               && Number(localAfter.product?.serverVersion || 0) > 0
-              && checkProductPayload(localAfter.product, cloudCheck.product);
+              && (locallyReconciled
+                ? checkCompleteProductPayload(localAfter.product, cloudCheck.product)
+                : checkProductPayload(localAfter.product, cloudCheck.product));
             const localBatchesVerified = initialBatches.every((batch) => {
               const saved = localAfter.localBatches.find((candidate) => String(candidate.id) === String(batch.id));
               const cloud = cloudCheck.batches.find((candidate) => String(candidate.id) === String(batch.id));
               return saved?.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
                 && Number(saved?.serverVersion || 0) > 0
-                && checkBatchPayload(saved, cloud);
+                && (locallyReconciled
+                  ? checkCompleteBatchPayload(saved, cloud)
+                  : checkBatchPayload(saved, cloud));
             });
             const localCategoryVerified = !categoryCheck.category || (
               localAfter.localCategory?.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
               && Number(localAfter.localCategory?.serverVersion || 0) > 0
-              && checkCategoryPayload(localAfter.localCategory, categoryCheck.category)
+              && (locallyReconciled
+                ? checkCompleteCategoryPayload(localAfter.localCategory, categoryCheck.category)
+                : checkCategoryPayload(localAfter.localCategory, categoryCheck.category))
             );
             const archivedBefore = before.local.localBatches.filter(isArchived)
               .sort((left, right) => String(left.id).localeCompare(String(right.id)));
@@ -1391,10 +1663,13 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
               verified: true,
               productId: product.id,
               batchIds: initialBatches.map((batch) => String(batch.id)),
+              locallyReconciled,
               rpcReportedSuccess: response?.success === true,
               cloudOutcome: 'complete',
               archivedBatchIdsKeptLocal: before.report.recovery.omittedArchivedBatchIds,
-              message: `Producto y ${initialBatches.length} lote(s) verificados en Cloud. Los lotes archivados permanecen intactos en este dispositivo.`
+              message: locallyReconciled
+                ? `Producto y ${initialBatches.length} lote(s) ya conciliados en este dispositivo y verificados en Cloud. No se repitieron escrituras locales.`
+                : `Producto y ${initialBatches.length} lote(s) verificados en Cloud. Los lotes archivados permanecen intactos en este dispositivo.`
             };
             }
           })

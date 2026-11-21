@@ -4,7 +4,13 @@ import {
   buildIndividualRecoveryIdempotencyKey,
   createProductIndividualRecoveryService
 } from '../productIndividualRecoveryService';
-import { productToCloudPayload } from '../productMapper';
+import {
+  categoryToCloudPayload,
+  cloudBatchToLocal,
+  cloudCategoryToLocal,
+  cloudProductToLocal,
+  productToCloudPayload
+} from '../productMapper';
 
 const baseProduct = (overrides = {}) => ({
   id: 'local-product-1',
@@ -43,6 +49,16 @@ const baseBatch = (overrides = {}) => ({
   cost: 2,
   price: 10,
   expiryDate: '2027-12-31',
+  ...overrides
+});
+
+const baseCategory = (overrides = {}) => ({
+  id: 'local-category-1',
+  name: 'Playeras',
+  color: '#345678',
+  sortOrder: 1,
+  isActive: true,
+  syncStatus: 'local',
   ...overrides
 });
 
@@ -267,6 +283,7 @@ const makeServiceHarness = ({
   product: productOverrides = {},
   batches: suppliedBatches = null,
   category: suppliedCategory = null,
+  categoryCloudPresent = false,
   portalPresent = true,
   categoryWriteMode = 'complete',
   licenseDetailsOverrides = {}
@@ -284,7 +301,9 @@ const makeServiceHarness = ({
   ];
   let cloudProducts = [];
   let cloudBatches = [];
-  let cloudCategories = [];
+  let cloudCategories = categoryCloudPresent && currentCategory
+    ? [{ ...categoryToCloudPayload(currentCategory), server_version: 7, deleted_at: null }]
+    : [];
   let cloudChangeSeq = 0;
   let requestArgs = null;
   let cloudReadFailure = false;
@@ -296,7 +315,7 @@ const makeServiceHarness = ({
     getProductDeletionTombstoneById: vi.fn(async () => null),
     getCategoryById: vi.fn(async (id) => String(currentCategory?.id) === String(id) ? currentCategory : null),
     getDeletedCategoryById: vi.fn(async () => null),
-    applyCloudCatalog: vi.fn(async ({ categories = [], product: _cloudProduct, batches }) => {
+    applyCloudCatalog: vi.fn(async ({ categories = [], product: _cloudProduct, batches = [] }) => {
       currentProduct = { ...currentProduct, syncStatus: 'synced', serverVersion: 1, lastSyncedAt: '2026-11-20T12:01:00.000Z' };
       if (categories[0]) currentCategory = { ...currentCategory, syncStatus: 'synced', serverVersion: 1, lastSyncedAt: '2026-11-20T12:01:00.000Z' };
       currentBatches = currentBatches.map((batch) => (
@@ -426,6 +445,9 @@ const makeServiceHarness = ({
     getCloud: () => ({ products: cloudProducts, batches: cloudBatches, categories: cloudCategories }),
     setLicenseKey: (licenseKey) => { currentLicenseKey = licenseKey; },
     setActor: (actor) => { currentActor = actor; },
+    setProduct: (product) => { currentProduct = product; },
+    setBatches: (batches) => { currentBatches = batches; },
+    setCategory: (category) => { currentCategory = category; },
     activeBatch,
     getCategory: () => currentCategory
   };
@@ -757,6 +779,141 @@ describe('individual product recovery execution', () => {
       expiryDate: '2027-12-31',
       deletedAt: '2026-11-01T00:00:00Z'
     });
+  });
+
+  it('accepts a complete concurrent catalog pull without applying the Cloud response twice', async () => {
+    const categoryId = 'cat_mwjqgsnr_9a2c2bd6';
+    const category = baseCategory({ id: categoryId });
+    const product = baseProduct({
+      name: 'Playera básica unisex',
+      categoryId,
+      stock: 25,
+      committedStock: 0,
+      price: 199,
+      cost: 120
+    });
+    const stocks = [4, 4, 4, 4, 4, 5];
+    const batches = stocks.map((stock, index) => baseBatch({
+      id: `variant-${index + 1}`,
+      productId: product.id,
+      manufacturerBatchId: `PLAYERA-${index + 1}`,
+      stock,
+      committedStock: 0,
+      price: 199,
+      cost: 120,
+      attributes: { size: ['XS', 'S', 'M', 'L', 'XL', 'XXL'][index], color: 'Negro' }
+    }));
+    const harness = makeServiceHarness({ product, batches, category, categoryCloudPresent: true });
+    harness.localRepository.applyCloudCatalog.mockImplementation(async ({ categories = [], products = [], product: cloudProduct = null, batches: cloudBatches = [] }) => {
+      const syncedAt = '2026-11-20T12:01:00.000Z';
+      const productRows = [...products, ...(cloudProduct ? [cloudProduct] : [])];
+      for (const row of categories) {
+        harness.setCategory(cloudCategoryToLocal(row, harness.getCategory(), {
+          syncStatus: 'synced', lastSyncedAt: syncedAt, pendingOperationId: null,
+          localMutationId: null, deletionPending: false, conflictReason: null
+        }));
+      }
+      for (const row of productRows) {
+        harness.setProduct(cloudProductToLocal(row, harness.getProduct(), {
+          syncStatus: 'synced', lastSyncedAt: syncedAt, pendingOperationId: null,
+          localMutationId: null, deletionPending: false, conflictReason: null
+        }));
+      }
+      harness.setBatches(harness.getBatches().map((batch) => {
+        const row = cloudBatches.find((candidate) => String(candidate.id) === String(batch.id));
+        return row ? cloudBatchToLocal(row, batch, {
+          syncStatus: 'synced', lastSyncedAt: syncedAt, pendingOperationId: null,
+          localMutationId: null, deletionPending: false, conflictReason: null
+        }) : batch;
+      }));
+      return { products: productRows.length, batches: cloudBatches.length, categories: categories.length, rejected: [], deferredInventory: 0 };
+    });
+    const upsertProduct = harness.cloudRepository.upsertProduct.getMockImplementation();
+    harness.cloudRepository.upsertProduct.mockImplementation(async (args) => {
+      const response = await upsertProduct(args);
+      // Model the existing productSyncHandler pull path applying the committed Cloud rows
+      // before the individual recovery's post-upsert local snapshot is read.
+      await harness.localRepository.applyCloudCatalog({
+        categories: harness.getCloud().categories,
+        product: response.product,
+        batches: response.batches
+      });
+      return response;
+    });
+
+    const result = await harness.service.recoverProduct({ productId: product.id });
+
+    expect(result).toMatchObject({
+      success: true,
+      recovered: true,
+      verified: true,
+      locallyReconciled: true,
+      productId: product.id,
+      batchIds: batches.map((batch) => batch.id)
+    });
+    expect(harness.cloudRepository.upsertProduct).toHaveBeenCalledOnce();
+    expect(harness.cloudRepository.upsertCategory).not.toHaveBeenCalled();
+    expect(harness.localRepository.applyCloudCatalog).toHaveBeenCalledOnce();
+    expect(harness.getProduct()).toMatchObject({
+      id: product.id,
+      categoryId,
+      stock: 25,
+      committedStock: 0,
+      price: 199,
+      cost: 120,
+      syncStatus: 'synced',
+      serverVersion: 1,
+      pendingOperationId: null,
+      localMutationId: null
+    });
+    expect(harness.getCategory()).toMatchObject({
+      id: categoryId,
+      syncStatus: 'synced',
+      serverVersion: 7,
+      pendingOperationId: null,
+      localMutationId: null
+    });
+    expect(harness.getBatches().filter((batch) => batches.some((item) => item.id === batch.id))).toEqual(
+      expect.arrayContaining(batches.map((batch) => expect.objectContaining({
+        id: batch.id,
+        stock: batch.stock,
+        attributes: batch.attributes,
+        syncStatus: 'synced',
+        serverVersion: 1,
+        pendingOperationId: null,
+        localMutationId: null
+      })))
+    );
+  });
+
+  it('keeps HOLD when a genuine local edit and pending operation remain after the Cloud write', async () => {
+    const harness = makeServiceHarness();
+    const upsertProduct = harness.cloudRepository.upsertProduct.getMockImplementation();
+    harness.cloudRepository.upsertProduct.mockImplementation(async (args) => {
+      const response = await upsertProduct(args);
+      harness.setProduct({
+        ...harness.getProduct(),
+        price: 9,
+        syncStatus: 'local',
+        localMutationId: 'new-local-price-edit'
+      });
+      harness.outboxService.listOperationsForEntity.mockImplementation(async ({ entityType }) => (
+        entityType === 'product' ? [{ id: 'pending-local-price-edit', status: 'pending' }] : []
+      ));
+      return response;
+    });
+
+    const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
+
+    expect(result).toMatchObject({
+      success: false,
+      blocked: true,
+      uncertain: true,
+      code: 'PRODUCT_RECOVERY_LOCAL_CHANGED'
+    });
+    expect(harness.getProduct()).toMatchObject({ price: 9, syncStatus: 'local', localMutationId: 'new-local-price-edit' });
+    expect(harness.cloudRepository.upsertProduct).toHaveBeenCalledOnce();
+    expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
   });
 
   it('trusts a complete Cloud reread when the RPC response omitted its batch projection', async () => {
