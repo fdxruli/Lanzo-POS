@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getMeta: vi.fn(),
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   completePharmacyInventoryCutover: vi.fn(),
   pullCatalogSnapshot: vi.fn(),
   runRecovery: vi.fn(),
+  runRecoveryWithoutLock: vi.fn(),
   events: []
 }));
 
@@ -25,7 +26,8 @@ vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   applyCloudCatalog: mocks.applyCloudCatalog
 } }));
 vi.mock('../productLocalCatalogRecovery', () => ({ productLocalCatalogRecovery: {
-  runUnsyncedCatalogRecovery: mocks.runRecovery
+  runUnsyncedCatalogRecovery: mocks.runRecovery,
+  runUnsyncedCatalogRecoveryWithoutLock: mocks.runRecoveryWithoutLock
 } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   migrateLocalCatalog: mocks.migrateLocalCatalog,
@@ -47,6 +49,7 @@ vi.mock('../../Logger', () => ({ default: {
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
 import { buildProductsMigratedMetaKey } from '../productConstants';
+import { runWithProductCatalogRecoveryLock } from '../productCatalogRecoveryLock';
 import { productMigrationService } from '../productMigrationService';
 
 const localCatalog = {
@@ -65,6 +68,10 @@ const successfulMigrationResponse = ({ categories = [], products = [], batches =
 });
 
 describe('product migration FREE to PRO coordination', () => {
+  afterEach(() => {
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   mocks.getMeta.mockResolvedValue(false);
@@ -163,6 +170,84 @@ describe('product migration FREE to PRO coordination', () => {
       expect.anything()
     );
     expect(await mocks.getLocalCatalogForMigration()).toEqual(localCatalog);
+  });
+
+  it('rechecks Cloud after an individual recovery releases the lock before starting bootstrap', async () => {
+    let tail = Promise.resolve();
+    const lockRequest = vi.fn(async (_name, _options, callback) => {
+      const previous = tail;
+      let release;
+      tail = new Promise((resolve) => { release = resolve; });
+      await previous;
+      try {
+        return await callback({ name: 'lock' });
+      } finally {
+        release();
+      }
+    });
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request: lockRequest }
+    });
+
+    let finishIndividualRecovery;
+    let markIndividualStarted;
+    const individualStarted = new Promise((resolve) => { markIndividualStarted = resolve; });
+    const individualRecovery = runWithProductCatalogRecoveryLock({
+      licenseKey: 'CUTOVER-LOCKED-FIRST',
+      requireWebLock: true,
+      operation: async () => {
+        markIndividualStarted();
+        await new Promise((resolve) => { finishIndividualRecovery = resolve; });
+      }
+    });
+    await individualStarted;
+
+    const migration = productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-LOCKED-FIRST',
+      guardLocalSnapshotBootstrap: true
+    });
+    await Promise.resolve();
+    expect(mocks.getLocalCatalogForMigration).not.toHaveBeenCalled();
+    expect(mocks.migrateLocalCatalog).not.toHaveBeenCalled();
+
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true,
+      categories: [],
+      products: [{ id: 'selected-local-snapshot-product' }],
+      batches: [],
+      total: 1,
+      has_more: true
+    });
+    finishIndividualRecovery();
+    await expect(individualRecovery).resolves.toBeUndefined();
+    await expect(migration).resolves.toMatchObject({
+      success: true, skipped: true, deferred: true,
+      reason: 'local_catalog_recovery_requires_selection'
+    });
+
+    expect(lockRequest).toHaveBeenCalledTimes(2);
+    expect(lockRequest.mock.calls[0][0]).toBe(lockRequest.mock.calls[1][0]);
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'CUTOVER-LOCKED-FIRST', entityType: 'all', limit: 1, includeDeleted: true, force: true
+    }));
+    expect(mocks.getLocalCatalogForMigration).not.toHaveBeenCalled();
+    expect(mocks.migrateLocalCatalog).not.toHaveBeenCalled();
+  });
+
+  it('continues initial migration when a guarded Cloud reread is still empty', async () => {
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({
+      success: true, categories: [], products: [], batches: [], total: 0, has_more: false
+    });
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-EMPTY-GUARDED', guardLocalSnapshotBootstrap: true
+    })).resolves.toMatchObject({ success: true, migrated: 2 });
+
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'CUTOVER-EMPTY-GUARDED', entityType: 'all', limit: 1, includeDeleted: true, force: true
+    }));
+    expect(mocks.migrateLocalCatalog).toHaveBeenCalled();
   });
 
   it('can retry the same tenant after bootstrap failure and commits readiness only after hydration', async () => {

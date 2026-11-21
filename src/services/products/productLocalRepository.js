@@ -238,6 +238,12 @@ export const productLocalRepository = {
     return loadData(STORES.MENU, productId);
   },
 
+  async getProductDeletionTombstoneById(productId) {
+    if (!productId) return null;
+    await ensureOpen();
+    return db.table(STORES.DELETED_MENU).get(productId);
+  },
+
   async getBatchById(batchId) {
     if (!batchId) return null;
     return loadData(STORES.PRODUCT_BATCHES, batchId);

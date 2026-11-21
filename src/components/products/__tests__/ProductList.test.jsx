@@ -55,6 +55,12 @@ vi.mock('../InventoryEntryModal', () => ({ default: ({ product }) => (
   <div role="dialog" aria-label="Recepción de medicamento">Formulario para {product.name}</div>
 ) }));
 vi.mock('../ProductCloudSyncIndicators', () => ({ default: () => null }));
+vi.mock('../IndividualProductRecoveryDialog', () => ({ default: ({ product, onClose }) => (
+  <div role="dialog" aria-label="Recuperación individual para prueba">
+    <span>Recuperar {product.id}</span>
+    <button type="button" onClick={onClose}>Cerrar recuperación</button>
+  </div>
+) }));
 
 afterEach(() => {
   cleanup();
@@ -86,6 +92,17 @@ const createDeferred = () => {
 };
 
 describe('ProductList batch-backed grocery details', () => {
+  it('offers a contextual verification action for an active unsynced product only', () => {
+    const local = { id: 'local-only', name: 'Algodón QA', isActive: true, syncStatus: 'local', stock: 17, price: 10, cost: 2 };
+    const synced = { id: 'cloud-ready', name: 'Gasa ya sincronizada', isActive: true, syncStatus: 'synced', serverVersion: 1, lastSyncedAt: '2026-11-20T12:00:00Z' };
+    render(<ProductList products={[local, synced]} categories={[]} isLoading={false} canManageProducts />);
+
+    const actions = screen.getAllByRole('button', { name: 'Verificar Cloud' });
+    expect(actions).toHaveLength(1);
+    fireEvent.click(actions[0]);
+    expect(screen.getByText('Recuperar local-only')).toBeInTheDocument();
+  });
+
   it('uses sale units and the nearest active batch expiry on cards', async () => {
     const nearestExpiryDate = new Date(Date.now() + (2 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
     const laterExpiryDate = new Date(Date.now() + (10 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);

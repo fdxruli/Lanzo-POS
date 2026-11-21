@@ -18,7 +18,9 @@ import {
 import { productMigrationService } from './productMigrationService';
 import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { productConflictService } from './productConflictService';
+import { listPublishedProducts } from '../ecommerce/ecommerceAdminService';
 import {
+  buildProductsMigratedMetaKey,
   PRODUCT_CATALOG_ENTITY_TYPES,
   PRODUCT_CATALOG_LAST_SEQ_KEY,
   PRODUCT_SYNC_STATUS
@@ -26,7 +28,7 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../inventory/inventoryEntryService';
-import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { isLocalTenantAccessError, runWithLocalTenantSyncLease } from '../tenant/localTenantGuard';
 import {
   assertProductInventoryMutationCurrent,
   assertProductInventoryOperationActorCurrent,
@@ -43,6 +45,100 @@ const canMigrateProductCatalog = () => {
   const state = useAppStore.getState();
   if (typeof state?.canAccess !== 'function') return true;
   return state.canAccess('products') === true;
+};
+
+const localProductId = (product) => String(product?.id ?? '');
+const localBatchProductId = (batch) => String(batch?.productId ?? batch?.product_id ?? '');
+
+const hasCloudCatalogRows = (response) => (
+  response.categories.length > 0
+  || response.products.length > 0
+  || response.batches.length > 0
+  || Number(response.total || 0) > 0
+  || response.has_more === true
+  || response.hasMore === true
+);
+
+const preflightLocalSnapshotRecovery = async (licenseKey) => {
+  const migrated = await syncMetaService.getMeta(
+    buildProductsMigratedMetaKey(licenseKey),
+    false,
+    { licenseKey }
+  );
+  const localChanges = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
+  if ((localChanges.products?.length || 0) + (localChanges.batches?.length || 0) === 0) return null;
+
+  const unsyncedProductIds = new Set();
+  for (const product of localChanges.products || []) {
+    const productId = localProductId(product);
+    if (!productId || product?.isActive === false) continue;
+    unsyncedProductIds.add(productId);
+  }
+  for (const batch of localChanges.batches || []) {
+    const productId = localBatchProductId(batch);
+    if (!productId || unsyncedProductIds.has(productId)) continue;
+    const product = await productLocalRepository.getProductById(productId);
+    if (product && product.isActive !== false) unsyncedProductIds.add(productId);
+  }
+  if (unsyncedProductIds.size === 0) return null;
+
+  const publicationResult = await listPublishedProducts();
+  if (publicationResult?.success !== true || !Array.isArray(publicationResult.products)) {
+    throw Object.assign(new Error(publicationResult?.message || 'No se pudo verificar la relación con publicaciones locales.'), {
+      code: publicationResult?.code || 'PRODUCT_RECOVERY_PUBLICATION_PREFLIGHT_FAILED'
+    });
+  }
+
+  const publicationsByLocalId = new Map();
+  for (const publication of publicationResult.products) {
+    const productId = String(publication?.localProductRef ?? '');
+    if (!productId || !unsyncedProductIds.has(productId)) continue;
+    if (publication.sourceType !== 'local_snapshot'
+      || (publication.productId && String(publication.productId) !== productId)
+      || publication.isPublished !== true
+      || publication.isAvailable !== true) continue;
+    const matches = publicationsByLocalId.get(productId) || [];
+    matches.push(publication);
+    publicationsByLocalId.set(productId, matches);
+  }
+  const publishedLocalSnapshotIds = [...publicationsByLocalId.keys()];
+  if (publishedLocalSnapshotIds.length === 0) return null;
+
+  let cloudCatalogExists = Boolean(migrated);
+  if (!cloudCatalogExists) {
+    const cloudProbe = await productCloudRepository.pullCatalogSnapshot({
+      licenseKey,
+      entityType: 'all',
+      offset: 0,
+      limit: 1,
+      includeDeleted: true,
+      force: true
+    });
+    if (cloudProbe?.success !== true
+      || !Array.isArray(cloudProbe.categories)
+      || !Array.isArray(cloudProbe.products)
+      || !Array.isArray(cloudProbe.batches)) {
+      throw Object.assign(new Error(cloudProbe?.message || 'No se pudo verificar si el catálogo Cloud ya existe.'), {
+        code: cloudProbe?.code || 'PRODUCT_ROUTE_CATALOG_PREFLIGHT_FAILED'
+      });
+    }
+    cloudCatalogExists = hasCloudCatalogRows(cloudProbe);
+  }
+  if (!cloudCatalogExists) {
+    return {
+      success: true,
+      guardLocalSnapshotBootstrap: true,
+      productCount: publishedLocalSnapshotIds.length
+    };
+  }
+
+  return {
+    success: true,
+    skipped: true,
+    deferred: true,
+    reason: 'local_catalog_recovery_requires_selection',
+    productCount: publishedLocalSnapshotIds.length
+  };
 };
 
 const asError = (response, fallback) => {
@@ -224,6 +320,17 @@ export const productSyncHandler = {
     }
 
     try {
+      const recoveryGate = await runWithLocalTenantSyncLease(
+          { license_key: licenseKey },
+          { reason: 'product_catalog_recovery_preflight' },
+          () => preflightLocalSnapshotRecovery(licenseKey)
+        );
+      if (recoveryGate?.deferred) {
+        Logger.log('[Products/Sync] Recuperación de catálogo diferida por preflight:', recoveryGate.reason);
+        // This skips the catalog hook only; the orchestrator's pull/outbox lifecycle is independent.
+        return recoveryGate;
+      }
+
       const canMigrateProducts = canMigrateProductCatalog();
 
       if (!canMigrateProducts) {
@@ -236,7 +343,12 @@ export const productSyncHandler = {
         return { ...snapshot, recovery, migrationSkipped: true };
       }
 
-      const migrationResult = await productMigrationService.runInitialMigrationIfNeeded({ licenseKey });
+      const migrationOptions = { licenseKey };
+      if (recoveryGate?.guardLocalSnapshotBootstrap === true) {
+        migrationOptions.guardLocalSnapshotBootstrap = true;
+      }
+      const migrationResult = await productMigrationService.runInitialMigrationIfNeeded(migrationOptions);
+      if (migrationResult?.deferred) return migrationResult;
       if (migrationResult?.blocked) {
         Logger.warn('[Products/Sync] Migracion inicial bloqueada:', migrationResult);
         return migrationResult;
