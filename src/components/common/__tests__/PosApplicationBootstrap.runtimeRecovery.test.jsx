@@ -3,12 +3,35 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const gateRuntimeMocks = vi.hoisted(() => ({
-  DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
-  isLocalDatabasePreparationActive: vi.fn(() => false),
-  ensureLocalDatabaseReady: vi.fn(),
-  retryLocalDatabaseRecovery: vi.fn()
-}));
+const gateRuntimeMocks = vi.hoisted(() => {
+  const activity = {
+    revision: 0,
+    snapshot: {
+      preparationActive: false,
+      preflightActive: false,
+      nativeOperations: [],
+      hasActiveNativeRequest: false,
+      hasTimedOutNativeRequest: false,
+      migrationActive: false
+    }
+  };
+  const listeners = new Set();
+
+  return {
+    DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
+    isLocalDatabasePreparationActive: vi.fn(() => false),
+    getLocalDatabaseActivityRevision: vi.fn(() => activity.revision),
+    getLocalDatabaseActivitySnapshot: vi.fn(() => activity.snapshot),
+    subscribeLocalDatabaseActivity: vi.fn((listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
+    ensureLocalDatabaseReady: vi.fn(),
+    retryLocalDatabaseRecovery: vi.fn(),
+    activity,
+    listeners
+  };
+});
 
 const loggerMocks = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -72,12 +95,23 @@ const renderReadyBootstrap = ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  gateRuntimeMocks.activity.revision = 0;
+  gateRuntimeMocks.activity.snapshot = {
+    preparationActive: false,
+    preflightActive: false,
+    nativeOperations: [],
+    hasActiveNativeRequest: false,
+    hasTimedOutNativeRequest: false,
+    migrationActive: false
+  };
+  gateRuntimeMocks.listeners.clear();
   resetPosApplicationBootstrapForTests();
   clearDatabaseRecoveryState();
 });
 
 afterEach(() => {
   cleanup();
+  gateRuntimeMocks.listeners.clear();
   resetPosApplicationBootstrapForTests();
   clearDatabaseRecoveryState();
 });
