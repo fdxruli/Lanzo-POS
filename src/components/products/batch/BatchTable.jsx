@@ -17,6 +17,10 @@ const formatDate = (isoDate) => {
 export const formatBatchCalendarDate = (value, fallback = 'Fecha no registrada') => {
   const calendarDate = extractCalendarDate(value);
   if (!calendarDate) return fallback;
+  const parsedDate = new Date(`${calendarDate}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(calendarDate)
+    || Number.isNaN(parsedDate.getTime())
+    || parsedDate.toISOString().slice(0, 10) !== calendarDate) return fallback;
   const [year, month, day] = calendarDate.split('-');
   return `${day}/${month}/${year}`;
 };
@@ -167,8 +171,7 @@ export default function BatchTable({
                   <dl className="batch-entry-meta">
                     {showExpiry && (
                       <>
-                        <div><dt>Caducidad</dt><dd>{pharmacyMedicine
-                          ? formatBatchCalendarDate(expiryValue) : formatDate(expiryValue)}</dd></div>
+                        <div><dt>Caducidad</dt><dd>{formatBatchCalendarDate(expiryValue)}</dd></div>
                         {pharmacyMedicine && (
                           <div><dt>Estado de caducidad</dt><dd>{getPharmacyExpiryLabel(batch)}</dd></div>
                         )}
