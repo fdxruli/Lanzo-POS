@@ -1,6 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
-import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
+import { closeTenantRuntime, getActiveTenantDatabase, getTenantRuntimeReadiness, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
   inspectActiveTenantStorageSnapshot,
   TenantScopedStorageInspectionError
@@ -856,6 +856,7 @@ export const createLocalTenantGuard = ({
   const activeSyncLeases = new Map();
   let nextSyncLeaseId = 1;
   let lastAttemptedTenantIdentity = null;
+  let retryableRuntimeContext = null;
   const resolveIdentity = (source) => resolveActiveTenantIdentity(source, cryptoProvider);
   const readRuntimeBrowserStorageSnapshot = activeTenantStorageInspector || (() => (
     readTenantOwnedBrowserStorageSnapshot(browserStorage)
@@ -866,6 +867,7 @@ export const createLocalTenantGuard = ({
   const runtimeSessionStorage = activeTenantStorageInspector ? null : tenantSessionStorage;
   const blockForLocalTenantError = (error) => {
     if (!isLocalTenantAccessError(error)) return;
+    retryableRuntimeContext = null;
     controller.block(
       error,
       error.code === LOCAL_TENANT_ERROR_CODES.MISMATCH
@@ -929,15 +931,33 @@ export const createLocalTenantGuard = ({
   const assertLocalTenantAccess = async (source, { reason = 'license_validation' } = {}) => {
     const activeIdentity = await resolveIdentity(source);
     lastAttemptedTenantIdentity = activeIdentity;
+    const controllerState = controller.getState();
     const alreadyGranted = controller.isGrantedFor(activeIdentity);
+    const runtimeReady = database !== defaultDatabase || getTenantRuntimeReadiness().ready;
+    const runtimePreparationRequired = !alreadyGranted || !runtimeReady;
+    const retryingAuthorizedRuntimeRecovery = !alreadyGranted
+      && controllerState.enabled
+      && controllerState.status === LOCAL_TENANT_STATUS.LOCKED
+      && controllerState.reason === 'tenant_runtime_recovery'
+      && reason === 'individual_product_recovery_inspect'
+      && retryableRuntimeContext?.operation === reason
+      && retryableRuntimeContext.identity
+      && areLocalTenantAliasesCompatible(retryableRuntimeContext.identity.aliases, activeIdentity.aliases);
+    if (alreadyGranted && database === defaultDatabase && !runtimeReady
+      && reason === 'individual_product_recovery_inspect') {
+      retryableRuntimeContext = { identity: activeIdentity, operation: reason };
+    } else if (retryableRuntimeContext && !retryingAuthorizedRuntimeRecovery) {
+      retryableRuntimeContext = null;
+    }
 
     if (
-      !alreadyGranted &&
+      runtimePreparationRequired &&
       [...activeSyncLeases.values()].some((lease) => !identitiesOverlap(lease.identity, activeIdentity))
     ) {
       const error = new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.MISMATCH, {
         reason: 'tenant_transition_during_active_sync'
       });
+      retryableRuntimeContext = null;
       controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
       throw error;
     }
@@ -945,10 +965,14 @@ export const createLocalTenantGuard = ({
     // Freeze the previous tenant before its physical database can be
     // replaced. This ordering also makes the brief B-open/B-binding window
     // fail closed through the runtime dbcore middleware.
-    if (!alreadyGranted) {
-      controller.lock('tenant_transition');
+    if (runtimePreparationRequired) {
+      const recoveryPreparation = alreadyGranted || retryingAuthorizedRuntimeRecovery;
+      const preparationReason = recoveryPreparation
+        ? 'tenant_runtime_recovery'
+        : 'tenant_transition';
+      controller.lock(preparationReason);
       if (database === defaultDatabase) closeTenantRuntime();
-      controller.enable(reason);
+      controller.enable(recoveryPreparation ? preparationReason : reason);
       if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
     }
     const nativeDatabase = await getNativeDatabase();
@@ -968,7 +992,8 @@ export const createLocalTenantGuard = ({
 
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
         if (database === defaultDatabase) await markTenantRuntimeReady();
-        if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
+        if (runtimePreparationRequired) controller.grant(activeIdentity, alreadyGranted ? 'runtime_recovered' : 'same_tenant');
+        retryableRuntimeContext = null;
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
 
@@ -982,6 +1007,7 @@ export const createLocalTenantGuard = ({
           snapshot,
           'bound_tenant_mismatch'
         );
+        retryableRuntimeContext = null;
         controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
         throw error;
       }
@@ -1002,6 +1028,7 @@ export const createLocalTenantGuard = ({
               ? 'conflicting_legacy_tenant_evidence'
               : 'missing_legacy_ownership_quorum'
           );
+          retryableRuntimeContext = null;
           controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
           throw error;
         }
@@ -1029,12 +1056,14 @@ export const createLocalTenantGuard = ({
             committed,
             'legacy_tenant_mismatch'
           );
+          retryableRuntimeContext = null;
           controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
           throw error;
         }
 
         if (database === defaultDatabase) await markTenantRuntimeReady();
         controller.grant(activeIdentity, bindingSource);
+        retryableRuntimeContext = null;
         return {
           status: bindingSource === 'legacy_internal_evidence'
             ? 'legacy_backfilled'
@@ -1059,6 +1088,7 @@ export const createLocalTenantGuard = ({
       latest,
       'snapshot_changed_repeatedly'
     );
+    retryableRuntimeContext = null;
     controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
     throw error;
   };
@@ -1079,7 +1109,15 @@ export const createLocalTenantGuard = ({
     const identity = await resolveIdentity(source);
     // No await is allowed between this check and registering the lease. A
     // second digest used to permit a tenant transition in that gap.
-    if (!controller.getState().enabled || !controller.isGrantedFor(identity)) {
+    const state = controller.getState();
+    const isAuthorizedRuntimeRetry = state.enabled
+      && state.status === LOCAL_TENANT_STATUS.LOCKED
+      && state.reason === 'tenant_runtime_recovery'
+      && reason === 'individual_product_recovery_inspect'
+      && retryableRuntimeContext?.operation === reason
+      && retryableRuntimeContext.identity
+      && areLocalTenantAliasesCompatible(retryableRuntimeContext.identity.aliases, identity.aliases);
+    if (!state.enabled || (!controller.isGrantedFor(identity) && !isAuthorizedRuntimeRetry)) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, { reason });
     }
     const leaseId = nextSyncLeaseId;
@@ -1108,10 +1146,14 @@ export const createLocalTenantGuard = ({
   return {
     controller,
     initialize: (reason = 'bootstrap') => controller.enable(reason),
-    lock: (reason = 'no_active_license') => controller.lock(reason),
+    lock: (reason = 'no_active_license') => {
+      retryableRuntimeContext = null;
+      return controller.lock(reason);
+    },
     reset: () => {
       activeSyncLeases.clear();
       lastAttemptedTenantIdentity = null;
+      retryableRuntimeContext = null;
       return controller.reset();
     },
     getState: () => controller.getState(),

@@ -214,7 +214,12 @@ describe('individual product recovery assessment', () => {
   });
 });
 
-const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } = {}) => {
+const makeServiceHarness = ({ responseMode = 'complete', canInventory = true, actorState = null } = {}) => {
+  let currentLicenseKey = 'tenant-a';
+  let currentActor = actorState || {
+    status: 'granted', sessionId: 'session-1',
+    permissions: canInventory ? ['products', 'inventory'] : ['products']
+  };
   let currentProduct = baseProduct({ stock: 17, cost: 2 });
   let currentBatches = [
     baseBatch({ stock: 17 }),
@@ -288,23 +293,24 @@ const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } =
       };
     })
   };
+  const outboxService = {
+    listOperationsForEntity: vi.fn(async () => []),
+    listInventoryEntriesForRecovery: vi.fn(async () => [])
+  };
+  const listLocalOnlyInventoryEntries = vi.fn(async () => []);
+  const runWithTenantLease = vi.fn(async (_tenant, _options, operation) => operation());
+  const assertTenantAccess = vi.fn(async () => true);
 
   const service = createProductIndividualRecoveryService({
-    getAppState: () => ({ licenseDetails: { license_key: 'tenant-a' } }),
-    actorController: { getState: () => ({
-      status: 'granted', sessionId: 'session-1',
-      permissions: canInventory ? ['products', 'inventory'] : ['products']
-    }) },
+    getAppState: () => ({ licenseDetails: { license_key: currentLicenseKey } }),
+    actorController: { getState: () => currentActor },
     localRepository,
     cloudRepository,
-    outboxService: {
-      listOperationsForEntity: vi.fn(async () => []),
-      listInventoryEntriesForRecovery: vi.fn(async () => [])
-    },
-    listLocalOnlyInventoryEntries: vi.fn(async () => []),
+    outboxService,
+    listLocalOnlyInventoryEntries,
     listPublishedProducts: vi.fn(async () => ({ success: true, products: [basePublication()] })),
-    runWithTenantLease: vi.fn(async (_tenant, _options, operation) => operation()),
-    assertTenantAccess: vi.fn(async () => true),
+    runWithTenantLease,
+    assertTenantAccess,
     runWithRecoveryLock: vi.fn(async ({ operation }) => operation({ locked: true })),
     captureMutation: vi.fn(() => ({ captured: true })),
     assertMutationCurrent: vi.fn(() => true),
@@ -317,10 +323,16 @@ const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } =
     service,
     localRepository,
     cloudRepository,
+    outboxService,
+    listLocalOnlyInventoryEntries,
+    runWithTenantLease,
+    assertTenantAccess,
     getProduct: () => currentProduct,
     getBatches: () => currentBatches,
     getRequestArgs: () => requestArgs,
     getCloud: () => ({ products: cloudProducts, batches: cloudBatches }),
+    setLicenseKey: (licenseKey) => { currentLicenseKey = licenseKey; },
+    setActor: (actor) => { currentActor = actor; },
     activeBatch
   };
 };
@@ -334,8 +346,86 @@ describe('individual product recovery execution', () => {
 
     expect(report.canRecover).toBe(true);
     expect(report.product.id).toBe('local-product-1');
+    expect(harness.assertTenantAccess).toHaveBeenCalledWith(
+      { license_key: 'tenant-a' },
+      { reason: 'individual_product_recovery_inspect' }
+    );
     expect(harness.cloudRepository.upsertProduct).not.toHaveBeenCalled();
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(harness.listLocalOnlyInventoryEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a requested tenant mismatch before reading local or Cloud data', async () => {
+    const harness = makeServiceHarness();
+    const report = await harness.service.inspectProduct({ productId: 'local-product-1', licenseKey: 'tenant-b' });
+
+    expect(report).toMatchObject({ success: false, blocked: true, code: 'TENANT_CONTEXT_MISMATCH', product: null });
+    expect(harness.runWithTenantLease).not.toHaveBeenCalled();
+    expect(harness.localRepository.getProductById).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['revoked session', { status: 'revoked', sessionId: 'session-1', permissions: ['*'] }, 'SESSION_REQUIRED'],
+    ['missing product permission', { status: 'granted', sessionId: 'session-1', permissions: ['inventory'] }, 'PRODUCT_PERMISSION_REQUIRED'],
+    ['missing inventory permission', { status: 'granted', sessionId: 'session-1', permissions: ['products'] }, 'INVENTORY_PERMISSION_REQUIRED']
+  ])('denies inspection for %s before reading tenant data', async (_label, actorState, code) => {
+    const harness = makeServiceHarness({ actorState });
+    const report = await harness.service.inspectProduct({ productId: 'local-product-1' });
+
+    expect(report).toMatchObject({ success: false, blocked: true, code, product: null });
+    expect(harness.runWithTenantLease).not.toHaveBeenCalled();
+    expect(harness.localRepository.getProductById).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('stops before Cloud reads when the selected tenant changes during local inspection', async () => {
+    const harness = makeServiceHarness();
+    const selectedProduct = harness.getProduct();
+    harness.localRepository.getProductById.mockImplementationOnce(async (id) => {
+      harness.setLicenseKey('tenant-b');
+      return id === selectedProduct.id ? selectedProduct : null;
+    });
+
+    const report = await harness.service.inspectProduct({ productId: selectedProduct.id });
+
+    expect(report).toMatchObject({ success: false, blocked: true, code: 'TENANT_CONTEXT_MISMATCH', product: null });
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
+    expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.upsertProduct).not.toHaveBeenCalled();
+  });
+
+  it('shows a clear safe retry when the tenant runtime cannot be prepared', async () => {
+    const harness = makeServiceHarness();
+    harness.assertTenantAccess.mockRejectedValueOnce(Object.assign(new Error('TENANT_RUNTIME_NOT_READY'), {
+      code: 'TENANT_RUNTIME_NOT_READY'
+    }));
+
+    const report = await harness.service.inspectProduct({ productId: 'local-product-1' });
+
+    expect(report).toMatchObject({
+      success: false,
+      blocked: true,
+      retryable: true,
+      code: 'TENANT_RUNTIME_NOT_READY'
+    });
+    expect(report.issues[0].message).toContain('no modifica productos, lotes ni inventario');
+    expect(harness.localRepository.getProductById).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('keeps a physical database open failure visible as a safe retryable block', async () => {
+    const harness = makeServiceHarness();
+    harness.assertTenantAccess.mockRejectedValueOnce(Object.assign(new Error('temporary native open failure'), {
+      code: 'DB_OPEN_RETRY_TEST'
+    }));
+
+    const report = await harness.service.inspectProduct({ productId: 'local-product-1' });
+
+    expect(report).toMatchObject({ success: false, blocked: true, retryable: true, code: 'DB_OPEN_RETRY_TEST' });
+    expect(report.issues[0].message).toContain('No se pudo preparar de forma segura el runtime local');
+    expect(harness.localRepository.getProductById).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
   });
 
   it('writes only the selected product and active lots, using create-only OCC and original IDs', async () => {
@@ -450,8 +540,9 @@ describe('individual product recovery execution', () => {
     const harness = makeServiceHarness({ canInventory: false });
     const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
 
-    expect(result.blocked).toBe(true);
-    expect(result.report?.issues.map((issue) => issue.code)).toContain('INVENTORY_PERMISSION_REQUIRED');
+    expect(result).toMatchObject({ success: false, blocked: true, code: 'INVENTORY_PERMISSION_REQUIRED' });
+    expect(harness.localRepository.getProductById).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.pullCatalogSnapshot).not.toHaveBeenCalled();
     expect(harness.cloudRepository.upsertProduct).not.toHaveBeenCalled();
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
   });

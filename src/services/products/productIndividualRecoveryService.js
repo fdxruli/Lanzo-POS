@@ -7,7 +7,7 @@ import {
 import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventoryEntryService';
 import { syncOutboxService } from '../sync/syncOutboxService';
 import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, OUTBOX_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
-import { runWithLocalTenantSyncLease, assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
+import { runWithLocalTenantSyncLease, assertLocalTenantAccess } from '../tenant/localTenantGuard';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { useAppStore } from '../../store/useAppStore';
@@ -29,6 +29,24 @@ const isDeleted = (record) => Boolean(record?.deletedAt || record?.deleted_at ||
 const isCloudActive = (record) => !isDeleted(record) && record?.is_active !== false && record?.isActive !== false;
 const hasProductPermission = (actor) => actor?.permissions?.includes('*') || actor?.permissions?.includes('products');
 const hasInventoryPermission = (actor) => actor?.permissions?.includes('*') || actor?.permissions?.includes('inventory');
+const INSPECTION_ACCESS_MESSAGES = Object.freeze({
+  SESSION_REQUIRED: 'La sesión vigente terminó o cambió. No se leyó el catálogo; vuelve a iniciar sesión y verifica otra vez.',
+  PRODUCT_PERMISSION_REQUIRED: 'Se requiere permiso de Productos para verificar este producto.',
+  INVENTORY_PERMISSION_REQUIRED: 'Se requiere permiso de Inventario para verificar existencias y lotes.'
+});
+const createInspectionAccessError = (code) => Object.assign(
+  new Error(INSPECTION_ACCESS_MESSAGES[code] || 'No se autorizó la lectura del producto.'),
+  { code }
+);
+const assertInspectionActor = (deps, expectedSessionId = null) => {
+  const actor = deps.actorController.getState();
+  if (actor?.status !== 'granted' || !actor?.sessionId || (expectedSessionId && actor.sessionId !== expectedSessionId)) {
+    throw createInspectionAccessError('SESSION_REQUIRED');
+  }
+  if (!hasProductPermission(actor)) throw createInspectionAccessError('PRODUCT_PERMISSION_REQUIRED');
+  if (!hasInventoryPermission(actor)) throw createInspectionAccessError('INVENTORY_PERMISSION_REQUIRED');
+  return actor;
+};
 const isProtectedMedicine = (product) => {
   const pharmacy = getPharmacyClassification(product);
   return (pharmacy.recorded && pharmacy.kind === 'medicine')
@@ -496,7 +514,6 @@ const readCloudRows = async (cloudRepository, licenseKey, entityType) => {
   }
 };
 
-const getCurrentActor = (deps) => deps.actorController.getState();
 const getCurrentState = (deps) => deps.getAppState();
 
 const getRecoveryContext = (deps, requestedLicenseKey = null) => {
@@ -508,6 +525,15 @@ const getRecoveryContext = (deps, requestedLicenseKey = null) => {
     licenseKey: requestedLicenseKey || currentLicenseKey,
     requestedLicenseMatches: Boolean(currentLicenseKey && (!requestedLicenseKey || requestedLicenseKey === currentLicenseKey))
   };
+};
+
+const assertRecoveryTenant = (deps, expectedLicenseKey) => {
+  const context = getRecoveryContext(deps, expectedLicenseKey);
+  if (!context.requestedLicenseMatches) {
+    throw Object.assign(new Error('El negocio activo cambió durante la verificación.'), {
+      code: 'TENANT_CONTEXT_MISMATCH'
+    });
+  }
 };
 
 const readLocalProductSnapshot = async (deps, productId) => {
@@ -560,15 +586,24 @@ const readOutbox = async (deps, licenseKey, productId, batches = []) => {
   return [...productAndBatchRows, ...inventoryRows];
 };
 
-const loadAssessment = async (deps, { licenseKey, productId, requestedLicenseMatches, appState }) => {
+const loadAssessment = async (deps, { licenseKey, productId, requestedLicenseMatches, appState, actorSessionId }) => {
   if (!productId) throw Object.assign(new Error('PRODUCT_ID_REQUIRED'), { code: 'PRODUCT_ID_REQUIRED' });
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
   const local = await readLocalProductSnapshot(deps, productId);
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
   const cloud = await readCloudSnapshot(deps, licenseKey);
+  assertRecoveryTenant(deps, licenseKey);
+  const actor = assertInspectionActor(deps, actorSessionId);
   const outboxRows = local.product
     ? await readOutbox(deps, licenseKey, productId, local.localBatches)
     : [];
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
   const localOnlyInventoryEvents = await deps.listLocalOnlyInventoryEntries({ licenseKey });
-  const actor = getCurrentActor(deps);
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
   const report = assessIndividualProductRecovery({
     licenseKey,
     requestedLicenseMatches,
@@ -685,6 +720,31 @@ const errorResult = (error, { uncertain = false } = {}) => ({
     || 'No se pudo recuperar el producto. Conserva los datos locales y revisa el resultado antes de reintentar.'
 });
 
+const isTenantRuntimeFailure = (code) => (
+  String(code || '').startsWith('TENANT_RUNTIME_')
+  || String(code || '').startsWith('TENANT_DATABASE_')
+  || String(code || '').startsWith('DB_')
+  || code === 'TENANT_DIRECTORY_CORRUPT'
+);
+
+const inspectionErrorMessage = (error) => {
+  const code = error?.code;
+  if (INSPECTION_ACCESS_MESSAGES[code]) return INSPECTION_ACCESS_MESSAGES[code];
+  if (code === 'TENANT_RUNTIME_NOT_READY') {
+    return 'El runtime local de este negocio no está listo. La verificación se detuvo antes de leer el catálogo; reintentar solo vuelve a consultar y no modifica productos, lotes ni inventario.';
+  }
+  if (code === 'TENANT_RUNTIME_STALE_HANDLE') {
+    return 'El runtime local cambió durante la verificación. No se mezclaron datos ni se escribieron cambios; vuelve a verificar con el negocio correcto.';
+  }
+  if (isTenantRuntimeFailure(code)) {
+    return `No se pudo preparar de forma segura el runtime local (${code}). La lectura se detuvo sin consultar otra base ni modificar productos, lotes o inventario. Puedes reintentar la verificación de forma segura.`;
+  }
+  if (code === 'TENANT_CONTEXT_MISMATCH') {
+    return 'El negocio activo no coincide con el contexto de esta verificación. No se leyeron datos de otro negocio; vuelve a verificar con el negocio correcto.';
+  }
+  return error?.message || 'No se pudo verificar el producto.';
+};
+
 const defaultDependencies = {
   getAppState: () => useAppStore.getState(),
   actorController: actorRuntimeController,
@@ -694,7 +754,7 @@ const defaultDependencies = {
   listLocalOnlyInventoryEntries: listLocalOnlyInventoryEntriesForRecovery,
   listPublishedProducts,
   runWithTenantLease: runWithLocalTenantSyncLease,
-  assertTenantAccess: assertLocalTenantSyncAccess,
+  assertTenantAccess: assertLocalTenantAccess,
   runWithRecoveryLock: runWithProductCatalogRecoveryLock,
   captureMutation: captureProductInventoryMutation,
   assertMutationCurrent: assertProductInventoryMutationCurrent,
@@ -711,16 +771,19 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
     if (!context.licenseKey || !context.requestedLicenseMatches) {
       throw Object.assign(new Error('TENANT_CONTEXT_MISMATCH'), { code: 'TENANT_CONTEXT_MISMATCH' });
     }
+    const actor = assertInspectionActor(deps);
     return deps.runWithTenantLease(
       { license_key: context.licenseKey },
       { reason },
       async () => {
+        assertInspectionActor(deps, actor.sessionId);
         await deps.assertTenantAccess({ license_key: context.licenseKey }, { reason });
         const freshContext = getRecoveryContext(deps, context.licenseKey);
         if (!freshContext.requestedLicenseMatches) {
           throw Object.assign(new Error('TENANT_CONTEXT_MISMATCH'), { code: 'TENANT_CONTEXT_MISMATCH' });
         }
-        return operation({ ...freshContext, licenseKey: context.licenseKey });
+        assertInspectionActor(deps, actor.sessionId);
+        return operation({ ...freshContext, licenseKey: context.licenseKey, actorSessionId: actor.sessionId });
       }
     );
   };
@@ -733,7 +796,17 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
           return result.report;
         });
       } catch (error) {
-        return { ...errorResult(error), product: null, batches: [], issues: [{ code: error?.code || 'PRODUCT_RECOVERY_INSPECTION_FAILED', message: error?.message || 'No se pudo verificar el producto.' }] };
+        const code = error?.code || 'PRODUCT_RECOVERY_INSPECTION_FAILED';
+        const retryable = isTenantRuntimeFailure(code)
+          || error?.diagnostic?.isRetryable === true;
+        return {
+          ...errorResult(error),
+          retryable,
+          message: inspectionErrorMessage(error),
+          product: null,
+          batches: [],
+          issues: [{ code, message: inspectionErrorMessage(error) }]
+        };
       }
     },
 
