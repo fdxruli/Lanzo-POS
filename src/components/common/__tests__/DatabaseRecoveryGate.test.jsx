@@ -19,12 +19,27 @@ const recoveryMocks = vi.hoisted(() => ({
 
 const runtimeMocks = vi.hoisted(() => ({
   retryLocalDatabaseRecovery: vi.fn(),
-  isLocalDatabasePreparationActive: vi.fn(() => false)
+  getLocalDatabaseActivityRevision: vi.fn(() => 0),
+  getLocalDatabaseActivitySnapshot: vi.fn(() => ({
+    preparationActive: false,
+    preflightActive: false,
+    nativeOperations: [],
+    hasActiveNativeRequest: false,
+    hasTimedOutNativeRequest: false,
+    migrationActive: false
+  })),
+  subscribeLocalDatabaseActivity: vi.fn(() => () => {})
 }));
 
 const nativeOperationMocks = vi.hoisted(() => ({
   snapshot: Object.freeze([]),
-  listeners: new Set()
+  listeners: new Set(),
+  revision: 0,
+  activity: {
+    preparationActive: false,
+    preflightActive: false,
+    migrationActive: false
+  }
 }));
 
 vi.mock('../../../services/db/databaseRecoveryState', () => ({
@@ -44,13 +59,18 @@ vi.mock('../../../services/db/databaseRecoveryState', () => ({
 }));
 
 vi.mock('../../../services/db/databaseRuntime', () => runtimeMocks);
-vi.mock('../../../services/db/indexedDbPreflight', () => ({
-  getActiveNativeOpenOperations: () => nativeOperationMocks.snapshot,
-  subscribeNativeOpenOperations: (listener) => {
-    nativeOperationMocks.listeners.add(listener);
-    return () => nativeOperationMocks.listeners.delete(listener);
-  }
+
+runtimeMocks.getLocalDatabaseActivityRevision.mockImplementation(() => nativeOperationMocks.revision);
+runtimeMocks.getLocalDatabaseActivitySnapshot.mockImplementation(() => ({
+  ...nativeOperationMocks.activity,
+  nativeOperations: nativeOperationMocks.snapshot,
+  hasActiveNativeRequest: nativeOperationMocks.snapshot.length > 0,
+  hasTimedOutNativeRequest: nativeOperationMocks.snapshot.some(operation => operation.state === 'timed_out_waiting_native_settlement')
 }));
+runtimeMocks.subscribeLocalDatabaseActivity.mockImplementation((listener) => {
+  nativeOperationMocks.listeners.add(listener);
+  return () => nativeOperationMocks.listeners.delete(listener);
+});
 
 import DatabaseRecoveryGate from '../DatabaseRecoveryGate';
 
@@ -68,7 +88,37 @@ const publishNativeOperations = (operations) => {
   nativeOperationMocks.snapshot = Object.freeze(
     operations.map((operation) => Object.freeze({ ...operation }))
   );
+  nativeOperationMocks.revision += 1;
   nativeOperationMocks.listeners.forEach((listener) => listener());
+};
+
+const publishLocalActivity = (activity) => {
+  nativeOperationMocks.activity = { ...nativeOperationMocks.activity, ...activity };
+  nativeOperationMocks.revision += 1;
+  nativeOperationMocks.listeners.forEach((listener) => listener());
+};
+
+const createDbOperationFailure = (overrides = {}) => ({
+  ...recoveryMocks.state,
+  status: 'failed',
+  errorCode: 'DB_OPERATION_FAILED',
+  isRetryable: false,
+  failure: {
+    id: 12,
+    phase: 'dexie_open',
+    category: 'unknown',
+    errorType: 'Error',
+    durationMs: 25,
+    nativeRequestState: 'none',
+    preflightActive: false,
+    restartContext: { runtimeGeneration: 1, actorGeneration: 1, actorStatus: 'locked' }
+  },
+  ...overrides
+});
+
+const subscribeRestartSafety = (listener) => {
+  nativeOperationMocks.listeners.add(listener);
+  return () => nativeOperationMocks.listeners.delete(listener);
 };
 
 const openDatabase = (name) => new Promise((resolve, reject) => {
@@ -85,7 +135,12 @@ const requestResult = (request) => new Promise((resolve, reject) => {
 
 beforeEach(() => {
   runtimeMocks.retryLocalDatabaseRecovery.mockReset();
-  runtimeMocks.isLocalDatabasePreparationActive.mockReturnValue(false);
+  nativeOperationMocks.revision = 0;
+  nativeOperationMocks.activity = {
+    preparationActive: false,
+    preflightActive: false,
+    migrationActive: false
+  };
   recoveryMocks.state = {
     status: 'ready',
     errorCode: null,
@@ -148,6 +203,126 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.queryByText('APP_CHILDREN')).not.toBeInTheDocument();
     expect(screen.getByText(/cierra las demás pestañas de lanzo/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
+  });
+
+  it('offers one normal restart for a safe DB_OPERATION_FAILED without retrying or clearing storage', () => {
+    recoveryMocks.state = createDbOperationFailure();
+    const reloadPage = vi.fn();
+    const getRestartBlockReason = vi.fn(() => null);
+
+    renderGate({ reloadPage, getRestartBlockReason, subscribeRestartSafety });
+
+    expect(screen.queryByText('APP_CHILDREN')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No se pudo comprobar la base local' })).toBeInTheDocument();
+    expect(screen.getByText(/puedes reiniciar la aplicación para intentar abrirla nuevamente/i)).toBeInTheDocument();
+    expect(screen.getByText(/no borres los datos del navegador/i)).toBeInTheDocument();
+    const restartButton = screen.getByRole('button', { name: 'Reiniciar Lanzo' });
+    expect(restartButton).toHaveClass('ui-button--primary');
+    expect(screen.getByRole('button', { name: 'Copiar diagnóstico' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Contactar a soporte' })).toBeInTheDocument();
+
+    fireEvent.click(restartButton);
+    fireEvent.click(restartButton);
+
+    expect(getRestartBlockReason).toHaveBeenCalledWith(12);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
+  });
+
+  it('keeps restart blocked for a live preparation and enables it when that operation settles', () => {
+    recoveryMocks.state = createDbOperationFailure();
+    publishLocalActivity({ preparationActive: true });
+    const reloadPage = vi.fn();
+    const getRestartBlockReason = () => (
+      nativeOperationMocks.activity.preparationActive ? 'local_database_active' : null
+    );
+
+    renderGate({ reloadPage, getRestartBlockReason, subscribeRestartSafety });
+
+    expect(screen.getByText(/todavía existe una operación local en curso/i)).toBeInTheDocument();
+    expect(screen.getByText(/solicitud de indexeddb activa o una preparación local en curso/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copiar diagnóstico' })).toBeInTheDocument();
+
+    act(() => publishLocalActivity({ preparationActive: false }));
+
+    expect(screen.getByRole('button', { name: 'Reiniciar Lanzo' })).toBeEnabled();
+    expect(screen.getByText(/puedes reiniciar la aplicación/i)).toBeInTheDocument();
+    expect(reloadPage).not.toHaveBeenCalled();
+  });
+
+  it('keeps restart blocked when a native IndexedDB request remains active after its public timeout', () => {
+    recoveryMocks.state = createDbOperationFailure();
+    publishNativeOperations([{
+      key: 'LanzoDB_t_secret-business:current',
+      state: 'timed_out_waiting_native_settlement'
+    }]);
+    const getRestartBlockReason = () => (
+      nativeOperationMocks.snapshot.length > 0 ? 'local_database_active' : null
+    );
+
+    renderGate({ getRestartBlockReason, subscribeRestartSafety });
+
+    expect(screen.getByText(/solicitud de indexeddb activa/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('secret-business');
+  });
+
+  it.each([
+    ['preflight', 'local_database_active'],
+    ['migration', 'local_database_active'],
+    ['write transaction', 'write_active'],
+    ['checkout', 'checkout_active'],
+    ['backup or restore', 'backup_active'],
+    ['synchronization', 'sync_active']
+  ])('does not allow restart during an active %s', (_label, reason) => {
+    recoveryMocks.state = createDbOperationFailure();
+
+    renderGate({ getRestartBlockReason: () => reason, subscribeRestartSafety });
+
+    expect(screen.getByText(/todavía existe una operación local en curso/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copiar diagnóstico' })).toBeInTheDocument();
+    expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
+  });
+
+  it('revalidates activity at the click and blocks a stale safe render', () => {
+    recoveryMocks.state = createDbOperationFailure();
+    let blockReason = null;
+    const reloadPage = vi.fn();
+
+    renderGate({
+      reloadPage,
+      getRestartBlockReason: () => blockReason,
+      subscribeRestartSafety
+    });
+
+    blockReason = 'write_active';
+    fireEvent.click(screen.getByRole('button', { name: 'Reiniciar Lanzo' }));
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(screen.getByText(/hay cambios locales guardándose/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+  });
+
+  it('fails closed with an explanation when the final safety check throws', () => {
+    recoveryMocks.state = createDbOperationFailure();
+    let safetyCheckFails = false;
+    const reloadPage = vi.fn();
+
+    renderGate({
+      reloadPage,
+      getRestartBlockReason: () => {
+        if (safetyCheckFails) throw new Error('safety check unavailable');
+        return null;
+      },
+      subscribeRestartSafety
+    });
+
+    safetyCheckFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Reiniciar Lanzo' }));
+
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(screen.getByText(/no se pudo confirmar que sea seguro reiniciar/i)).toBeInTheDocument();
   });
 
   it('explains a timed-out preparation without offering retry or reload', () => {
@@ -389,6 +564,26 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'DB_TIMEOUT',
+    'DB_UNSUPPORTED_NATIVE_VERSION',
+    'DB_PRIMARY_KEY_MISMATCH',
+    'DB_CLOSED_AFTER_STRUCTURAL_ERROR',
+    'DB_BROWSER_STORAGE_UNAVAILABLE'
+  ])('does not expose the DB_OPERATION_FAILED restart for structural state %s', (errorCode) => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode,
+      isRetryable: false
+    };
+
+    renderGate({ getRestartBlockReason: () => null });
+
+    expect(screen.queryByRole('button', { name: 'Reiniciar Lanzo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
   });
 
   it('uses the central mailto report and copies that exact report for every FAILED code', async () => {

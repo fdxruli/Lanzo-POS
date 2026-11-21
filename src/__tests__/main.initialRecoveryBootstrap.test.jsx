@@ -21,13 +21,35 @@ const readyImportMocks = vi.hoisted(() => ({
   startPosSyncAutoBootstrap: vi.fn()
 }));
 
-const runtimeMocks = vi.hoisted(() => ({
-  DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
-  isLocalDatabasePreparationActive: vi.fn(() => true),
-  prepareLocalDatabase: vi.fn(),
-  ensureLocalDatabaseReady: vi.fn(),
-  retryLocalDatabaseRecovery: vi.fn()
-}));
+const runtimeMocks = vi.hoisted(() => {
+  const activity = {
+    revision: 0,
+    snapshot: {
+      preparationActive: false,
+      preflightActive: false,
+      nativeOperations: [],
+      hasActiveNativeRequest: false,
+      hasTimedOutNativeRequest: false,
+      migrationActive: false
+    }
+  };
+  const listeners = new Set();
+
+  return {
+    DATABASE_PREPARATION_TIMEOUT_MS: 15_000,
+    getLocalDatabaseActivityRevision: vi.fn(() => activity.revision),
+    getLocalDatabaseActivitySnapshot: vi.fn(() => activity.snapshot),
+    subscribeLocalDatabaseActivity: vi.fn((listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
+    prepareLocalDatabase: vi.fn(),
+    ensureLocalDatabaseReady: vi.fn(),
+    retryLocalDatabaseRecovery: vi.fn(),
+    activity,
+    listeners
+  };
+});
 
 vi.mock('react-dom/client', async () => {
   const actual = await vi.importActual('react-dom/client');
@@ -99,6 +121,16 @@ beforeEach(() => {
   rootMocks.roots.length = 0;
   readyImportMocks.appLoaded = false;
   readyImportMocks.posSyncLoaded = false;
+  runtimeMocks.activity.revision = 0;
+  runtimeMocks.activity.snapshot = {
+    preparationActive: false,
+    preflightActive: false,
+    nativeOperations: [],
+    hasActiveNativeRequest: false,
+    hasTimedOutNativeRequest: false,
+    migrationActive: false
+  };
+  runtimeMocks.listeners.clear();
   resetPosApplicationBootstrapForTests();
   clearDatabaseRecoveryState();
 

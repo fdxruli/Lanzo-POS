@@ -1,17 +1,75 @@
 import { getActiveTenantDatabase, getActiveTenantRuntime } from './tenantRuntimeRouter';
-import { getActiveNativeOpenOperations } from './indexedDbPreflight';
-import { getActiveIndexedDbPreflightOperations } from './indexedDbPreflightCoordinator';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { getActiveNativeOpenOperations, subscribeNativeOpenOperations } from './indexedDbPreflight';
+import {
+  getActiveIndexedDbPreflightOperations,
+  subscribeIndexedDbPreflightOperations
+} from './indexedDbPreflightCoordinator';
 import {
   DATABASE_RECOVERY_CODES,
   DATABASE_RECOVERY_STATUS,
   classifyDatabaseError,
   getDatabaseRecoveryState,
   normalizeBrowserStorageError,
-  setDatabaseRecoveryState
+  setDatabaseRecoveryState,
+  subscribeDatabaseRecoveryState
 } from './databaseRecoveryState';
 
 let activePreparationCount = 0;
+let failureSequence = 0;
+let activityRevision = 0;
+let activitySourceUnsubscribers = null;
+const activityListeners = new Set();
 export const DATABASE_PREPARATION_TIMEOUT_MS = 15_000;
+
+const publishLocalDatabaseActivity = () => {
+  activityRevision += 1;
+  activityListeners.forEach((listener) => {
+    try { listener(); } catch { /* Activity observers must not interrupt database work. */ }
+  });
+};
+
+export const getLocalDatabaseActivityRevision = () => activityRevision;
+
+export const subscribeLocalDatabaseActivity = (listener) => {
+  activityListeners.add(listener);
+  if (!activitySourceUnsubscribers) {
+    activitySourceUnsubscribers = [
+      subscribeNativeOpenOperations(publishLocalDatabaseActivity),
+      subscribeIndexedDbPreflightOperations(publishLocalDatabaseActivity),
+      subscribeDatabaseRecoveryState(publishLocalDatabaseActivity)
+    ];
+  }
+
+  return () => {
+    activityListeners.delete(listener);
+    if (activityListeners.size === 0 && activitySourceUnsubscribers) {
+      activitySourceUnsubscribers.forEach((unsubscribe) => unsubscribe?.());
+      activitySourceUnsubscribers = null;
+    }
+  };
+};
+
+const getNativeRequestState = (nativeOperations) => {
+  if (nativeOperations.length === 0) return 'none';
+  if (nativeOperations.length > 1) return 'multiple_active';
+  return nativeOperations[0]?.state || 'none';
+};
+
+const captureRestartContext = (runtime) => {
+  let actor = null;
+  try {
+    actor = actorRuntimeController.getState();
+  } catch {
+    // Context data is optional diagnostics; a missing value fails restart checks closed.
+  }
+
+  return {
+    runtimeGeneration: Number.isSafeInteger(runtime?.generation) ? runtime.generation : null,
+    actorGeneration: Number.isSafeInteger(actor?.generation) ? actor.generation : null,
+    actorStatus: actor?.status || null
+  };
+};
 
 const publishPreparationTimeout = (databaseName) => {
   const currentState = getDatabaseRecoveryState();
@@ -27,7 +85,12 @@ const publishPreparationTimeout = (databaseName) => {
   });
 };
 
-const publishPreparationFailure = (error, databaseName) => {
+const publishPreparationFailure = (error, databaseName, {
+  phase = 'unknown',
+  durationMs = null,
+  runtime = null,
+  restartContext = null
+} = {}) => {
   const currentState = getDatabaseRecoveryState();
   if (![DATABASE_RECOVERY_STATUS.IDLE, DATABASE_RECOVERY_STATUS.CHECKING].includes(currentState.status)) {
     return;
@@ -39,6 +102,16 @@ const publishPreparationFailure = (error, databaseName) => {
   const isOpenTimeout = classification.code === DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
     || error?.name === 'DatabaseOpenTimeoutError';
   const isKnownRecovery = classification.structural && !isOpenTimeout;
+  const nativeOperations = getActiveNativeOpenOperations();
+  const errorType = typeof effectiveError?.name === 'string' ? effectiveError.name : 'Error';
+  const isKnownDexieError = new Set([
+    'DatabaseError', 'DatabaseClosedError', 'DatabaseOpenTimeoutError', 'OpenFailedError',
+    'UpgradeError', 'VersionError', 'TransactionInactiveError'
+  ]).has(errorType);
+  const isKnownIndexedDbError = new Set([
+    'AbortError', 'ConstraintError', 'DataError', 'InvalidStateError', 'NetworkError',
+    'NotAllowedError', 'QuotaExceededError', 'ReadOnlyError', 'TimeoutError', 'UnknownError'
+  ]).has(errorType);
   const errorCode = browserStorageError?.code
     || (isOpenTimeout
       ? 'DB_TIMEOUT'
@@ -62,7 +135,18 @@ const publishPreparationFailure = (error, databaseName) => {
       ? 'La apertura del almacenamiento local no terminó dentro del tiempo esperado.'
       : isKnownRecovery
         ? effectiveError?.message || null
-        : 'No se pudo confirmar que la base local esté lista.')
+        : 'No se pudo confirmar que la base local esté lista.'),
+    failure: {
+      id: ++failureSequence,
+      phase,
+      category: isKnownDexieError ? 'dexie' : isKnownIndexedDbError ? 'indexeddb' : 'unknown',
+      errorType,
+      errorCode: classification.code,
+      durationMs,
+      nativeRequestState: getNativeRequestState(nativeOperations),
+      preflightActive: getActiveIndexedDbPreflightOperations().length > 0,
+      restartContext: restartContext || captureRestartContext(runtime)
+    }
   });
 };
 
@@ -72,11 +156,16 @@ export const prepareLocalDatabase = async () => {
   // legacy vault back into a runtime database, while requiring a tenant here
   // deadlocks the license bootstrap that is responsible for resolving one.
   activePreparationCount += 1;
+  publishLocalDatabaseActivity();
   let runtime = null;
+  let restartContext = null;
   let databaseName = null;
   let preparationTimeoutId = null;
+  let phase = 'runtime_resolution';
+  const startTime = globalThis.performance?.now?.() ?? Date.now();
   try {
     runtime = getActiveTenantRuntime();
+    restartContext = captureRestartContext(runtime);
     databaseName = runtime?.databaseName || null;
     setDatabaseRecoveryState({
       status: DATABASE_RECOVERY_STATUS.CHECKING,
@@ -88,6 +177,7 @@ export const prepareLocalDatabase = async () => {
       return { ready: true, deferredTenantRuntime: true, databaseName: null, runtime: null };
     }
 
+    phase = 'database_resolution';
     preparationTimeoutId = setTimeout(
       () => publishPreparationTimeout(databaseName),
       DATABASE_PREPARATION_TIMEOUT_MS
@@ -95,7 +185,10 @@ export const prepareLocalDatabase = async () => {
 
     const database = getActiveTenantDatabase();
     databaseName = database.name;
-    if (!database.isOpen()) {
+    phase = 'database_state_check';
+    const databaseIsOpen = database.isOpen();
+    if (!databaseIsOpen) {
+      phase = 'dexie_open';
       // Dexie's open promise remains pending while an older connection blocks
       // a version upgrade. Publish that native state immediately so the gate
       // can explain the lock instead of leaving its generic checking screen.
@@ -115,14 +208,22 @@ export const prepareLocalDatabase = async () => {
         blockedEvent?.unsubscribe?.(onBlocked);
       }
     }
+    phase = 'ready_confirmation';
     setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY, databaseName });
     return { ready: true, databaseName, runtime };
   } catch (error) {
-    publishPreparationFailure(error, databaseName || runtime?.databaseName || null);
+    const endTime = globalThis.performance?.now?.() ?? Date.now();
+    publishPreparationFailure(error, databaseName || runtime?.databaseName || null, {
+      phase,
+      durationMs: Math.max(0, endTime - startTime),
+      runtime,
+      restartContext
+    });
     throw error;
   } finally {
     if (preparationTimeoutId !== null) clearTimeout(preparationTimeoutId);
     activePreparationCount = Math.max(0, activePreparationCount - 1);
+    publishLocalDatabaseActivity();
     const currentState = getDatabaseRecoveryState();
     if (
       activePreparationCount === 0
@@ -144,13 +245,14 @@ export const getLocalDatabaseActivitySnapshot = () => {
     preflightActive: preflightOperations.length > 0,
     nativeOperations,
     hasActiveNativeRequest: nativeOperations.length > 0,
-    hasTimedOutNativeRequest: nativeOperations.some(({ state }) => state === 'timed_out_waiting_native_settlement')
+    hasTimedOutNativeRequest: nativeOperations.some(({ state }) => state === 'timed_out_waiting_native_settlement'),
+    migrationActive: getDatabaseRecoveryState().status === DATABASE_RECOVERY_STATUS.MIGRATING
   };
 };
 
 export const isLocalDatabasePreparationActive = () => {
   const activity = getLocalDatabaseActivitySnapshot();
-  return activity.preparationActive || activity.preflightActive || activity.hasActiveNativeRequest;
+  return activity.preparationActive || activity.preflightActive || activity.hasActiveNativeRequest || activity.migrationActive;
 };
 export const retryLocalDatabaseRecovery = async () => {
   const activity = getLocalDatabaseActivitySnapshot();

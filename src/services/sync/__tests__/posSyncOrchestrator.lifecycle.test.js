@@ -129,6 +129,26 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
     expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
   });
 
+  it('notifies restart safety subscribers when an outbox operation starts and finishes', async () => {
+    await startDeferredBootstrap();
+    let finishOutboxRead;
+    mocks.getPendingOperations.mockImplementationOnce(() => new Promise((resolve) => {
+      finishOutboxRead = resolve;
+    }));
+    const listener = vi.fn();
+    const unsubscribe = posSyncOrchestrator.subscribeUpdateActivity(listener);
+
+    const operation = posSyncOrchestrator.processOutbox('restart-safety-test');
+    await vi.waitFor(() => expect(posSyncOrchestrator.getUpdateActivity()).toBe(true));
+    expect(listener).toHaveBeenCalled();
+
+    finishOutboxRead([]);
+    await expect(operation).resolves.toMatchObject({ processed: 0 });
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+    expect(listener.mock.calls.length).toBeGreaterThan(1);
+    unsubscribe();
+  });
+
   it('does not leave pull locked when stop invalidates its tenant assertion', async () => {
     await startDeferredBootstrap();
     vi.clearAllMocks();

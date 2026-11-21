@@ -26,6 +26,33 @@ export const BROWSER_STORAGE_UNAVAILABLE_MESSAGE = 'No se pudo abrir el almacena
 const listeners = new Set();
 const loggedFingerprints = new Set();
 
+const SAFE_FAILURE_PHASES = new Set([
+  'runtime_resolution',
+  'database_resolution',
+  'database_state_check',
+  'dexie_open',
+  'ready_confirmation',
+  'startup_interrupted',
+  'unknown'
+]);
+const SAFE_FAILURE_CATEGORIES = new Set(['indexeddb', 'dexie', 'unknown']);
+const SAFE_FAILURE_ERROR_TYPES = new Set([
+  'Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'DOMException',
+  'AbortError', 'ConstraintError', 'DataError', 'InvalidStateError', 'NetworkError',
+  'NotAllowedError', 'QuotaExceededError', 'ReadOnlyError', 'TimeoutError',
+  'TransactionInactiveError', 'UnknownError', 'VersionError', 'DatabaseError',
+  'DatabaseClosedError', 'DatabaseOpenTimeoutError', 'OpenFailedError', 'UpgradeError'
+]);
+const SAFE_NATIVE_REQUEST_STATES = new Set([
+  'none', 'multiple_active', 'opening', 'blocked', 'upgrading', 'timed_out_waiting_native_settlement'
+]);
+const SAFE_ACTOR_STATUSES = new Set(['locked', 'authenticating', 'handoff_check', 'granted']);
+const SAFE_FAILURE_CODES = new Set([
+  ...Object.values(DATABASE_RECOVERY_CODES),
+  'DB_TIMEOUT',
+  'DB_OPERATION_FAILED'
+]);
+
 let state = Object.freeze({
   status: DATABASE_RECOVERY_STATUS.IDLE,
   errorCode: null,
@@ -38,7 +65,8 @@ let state = Object.freeze({
   isRetryable: true,
   requiresMigration: false,
   message: null,
-  migration: null
+  migration: null,
+  failure: null
 });
 
 const sanitizeDiagnostic = (next = {}) => {
@@ -51,6 +79,16 @@ const sanitizeDiagnostic = (next = {}) => {
       .filter(([store]) => affectedStores.includes(store))
       .map(([store, keyPath]) => [store, keyPath ?? null])
   );
+
+  const failure = next.failure && typeof next.failure === 'object' ? next.failure : null;
+  const failureContext = failure?.restartContext && typeof failure.restartContext === 'object'
+    ? failure.restartContext
+    : null;
+  const safeFailureId = Number.isSafeInteger(failure?.id) && failure.id >= 0 ? failure.id : null;
+  const safePhase = SAFE_FAILURE_PHASES.has(failure?.phase) ? failure.phase : 'unknown';
+  const safeNativeRequestState = SAFE_NATIVE_REQUEST_STATES.has(failure?.nativeRequestState)
+    ? failure.nativeRequestState
+    : 'none';
 
   return {
     status: next.status || DATABASE_RECOVERY_STATUS.IDLE,
@@ -74,7 +112,30 @@ const sanitizeDiagnostic = (next = {}) => {
           sourceCounts: { ...(next.migration.sourceCounts || {}) },
           targetCounts: { ...(next.migration.targetCounts || {}) }
         }
-      : null
+      : null,
+    failure: failure ? {
+      id: safeFailureId,
+      phase: safePhase,
+      category: SAFE_FAILURE_CATEGORIES.has(failure.category) ? failure.category : 'unknown',
+      errorType: SAFE_FAILURE_ERROR_TYPES.has(failure.errorType) ? failure.errorType : 'Error',
+      errorCode: SAFE_FAILURE_CODES.has(failure.errorCode) ? failure.errorCode : null,
+      durationMs: Number.isFinite(failure.durationMs)
+        ? Math.max(0, Math.min(900_000, Math.round(failure.durationMs)))
+        : null,
+      nativeRequestState: safeNativeRequestState,
+      preflightActive: failure.preflightActive === true,
+      restartContext: failureContext ? {
+        runtimeGeneration: Number.isSafeInteger(failureContext.runtimeGeneration)
+          ? failureContext.runtimeGeneration
+          : null,
+        actorGeneration: Number.isSafeInteger(failureContext.actorGeneration)
+          ? failureContext.actorGeneration
+          : null,
+        actorStatus: SAFE_ACTOR_STATUSES.has(failureContext.actorStatus)
+          ? failureContext.actorStatus
+          : null
+      } : null
+    } : null
   };
 };
 
