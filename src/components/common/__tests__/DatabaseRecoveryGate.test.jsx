@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import 'fake-indexeddb/auto';
 import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,6 +71,18 @@ const publishNativeOperations = (operations) => {
   nativeOperationMocks.listeners.forEach((listener) => listener());
 };
 
+const openDatabase = (name) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, 1);
+  request.onupgradeneeded = () => request.result.createObjectStore('sales', { keyPath: 'id' });
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => resolve(request.result);
+});
+
+const requestResult = (request) => new Promise((resolve, reject) => {
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => resolve(request.result);
+});
+
 beforeEach(() => {
   runtimeMocks.retryLocalDatabaseRecovery.mockReset();
   runtimeMocks.isLocalDatabasePreparationActive.mockReturnValue(false);
@@ -137,6 +150,26 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
   });
 
+  it('explains a timed-out preparation without offering retry or reload', () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_TIMEOUT',
+      isRetryable: false
+    };
+    publishNativeOperations([{ key: 'LanzoDB_t_pending:current', state: 'opening' }]);
+
+    renderGate();
+
+    expect(screen.getByRole('heading', { name: /apertura de la base local no terminó/i })).toBeInTheDocument();
+    expect(screen.getByText(/solicitud de indexeddb activa/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reintentar recuperación|reiniciar lanzo/i })).not.toBeInTheDocument();
+    expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
+    openRecoveryDetails();
+    expect(screen.getByText(/DB_TIMEOUT/i)).toBeInTheDocument();
+  });
+
   it('shows bounded support recovery for tenant directory corruption without naming LanzoDB1', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
@@ -153,6 +186,30 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.queryByText(/LanzoDB1/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /reiniciar lanzo/i }));
     expect(reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps local sales data after the user chooses a manual reload', async () => {
+    const databaseName = `lanzo-reload-preserves-sales-${Date.now()}`;
+    const database = await openDatabase(databaseName);
+    const sale = { id: 'sale-preserved', total: 1250, status: 'completed' };
+    await requestResult(database.transaction('sales', 'readwrite').objectStore('sales').put(sale));
+    database.close();
+
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'recovery_required',
+      errorCode: 'DB_OPEN_TIMEOUT'
+    };
+    const reloadPage = vi.fn();
+    renderGate({ reloadPage });
+    fireEvent.click(screen.getByRole('button', { name: /reiniciar lanzo/i }));
+
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+    const reopened = await openDatabase(databaseName);
+    const persistedSale = await requestResult(reopened.transaction('sales').objectStore('sales').get(sale.id));
+    expect(persistedSale).toEqual(sale);
+    reopened.close();
+    await requestResult(indexedDB.deleteDatabase(databaseName));
   });
 
   it('does not expose a report action before actor and tenant context is ready', () => {

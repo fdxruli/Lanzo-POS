@@ -1,5 +1,8 @@
 import { getAdminUpdateDraftBlockReason, hasAdminUpdateWrites } from '../../pwa/adminUpdateSafety';
-import { getLocalDatabaseActivitySnapshot } from '../../services/db/databaseRuntime';
+import {
+  DATABASE_PREPARATION_TIMEOUT_MS,
+  getLocalDatabaseActivitySnapshot
+} from '../../services/db/databaseRuntime';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Copy, Mail, RotateCw } from 'lucide-react';
 import DatabaseRecoveryGate from './DatabaseRecoveryGate';
@@ -13,6 +16,7 @@ import {
 import {
   DATABASE_RECOVERY_STATUS,
   getDatabaseRecoveryState,
+  setDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../../services/db/databaseRecoveryState';
 import {
@@ -34,8 +38,12 @@ import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryC
 import { isAdminNotFoundPath } from '../../router/adminRoutePaths';
 
 let initialPreparationPromise = null;
+let initialPreparationTimeoutId = null;
+let initialPreparationGeneration = 0;
 let readyRuntimePromise = null;
 let readyRuntimeActivated = false;
+
+export const INITIAL_DATABASE_PREPARATION_TIMEOUT_MS = DATABASE_PREPARATION_TIMEOUT_MS;
 
 export const isAdminNotFoundPathForDebugConsole = (pathname) => (
   isAdminNotFoundPath(pathname)
@@ -173,7 +181,9 @@ export const loadPosReadyRuntime = async () => {
         if (useAppStore.getState().isBackupLoading) return 'Espera a que termine el respaldo o la restauración antes de actualizar.';
         if (hasAdminUpdateWrites()) return 'Estamos guardando información. Intenta actualizar en unos momentos.';
         const activity = getLocalDatabaseActivitySnapshot();
-        if (activity.hasActiveNativeRequest || activity.preflightActive) return 'Espera a que termine la preparación de los datos locales.';
+        if (activity.preparationActive || activity.hasActiveNativeRequest || activity.preflightActive) {
+          return 'Espera a que termine la preparación de los datos locales.';
+        }
         if (posSyncOrchestrator.getUpdateActivity()) return 'Espera a que termine la sincronización antes de actualizar.';
         return getAdminUpdateDraftBlockReason() || true;
       });
@@ -198,21 +208,62 @@ export const startInitialDatabasePreparation = ({
 }) => {
   if (initialPreparationPromise) return initialPreparationPromise;
 
+  const generation = ++initialPreparationGeneration;
+  const publishIfStillPending = (errorCode, message) => {
+    if (generation !== initialPreparationGeneration) return;
+    const currentState = getDatabaseRecoveryState();
+    if (![DATABASE_RECOVERY_STATUS.IDLE, DATABASE_RECOVERY_STATUS.CHECKING].includes(currentState.status)) return;
+    setDatabaseRecoveryState({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode,
+      databaseName: currentState.databaseName,
+      isRetryable: false,
+      requiresMigration: false,
+      message
+    });
+  };
+
+  initialPreparationTimeoutId = setTimeout(() => {
+    publishIfStillPending(
+      'DB_TIMEOUT',
+      'La preparación inicial no terminó dentro del tiempo esperado.'
+    );
+  }, INITIAL_DATABASE_PREPARATION_TIMEOUT_MS);
+
   initialPreparationPromise = (async () => {
-    let canContinueBoot = true;
     try {
-      canContinueBoot = await cleanupDevelopmentServiceWorkers();
-    } catch (error) {
-      Logger.warn('[Boot] La limpieza de service workers de desarrollo falló sin bloquear el preflight.', {
-        message: error?.message || 'unknown'
-      });
-    }
+      let canContinueBoot = true;
+      try {
+        canContinueBoot = await cleanupDevelopmentServiceWorkers();
+      } catch (error) {
+        Logger.warn('[Boot] La limpieza de service workers de desarrollo falló sin bloquear el preflight.', {
+          message: error?.message || 'unknown'
+        });
+      }
 
-    if (canContinueBoot === false) {
-      return { ready: false, interruptedForCleanup: true };
-    }
+      if (canContinueBoot === false) {
+        publishIfStillPending(
+          'DB_OPERATION_FAILED',
+          'La limpieza local solicitó reiniciar Lanzo, pero la página no se recargó.'
+        );
+        return { ready: false, interruptedForCleanup: true };
+      }
 
-    return databaseRuntime.prepareLocalDatabase();
+      try {
+        return await databaseRuntime.prepareLocalDatabase();
+      } catch (error) {
+        publishIfStillPending(
+          'DB_OPERATION_FAILED',
+          'Lanzo no pudo confirmar que la base local esté lista. Tus datos locales permanecen protegidos.'
+        );
+        throw error;
+      }
+    } finally {
+      if (generation === initialPreparationGeneration && initialPreparationTimeoutId !== null) {
+        clearTimeout(initialPreparationTimeoutId);
+        initialPreparationTimeoutId = null;
+      }
+    }
   })();
 
   return initialPreparationPromise;
@@ -592,6 +643,9 @@ export default function PosApplicationBootstrap({
 }
 
 export const resetPosApplicationBootstrapForTests = () => {
+  initialPreparationGeneration += 1;
+  if (initialPreparationTimeoutId !== null) clearTimeout(initialPreparationTimeoutId);
+  initialPreparationTimeoutId = null;
   initialPreparationPromise = null;
   readyRuntimePromise = null;
   readyRuntimeActivated = false;
