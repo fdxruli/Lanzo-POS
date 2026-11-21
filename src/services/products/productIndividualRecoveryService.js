@@ -6,15 +6,16 @@ import {
 } from '../auth/productInventoryAuthority';
 import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventoryEntryService';
 import { syncOutboxService } from '../sync/syncOutboxService';
-import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, OUTBOX_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, OUTBOX_STATUS, CONFLICT_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
 import { runWithLocalTenantSyncLease, assertLocalTenantAccess } from '../tenant/localTenantGuard';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { useAppStore } from '../../store/useAppStore';
-import { listPublishedProducts } from '../ecommerce/ecommerceAdminService';
+import { getEcommercePortal, listPublishedProducts } from '../ecommerce/ecommerceAdminService';
+import { syncConflictService } from '../sync/syncConflictService';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
-import { productToCloudPayload, batchToCloudPayload, normalizeBarcodeKey, normalizeSkuKey } from './productMapper';
+import { productToCloudPayload, batchToCloudPayload, categoryToCloudPayload, normalizeBarcodeKey, normalizeNameKey, normalizeSkuKey } from './productMapper';
 import { isBatchArchived } from './batchStatus';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
@@ -159,7 +160,9 @@ const checkProductPayload = (local, cloud) => {
     && textEqual(categoryOfCloudProduct(cloud), expected.category_id)
     && textEqual(cloud.name, expected.name)
     && textEqual(cloud.description, expected.description)
+    && textEqual(cloud.barcode ?? cloud.barCode, expected.barcode)
     && textEqual(cloud.barcode_key ?? cloud.barcodeKey, expected.barcode_key)
+    && textEqual(cloud.sku ?? cloud.SKU, expected.sku)
     && textEqual(cloud.sku_key ?? cloud.skuKey, expected.sku_key)
     && numericEqual(cloud.price, expected.price)
     && numericEqual(cloud.cost, expected.cost)
@@ -179,7 +182,20 @@ const checkProductPayload = (local, cloud) => {
     && textEqual(cloud.presentation, expected.presentation)
     && textEqual(String(cloud.expiration_mode ?? cloud.expirationMode ?? 'NONE').toUpperCase(), expected.expiration_mode)
     && numericEqual(cloud.shelf_life_value ?? cloud.shelfLifeValue, expected.shelf_life_value)
-    && textEqual(cloud.shelf_life_unit ?? cloud.shelfLifeUnit, expected.shelf_life_unit);
+    && textEqual(cloud.shelf_life_unit ?? cloud.shelfLifeUnit, expected.shelf_life_unit)
+    && (!expected.metadata?.rubro_context
+      || textEqual(cloud.metadata?.rubro_context ?? cloud.metadata?.rubroContext, expected.metadata.rubro_context));
+};
+
+const checkCategoryPayload = (local, cloud) => {
+  if (!local || !cloud || isDeleted(cloud) || !isCloudActive(cloud)) return false;
+  const expected = categoryToCloudPayload(local);
+  return String(cloud.id) === String(expected.id)
+    && textEqual(cloud.name, expected.name)
+    && textEqual(cloud.name_key ?? cloud.nameKey, expected.name_key)
+    && textEqual(cloud.color, expected.color)
+    && Number(cloud.sort_order ?? cloud.sortOrder ?? 0) === expected.sort_order
+    && (cloud.is_active ?? cloud.isActive) !== false;
 };
 
 const checkBatchPayload = (local, cloud) => {
@@ -195,6 +211,7 @@ const checkBatchPayload = (local, cloud) => {
     && (cloud.track_stock ?? cloud.trackStock) === expected.track_stock
     && (cloud.is_active ?? cloud.isActive) === expected.is_active
     && textEqual(cloud.status, expected.status)
+    && textEqual(cloud.sku, expected.sku)
     && textEqual(cloud.sku_key ?? cloud.skuKey, expected.sku_key)
     && dateEqual(cloud.expiry_date ?? cloud.expiryDate, expected.expiry_date)
     && textEqual(cloud.manufacturer_batch_id ?? cloud.manufacturerBatchId, expected.manufacturer_batch_id)
@@ -226,12 +243,17 @@ export const assessIndividualProductRecovery = ({
   localCategory = null,
   localCategoryTombstone = null,
   localIngredients = [],
+  portalExists = true,
+  portalIssue = null,
+  publicationIssue = null,
+  publicationsVerified = true,
   publications = [],
   cloudProducts = [],
   cloudBatches = [],
   cloudCategories = [],
   outboxRows = [],
-  localOnlyInventoryEvents = []
+  localOnlyInventoryEvents = [],
+  conflictRows = []
 } = {}) => {
   const issues = [];
   const productId = localProductId(product);
@@ -248,14 +270,26 @@ export const assessIndividualProductRecovery = ({
   const publicationMatches = publications.filter((row) => String(row?.localProductRef ?? '') === productId);
   const publication = publicationMatches.length === 1 ? publicationMatches[0] : null;
   const activeCloudProduct = cloudProductsForId.find(isCloudActive) || null;
+  const categoryId = localCategoryId(product);
+  const cloudRecovery = product ? cloudRecoveryMatches({
+    product, batches: initialBatches, localBatches: batches, cloudProducts, cloudBatches
+  }) : { success: false };
+  const existingCloudRows = cloudProductsForId.length > 0 || cloudBatchesForProduct.length > 0;
+  const existingCloudComplete = existingCloudRows && cloudRecovery.success;
   const batchSummary = batches.map((batch) => {
     const cloud = cloudBatchById.get(String(batch.id)) || null;
     const archived = isArchived(batch);
     return {
       id: String(batch.id),
-      label: batch.manufacturerBatchId || batch.manufacturer_batch_id || batch.sku || `Lote ${String(batch.id).slice(-6)}`,
+      label: batch.manufacturerBatchId || batch.manufacturer_batch_id || batch.sku || 'Lote sin identificador adicional',
       stock: asNumber(batch.stock),
       committedStock: asNumber(batch.committedStock ?? batch.committed_stock),
+      cost: batch.cost,
+      price: batch.price,
+      productId: localBatchProductId(batch),
+      sku: batch.sku,
+      attributes: batch.attributes,
+      manufacturerBatchId: batch.manufacturerBatchId ?? batch.manufacturer_batch_id,
       status: archived ? 'archived' : batchStatus(batch),
       expiryDate: batch.expiryDate ?? batch.expiry_date ?? null,
       cloudStatus: !cloud ? 'absent' : (isDeleted(cloud) ? 'deleted' : (isCloudActive(cloud) ? 'active' : 'inactive')),
@@ -288,36 +322,72 @@ export const assessIndividualProductRecovery = ({
   }
   if (product?.pendingOperationId) addIssue(issues, 'LOCAL_PRODUCT_OPERATION_PENDING', 'El producto tiene una operación local pendiente.', productId);
 
-  if (publicationMatches.length !== 1) {
-    addIssue(issues, publicationMatches.length === 0 ? 'PUBLICATION_NOT_FOUND' : 'PUBLICATION_AMBIGUOUS',
-      publicationMatches.length === 0
-        ? 'No existe una publicación vinculada por localProductRef al ID original.'
-        : 'Más de una publicación apunta al mismo ID local; la relación requiere conciliación.', productId || null);
-  } else if (publication.sourceType !== 'local_snapshot'
-    || (publication.productId && String(publication.productId) !== productId)
-    || publication.isPublished !== true
-    || publication.isAvailable !== true) {
-    addIssue(issues, 'PUBLICATION_SOURCE_MISMATCH', 'La publicación no coincide con una fuente local_snapshot activa y disponible.', publication.id || null);
+  if (portalIssue || (portalExists !== true && portalExists !== false)) {
+    addIssue(issues, portalIssue?.code || 'PORTAL_STATE_UNVERIFIED', portalIssue?.message || 'No se pudo confirmar si existe un portal o si su lectura terminó completa; la acción queda bloqueada mientras se muestran las verificaciones Cloud independientes.', productId || null);
+  } else if (portalExists === true && !publicationsVerified) {
+    addIssue(issues, publicationIssue?.code || 'PUBLICATION_STATE_UNVERIFIED', publicationIssue?.message || 'El portal existe, pero la lista completa de publicaciones no se pudo confirmar.', productId || null);
+  } else if (portalExists === true) {
+    if (publicationMatches.length !== 1) {
+      addIssue(issues, publicationMatches.length === 0 ? 'PUBLICATION_NOT_FOUND' : 'PUBLICATION_AMBIGUOUS',
+        publicationMatches.length === 0
+          ? 'No existe una publicación vinculada por localProductRef al ID original.'
+          : 'Más de una publicación apunta al mismo ID local; la relación requiere conciliación.', productId || null);
+    } else if (publication.sourceType !== 'local_snapshot'
+      || (publication.productId && String(publication.productId) !== productId)
+      || publication.isPublished !== true
+      || publication.isAvailable !== true) {
+      addIssue(issues, 'PUBLICATION_SOURCE_MISMATCH', 'La publicación no coincide con una fuente local_snapshot activa y disponible.', publication.id || null);
+    }
   }
 
-  if (cloudProductsForId.length > 1) addIssue(issues, 'CLOUD_PRODUCT_ID_AMBIGUOUS', 'Cloud devolvió más de una fila para el ID del producto.', productId);
-  if (cloudProductsForId.length > 0) {
+  if (cloudProductsForId.length > 1) {
+    addIssue(issues, 'CLOUD_PRODUCT_ID_AMBIGUOUS', 'Cloud devolvió más de una fila para el ID del producto.', productId);
+  } else if (existingCloudRows && !existingCloudComplete && cloudProductsForId.length > 0) {
     const cloudRow = cloudProductsForId[0];
-    addIssue(issues, isDeleted(cloudRow) ? 'CLOUD_PRODUCT_TOMBSTONE' : 'CLOUD_PRODUCT_EXISTS',
+    addIssue(issues, isDeleted(cloudRow) ? 'CLOUD_PRODUCT_TOMBSTONE' : 'CLOUD_PRODUCT_RECONCILIATION_REQUIRED',
       isDeleted(cloudRow)
         ? 'Cloud ya conserva una eliminación con el ID original; no se resucitará.'
-        : 'Cloud ya contiene el ID original; no se sobrescribirá ni se creará otro producto.', productId);
+        : 'Cloud ya contiene el producto, pero su conjunto no coincide exactamente con el producto y los lotes locales; se requiere conciliación antes de escribir.', productId);
   }
 
-  const categoryId = localCategoryId(product);
   if (categoryId) {
     if (!localCategory || String(localCategory.id) !== String(categoryId) || localCategory.isActive === false || isDeleted(localCategory)) {
       addIssue(issues, 'LOCAL_CATEGORY_REFERENCE_INVALID', 'La categoría referenciada no existe o no está activa en el catálogo local.', String(categoryId));
     }
+    if (localCategory?.deletionPending === true) {
+      addIssue(issues, 'LOCAL_CATEGORY_TOMBSTONE', 'La categoría referenciada tiene una eliminación local pendiente.', String(categoryId));
+    }
+    if (!String(localCategory?.name || '').trim()) {
+      addIssue(issues, 'LOCAL_CATEGORY_IDENTITY_INVALID', 'La categoría local no tiene un nombre para confirmar su ID en Cloud.', String(categoryId));
+    }
+    const categoryLicenseKey = localCategory?.licenseKey || localCategory?.license_key
+      || localCategory?.metadata?.licenseKey || localCategory?.metadata?.license_key;
+    if (categoryLicenseKey && categoryLicenseKey !== licenseKey) {
+      addIssue(issues, 'LOCAL_CATEGORY_TENANT_MISMATCH', 'La categoría local registra un negocio distinto; no se escribirá en Cloud.', String(categoryId));
+    }
     if (localCategoryTombstone) addIssue(issues, 'LOCAL_CATEGORY_TOMBSTONE', 'La categoría referenciada tiene una eliminación local pendiente.', String(categoryId));
+    if ([PRODUCT_SYNC_STATUS.PENDING, PRODUCT_SYNC_STATUS.ERROR].includes(localCategory?.syncStatus)
+      || localCategory?.pendingOperationId) {
+      addIssue(issues, 'LOCAL_CATEGORY_OPERATION_UNRESOLVED', 'La categoría tiene un cambio local pendiente o fallido que requiere conciliación.', String(categoryId));
+    }
+    if (localCategory?.syncStatus === PRODUCT_SYNC_STATUS.CONFLICT || localCategory?.conflictReason) {
+      addIssue(issues, 'LOCAL_CATEGORY_CONFLICT', 'La categoría tiene un conflicto local que requiere conciliación.', String(categoryId));
+    }
     const matchingCloudCategories = cloudCategories.filter((row) => String(row.id) === String(categoryId));
-    if (matchingCloudCategories.length !== 1 || !isCloudActive(matchingCloudCategories[0])) {
-      addIssue(issues, 'CLOUD_CATEGORY_REFERENCE_MISSING', 'La categoría no tiene una fuente Cloud activa; la recuperación individual no escribirá categorías.', String(categoryId));
+    const categoryNameKey = normalizeNameKey(localCategory?.name || '');
+    const cloudNameConflict = cloudCategories.find((row) => String(row.id) !== String(categoryId)
+      && normalizeNameKey(row.name || row.name_key || row.nameKey || '') === categoryNameKey);
+    if (cloudNameConflict) {
+      addIssue(issues, 'CLOUD_CATEGORY_NAME_CONFLICT', 'Cloud ya contiene otra categoría con el mismo nombre y un ID distinto.', String(cloudNameConflict.id));
+    }
+    if (matchingCloudCategories.length > 1) {
+      addIssue(issues, 'CLOUD_CATEGORY_ID_AMBIGUOUS', 'Cloud devolvió más de una fila para el ID original de la categoría.', String(categoryId));
+    } else if (matchingCloudCategories.length === 1 && !checkCategoryPayload(localCategory, matchingCloudCategories[0])) {
+      const row = matchingCloudCategories[0];
+      addIssue(issues, isDeleted(row) ? 'CLOUD_CATEGORY_TOMBSTONE' : 'CLOUD_CATEGORY_ID_CONFLICT',
+        isDeleted(row)
+          ? 'Cloud conserva una eliminación para esta categoría; no se restaurará.'
+          : 'Cloud ya usa el ID original para una categoría diferente; no se sobrescribirá.', String(categoryId));
     }
   }
 
@@ -357,11 +427,11 @@ export const assessIndividualProductRecovery = ({
       if (cloud && !isDeleted(cloud) && isCloudActive(cloud)) {
         addIssue(issues, 'ARCHIVED_BATCH_CLOUD_ACTIVE', 'El lote archivado sigue activo en Cloud; no se borrará ni se reactivará automáticamente.', batch.id);
       }
-    } else if (cloud) {
-      addIssue(issues, isDeleted(cloud) ? 'ACTIVE_BATCH_CLOUD_TOMBSTONE' : 'ACTIVE_BATCH_CLOUD_EXISTS',
+    } else if (cloud && !existingCloudComplete) {
+      addIssue(issues, isDeleted(cloud) ? 'ACTIVE_BATCH_CLOUD_TOMBSTONE' : 'ACTIVE_BATCH_CLOUD_RECONCILIATION_REQUIRED',
         isDeleted(cloud)
           ? 'Cloud conserva una eliminación para un lote local activo; requiere conciliación.'
-          : 'Cloud ya contiene el ID de un lote local; no se sobrescribirá.', batch.id);
+          : 'Cloud ya contiene este lote, pero el conjunto completo no coincide exactamente; no se sobrescribirá.', batch.id);
     }
     if (!isArchived(batch)
       && String(product?.expirationMode || product?.expiration_mode || '').toUpperCase() === 'STRICT'
@@ -391,13 +461,15 @@ export const assessIndividualProductRecovery = ({
   if (cloudKeyConflict) addIssue(issues, 'CLOUD_PRODUCT_KEY_CONFLICT', 'El SKU o código de barras original ya pertenece a otro producto Cloud.', cloudProductId(cloudKeyConflict));
 
   const unsyncedOutbox = outboxRows.filter((row) => row?.status !== OUTBOX_STATUS.SYNCED);
-  if (unsyncedOutbox.length) addIssue(issues, 'CATALOG_OPERATION_UNRESOLVED', 'Hay operaciones de producto, lote o inventario pendientes o conflictivas para este producto.', productId);
-  const localOnlyEvents = localOnlyInventoryEvents.filter((event) => String(event?.productId ?? '') === productId);
+  if (unsyncedOutbox.length) addIssue(issues, 'CATALOG_OPERATION_UNRESOLVED', 'Hay operaciones de categoría, producto, lote o inventario pendientes o conflictivas para este producto.', productId);
+  const relevantConflictRows = conflictRows.filter((row) => row?.status === CONFLICT_STATUS.PENDING);
+  if (relevantConflictRows.length) addIssue(issues, 'LOCAL_SYNC_CONFLICT_PENDING', 'Hay un conflicto local pendiente para la categoría, el producto o uno de sus lotes.', productId);
+  const localOnlyEvents = localOnlyInventoryEvents.filter((event) => String(event?.productId ?? event?.product_id ?? '') === productId);
   if (localOnlyEvents.length) addIssue(issues, 'LOCAL_ONLY_INVENTORY_HISTORY', 'Hay movimientos de inventario local sin confirmación Cloud; se conservan sin reconstruirlos.', productId);
 
   const stock = asNumber(product?.stock);
   const committedStock = asNumber(product?.committedStock ?? product?.committed_stock);
-  const existingSourceState = cloudProductsForId.length ? 'exists_or_deleted' : 'missing';
+  const existingSourceState = existingCloudComplete ? 'verified' : (existingCloudRows ? 'requires_reconciliation' : 'missing');
   const recoveryPayload = product ? productToCloudPayload(product) : null;
   const ingredientReferences = recipeReferenceIds(product || {}).map((id) => {
     const localIngredient = ingredientMap.get(id);
@@ -411,17 +483,27 @@ export const assessIndividualProductRecovery = ({
   const idempotencyKey = product
     ? buildIndividualRecoveryIdempotencyKey({ licenseKey, product, batches: initialBatches })
     : null;
-  const canRecover = issues.length === 0 && Boolean(product) && Boolean(publication) && initialBatches.every((batch) => (
+  const canRecover = issues.length === 0 && Boolean(product)
+    && (portalExists === false || (portalExists === true && publicationsVerified && Boolean(publication)))
+    && initialBatches.every((batch) => (
     localBatchProductId(batch) === productId
   ));
 
   return {
     success: true,
     canRecover,
-    status: canRecover ? 'ready' : (cloudProductsForId.length ? 'cloud_conflict' : 'blocked'),
+    status: canRecover ? (existingCloudComplete ? 'cloud_matches' : 'ready')
+      : (existingCloudRows && !existingCloudComplete ? 'cloud_conflict' : 'blocked'),
     product: product ? {
       id: productId,
       name: product.name || '',
+      cost: product.cost,
+      price: product.price,
+      productType: product.productType ?? product.product_type,
+      sku: product.sku,
+      barcode: product.barcode,
+      rubroContext: product.rubroContext ?? product.rubro_context ?? product.metadata?.rubro_context ?? product.metadata?.rubroContext,
+      expirationMode: product.expirationMode ?? product.expiration_mode,
       localStatus: product.syncStatus || PRODUCT_SYNC_STATUS.LOCAL,
       active: product.isActive !== false && !isDeleted(product),
       stock,
@@ -433,7 +515,10 @@ export const assessIndividualProductRecovery = ({
           id: String(categoryId),
           name: localCategory?.name || null,
           local: localCategory && localCategory.isActive !== false && !isDeleted(localCategory) ? 'active' : 'missing',
-          cloud: cloudCategories.some((row) => String(row.id) === String(categoryId) && isCloudActive(row)) ? 'active' : 'missing'
+          cloud: cloudCategories.some((row) => String(row.id) === String(categoryId) && checkCategoryPayload(localCategory, row)) ? 'active' : 'missing',
+          action: cloudCategories.some((row) => String(row.id) === String(categoryId) && checkCategoryPayload(localCategory, row))
+            ? 'confirmed'
+            : 'create_with_original_id'
         } : null,
         recipe: ingredientReferences
       },
@@ -447,6 +532,7 @@ export const assessIndividualProductRecovery = ({
       productId: activeCloudProduct?.id || null,
       batchIds: cloudBatchesForProduct.filter(isCloudActive).map(cloudBatchId)
     },
+    portal: { exists: portalExists, verified: portalExists === true || portalExists === false },
     publication: publication ? {
       id: publication.id,
       sourceType: publication.sourceType,
@@ -469,6 +555,8 @@ export const assessIndividualProductRecovery = ({
     },
     recovery: {
       entityCount: 1,
+      existingCloudComplete,
+      categoryId: categoryId ? String(categoryId) : null,
       batchIds: initialBatches.map((batch) => String(batch.id)),
       omittedArchivedBatchIds: archivedBatches.map((batch) => String(batch.id)),
       expectedProduct: recoveryPayload,
@@ -481,12 +569,15 @@ export const assessIndividualProductRecovery = ({
 const readCloudRows = async (cloudRepository, licenseKey, entityType) => {
   const records = [];
   let offset = 0;
+  let snapshotTotal = null;
+  let snapshotChangeSeq = null;
   while (true) {
+    const requestedLimit = SYNC_LIMITS.MAX_PULL_LIMIT;
     const response = await cloudRepository.pullCatalogSnapshot({
       licenseKey,
       entityType,
       offset,
-      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
+      limit: requestedLimit,
       includeDeleted: true,
       force: true
     });
@@ -503,15 +594,68 @@ const readCloudRows = async (cloudRepository, licenseKey, entityType) => {
         code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INVALID'
       });
     }
-    records.push(...collection);
-    if (!(response.has_more || response.hasMore)) return records;
-    if (collection.length === 0) {
-      throw Object.assign(new Error('La paginación del catálogo Cloud no avanzó.'), {
-        code: 'PRODUCT_RECOVERY_CLOUD_PAGINATION_STALLED'
+    const responseOffset = Number(response.offset);
+    const responseLimit = Number(response.limit);
+    const total = Number(response.total);
+    const changeSeq = Number(response.latest_change_seq);
+    if (!Number.isInteger(responseOffset)
+      || responseOffset !== offset
+      || response.entity_type !== entityType
+      || !Number.isInteger(responseLimit)
+      || responseLimit !== requestedLimit
+      || !Number.isInteger(total)
+      || total < 0
+      || !Number.isSafeInteger(changeSeq)
+      || changeSeq < 0
+      || typeof response.has_more !== 'boolean') {
+      throw Object.assign(new Error('La respuesta Cloud no confirma el total ni la página completa del catálogo.'), {
+        code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INCOMPLETE'
       });
     }
+    if (snapshotTotal === null) {
+      snapshotTotal = total;
+      snapshotChangeSeq = changeSeq;
+    } else if (snapshotTotal !== total || snapshotChangeSeq !== changeSeq) {
+      throw Object.assign(new Error('El catálogo Cloud cambió durante la paginación.'), {
+        code: 'PRODUCT_RECOVERY_CLOUD_SNAPSHOT_CHANGED'
+      });
+    }
+    const expectedPageSize = Math.min(responseLimit, Math.max(0, total - offset));
+    const expectedHasMore = offset + responseLimit < total;
+    if (collection.length !== expectedPageSize || response.has_more !== expectedHasMore) {
+      throw Object.assign(new Error('La página recibida no coincide con el total informado por Cloud.'), {
+        code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INCOMPLETE'
+      });
+    }
+    records.push(...collection);
+    if (!response.has_more) {
+      records.snapshotMeta = { total: snapshotTotal, latestChangeSeq: snapshotChangeSeq };
+      return records;
+    }
+    if (collection.length === 0) throw Object.assign(new Error('La paginación del catálogo Cloud no avanzó.'), {
+      code: 'PRODUCT_RECOVERY_CLOUD_PAGINATION_STALLED'
+    });
     offset += collection.length;
   }
+};
+
+const readCloudCatalogSnapshot = async (deps, licenseKey) => {
+  const [cloudProducts, cloudBatches, cloudCategories] = await Promise.all([
+    readCloudRows(deps.cloudRepository, licenseKey, 'product'),
+    readCloudRows(deps.cloudRepository, licenseKey, 'product_batch'),
+    readCloudRows(deps.cloudRepository, licenseKey, 'category')
+  ]);
+  const changeSeqs = new Set([
+    cloudProducts.snapshotMeta?.latestChangeSeq,
+    cloudBatches.snapshotMeta?.latestChangeSeq,
+    cloudCategories.snapshotMeta?.latestChangeSeq
+  ]);
+  if (changeSeqs.size !== 1) {
+    throw Object.assign(new Error('Las tres lecturas Cloud no corresponden a la misma revisión del catálogo.'), {
+      code: 'PRODUCT_RECOVERY_CLOUD_SNAPSHOT_CHANGED'
+    });
+  }
+  return { cloudProducts, cloudBatches, cloudCategories };
 };
 
 const getCurrentState = (deps) => deps.getAppState();
@@ -555,35 +699,137 @@ const readLocalProductSnapshot = async (deps, productId) => {
 };
 
 const readCloudSnapshot = async (deps, licenseKey) => {
-  const [cloudProducts, cloudBatches, cloudCategories, publicationResponse] = await Promise.all([
-    readCloudRows(deps.cloudRepository, licenseKey, 'product'),
-    readCloudRows(deps.cloudRepository, licenseKey, 'product_batch'),
-    readCloudRows(deps.cloudRepository, licenseKey, 'category'),
-    deps.listPublishedProducts()
+  const [catalog, portalResult] = await Promise.all([
+    readCloudCatalogSnapshot(deps, licenseKey),
+    Promise.resolve().then(() => deps.getEcommercePortal())
+      .then((response) => ({ response }))
+      .catch((error) => ({ error }))
   ]);
-  if (publicationResponse?.success !== true || !Array.isArray(publicationResponse.products)) {
-    throw Object.assign(new Error(publicationResponse?.message || 'No se pudo verificar la publicación de la tienda.'), {
-      code: publicationResponse?.code || 'PRODUCT_RECOVERY_PUBLICATION_READ_FAILED'
-    });
+  const portalResponse = portalResult.response;
+  const portalEnvelopeComplete = portalResponse?.success === true
+    && Object.prototype.hasOwnProperty.call(portalResponse || {}, 'portal')
+    && portalResponse.plan && typeof portalResponse.plan === 'object'
+    && !Array.isArray(portalResponse.plan)
+    && portalResponse.features && typeof portalResponse.features === 'object'
+    && !Array.isArray(portalResponse.features)
+    && typeof portalResponse.timezone === 'string'
+    && typeof portalResponse.ordersPaused === 'boolean'
+    && Number.isInteger(portalResponse.publishedProductCount)
+    && portalResponse.publishedProductCount >= 0;
+  if (portalResult.error || !portalEnvelopeComplete) {
+    const error = portalResult.error;
+    return {
+      ...catalog,
+      portalExists: null,
+      portalIssue: {
+        code: error?.code || portalResponse?.code || (portalResponse?.success === true
+          ? 'PRODUCT_RECOVERY_PORTAL_RESPONSE_INCOMPLETE'
+          : 'PRODUCT_RECOVERY_PORTAL_READ_FAILED'),
+        message: error
+          ? 'No se pudo confirmar el estado del portal online. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+          : portalResponse?.message || 'No se pudo confirmar el estado del portal online. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+      },
+      publications: [],
+      publicationsVerified: false
+    };
   }
-  return { cloudProducts, cloudBatches, cloudCategories, publications: publicationResponse.products };
+  const portalExists = portalResponse.portal !== null;
+  if (!portalExists && portalResponse.publishedProductCount !== 0) {
+    return {
+      ...catalog,
+      portalExists: null,
+      portalIssue: {
+        code: 'PRODUCT_RECOVERY_PORTAL_RESPONSE_INCOMPLETE',
+        message: 'La respuesta indica publicaciones sin identificar un portal. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+      },
+      publications: [],
+      publicationsVerified: false
+    };
+  }
+  if (portalExists && (typeof portalResponse.portal !== 'object'
+    || Array.isArray(portalResponse.portal)
+    || !portalResponse.portal.id
+    || !portalResponse.portal.slug)) {
+    return {
+      ...catalog,
+      portalExists: null,
+      portalIssue: {
+        code: 'PRODUCT_RECOVERY_PORTAL_RESPONSE_INCOMPLETE',
+        message: 'La respuesta del portal no contiene una identidad completa. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+      },
+      publications: [],
+      publicationsVerified: false
+    };
+  }
+  if (!portalExists) return { ...catalog, portalExists: false, publications: [], publicationsVerified: true };
+
+  let publicationResponse = null;
+  let publicationError = null;
+  try {
+    publicationResponse = await deps.listPublishedProducts();
+  } catch (error) {
+    publicationError = error;
+  }
+  const publishedCount = publicationResponse?.publishedCount;
+  const publicationsComplete = Array.isArray(publicationResponse?.products)
+    && Number.isInteger(publishedCount)
+    && publishedCount >= 0
+    && publishedCount <= publicationResponse.products.length
+    && publishedCount === portalResponse.publishedProductCount
+    && publicationResponse.products.every((row) => row
+      && typeof row === 'object'
+      && Boolean(row.id)
+      && Object.prototype.hasOwnProperty.call(row, 'productId')
+      && Object.prototype.hasOwnProperty.call(row, 'localProductRef')
+      && Object.prototype.hasOwnProperty.call(row, 'sourceType')
+      && Object.prototype.hasOwnProperty.call(row, 'isPublished')
+      && Object.prototype.hasOwnProperty.call(row, 'isAvailable'));
+  if (publicationError || publicationResponse?.success !== true || !publicationsComplete) {
+    return {
+      ...catalog,
+      portalExists: true,
+      publications: [],
+      publicationsVerified: false,
+      publicationIssue: {
+        code: publicationError?.code || publicationResponse?.code || (publicationResponse?.success === true
+          ? (Number.isInteger(publishedCount) && publishedCount !== portalResponse.publishedProductCount
+            ? 'PRODUCT_RECOVERY_PUBLICATION_SNAPSHOT_CHANGED'
+            : 'PRODUCT_RECOVERY_PUBLICATION_RESPONSE_INCOMPLETE')
+          : 'PRODUCT_RECOVERY_PUBLICATION_READ_FAILED'),
+        message: publicationError
+          ? 'No se pudo verificar la lista completa de publicaciones. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+          : publicationResponse?.message || 'No se pudo verificar la lista completa de publicaciones. Las verificaciones Cloud continúan, pero la acción queda bloqueada.'
+      }
+    };
+  }
+  return { ...catalog, portalExists: true, publications: publicationResponse.products, publicationsVerified: true };
 };
 
-const readOutbox = async (deps, licenseKey, productId, batches = []) => {
+const readOutbox = async (deps, licenseKey, productId, batches = [], categoryId = null) => {
   const records = await Promise.all([
     deps.outboxService.listOperationsForEntity({ licenseKey, entityType: SYNC_ENTITY_TYPES.PRODUCT, entityId: productId }),
     ...batches.map((batch) => deps.outboxService.listOperationsForEntity({
       licenseKey, entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH, entityId: String(batch.id)
     })),
+    ...(categoryId ? [deps.outboxService.listOperationsForEntity({
+      licenseKey, entityType: SYNC_ENTITY_TYPES.CATEGORY, entityId: String(categoryId)
+    })] : []),
     deps.outboxService.listInventoryEntriesForRecovery({ licenseKey })
   ]);
-  const productAndBatchRows = records.slice(0, batches.length + 1).flat();
+  const catalogRecordCount = batches.length + 1 + (categoryId ? 1 : 0);
+  const productBatchCategoryRows = records.slice(0, catalogRecordCount).flat();
   const batchIds = new Set(batches.map((batch) => String(batch.id)));
-  const inventoryRows = records.at(-1).filter((row) => (
-    String(row?.entityId || row?.payload?.entry?.productId || '') === String(productId)
-    || String(row?.payload?.entry?.batchId || '') && batchIds.has(String(row.payload.entry.batchId))
-  ));
-  return [...productAndBatchRows, ...inventoryRows];
+  const inventoryRows = records.at(-1).filter((row) => {
+    const entry = row?.payload?.entry || row?.payload?.inventoryEntry || row?.payload || {};
+    const productReferences = [row?.entityId, row?.productId, row?.product_id, entry.productId, entry.product_id]
+      .filter((value) => value !== undefined && value !== null)
+      .map(String);
+    const batchReferences = [row?.batchId, row?.batch_id, entry.batchId, entry.batch_id, entry.variantBatchId]
+      .filter((value) => value !== undefined && value !== null)
+      .map(String);
+    return productReferences.includes(String(productId)) || batchReferences.some((id) => batchIds.has(id));
+  });
+  return [...productBatchCategoryRows, ...inventoryRows];
 };
 
 const loadAssessment = async (deps, { licenseKey, productId, requestedLicenseMatches, appState, actorSessionId }) => {
@@ -597,11 +843,25 @@ const loadAssessment = async (deps, { licenseKey, productId, requestedLicenseMat
   assertRecoveryTenant(deps, licenseKey);
   const actor = assertInspectionActor(deps, actorSessionId);
   const outboxRows = local.product
-    ? await readOutbox(deps, licenseKey, productId, local.localBatches)
+    ? await readOutbox(deps, licenseKey, productId, local.localBatches, localCategoryId(local.product))
     : [];
   assertRecoveryTenant(deps, licenseKey);
   assertInspectionActor(deps, actorSessionId);
   const localOnlyInventoryEvents = await deps.listLocalOnlyInventoryEntries({ licenseKey });
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
+  const entities = [
+    { entityType: SYNC_ENTITY_TYPES.PRODUCT, entityId: productId },
+    ...local.localBatches.map((batch) => ({ entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH, entityId: String(batch.id) })),
+    ...(local.product && localCategoryId(local.product)
+      ? [{ entityType: SYNC_ENTITY_TYPES.CATEGORY, entityId: String(localCategoryId(local.product)) }]
+      : [])
+  ];
+  const conflictRows = local.product
+    ? (await Promise.all(entities.map(({ entityType, entityId }) => deps.conflictService.listConflictsForEntity({
+      licenseKey, entityType, entityId
+    })))).flat()
+    : [];
   assertRecoveryTenant(deps, licenseKey);
   assertInspectionActor(deps, actorSessionId);
   const report = assessIndividualProductRecovery({
@@ -614,17 +874,26 @@ const loadAssessment = async (deps, { licenseKey, productId, requestedLicenseMat
     ...local,
     ...cloud,
     outboxRows,
-    localOnlyInventoryEvents
+    localOnlyInventoryEvents,
+    conflictRows
   });
-  return { report, local, cloud, outboxRows, localOnlyInventoryEvents };
+  return { report, local, cloud, outboxRows, localOnlyInventoryEvents, conflictRows };
 };
 
 const sameLocalSnapshot = (left, right) => stableStringify({
   product: left?.product || null,
-  batches: [...(left?.localBatches || [])].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  batches: [...(left?.localBatches || [])].sort((a, b) => String(a.id).localeCompare(String(b.id))),
+  productTombstone: left?.productTombstone || null,
+  category: left?.localCategory || null,
+  categoryTombstone: left?.localCategoryTombstone || null,
+  ingredients: [...(left?.localIngredients || [])].sort((a, b) => String(a?.id).localeCompare(String(b?.id)))
 }) === stableStringify({
   product: right?.product || null,
-  batches: [...(right?.localBatches || [])].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  batches: [...(right?.localBatches || [])].sort((a, b) => String(a.id).localeCompare(String(b.id))),
+  productTombstone: right?.productTombstone || null,
+  category: right?.localCategory || null,
+  categoryTombstone: right?.localCategoryTombstone || null,
+  ingredients: [...(right?.localIngredients || [])].sort((a, b) => String(a?.id).localeCompare(String(b?.id)))
 });
 
 const cloudRecoveryMatches = ({ product, batches, localBatches, cloudProducts, cloudBatches }) => {
@@ -697,8 +966,102 @@ const classifyCloudRecoveryOutcome = ({ product, batches, localBatches, cloudPro
   };
 };
 
+const inspectCloudCategoryIdentity = (localCategory, cloudCategories = []) => {
+  if (!localCategory?.id) return { success: true, category: null, absent: true };
+  const id = String(localCategory.id);
+  const matching = cloudCategories.filter((row) => String(row.id) === id);
+  if (matching.length > 1) return { success: false, code: 'CLOUD_CATEGORY_ID_AMBIGUOUS' };
+  const nameKey = normalizeNameKey(localCategory.name || '');
+  const duplicateName = cloudCategories.find((row) => String(row.id) !== id
+    && normalizeNameKey(row.name || row.name_key || row.nameKey || '') === nameKey);
+  if (duplicateName) return { success: false, code: 'CLOUD_CATEGORY_NAME_CONFLICT', entityId: String(duplicateName.id) };
+  if (!matching.length) return { success: true, category: null, absent: true };
+  if (isDeleted(matching[0])) return { success: false, code: 'CLOUD_CATEGORY_TOMBSTONE', entityId: id };
+  if (!checkCategoryPayload(localCategory, matching[0])) {
+    return { success: false, code: 'CLOUD_CATEGORY_ID_CONFLICT', entityId: id };
+  }
+  return { success: true, category: matching[0], absent: false };
+};
+
+const categoryRecoveryIdempotencyKey = (licenseKey, payload) => (
+  `product-local-recovery:category:v1:${fingerprint(stableStringify({ licenseKey, payload }))}`
+);
+
+const ensureRecoveryCategory = async ({ deps, licenseKey, local, cloud, actorHandle, requirements, actorSessionId }) => {
+  const category = local?.localCategory;
+  if (!category) return { category: null, wrote: false };
+  const initial = inspectCloudCategoryIdentity(category, cloud.cloudCategories);
+  if (!initial.success) {
+    throw Object.assign(new Error('La categoría Cloud no conserva una identidad inequívoca con el catálogo local.'), {
+      code: initial.code,
+      entityId: initial.entityId
+    });
+  }
+  if (!initial.absent) return { category: initial.category, wrote: false };
+
+  const payload = categoryToCloudPayload(category);
+  const idempotencyKey = categoryRecoveryIdempotencyKey(licenseKey, payload);
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
+  deps.assertMutationCurrent(actorHandle, requirements);
+  let response = null;
+  let mutationError = null;
+  try {
+    response = await deps.cloudRepository.upsertCategory({
+      licenseKey,
+      category: payload,
+      expectedVersion: 0,
+      idempotencyKey,
+      actorHandle
+    });
+  } catch (error) {
+    mutationError = error;
+  }
+
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
+  let categories;
+  try {
+    categories = await readCloudRows(deps.cloudRepository, licenseKey, 'category');
+  } catch (error) {
+    throw Object.assign(new Error('No se pudo confirmar si la escritura de categoría llegó a Cloud. Conserva el estado local y no repitas la escritura todavía.'), {
+      code: 'PRODUCT_RECOVERY_CATEGORY_OUTCOME_UNKNOWN',
+      uncertain: true,
+      cause: error,
+      mutationError,
+      rpcResponse: response
+    });
+  }
+  assertRecoveryTenant(deps, licenseKey);
+  assertInspectionActor(deps, actorSessionId);
+  const confirmed = inspectCloudCategoryIdentity(category, categories);
+  if (confirmed.success && !confirmed.absent) {
+    return { category: confirmed.category, wrote: true, rpcResponse: response, rpcError: mutationError };
+  }
+  if (!confirmed.success) {
+    throw Object.assign(new Error('Cloud contiene una categoría con ID o nombre conflictivo. No se continuará con el producto.'), {
+      code: confirmed.code,
+      uncertain: Boolean(mutationError || response?.success === true),
+      entityId: confirmed.entityId,
+      rpcResponse: response,
+      rpcError: mutationError
+    });
+  }
+  throw Object.assign(new Error(response?.message || mutationError?.message || 'Cloud no confirmó la categoría con su ID local. No se creó ni marcó el producto.'), {
+    code: response?.code || 'PRODUCT_RECOVERY_CATEGORY_NOT_CONFIRMED',
+    uncertain: Boolean(mutationError || response?.success === true),
+    rpcResponse: response,
+    rpcError: mutationError
+  });
+};
+
 const RECOVERY_MESSAGES = Object.freeze({
   PRODUCT_RECOVERY_LOCK_UNAVAILABLE: 'El navegador no permite asegurar exclusividad. No se ejecutó la recuperación.',
+  PRODUCT_RECOVERY_CATEGORY_OUTCOME_UNKNOWN: 'HOLD: no se pudo confirmar si la categoría llegó a Cloud. La verificación debe aclarar el estado antes de repetir cualquier escritura.',
+  PRODUCT_RECOVERY_CATEGORY_NOT_CONFIRMED: 'Cloud no confirmó la categoría local. El producto y sus lotes no se escribieron.',
+  CLOUD_CATEGORY_ID_CONFLICT: 'Cloud ya usa el ID local de la categoría para otra categoría. Se detuvo antes de escribir el producto.',
+  CLOUD_CATEGORY_NAME_CONFLICT: 'Cloud ya contiene otra categoría con el mismo nombre y distinto ID. Se detuvo antes de escribir el producto.',
+  CLOUD_CATEGORY_TOMBSTONE: 'Cloud conserva la categoría como eliminada. No se restauró ni se escribió el producto.',
   PHARMACY_INITIAL_STOCK_REQUIRES_DOCUMENTED_RECEIPT: 'La guarda farmacéutica requiere una recepción documentada para importar stock positivo. No se modificó el catálogo local.',
   PHARMACY_HISTORICAL_IMPORT_NOT_AUTHORIZED: 'Production no tiene una autorización vigente para importar este saldo histórico. No se modificó el catálogo local.',
   VERSION_CONFLICT: 'El producto apareció en Cloud durante la operación. Se detuvo sin sobrescribirlo.',
@@ -709,6 +1072,20 @@ const RECOVERY_MESSAGES = Object.freeze({
   ACTOR_CONTEXT_STALE: 'HOLD: Cloud quedó completo, pero la sesión cambió durante la operación. Los datos locales no se marcaron como sincronizados; verifica la sesión y concilia antes de reintentar.'
 });
 const PARTIAL_CLOUD_WRITE_MESSAGE = 'HOLD: Cloud contiene el producto o alguno de sus lotes, pero el conjunto no coincide con los datos locales. No reintentes ni cambies inventario; requiere conciliación.';
+
+const assertReconciliationContextCurrent = (deps, { licenseKey, actorSessionId, actorHandle, requirements }) => {
+  try {
+    assertRecoveryTenant(deps, licenseKey);
+    assertInspectionActor(deps, actorSessionId);
+    deps.assertMutationCurrent(actorHandle, requirements);
+  } catch (cause) {
+    throw Object.assign(new Error(RECOVERY_MESSAGES.ACTOR_CONTEXT_STALE), {
+      code: 'ACTOR_CONTEXT_STALE',
+      uncertain: true,
+      cause
+    });
+  }
+};
 
 const errorResult = (error, { uncertain = false } = {}) => ({
   success: false,
@@ -751,7 +1128,9 @@ const defaultDependencies = {
   localRepository: productLocalRepository,
   cloudRepository: productCloudRepository,
   outboxService: syncOutboxService,
+  conflictService: syncConflictService,
   listLocalOnlyInventoryEntries: listLocalOnlyInventoryEntriesForRecovery,
+  getEcommercePortal,
   listPublishedProducts,
   runWithTenantLease: runWithLocalTenantSyncLease,
   assertTenantAccess: assertLocalTenantAccess,
@@ -830,32 +1209,86 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
             const requirements = { products: true, inventory: inventoryRequired };
             const actorHandle = deps.captureMutation(requirements);
             deps.assertMutationCurrent(actorHandle, requirements);
+            const localBeforeCategory = await readLocalProductSnapshot(deps, productId);
+            assertRecoveryTenant(deps, context.licenseKey);
+            assertInspectionActor(deps, context.actorSessionId);
+            if (!sameLocalSnapshot(before.local, localBeforeCategory)) {
+              return { ...errorResult(Object.assign(new Error('Los datos locales cambiaron antes de confirmar la categoría. No se escribió el producto.'), { code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' })) };
+            }
+            const categoryResult = await ensureRecoveryCategory({
+              deps,
+              licenseKey: context.licenseKey,
+              local: localBeforeCategory,
+              cloud: before.cloud,
+              actorHandle,
+              requirements,
+              actorSessionId: context.actorSessionId
+            });
+            const preflight = await loadAssessment(deps, { ...context, productId });
+            if (!sameLocalSnapshot(before.local, preflight.local)) {
+              return { ...errorResult(Object.assign(new Error('Los datos locales cambiaron durante la verificación de categoría. No se escribió el producto.'), { code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' })) };
+            }
+            if (!preflight.report.canRecover) {
+              return {
+                success: false,
+                blocked: true,
+                report: preflight.report,
+                issues: preflight.report.issues,
+                categoryConfirmed: Boolean(categoryResult.category),
+                productWriteSkipped: true
+              };
+            }
             const idempotencyKey = before.report.recovery.idempotencyKey;
             let response = null;
             let rpcError = null;
-            try {
-              response = await deps.cloudRepository.upsertProduct({
-                licenseKey: context.licenseKey,
-                product: productToCloudPayload(product),
-                initialBatches: initialBatches.map(batchToCloudPayload),
-                expectedVersion: 0,
-                idempotencyKey,
-                actorHandle,
-                isNewProduct: true
-              });
-            } catch (error) {
-              rpcError = error;
+            if (!preflight.report.recovery.existingCloudComplete) {
+              assertRecoveryTenant(deps, context.licenseKey);
+              assertInspectionActor(deps, context.actorSessionId);
+              deps.assertMutationCurrent(actorHandle, requirements);
+              try {
+                response = await deps.cloudRepository.upsertProduct({
+                  licenseKey: context.licenseKey,
+                  product: productToCloudPayload(product),
+                  initialBatches: initialBatches.map(batchToCloudPayload),
+                  expectedVersion: 0,
+                  idempotencyKey,
+                  actorHandle,
+                  isNewProduct: true
+                });
+              } catch (error) {
+                rpcError = error;
+              }
             }
 
             let afterCloud;
             try {
-              afterCloud = await readCloudSnapshot(deps, context.licenseKey);
+              afterCloud = await readCloudCatalogSnapshot(deps, context.licenseKey);
             } catch (error) {
               const readError = Object.assign(new Error(error?.message || 'No se pudo releer el producto y sus lotes después de llamar al RPC.'), {
                 code: 'PRODUCT_RECOVERY_CLOUD_OUTCOME_UNKNOWN',
                 cause: error
               });
               return { ...errorResult(readError, { uncertain: true }), rpcResponse: response, rpcError };
+            }
+            try {
+              assertReconciliationContextCurrent(deps, {
+                licenseKey: context.licenseKey,
+                actorSessionId: context.actorSessionId,
+                actorHandle,
+                requirements
+              });
+            } catch (error) {
+              return { ...errorResult(error, { uncertain: true }), rpcResponse: response, rpcError };
+            }
+
+            const categoryCheck = preflight.local.localCategory
+              ? inspectCloudCategoryIdentity(preflight.local.localCategory, afterCloud.cloudCategories)
+              : { success: true, category: null, absent: false };
+            if (!categoryCheck.success || categoryCheck.absent) {
+              const error = Object.assign(new Error('El producto y sus lotes no se marcarán como recuperados hasta volver a confirmar la categoría original en Cloud.'), {
+                code: categoryCheck.code || 'PRODUCT_RECOVERY_CATEGORY_NOT_CONFIRMED'
+              });
+              return { ...errorResult(error, { uncertain: true }), rpcResponse: response, rpcError, cloudOutcome: 'category_unconfirmed' };
             }
 
             const cloudOutcome = classifyCloudRecoveryOutcome({
@@ -904,14 +1337,25 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
             if (!sameLocalSnapshot(before.local, currentLocal)) {
               return { ...errorResult(Object.assign(new Error('Los datos locales cambiaron durante la operación. Cloud requiere conciliación antes de aplicar una respuesta local.'), { code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' }), { uncertain: true }) };
             }
-            deps.assertMutationCurrent(actorHandle, requirements);
+            try {
+              assertReconciliationContextCurrent(deps, {
+                licenseKey: context.licenseKey,
+                actorSessionId: context.actorSessionId,
+                actorHandle,
+                requirements
+              });
+            } catch (error) {
+              return { ...errorResult(error, { uncertain: true }), rpcResponse: response, rpcError };
+            }
 
             const applied = await deps.localRepository.applyCloudCatalog({
+              categories: categoryCheck.category ? [categoryCheck.category] : [],
               product: cloudCheck.product,
               batches: cloudCheck.batches
             });
             if (applied?.rejected?.length || applied?.deferredInventory
-              || applied?.products !== 1 || applied?.batches !== initialBatches.length) {
+              || applied?.products !== 1 || applied?.batches !== initialBatches.length
+              || applied?.categories !== (categoryCheck.category ? 1 : 0)) {
               return { ...errorResult(Object.assign(new Error('La verificación Cloud fue correcta, pero la actualización de estado local no se completó.'), { code: 'PRODUCT_RECOVERY_LOCAL_APPLY_PARTIAL' }), { uncertain: true }), applied };
             }
 
@@ -926,12 +1370,17 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
                 && Number(saved?.serverVersion || 0) > 0
                 && checkBatchPayload(saved, cloud);
             });
+            const localCategoryVerified = !categoryCheck.category || (
+              localAfter.localCategory?.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
+              && Number(localAfter.localCategory?.serverVersion || 0) > 0
+              && checkCategoryPayload(localAfter.localCategory, categoryCheck.category)
+            );
             const archivedBefore = before.local.localBatches.filter(isArchived)
               .sort((left, right) => String(left.id).localeCompare(String(right.id)));
             const archivedAfter = localAfter.localBatches.filter(isArchived)
               .sort((left, right) => String(left.id).localeCompare(String(right.id)));
             const archivedBatchesPreserved = stableStringify(archivedBefore) === stableStringify(archivedAfter);
-            if (!localProductVerified || !localBatchesVerified || !archivedBatchesPreserved) {
+            if (!localProductVerified || !localBatchesVerified || !localCategoryVerified || !archivedBatchesPreserved) {
               return { ...errorResult(Object.assign(new Error('Cloud quedó completo, pero el navegador no confirmó el estado local sincronizado.'), { code: 'PRODUCT_RECOVERY_LOCAL_CONFIRMATION_MISSING' }), { uncertain: true }) };
             }
 
