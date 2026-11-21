@@ -68,6 +68,33 @@ describe('IndividualProductRecoveryDialog', () => {
     expect(mocks.recoverProduct).not.toHaveBeenCalled();
   });
 
+  it('shows a retryable runtime block and refreshes without starting product recovery', async () => {
+    mocks.inspectProduct
+      .mockResolvedValueOnce({
+        success: false,
+        blocked: true,
+        retryable: true,
+        code: 'TENANT_RUNTIME_NOT_READY',
+        product: null,
+        batches: [],
+        issues: [{
+          code: 'TENANT_RUNTIME_NOT_READY',
+          message: 'El runtime local no está listo. Reintentar no modifica productos, lotes ni inventario.'
+        }]
+      })
+      .mockResolvedValueOnce(report(false));
+
+    render(<IndividualProductRecoveryDialog product={product} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/El runtime local no está listo/)).toBeInTheDocument();
+    expect(screen.getByText(/Reintentar vuelve a comprobar el negocio/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
+
+    expect(await screen.findByText('Se requiere recepción documentada.')).toBeInTheDocument();
+    expect(mocks.inspectProduct).toHaveBeenCalledTimes(2);
+    expect(mocks.recoverProduct).not.toHaveBeenCalled();
+  });
+
   it('shows the actual verified result after explicit confirmation', async () => {
     render(<IndividualProductRecoveryDialog product={product} onClose={vi.fn()} />);
     await screen.findByRole('button', { name: 'Confirmar recuperación' });

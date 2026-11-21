@@ -121,6 +121,9 @@ export default function IndividualProductRecoveryDialog({ product, onClose }) {
           {!loading && report?.issues?.length > 0 && (
             <section className="individual-recovery-blockers" aria-labelledby="individual-recovery-blockers-title">
               <h3 id="individual-recovery-blockers-title">Bloqueos comprobados</h3>
+              {report.retryable && (
+                <p>La lectura se detuvo de forma segura. Reintentar vuelve a comprobar el negocio y no modifica productos, lotes ni inventario.</p>
+              )}
               <ul>
                 {report.issues.map((issue, index) => <li key={`${issue.code}-${issue.entityId || index}`}>{issue.message}</li>)}
               </ul>
@@ -145,7 +148,7 @@ export default function IndividualProductRecoveryDialog({ product, onClose }) {
         <footer className="individual-recovery-dialog__actions">
           <button type="button" className="ui-button ui-button--ghost" onClick={onClose} disabled={saving}>Cerrar</button>
           <button type="button" className="ui-button ui-button--neutral" onClick={handleRefresh} disabled={loading || saving}>
-            Volver a verificar
+            {report?.retryable ? 'Reintentar verificación' : 'Volver a verificar'}
           </button>
           {report?.canRecover && !operationResult && (
             <button type="button" className="ui-button ui-button--primary" onClick={handleRecover} disabled={saving || loading}>

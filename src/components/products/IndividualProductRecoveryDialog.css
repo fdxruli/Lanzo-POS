@@ -136,6 +136,11 @@
   font-size: 0.875rem;
 }
 
+.individual-recovery-blockers p {
+  margin: 10px 0 0;
+  font-size: 0.875rem;
+}
+
 .individual-recovery-ready,
 .individual-recovery-result.is-success {
   border-color: #9dd7b0;

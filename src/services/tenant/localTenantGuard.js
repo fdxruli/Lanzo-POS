@@ -1,6 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
-import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
+import { closeTenantRuntime, getActiveTenantDatabase, getTenantRuntimeReadiness, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
   inspectActiveTenantStorageSnapshot,
   TenantScopedStorageInspectionError
@@ -856,6 +856,7 @@ export const createLocalTenantGuard = ({
   const activeSyncLeases = new Map();
   let nextSyncLeaseId = 1;
   let lastAttemptedTenantIdentity = null;
+  let retryableRuntimeIdentity = null;
   const resolveIdentity = (source) => resolveActiveTenantIdentity(source, cryptoProvider);
   const readRuntimeBrowserStorageSnapshot = activeTenantStorageInspector || (() => (
     readTenantOwnedBrowserStorageSnapshot(browserStorage)
@@ -866,6 +867,7 @@ export const createLocalTenantGuard = ({
   const runtimeSessionStorage = activeTenantStorageInspector ? null : tenantSessionStorage;
   const blockForLocalTenantError = (error) => {
     if (!isLocalTenantAccessError(error)) return;
+    retryableRuntimeIdentity = null;
     controller.block(
       error,
       error.code === LOCAL_TENANT_ERROR_CODES.MISMATCH
@@ -930,14 +932,22 @@ export const createLocalTenantGuard = ({
     const activeIdentity = await resolveIdentity(source);
     lastAttemptedTenantIdentity = activeIdentity;
     const alreadyGranted = controller.isGrantedFor(activeIdentity);
+    const runtimeReady = database !== defaultDatabase || getTenantRuntimeReadiness().ready;
+    const runtimePreparationRequired = !alreadyGranted || !runtimeReady;
+    if (alreadyGranted && database === defaultDatabase && !runtimeReady) {
+      retryableRuntimeIdentity = activeIdentity;
+    } else if (retryableRuntimeIdentity && !areLocalTenantAliasesCompatible(retryableRuntimeIdentity.aliases, activeIdentity.aliases)) {
+      retryableRuntimeIdentity = null;
+    }
 
     if (
-      !alreadyGranted &&
+      runtimePreparationRequired &&
       [...activeSyncLeases.values()].some((lease) => !identitiesOverlap(lease.identity, activeIdentity))
     ) {
       const error = new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.MISMATCH, {
         reason: 'tenant_transition_during_active_sync'
       });
+      retryableRuntimeIdentity = null;
       controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
       throw error;
     }
@@ -945,8 +955,8 @@ export const createLocalTenantGuard = ({
     // Freeze the previous tenant before its physical database can be
     // replaced. This ordering also makes the brief B-open/B-binding window
     // fail closed through the runtime dbcore middleware.
-    if (!alreadyGranted) {
-      controller.lock('tenant_transition');
+    if (runtimePreparationRequired) {
+      controller.lock(alreadyGranted ? 'tenant_runtime_recovery' : 'tenant_transition');
       if (database === defaultDatabase) closeTenantRuntime();
       controller.enable(reason);
       if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
@@ -968,7 +978,8 @@ export const createLocalTenantGuard = ({
 
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
         if (database === defaultDatabase) await markTenantRuntimeReady();
-        if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
+        if (runtimePreparationRequired) controller.grant(activeIdentity, alreadyGranted ? 'runtime_recovered' : 'same_tenant');
+        retryableRuntimeIdentity = null;
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
 
@@ -982,6 +993,7 @@ export const createLocalTenantGuard = ({
           snapshot,
           'bound_tenant_mismatch'
         );
+        retryableRuntimeIdentity = null;
         controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
         throw error;
       }
@@ -1002,6 +1014,7 @@ export const createLocalTenantGuard = ({
               ? 'conflicting_legacy_tenant_evidence'
               : 'missing_legacy_ownership_quorum'
           );
+          retryableRuntimeIdentity = null;
           controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
           throw error;
         }
@@ -1029,12 +1042,14 @@ export const createLocalTenantGuard = ({
             committed,
             'legacy_tenant_mismatch'
           );
+          retryableRuntimeIdentity = null;
           controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
           throw error;
         }
 
         if (database === defaultDatabase) await markTenantRuntimeReady();
         controller.grant(activeIdentity, bindingSource);
+        retryableRuntimeIdentity = null;
         return {
           status: bindingSource === 'legacy_internal_evidence'
             ? 'legacy_backfilled'
@@ -1059,6 +1074,7 @@ export const createLocalTenantGuard = ({
       latest,
       'snapshot_changed_repeatedly'
     );
+    retryableRuntimeIdentity = null;
     controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
     throw error;
   };
@@ -1079,7 +1095,12 @@ export const createLocalTenantGuard = ({
     const identity = await resolveIdentity(source);
     // No await is allowed between this check and registering the lease. A
     // second digest used to permit a tenant transition in that gap.
-    if (!controller.getState().enabled || !controller.isGrantedFor(identity)) {
+    const state = controller.getState();
+    const isAuthorizedRuntimeRetry = state.enabled
+      && state.status === LOCAL_TENANT_STATUS.LOCKED
+      && retryableRuntimeIdentity
+      && areLocalTenantAliasesCompatible(retryableRuntimeIdentity.aliases, identity.aliases);
+    if (!state.enabled || (!controller.isGrantedFor(identity) && !isAuthorizedRuntimeRetry)) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, { reason });
     }
     const leaseId = nextSyncLeaseId;
@@ -1108,10 +1129,14 @@ export const createLocalTenantGuard = ({
   return {
     controller,
     initialize: (reason = 'bootstrap') => controller.enable(reason),
-    lock: (reason = 'no_active_license') => controller.lock(reason),
+    lock: (reason = 'no_active_license') => {
+      retryableRuntimeIdentity = null;
+      return controller.lock(reason);
+    },
     reset: () => {
       activeSyncLeases.clear();
       lastAttemptedTenantIdentity = null;
+      retryableRuntimeIdentity = null;
       return controller.reset();
     },
     getState: () => controller.getState(),

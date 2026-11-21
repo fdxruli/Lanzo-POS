@@ -2,7 +2,13 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
+import {
+  assertLocalTenantAccess,
+  initializeLocalTenantGuard,
+  runWithLocalTenantSyncLease,
+  resetLocalTenantGuardForTests,
+  resolveActiveTenantIdentity
+} from '../../tenant/localTenantGuard';
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
@@ -290,6 +296,90 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(a);
     expect(getActiveTenantRuntime()).not.toBeNull();
     expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+  });
+
+  it('reopens the same physical tenant runtime after it closes while its tenant grant remains valid', async () => {
+    const licenseKey = `RUNTIME-RETRY-${crypto.randomUUID()}`;
+    const source = { license_key: licenseKey };
+    let databaseName = null;
+    try {
+      initializeLocalTenantGuard('runtime-retry-test');
+      await assertLocalTenantAccess(source);
+      const before = getActiveTenantRuntime();
+      databaseName = before.databaseName;
+      await db.table(STORES.MENU).put({ id: 'runtime-retry-product', name: 'Preservar', stock: 37 });
+
+      closeTenantRuntime();
+      expect(localTenantAccessController.getState().status).toBe('granted');
+      expect(getTenantRuntimeReadiness()).toMatchObject({ ready: false, runtime: null });
+      expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+
+      await expect(assertLocalTenantAccess(source)).resolves.toMatchObject({ status: 'pass' });
+
+      const after = getActiveTenantRuntime();
+      expect(after.databaseName).toBe(before.databaseName);
+      expect(after.generation).toBeGreaterThan(before.generation);
+      expect(localTenantAccessController.getState().status).toBe('granted');
+      expect(getTenantRuntimeReadiness()).toMatchObject({ ready: true, runtime: { databaseName } });
+      await expect(db.table(STORES.MENU).get('runtime-retry-product')).resolves.toMatchObject({ stock: 37 });
+    } finally {
+      closeTenantRuntime();
+      resetLocalTenantGuardForTests();
+      if (databaseName) await deletePhysicalDatabase(databaseName);
+    }
+  });
+
+  it('allows only the previously granted tenant to retry a failed runtime reopen', async () => {
+    const licenseKey = `RUNTIME-RETRY-FAIL-${crypto.randomUUID()}`;
+    const source = { license_key: licenseKey };
+    let databaseName = null;
+    let failNextOpen = true;
+    try {
+      initializeLocalTenantGuard('runtime-retry-test');
+      await assertLocalTenantAccess(source);
+      const before = getActiveTenantRuntime();
+      databaseName = before.databaseName;
+      await db.table(STORES.MENU).put({ id: 'runtime-retry-product', name: 'Preservar', stock: 37 });
+      closeTenantRuntime();
+
+      configureTenantRuntimeDatabaseFactory((name) => {
+        const database = createOperationalLanzoDatabase(name);
+        if (name === databaseName && failNextOpen) {
+          failNextOpen = false;
+          vi.spyOn(database, 'open').mockRejectedValueOnce(Object.assign(new Error('temporary native open failure'), {
+            code: 'DB_OPEN_RETRY_TEST'
+          }));
+        }
+        return database;
+      });
+
+      await expect(runWithLocalTenantSyncLease(source, { reason: 'individual_product_recovery_inspect' }, async () => (
+        assertLocalTenantAccess(source, { reason: 'individual_product_recovery_inspect' })
+      ))).rejects.toMatchObject({ code: 'DB_OPEN_RETRY_TEST' });
+      expect(localTenantAccessController.getState().status).toBe('locked');
+      expect(getActiveTenantRuntime()).toBeNull();
+
+      await expect(runWithLocalTenantSyncLease(
+        { license_key: `RUNTIME-RETRY-OTHER-${crypto.randomUUID()}` },
+        { reason: 'individual_product_recovery_inspect' },
+        async () => true
+      )).rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
+      expect(getActiveTenantRuntime()).toBeNull();
+
+      await expect(runWithLocalTenantSyncLease(source, { reason: 'individual_product_recovery_inspect' }, async () => (
+        assertLocalTenantAccess(source, { reason: 'individual_product_recovery_inspect' })
+      ))).resolves.toMatchObject({ status: 'pass' });
+
+      const after = getActiveTenantRuntime();
+      expect(after.databaseName).toBe(databaseName);
+      expect(after.generation).toBeGreaterThan(before.generation);
+      await expect(db.table(STORES.MENU).get('runtime-retry-product')).resolves.toMatchObject({ stock: 37 });
+    } finally {
+      configureTenantRuntimeDatabaseFactory(createOperationalLanzoDatabase);
+      closeTenantRuntime();
+      resetLocalTenantGuardForTests();
+      if (databaseName) await deletePhysicalDatabase(databaseName);
+    }
   });
 
   it('upgrades released native 320 and bug-affected native 321 tenants through the production router and remains READY across A to B to A', async () => {
