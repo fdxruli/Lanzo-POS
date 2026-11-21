@@ -638,13 +638,42 @@ const cloudRecoveryMatches = ({ product, batches, localBatches, cloudProducts, c
   };
 };
 
+const classifyCloudRecoveryOutcome = ({ product, batches, localBatches, cloudProducts, cloudBatches }) => {
+  const verification = cloudRecoveryMatches({ product, batches, localBatches, cloudProducts, cloudBatches });
+  if (verification.success) return { state: 'complete', verification };
+
+  const productId = String(product.id);
+  const expectedBatchIds = new Set(batches.map((batch) => String(batch.id)));
+  const productRows = cloudProducts.filter((row) => cloudProductId(row) === productId);
+  const batchRows = cloudBatches.filter((row) => (
+    cloudBatchParentId(row) === productId || expectedBatchIds.has(cloudBatchId(row))
+  ));
+  if (productRows.length === 0 && batchRows.length === 0) {
+    return { state: 'absent', verification };
+  }
+
+  const presentBatchIds = new Set(batchRows.map(cloudBatchId));
+  return {
+    state: 'partial',
+    verification,
+    productPresent: productRows.length > 0,
+    missingBatchIds: batches.map((batch) => String(batch.id)).filter((id) => !presentBatchIds.has(id)),
+    unexpectedBatchIds: batchRows.map(cloudBatchId).filter((id) => !expectedBatchIds.has(id))
+  };
+};
+
 const RECOVERY_MESSAGES = Object.freeze({
   PRODUCT_RECOVERY_LOCK_UNAVAILABLE: 'El navegador no permite asegurar exclusividad. No se ejecutó la recuperación.',
   PHARMACY_INITIAL_STOCK_REQUIRES_DOCUMENTED_RECEIPT: 'La guarda farmacéutica requiere una recepción documentada para importar stock positivo. No se modificó el catálogo local.',
   PHARMACY_HISTORICAL_IMPORT_NOT_AUTHORIZED: 'Production no tiene una autorización vigente para importar este saldo histórico. No se modificó el catálogo local.',
   VERSION_CONFLICT: 'El producto apareció en Cloud durante la operación. Se detuvo sin sobrescribirlo.',
-  DUPLICATE_PRODUCT_KEY: 'El servidor detectó un SKU o código de barras duplicado. No se modificó el catálogo local.'
+  DUPLICATE_PRODUCT_KEY: 'El servidor detectó un SKU o código de barras duplicado. No se modificó el catálogo local.',
+  PRODUCT_RECOVERY_CLOUD_OUTCOME_UNKNOWN: 'HOLD: no se pudo confirmar en Cloud el resultado de la escritura. Conserva los datos locales y no reintentes hasta completar una lectura de conciliación.',
+  PRODUCT_RECOVERY_RPC_FAILED_NO_CLOUD_WRITE: 'Cloud confirmó que no existe el producto ni sus lotes. Los datos locales siguen intactos; vuelve a verificar antes de solicitar otro intento.',
+  PRODUCT_RECOVERY_CLOUD_SUCCESS_NOT_VISIBLE: 'HOLD: el RPC informó éxito, pero la lectura Cloud no encuentra el producto ni sus lotes. No reintentes hasta conciliar.',
+  ACTOR_CONTEXT_STALE: 'HOLD: Cloud quedó completo, pero la sesión cambió durante la operación. Los datos locales no se marcaron como sincronizados; verifica la sesión y concilia antes de reintentar.'
 });
+const PARTIAL_CLOUD_WRITE_MESSAGE = 'HOLD: Cloud contiene el producto o alguno de sus lotes, pero el conjunto no coincide con los datos locales. No reintentes ni cambies inventario; requiere conciliación.';
 
 const errorResult = (error, { uncertain = false } = {}) => ({
   success: false,
@@ -729,42 +758,74 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
             const actorHandle = deps.captureMutation(requirements);
             deps.assertMutationCurrent(actorHandle, requirements);
             const idempotencyKey = before.report.recovery.idempotencyKey;
-            const response = await deps.cloudRepository.upsertProduct({
-              licenseKey: context.licenseKey,
-              product: productToCloudPayload(product),
-              initialBatches: initialBatches.map(batchToCloudPayload),
-              expectedVersion: 0,
-              idempotencyKey,
-              actorHandle,
-              isNewProduct: true
-            });
-            if (response?.success !== true
-              || response?.product?.id !== product.id
-              || response?.idempotency_key !== idempotencyKey
-              || !Array.isArray(response?.batches)
-              || stableStringify(response.batches.map((batch) => String(batch.id)).sort())
-                !== stableStringify(initialBatches.map((batch) => String(batch.id)).sort())) {
-              const error = Object.assign(new Error(response?.message || response?.code || 'La respuesta del RPC no confirmó el producto y todos sus lotes.'), {
-                code: response?.code || 'PRODUCT_RECOVERY_RPC_RESPONSE_UNCERTAIN'
+            let response = null;
+            let rpcError = null;
+            try {
+              response = await deps.cloudRepository.upsertProduct({
+                licenseKey: context.licenseKey,
+                product: productToCloudPayload(product),
+                initialBatches: initialBatches.map(batchToCloudPayload),
+                expectedVersion: 0,
+                idempotencyKey,
+                actorHandle,
+                isNewProduct: true
               });
-              return { ...errorResult(error, { uncertain: response?.success === true }), rpcResponse: response };
+            } catch (error) {
+              rpcError = error;
             }
 
-            if (response.clientLocalReconciliationPending) {
-              return { ...errorResult(Object.assign(new Error('La sesión cambió después de la respuesta Cloud.'), { code: 'ACTOR_CONTEXT_STALE' }), { uncertain: true }) };
+            let afterCloud;
+            try {
+              afterCloud = await readCloudSnapshot(deps, context.licenseKey);
+            } catch (error) {
+              const readError = Object.assign(new Error(error?.message || 'No se pudo releer el producto y sus lotes después de llamar al RPC.'), {
+                code: 'PRODUCT_RECOVERY_CLOUD_OUTCOME_UNKNOWN',
+                cause: error
+              });
+              return { ...errorResult(readError, { uncertain: true }), rpcResponse: response, rpcError };
             }
 
-            const afterCloud = await readCloudSnapshot(deps, context.licenseKey);
-            const cloudCheck = cloudRecoveryMatches({
+            const cloudOutcome = classifyCloudRecoveryOutcome({
               product,
               batches: initialBatches,
               localBatches: before.local.localBatches.filter((batch) => localBatchProductId(batch) === String(product.id)),
               cloudProducts: afterCloud.cloudProducts,
               cloudBatches: afterCloud.cloudBatches
             });
-            if (!cloudCheck.success) {
-              return { ...errorResult(Object.assign(new Error('Cloud no confirmó todos los datos del producto y sus lotes.'), { code: cloudCheck.code }), { uncertain: true }) };
+            if (cloudOutcome.state === 'absent') {
+              const rpcReportedSuccess = response?.success === true;
+              const error = Object.assign(new Error(rpcReportedSuccess
+                ? RECOVERY_MESSAGES.PRODUCT_RECOVERY_CLOUD_SUCCESS_NOT_VISIBLE
+                : RECOVERY_MESSAGES.PRODUCT_RECOVERY_RPC_FAILED_NO_CLOUD_WRITE), {
+                code: rpcReportedSuccess
+                  ? 'PRODUCT_RECOVERY_CLOUD_SUCCESS_NOT_VISIBLE'
+                  : 'PRODUCT_RECOVERY_RPC_FAILED_NO_CLOUD_WRITE'
+              });
+              return { ...errorResult(error, { uncertain: rpcReportedSuccess }), rpcResponse: response, rpcError, cloudOutcome: 'absent' };
             }
+            if (cloudOutcome.state === 'partial') {
+              const details = [
+                cloudOutcome.productPresent ? 'el producto sí existe' : 'el producto no aparece',
+                cloudOutcome.missingBatchIds.length ? `faltan lotes ${cloudOutcome.missingBatchIds.join(', ')}` : null,
+                cloudOutcome.unexpectedBatchIds.length ? `hay lotes inesperados ${cloudOutcome.unexpectedBatchIds.join(', ')}` : null,
+                `verificación ${cloudOutcome.verification.code || 'incompleta'}`
+              ].filter(Boolean).join('; ');
+              const error = Object.assign(new Error(`${PARTIAL_CLOUD_WRITE_MESSAGE} Detalle: ${details}.`), {
+                code: 'PRODUCT_RECOVERY_PARTIAL_CLOUD_WRITE'
+              });
+              return { ...errorResult(error, { uncertain: true }), rpcResponse: response, rpcError, cloudOutcome: 'partial' };
+            }
+
+            if (response?.clientLocalReconciliationPending) {
+              return {
+                ...errorResult(Object.assign(new Error(RECOVERY_MESSAGES.ACTOR_CONTEXT_STALE), { code: 'ACTOR_CONTEXT_STALE' }), { uncertain: true }),
+                rpcResponse: response,
+                rpcError,
+                cloudOutcome: 'complete'
+              };
+            }
+
+            const cloudCheck = cloudOutcome.verification;
 
             const currentLocal = await readLocalProductSnapshot(deps, productId);
             if (!sameLocalSnapshot(before.local, currentLocal)) {
@@ -808,6 +869,8 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
               verified: true,
               productId: product.id,
               batchIds: initialBatches.map((batch) => String(batch.id)),
+              rpcReportedSuccess: response?.success === true,
+              cloudOutcome: 'complete',
               archivedBatchIdsKeptLocal: before.report.recovery.omittedArchivedBatchIds,
               message: `Producto y ${initialBatches.length} lote(s) verificados en Cloud. Los lotes archivados permanecen intactos en este dispositivo.`
             };

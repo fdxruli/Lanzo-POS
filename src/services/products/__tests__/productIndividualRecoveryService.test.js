@@ -223,6 +223,7 @@ const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } =
   let cloudProducts = [];
   let cloudBatches = [];
   let requestArgs = null;
+  let cloudReadFailure = false;
   const activeBatch = currentBatches[0];
 
   const localRepository = {
@@ -243,15 +244,23 @@ const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } =
   };
 
   const cloudRepository = {
-    pullCatalogSnapshot: vi.fn(async ({ entityType }) => ({
-      success: true,
-      products: entityType === 'product' ? cloudProducts : undefined,
-      batches: entityType === 'product_batch' ? cloudBatches : undefined,
-      categories: entityType === 'category' ? [] : undefined,
-      has_more: false
-    })),
+    pullCatalogSnapshot: vi.fn(async ({ entityType }) => {
+      if (cloudReadFailure) throw new Error('Cloud read timed out');
+      return {
+        success: true,
+        products: entityType === 'product' ? cloudProducts : undefined,
+        batches: entityType === 'product_batch' ? cloudBatches : undefined,
+        categories: entityType === 'category' ? [] : undefined,
+        has_more: false
+      };
+    }),
     upsertProduct: vi.fn(async (args) => {
       requestArgs = args;
+      if (responseMode === 'transport-absent') throw new Error('RPC transport timed out');
+      if (responseMode === 'transport-unknown') {
+        cloudReadFailure = true;
+        throw new Error('RPC transport timed out');
+      }
       const product = {
         ...productToCloudPayload(args.product),
         server_version: 1,
@@ -265,10 +274,14 @@ const makeServiceHarness = ({ responseMode = 'complete', canInventory = true } =
           server_version: 1,
           deleted_at: null
         }));
-      cloudProducts = [product];
-      cloudBatches = responseMode === 'partial-cloud' ? [] : batches;
+      cloudProducts = responseMode === 'no-write' ? [] : [product];
+      cloudBatches = ['partial-cloud', 'failure-product-only', 'transport-product-only', 'no-write'].includes(responseMode)
+        ? [] : batches;
+      if (responseMode === 'transport-product-only') throw new Error('RPC transport timed out');
       return {
-        success: true,
+        success: responseMode !== 'failure-product-only' && responseMode !== 'no-write',
+        code: responseMode === 'failure-product-only' ? 'BATCH_VALIDATION_FAILED' : undefined,
+        message: responseMode === 'failure-product-only' ? 'The product was inserted but its lot was rejected.' : undefined,
         product,
         batches: responseMode === 'partial-response' ? [] : batches,
         idempotency_key: args.idempotencyKey
@@ -353,20 +366,82 @@ describe('individual product recovery execution', () => {
     });
   });
 
-  it('keeps local records untouched after a partial RPC response', async () => {
+  it('trusts a complete Cloud reread when the RPC response omitted its batch projection', async () => {
     const harness = makeServiceHarness({ responseMode: 'partial-response' });
     const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
 
-    expect(result).toMatchObject({ success: false, blocked: true, uncertain: true });
+    expect(result).toMatchObject({ success: true, recovered: true, verified: true, cloudOutcome: 'complete' });
+    expect(harness.localRepository.applyCloudCatalog).toHaveBeenCalledTimes(1);
+    expect(harness.getProduct().syncStatus).toBe('synced');
+  });
+
+  it('holds a success response when the Cloud reread finds only the product and no lot', async () => {
+    const harness = makeServiceHarness({ responseMode: 'partial-cloud' });
+    const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
+
+    expect(result).toMatchObject({
+      success: false, blocked: true, uncertain: true, cloudOutcome: 'partial',
+      code: 'PRODUCT_RECOVERY_PARTIAL_CLOUD_WRITE'
+    });
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
     expect(harness.getProduct().syncStatus).toBe('local');
   });
 
-  it('requires the post-write Cloud read to confirm the full lot set before changing local sync state', async () => {
-    const harness = makeServiceHarness({ responseMode: 'partial-cloud' });
+  it('holds success:false when Cloud contains the inserted product but not its original lot, without retrying', async () => {
+    const harness = makeServiceHarness({ responseMode: 'failure-product-only' });
     const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
 
-    expect(result).toMatchObject({ success: false, blocked: true, uncertain: true, code: 'PRODUCT_RECOVERY_CLOUD_BATCH_SET_MISMATCH' });
+    expect(result).toMatchObject({
+      success: false, blocked: true, uncertain: true, cloudOutcome: 'partial',
+      code: 'PRODUCT_RECOVERY_PARTIAL_CLOUD_WRITE'
+    });
+    expect(result.message).toContain('HOLD');
+    expect(result.message).toContain('faltan lotes local-batch-1');
+    expect(harness.getCloud().products).toHaveLength(1);
+    expect(harness.getCloud().batches).toHaveLength(0);
+    expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(harness.getProduct().syncStatus).toBe('local');
+
+    const retry = await harness.service.recoverProduct({ productId: 'local-product-1' });
+    expect(retry.blocked).toBe(true);
+    expect(harness.cloudRepository.upsertProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it('rereads Cloud after an RPC transport error and holds a product-only partial write', async () => {
+    const harness = makeServiceHarness({ responseMode: 'transport-product-only' });
+    const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
+
+    expect(result).toMatchObject({
+      success: false, blocked: true, uncertain: true, cloudOutcome: 'partial',
+      code: 'PRODUCT_RECOVERY_PARTIAL_CLOUD_WRITE'
+    });
+    expect(harness.cloudRepository.pullCatalogSnapshot.mock.calls.map(([args]) => args.entityType))
+      .toEqual(['product', 'product_batch', 'category', 'product', 'product_batch', 'category']);
+    expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes a failed RPC with a confirmed absent Cloud source from a partial write', async () => {
+    const harness = makeServiceHarness({ responseMode: 'no-write' });
+    const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
+
+    expect(result).toMatchObject({
+      success: false, blocked: true, uncertain: false, cloudOutcome: 'absent',
+      code: 'PRODUCT_RECOVERY_RPC_FAILED_NO_CLOUD_WRITE'
+    });
+    expect(harness.getCloud()).toEqual({ products: [], batches: [] });
+    expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(harness.getProduct().syncStatus).toBe('local');
+  });
+
+  it('keeps HOLD when transport uncertainty prevents the post-RPC Cloud reread', async () => {
+    const harness = makeServiceHarness({ responseMode: 'transport-unknown' });
+    const result = await harness.service.recoverProduct({ productId: 'local-product-1' });
+
+    expect(result).toMatchObject({
+      success: false, blocked: true, uncertain: true,
+      code: 'PRODUCT_RECOVERY_CLOUD_OUTCOME_UNKNOWN'
+    });
+    expect(result).not.toHaveProperty('cloudOutcome');
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
     expect(harness.getProduct().syncStatus).toBe('local');
   });

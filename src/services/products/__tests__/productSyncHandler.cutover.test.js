@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
   applyCloudCatalog: vi.fn(),
   getCatalogRecordForSync: vi.fn(),
   listUnsyncedLocalCatalogForCloud: vi.fn(),
+  getProductById: vi.fn(),
+  getBatchesByProductId: vi.fn(),
+  listOperationsForEntity: vi.fn(),
+  listPublishedProducts: vi.fn(),
   setMeta: vi.fn(),
   getMeta: vi.fn(),
   pullCatalogChanges: vi.fn(),
@@ -45,6 +49,12 @@ vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
   getMeta: mocks.getMeta,
   setMeta: mocks.setMeta
 } }));
+vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: {
+  listOperationsForEntity: mocks.listOperationsForEntity
+} }));
+vi.mock('../../ecommerce/ecommerceAdminService', () => ({
+  listPublishedProducts: mocks.listPublishedProducts
+}));
 vi.mock('../productMigrationService', () => ({ productMigrationService: {
   runInitialMigrationIfNeeded: mocks.runMigration,
   pullFullSnapshot: vi.fn()
@@ -67,7 +77,9 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   applyCloudCatalog: mocks.applyCloudCatalog,
   getCatalogRecordForSync: mocks.getCatalogRecordForSync,
-  listUnsyncedLocalCatalogForCloud: mocks.listUnsyncedLocalCatalogForCloud
+  listUnsyncedLocalCatalogForCloud: mocks.listUnsyncedLocalCatalogForCloud,
+  getProductById: mocks.getProductById,
+  getBatchesByProductId: mocks.getBatchesByProductId
 } }));
 vi.mock('../productConflictService', () => ({ productConflictService: {
   isConflictResponse: (response) => response?.code === 'VERSION_CONFLICT',
@@ -108,9 +120,15 @@ describe('product sync repeated cutover safety', () => {
     mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValue({
       categories: [], products: [], batches: [], deletes: { categories: [], products: [], batches: [] }
     });
+    mocks.getProductById.mockResolvedValue(null);
+    mocks.getBatchesByProductId.mockResolvedValue([]);
+    mocks.listOperationsForEntity.mockResolvedValue([]);
+    mocks.listPublishedProducts.mockResolvedValue({ success: true, products: [] });
     mocks.getMeta.mockResolvedValue(12);
     mocks.runWithTenantLease.mockImplementation(async (_source, _options, operation) => operation());
-    mocks.pullCatalogSnapshot.mockResolvedValue({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValue({
+      success: true, categories: [], products: [], batches: [], has_more: false
+    });
   });
 
   const receiptOperation = {
@@ -257,28 +275,57 @@ describe('product sync repeated cutover safety', () => {
     expect(mocks.runRecovery).not.toHaveBeenCalled();
   });
 
-  it('defers broad recovery on the Products route when a migrated tenant has unsynced local catalog rows', async () => {
-    mocks.getMeta.mockResolvedValueOnce(true);
-    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
-      categories: [],
-      products: [{ id: 'local-only-product' }],
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
+  it.each(['route_demand', 'app_start', 'missing_local_product_cache', 'module_demand_products'])(
+    'defers broad recovery for a published local snapshot on the %s start path', async (reason) => {
+      mocks.getMeta.mockResolvedValue(true);
+      mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValue({
+        categories: [],
+        products: [{ id: 'local-only-product', isActive: true }],
+        batches: [],
+        deletes: { categories: [], products: [], batches: [] }
+      });
+      mocks.listPublishedProducts.mockResolvedValue({
+        success: true,
+        products: [{
+          sourceType: 'local_snapshot', productId: null, localProductRef: 'local-only-product',
+          isPublished: true, isAvailable: true
+        }]
+      });
+
+      const result = await productSyncHandler.onStart({ licenseKey: 'CUTOVER-HANDLER', reason });
+
+      expect(result).toMatchObject({
+        success: true,
+        skipped: true,
+        deferred: true,
+        reason: 'local_catalog_recovery_requires_selection',
+        productCount: 1
+      });
+      expect(mocks.runMigration).not.toHaveBeenCalled();
+      expect(mocks.runRecovery).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps local-snapshot recovery separate even when its original outbox row is pending', async () => {
+    mocks.getMeta.mockResolvedValue(true);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValue({
+      categories: [], products: [{ id: 'local-outbox-product', isActive: true }], batches: [], deletes: {}
     });
+    mocks.listPublishedProducts.mockResolvedValue({ success: true, products: [{
+      sourceType: 'local_snapshot', productId: null, localProductRef: 'local-outbox-product',
+      isPublished: true, isAvailable: true
+    }] });
+    mocks.listOperationsForEntity.mockResolvedValue([{
+      status: 'pending', entityType: SYNC_ENTITY_TYPES.PRODUCT, entityId: 'local-outbox-product'
+    }]);
 
     const result = await productSyncHandler.onStart({
-      licenseKey: 'CUTOVER-HANDLER',
-      reason: 'route_demand'
-    });
-    expect(result.error?.message).toBeUndefined();
-    expect(result).toMatchObject({
-      success: true,
-      skipped: true,
-      deferred: true,
-      reason: 'local_catalog_recovery_requires_selection',
-      pendingCount: 1
+      licenseKey: 'CUTOVER-HANDLER', reason: 'module_demand_products'
     });
 
+    expect(result).toMatchObject({
+      success: true, skipped: true, deferred: true, reason: 'local_catalog_recovery_requires_selection'
+    });
     expect(mocks.runMigration).not.toHaveBeenCalled();
     expect(mocks.runRecovery).not.toHaveBeenCalled();
   });
@@ -287,10 +334,14 @@ describe('product sync repeated cutover safety', () => {
     mocks.getMeta.mockResolvedValueOnce(false);
     mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
       categories: [],
-      products: [{ id: 'local-only-product' }],
+      products: [{ id: 'local-only-product', isActive: true }],
       batches: [],
       deletes: { categories: [], products: [], batches: [] }
     });
+    mocks.listPublishedProducts.mockResolvedValueOnce({ success: true, products: [{
+      sourceType: 'local_snapshot', productId: null, localProductRef: 'local-only-product',
+      isPublished: true, isAvailable: true
+    }] });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
       success: true,
       categories: [],
@@ -308,12 +359,12 @@ describe('product sync repeated cutover safety', () => {
       skipped: true,
       deferred: true,
       reason: 'local_catalog_recovery_requires_selection',
-      pendingCount: 1
+      productCount: 1
     });
 
     expect(mocks.runWithTenantLease).toHaveBeenCalledWith(
       { license_key: 'CUTOVER-HANDLER' },
-      { reason: 'product_route_recovery_gate' },
+      { reason: 'product_catalog_recovery_preflight' },
       expect.any(Function)
     );
     expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
@@ -327,10 +378,14 @@ describe('product sync repeated cutover safety', () => {
     mocks.getMeta.mockResolvedValueOnce(false);
     mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
       categories: [],
-      products: [{ id: 'first-product' }],
+      products: [{ id: 'first-product', isActive: true }],
       batches: [],
       deletes: { categories: [], products: [], batches: [] }
     });
+    mocks.listPublishedProducts.mockResolvedValueOnce({ success: true, products: [{
+      sourceType: 'local_snapshot', productId: null, localProductRef: 'first-product',
+      isPublished: true, isAvailable: true
+    }] });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
       success: true, categories: [], products: [], batches: [], total: 0, has_more: false
     });
@@ -340,6 +395,30 @@ describe('product sync repeated cutover safety', () => {
       reason: 'route_demand'
     })).resolves.toMatchObject({ success: true, recovery: { recovered: 1 } });
 
+    expect(mocks.runMigration).toHaveBeenCalledWith({
+      licenseKey: 'CUTOVER-HANDLER', guardLocalSnapshotBootstrap: true
+    });
+  });
+
+  it('keeps ordinary PRO catalog outbox work on the normal migration and outbox path', async () => {
+    mocks.getMeta.mockResolvedValue(true);
+    mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValue({
+      categories: [],
+      products: [{ id: 'cloud-product', isActive: true, syncStatus: 'pending' }],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.listPublishedProducts.mockResolvedValue({ success: true, products: [{
+      sourceType: 'cloud', productId: 'cloud-product', localProductRef: null,
+      isPublished: true, isAvailable: true
+    }] });
+    mocks.listOperationsForEntity.mockResolvedValue([{ status: 'pending', entityId: 'cloud-product' }]);
+
+    const result = await productSyncHandler.onStart({
+      licenseKey: 'CUTOVER-HANDLER', reason: 'app_start'
+    });
+
+    expect(result).toMatchObject({ success: true, recovery: { recovered: 1 } });
     expect(mocks.runMigration).toHaveBeenCalledWith({ licenseKey: 'CUTOVER-HANDLER' });
   });
 
@@ -347,10 +426,14 @@ describe('product sync repeated cutover safety', () => {
     mocks.getMeta.mockResolvedValueOnce(false);
     mocks.listUnsyncedLocalCatalogForCloud.mockResolvedValueOnce({
       categories: [],
-      products: [{ id: 'local-only-product' }],
+      products: [{ id: 'local-only-product', isActive: true }],
       batches: [],
       deletes: { categories: [], products: [], batches: [] }
     });
+    mocks.listPublishedProducts.mockResolvedValueOnce({ success: true, products: [{
+      sourceType: 'local_snapshot', productId: null, localProductRef: 'local-only-product',
+      isPublished: true, isAvailable: true
+    }] });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: false, code: 'READ_FAILED' });
 
     await expect(productSyncHandler.onStart({

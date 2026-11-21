@@ -24,10 +24,19 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
+import { runWithProductCatalogRecoveryLock } from './productCatalogRecoveryLock';
 
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const initialMigrationByLicense = new Map();
+const hasCloudCatalogRows = (response = {}) => (
+  (response.categories?.length || 0) > 0
+  || (response.products?.length || 0) > 0
+  || (response.batches?.length || 0) > 0
+  || Number(response.total || 0) > 0
+  || response.has_more === true
+  || response.hasMore === true
+);
 export { validateLocalCatalogForMigration } from './productMigrationValidation';
 
 const saveBlockedMigrationConflict = async ({ licenseKey, issues }) => {
@@ -152,7 +161,7 @@ export const productMigrationService = {
     return { success: true, applied, latestChangeSeq };
   },
 
-  async runInitialMigrationIfNeeded({ licenseKey } = {}) {
+  async runInitialMigrationIfNeeded({ licenseKey, guardLocalSnapshotBootstrap = false } = {}) {
     if (licenseKey && initialMigrationByLicense.has(licenseKey)) {
       return initialMigrationByLicense.get(licenseKey);
     }
@@ -185,129 +194,176 @@ export const productMigrationService = {
       return { ...snapshot, recovery };
     }
 
-    const localCatalog = await productLocalRepository.getLocalCatalogForMigration();
-    const issues = validateLocalCatalogForMigration(localCatalog);
+    return runWithProductCatalogRecoveryLock({
+      licenseKey,
+      operation: async () => {
+        // Recheck after acquiring the same cross-tab lock as individual
+        // recovery. Another tab may have completed bootstrap while we waited.
+        const migratedWhileWaiting = await syncMetaService.getMeta(migratedKey, false, { licenseKey });
+        if (migratedWhileWaiting) {
+          const recovery = await productLocalCatalogRecovery.runUnsyncedCatalogRecoveryWithoutLock({
+            licenseKey,
+            canMigrateProducts: true
+          });
+          if (recovery?.blocked || recovery?.success === false) {
+            return { success: false, blocked: true, recovery };
+          }
+          const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
+          return { ...snapshot, recovery };
+        }
 
-    if (issues.length > 0) {
-      await saveBlockedMigrationConflict({ licenseKey, issues });
-      Logger.warn('[Products/Migration] Migracion bloqueada por conflictos locales:', issues);
-      return { success: false, blocked: true, issues };
-    }
+        if (guardLocalSnapshotBootstrap) {
+          const cloudProbe = await productCloudRepository.pullCatalogSnapshot({
+            licenseKey,
+            entityType: 'all',
+            offset: 0,
+            limit: 1,
+            includeDeleted: true,
+            force: true
+          });
+          if (cloudProbe?.success !== true
+            || !Array.isArray(cloudProbe.categories)
+            || !Array.isArray(cloudProbe.products)
+            || !Array.isArray(cloudProbe.batches)) {
+            throw Object.assign(new Error(cloudProbe?.message || 'No se pudo confirmar que Cloud siga vacío antes de la migración inicial.'), {
+              code: cloudProbe?.code || 'PRODUCT_INITIAL_MIGRATION_CLOUD_RECHECK_FAILED'
+            });
+          }
+          if (hasCloudCatalogRows(cloudProbe)) {
+            return {
+              success: true,
+              skipped: true,
+              deferred: true,
+              reason: 'local_catalog_recovery_requires_selection'
+            };
+          }
+        }
 
-    const totalLocalRows = localCatalog.categories.length + localCatalog.products.length + localCatalog.batches.length;
-    // Close the server cutover even when all local pharmacy balances are zero:
-    // otherwise a still-open lease could import unrelated positive stock later.
-    const needsPharmacyCutoverClose = localCatalog.products.some((product) =>
-      getPharmacyClassification(product).recorded
-    );
-    let pharmacyCutoverRoot = null;
+        const localCatalog = await productLocalRepository.getLocalCatalogForMigration();
+        const issues = validateLocalCatalogForMigration(localCatalog);
 
-    if (totalLocalRows > 0) {
-      // Persist the same root across crash/retry so server-side cutover leases,
-      // import-item hashes and nested idempotency keys remain stable.
-      const savedRoot = await syncMetaService.getMeta(
-        PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey }
-      );
-      const batchId = savedRoot || `products-${licenseKey}-${Date.now()}`;
-      if (!savedRoot) {
-        await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, batchId, { licenseKey });
+        if (issues.length > 0) {
+          await saveBlockedMigrationConflict({ licenseKey, issues });
+          Logger.warn('[Products/Migration] Migracion bloqueada por conflictos locales:', issues);
+          return { success: false, blocked: true, issues };
+        }
+
+        const totalLocalRows = localCatalog.categories.length + localCatalog.products.length + localCatalog.batches.length;
+        // Close the server cutover even when all local pharmacy balances are zero:
+        // otherwise a still-open lease could import unrelated positive stock later.
+        const needsPharmacyCutoverClose = localCatalog.products.some((product) =>
+          getPharmacyClassification(product).recorded
+        );
+        let pharmacyCutoverRoot = null;
+
+        if (totalLocalRows > 0) {
+          // Persist the same root across crash/retry so server-side cutover leases,
+          // import-item hashes and nested idempotency keys remain stable.
+          const savedRoot = await syncMetaService.getMeta(
+            PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey }
+          );
+          const batchId = savedRoot || `products-${licenseKey}-${Date.now()}`;
+          if (!savedRoot) {
+            await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, batchId, { licenseKey });
+          }
+          pharmacyCutoverRoot = batchId;
+
+          for (let index = 0; index < localCatalog.categories.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
+            const categories = localCatalog.categories.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(categoryToCloudPayload);
+            const response = await productCloudRepository.migrateLocalCatalog({
+              licenseKey,
+              categories,
+              products: [],
+              batches: [],
+              batchId: `${batchId}-categories-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
+            });
+
+            const blocked = await getBlockedMigrationResult({
+              licenseKey,
+              response,
+              expectedCounts: { categories: categories.length, products: 0, batches: 0 }
+            });
+            if (blocked) return blocked;
+
+            await productLocalRepository.applyCloudCatalog(response);
+          }
+
+          // Recipe writes now require referenced ingredients to exist on the server.
+          // Keep all ingredient batches ahead of dishes during initial cutover.
+          const orderedProducts = [...localCatalog.products].sort((a, b) =>
+            Number(b.productType === 'ingredient') - Number(a.productType === 'ingredient'));
+          for (let index = 0; index < orderedProducts.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
+            const products = orderedProducts.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(productToCloudPayload);
+            const response = await productCloudRepository.migrateLocalCatalog({
+              licenseKey,
+              categories: [],
+              products,
+              batches: [],
+              batchId: `${batchId}-products-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
+            });
+
+            const blocked = await getBlockedMigrationResult({
+              licenseKey,
+              response,
+              expectedCounts: { categories: 0, products: products.length, batches: 0 }
+            });
+            if (blocked) return blocked;
+
+            await productLocalRepository.applyCloudCatalog(response);
+          }
+
+          for (let index = 0; index < localCatalog.batches.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
+            const batches = localCatalog.batches.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(batchToCloudPayload);
+
+            const response = await productCloudRepository.migrateLocalCatalog({
+              licenseKey,
+              categories: [],
+              products: [],
+              batches,
+              batchId: `${batchId}-batches-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
+            });
+
+            const blocked = await getBlockedMigrationResult({
+              licenseKey,
+              response,
+              expectedCounts: { categories: 0, products: 0, batches: batches.length }
+            });
+            if (blocked) return blocked;
+
+            await productLocalRepository.applyCloudCatalog(response);
+          }
+        }
+
+        const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
+        if (snapshot?.success !== true) return snapshot;
+
+        if (needsPharmacyCutoverClose && pharmacyCutoverRoot) {
+          const closed = await productCloudRepository.completePharmacyInventoryCutover({
+            licenseKey,
+            batchRoot: pharmacyCutoverRoot
+          });
+          if (closed?.success !== true) {
+            const issues = [{ code: 'PHARMACY_CUTOVER_CLOSE_FAILED', message: 'No se cerró el corte histórico en Cloud.' }];
+            await saveBlockedMigrationConflict({ licenseKey, issues });
+            return { success: false, blocked: true, issues, response: closed };
+          }
+        }
+
+        await syncMetaService.setMeta(migratedKey, true, { licenseKey });
+        await syncMetaService.setMeta(PRODUCTS_MIGRATED_AT_META_KEY, nowIso(), { licenseKey });
+        await syncMetaService.setMeta(PRODUCTS_MIGRATION_WARNING_META_KEY, null, { licenseKey });
+        await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey });
+
+        Logger.log(`[Products/Migration] Migracion inicial completada. Local=${totalLocalRows}, snapshot=${snapshot.applied || 0}`);
+        notifyProductsChanged({ source: 'productMigrationService.runInitialMigrationIfNeeded' });
+
+        return {
+          success: true,
+          migrated: totalLocalRows,
+          snapshotCount: snapshot.applied || 0
+        };
       }
-      pharmacyCutoverRoot = batchId;
-
-      for (let index = 0; index < localCatalog.categories.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-        const categories = localCatalog.categories.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(categoryToCloudPayload);
-        const response = await productCloudRepository.migrateLocalCatalog({
-          licenseKey,
-          categories,
-          products: [],
-          batches: [],
-          batchId: `${batchId}-categories-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-        });
-
-        const blocked = await getBlockedMigrationResult({
-          licenseKey,
-          response,
-          expectedCounts: { categories: categories.length, products: 0, batches: 0 }
-        });
-        if (blocked) return blocked;
-
-        await productLocalRepository.applyCloudCatalog(response);
-      }
-
-      // Recipe writes now require referenced ingredients to exist on the server.
-      // Keep all ingredient batches ahead of dishes during initial cutover.
-      const orderedProducts = [...localCatalog.products].sort((a, b) =>
-        Number(b.productType === 'ingredient') - Number(a.productType === 'ingredient'));
-      for (let index = 0; index < orderedProducts.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-        const products = orderedProducts.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(productToCloudPayload);
-        const response = await productCloudRepository.migrateLocalCatalog({
-          licenseKey,
-          categories: [],
-          products,
-          batches: [],
-          batchId: `${batchId}-products-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-        });
-
-        const blocked = await getBlockedMigrationResult({
-          licenseKey,
-          response,
-          expectedCounts: { categories: 0, products: products.length, batches: 0 }
-        });
-        if (blocked) return blocked;
-
-        await productLocalRepository.applyCloudCatalog(response);
-      }
-
-      for (let index = 0; index < localCatalog.batches.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-        const batches = localCatalog.batches.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(batchToCloudPayload);
-
-        const response = await productCloudRepository.migrateLocalCatalog({
-          licenseKey,
-          categories: [],
-          products: [],
-          batches,
-          batchId: `${batchId}-batches-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-        });
-
-        const blocked = await getBlockedMigrationResult({
-          licenseKey,
-          response,
-          expectedCounts: { categories: 0, products: 0, batches: batches.length }
-        });
-        if (blocked) return blocked;
-
-        await productLocalRepository.applyCloudCatalog(response);
-      }
-    }
-
-    const snapshot = await this.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
-    if (snapshot?.success !== true) return snapshot;
-
-    if (needsPharmacyCutoverClose && pharmacyCutoverRoot) {
-      const closed = await productCloudRepository.completePharmacyInventoryCutover({
-        licenseKey,
-        batchRoot: pharmacyCutoverRoot
-      });
-      if (closed?.success !== true) {
-        const issues = [{ code: 'PHARMACY_CUTOVER_CLOSE_FAILED', message: 'No se cerró el corte histórico en Cloud.' }];
-        await saveBlockedMigrationConflict({ licenseKey, issues });
-        return { success: false, blocked: true, issues, response: closed };
-      }
-    }
-
-    await syncMetaService.setMeta(migratedKey, true, { licenseKey });
-    await syncMetaService.setMeta(PRODUCTS_MIGRATED_AT_META_KEY, nowIso(), { licenseKey });
-    await syncMetaService.setMeta(PRODUCTS_MIGRATION_WARNING_META_KEY, null, { licenseKey });
-    await syncMetaService.setMeta(PRODUCTS_MIGRATION_BATCH_ROOT_META_KEY, null, { licenseKey });
-
-    Logger.log(`[Products/Migration] Migracion inicial completada. Local=${totalLocalRows}, snapshot=${snapshot.applied || 0}`);
-    notifyProductsChanged({ source: 'productMigrationService.runInitialMigrationIfNeeded' });
-
-    return {
-      success: true,
-      migrated: totalLocalRows,
-      snapshotCount: snapshot.applied || 0
-    };
+    });
     })();
 
     if (!licenseKey) return operation;
