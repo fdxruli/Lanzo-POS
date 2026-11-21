@@ -11,6 +11,27 @@ import { normalizeBarcodeKey } from '../../../../services/products/productMapper
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { compressImage, generateID } from '../../../../services/utils';
 import { queryBatchesByProductIdAndActive } from '../../../../services/database';
+import Logger from '../../../../services/Logger';
+
+const PRODUCT_SAVE_UNCERTAIN_CODES = new Set([
+  'PRODUCT_SAVE_RESULT_MISSING',
+  'PRODUCT_SYNC_CONFIRMATION_MISSING',
+  'PRODUCT_CATEGORY_CONFIRMATION_MISSING',
+  'PRODUCT_CATEGORY_NOT_CONFIRMED'
+]);
+
+const getProductSaveCode = (result, fallback) => {
+  const candidate = result?.code || result?.error?.code;
+  return typeof candidate === 'string' && /^[A-Z0-9_]{1,64}$/.test(candidate)
+    ? candidate
+    : fallback;
+};
+
+const getProductSaveMessage = (result) => (
+  (typeof result?.message === 'string' && result.message.trim())
+  || (typeof result?.error?.message === 'string' && result.error.message.trim())
+  || ''
+);
 
 const comparableValues = (values) => JSON.stringify(values, (_key, value) => {
   if (typeof File !== 'undefined' && value instanceof File) return `file:${value.name}:${value.size}:${value.lastModified}`;
@@ -32,6 +53,7 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
   ));
   const [errors, setErrors] = useState({ fieldErrors: {}, globalErrors: [] });
   const [isSaving, setIsSaving] = useState(false);
+  const [saveOutcome, setSaveOutcome] = useState(null);
   const submitInFlightRef = useRef(false);
   const [barcodeMatches, setBarcodeMatches] = useState([]);
   const [barcodeLookupFailed, setBarcodeLookupFailed] = useState(false);
@@ -40,6 +62,8 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
   const blobUrlRef = useRef(null);
   const initialValuesRef = useRef(comparableValues(initialDefaults));
   const originalApparelBatchesRef = useRef([]);
+
+  useEffect(() => { setSaveOutcome(null); }, [values]);
 
   useEffect(() => { setRebasedProduct(null); }, [productToEdit?.id]);
 
@@ -228,11 +252,16 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
         setErrors({ ...nextErrors, fieldErrors: { ...nextErrors.fieldErrors, barcode: 'No se pudo comprobar el código localmente. Inténtalo de nuevo.' } });
         return false;
       }
+      setSaveOutcome(null);
       setIsSaving(true);
       try {
         const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
         const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
         if (result?.success === false && ['APPAREL_DUPLICATE_SKU', 'APPAREL_SKU_CHECK_FAILED', 'DUPLICATE_SKU'].includes(result.code)) {
+          Logger.warn('[Products] Guardado V2 rechazado por SKU.', {
+            stage: 'form_on_save_result',
+            code: getProductSaveCode(result, 'PRODUCT_VARIANT_SKU_REJECTED')
+          });
           setErrors((previous) => ({
             ...previous,
             fieldErrors: { ...previous.fieldErrors, quickVariants: result.message || 'No se pudo guardar el SKU de la variante.' }
@@ -241,6 +270,10 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
         }
         if (result?.success === false && ['DUPLICATE_BARCODE', 'DUPLICATE_PRODUCT_KEY'].includes(result.code || result.error?.code)) {
           const code = result.code || result.error?.code;
+          Logger.warn('[Products] Guardado V2 rechazado por código duplicado.', {
+            stage: 'form_on_save_result',
+            code: getProductSaveCode(result, 'DUPLICATE_PRODUCT_KEY')
+          });
           if (code === 'DUPLICATE_PRODUCT_KEY' && normalizedRubro === 'apparel' && values.hasVariants) {
             setErrors((previous) => ({
               ...previous,
@@ -261,7 +294,13 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
           }));
           return false;
         }
-        if (result?.success === false) return false;
+        if (result?.cancelled) {
+          setSaveOutcome({
+            kind: 'cancelled',
+            message: result.message || 'Guardado cancelado. Conservamos los cambios del formulario.'
+          });
+          return false;
+        }
         if (result?.partial) {
           originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
             originalApparelBatchesRef.current,
@@ -273,9 +312,55 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
           if (cloudVersion !== null && cloudVersion !== undefined) {
             setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
           }
+          if (!result.errorPresented) {
+            setSaveOutcome({
+              kind: 'warning',
+              message: getProductSaveMessage(result) || 'El producto se guardó parcialmente. Conservamos el borrador para que puedas revisar los cambios pendientes.'
+            });
+          }
           return result;
         }
-        if (result !== false && normalizedRubro === 'apparel' && effectiveProductToEdit?.id && result?.appliedVariants) {
+        if (result?.errorPresented) return false;
+        if (result?.success === false) {
+          const code = getProductSaveCode(result, 'PRODUCT_SAVE_REJECTED_UNREPORTED');
+          const uncertain = PRODUCT_SAVE_UNCERTAIN_CODES.has(code);
+          Logger.warn('[Products] Guardado V2 rechazado sin mensaje previo.', {
+            stage: 'form_on_save_result',
+            code
+          });
+          setSaveOutcome({
+            kind: uncertain ? 'warning' : 'error',
+            message: uncertain
+              ? `Cloud no confirmó el resultado. Conservamos el borrador; verifica el catálogo antes de volver a guardar. Código: ${code}.`
+              : getProductSaveMessage(result) || `No se confirmó el guardado. Conservamos el borrador. Código: ${code}.`
+          });
+          return false;
+        }
+        const confirmedSave = result === true || result?.success === true;
+        if (!confirmedSave) {
+          const resultMissing = result === null || result === undefined;
+          const code = resultMissing
+            ? 'PRODUCT_SAVE_RESULT_MISSING'
+            : getProductSaveCode(result, 'PRODUCT_SAVE_RESULT_UNRECOGNIZED');
+          const uncertain = resultMissing
+            || result?.success !== false
+            || PRODUCT_SAVE_UNCERTAIN_CODES.has(code);
+          const resultReason = uncertain && !PRODUCT_SAVE_UNCERTAIN_CODES.has(code)
+            ? getProductSaveMessage(result)
+            : '';
+          Logger.warn('[Products] Guardado V2 sin confirmación reconocida.', {
+            stage: resultMissing ? 'form_on_save_result' : 'form_save_result_validation',
+            code
+          });
+          setSaveOutcome({
+            kind: uncertain ? 'warning' : 'error',
+            message: uncertain
+              ? `${resultReason ? `${resultReason} ` : ''}No recibimos confirmación del guardado. Conservamos el borrador; verifica el catálogo antes de volver a guardar. Código: ${code}.`
+              : getProductSaveMessage(result) || `No se confirmó el guardado. Conservamos el borrador. Código: ${code}.`
+          });
+          return false;
+        }
+        if (normalizedRubro === 'apparel' && effectiveProductToEdit?.id && result?.appliedVariants) {
           const rebasedVariants = rebaseApparelVariantSnapshot(
             originalApparelBatchesRef.current,
             values.quickVariants,
@@ -285,21 +370,48 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
           const nextValues = { ...values, quickVariants: rebasedVariants };
           setValues(nextValues);
           markClean(nextValues);
+          if (!result.messageHandled) {
+            setSaveOutcome({
+              kind: result.pending ? 'warning' : 'success',
+              message: getProductSaveMessage(result) || (result.pending
+                ? 'Producto guardado localmente. La sincronización sigue pendiente.'
+                : 'Producto guardado.')
+            });
+          }
           return result;
         }
-        if (result !== false && resetAfterSave && !productToEdit) {
+        if (resetAfterSave && !productToEdit) {
           const next = getDefaults();
           setValues(next);
           markClean(next);
           setErrors({ fieldErrors: {}, globalErrors: [] });
-        } else if (result !== false) {
+        } else {
           markClean(values);
         }
+        if (!resetAfterSave && !result?.messageHandled) {
+          setSaveOutcome({
+            kind: result?.pending ? 'warning' : 'success',
+            message: getProductSaveMessage(result) || (result?.pending
+              ? 'Producto guardado localmente. La sincronización sigue pendiente.'
+              : 'Producto guardado.')
+          });
+        }
         return result;
+      } catch (error) {
+        const code = getProductSaveCode(error, 'PRODUCT_SAVE_CALLBACK_THROWN');
+        Logger.warn('[Products] La respuesta del guardado V2 no pudo completarse.', {
+          stage: 'form_on_save_exception',
+          code
+        });
+        setSaveOutcome({
+          kind: 'warning',
+          message: `No pudimos confirmar el resultado del guardado. Conservamos el borrador; verifica el catálogo antes de volver a guardar. Código: ${code}.`
+        });
+        return false;
       } finally { setIsSaving(false); }
     } finally {
       submitInFlightRef.current = false;
     }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, saveOutcome, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }
