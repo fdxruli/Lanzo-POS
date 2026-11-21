@@ -856,7 +856,7 @@ export const createLocalTenantGuard = ({
   const activeSyncLeases = new Map();
   let nextSyncLeaseId = 1;
   let lastAttemptedTenantIdentity = null;
-  let retryableRuntimeIdentity = null;
+  let retryableRuntimeContext = null;
   const resolveIdentity = (source) => resolveActiveTenantIdentity(source, cryptoProvider);
   const readRuntimeBrowserStorageSnapshot = activeTenantStorageInspector || (() => (
     readTenantOwnedBrowserStorageSnapshot(browserStorage)
@@ -867,7 +867,7 @@ export const createLocalTenantGuard = ({
   const runtimeSessionStorage = activeTenantStorageInspector ? null : tenantSessionStorage;
   const blockForLocalTenantError = (error) => {
     if (!isLocalTenantAccessError(error)) return;
-    retryableRuntimeIdentity = null;
+    retryableRuntimeContext = null;
     controller.block(
       error,
       error.code === LOCAL_TENANT_ERROR_CODES.MISMATCH
@@ -931,13 +931,23 @@ export const createLocalTenantGuard = ({
   const assertLocalTenantAccess = async (source, { reason = 'license_validation' } = {}) => {
     const activeIdentity = await resolveIdentity(source);
     lastAttemptedTenantIdentity = activeIdentity;
+    const controllerState = controller.getState();
     const alreadyGranted = controller.isGrantedFor(activeIdentity);
     const runtimeReady = database !== defaultDatabase || getTenantRuntimeReadiness().ready;
     const runtimePreparationRequired = !alreadyGranted || !runtimeReady;
-    if (alreadyGranted && database === defaultDatabase && !runtimeReady) {
-      retryableRuntimeIdentity = activeIdentity;
-    } else if (retryableRuntimeIdentity && !areLocalTenantAliasesCompatible(retryableRuntimeIdentity.aliases, activeIdentity.aliases)) {
-      retryableRuntimeIdentity = null;
+    const retryingAuthorizedRuntimeRecovery = !alreadyGranted
+      && controllerState.enabled
+      && controllerState.status === LOCAL_TENANT_STATUS.LOCKED
+      && controllerState.reason === 'tenant_runtime_recovery'
+      && reason === 'individual_product_recovery_inspect'
+      && retryableRuntimeContext?.operation === reason
+      && retryableRuntimeContext.identity
+      && areLocalTenantAliasesCompatible(retryableRuntimeContext.identity.aliases, activeIdentity.aliases);
+    if (alreadyGranted && database === defaultDatabase && !runtimeReady
+      && reason === 'individual_product_recovery_inspect') {
+      retryableRuntimeContext = { identity: activeIdentity, operation: reason };
+    } else if (retryableRuntimeContext && !retryingAuthorizedRuntimeRecovery) {
+      retryableRuntimeContext = null;
     }
 
     if (
@@ -947,7 +957,7 @@ export const createLocalTenantGuard = ({
       const error = new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.MISMATCH, {
         reason: 'tenant_transition_during_active_sync'
       });
-      retryableRuntimeIdentity = null;
+      retryableRuntimeContext = null;
       controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
       throw error;
     }
@@ -956,9 +966,13 @@ export const createLocalTenantGuard = ({
     // replaced. This ordering also makes the brief B-open/B-binding window
     // fail closed through the runtime dbcore middleware.
     if (runtimePreparationRequired) {
-      controller.lock(alreadyGranted ? 'tenant_runtime_recovery' : 'tenant_transition');
+      const recoveryPreparation = alreadyGranted || retryingAuthorizedRuntimeRecovery;
+      const preparationReason = recoveryPreparation
+        ? 'tenant_runtime_recovery'
+        : 'tenant_transition';
+      controller.lock(preparationReason);
       if (database === defaultDatabase) closeTenantRuntime();
-      controller.enable(reason);
+      controller.enable(recoveryPreparation ? preparationReason : reason);
       if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
     }
     const nativeDatabase = await getNativeDatabase();
@@ -979,7 +993,7 @@ export const createLocalTenantGuard = ({
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
         if (database === defaultDatabase) await markTenantRuntimeReady();
         if (runtimePreparationRequired) controller.grant(activeIdentity, alreadyGranted ? 'runtime_recovered' : 'same_tenant');
-        retryableRuntimeIdentity = null;
+        retryableRuntimeContext = null;
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
 
@@ -993,7 +1007,7 @@ export const createLocalTenantGuard = ({
           snapshot,
           'bound_tenant_mismatch'
         );
-        retryableRuntimeIdentity = null;
+        retryableRuntimeContext = null;
         controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
         throw error;
       }
@@ -1014,7 +1028,7 @@ export const createLocalTenantGuard = ({
               ? 'conflicting_legacy_tenant_evidence'
               : 'missing_legacy_ownership_quorum'
           );
-          retryableRuntimeIdentity = null;
+          retryableRuntimeContext = null;
           controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
           throw error;
         }
@@ -1042,14 +1056,14 @@ export const createLocalTenantGuard = ({
             committed,
             'legacy_tenant_mismatch'
           );
-          retryableRuntimeIdentity = null;
+          retryableRuntimeContext = null;
           controller.block(error, LOCAL_TENANT_STATUS.MISMATCH);
           throw error;
         }
 
         if (database === defaultDatabase) await markTenantRuntimeReady();
         controller.grant(activeIdentity, bindingSource);
-        retryableRuntimeIdentity = null;
+        retryableRuntimeContext = null;
         return {
           status: bindingSource === 'legacy_internal_evidence'
             ? 'legacy_backfilled'
@@ -1074,7 +1088,7 @@ export const createLocalTenantGuard = ({
       latest,
       'snapshot_changed_repeatedly'
     );
-    retryableRuntimeIdentity = null;
+    retryableRuntimeContext = null;
     controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
     throw error;
   };
@@ -1098,8 +1112,11 @@ export const createLocalTenantGuard = ({
     const state = controller.getState();
     const isAuthorizedRuntimeRetry = state.enabled
       && state.status === LOCAL_TENANT_STATUS.LOCKED
-      && retryableRuntimeIdentity
-      && areLocalTenantAliasesCompatible(retryableRuntimeIdentity.aliases, identity.aliases);
+      && state.reason === 'tenant_runtime_recovery'
+      && reason === 'individual_product_recovery_inspect'
+      && retryableRuntimeContext?.operation === reason
+      && retryableRuntimeContext.identity
+      && areLocalTenantAliasesCompatible(retryableRuntimeContext.identity.aliases, identity.aliases);
     if (!state.enabled || (!controller.isGrantedFor(identity) && !isAuthorizedRuntimeRetry)) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, { reason });
     }
@@ -1130,13 +1147,13 @@ export const createLocalTenantGuard = ({
     controller,
     initialize: (reason = 'bootstrap') => controller.enable(reason),
     lock: (reason = 'no_active_license') => {
-      retryableRuntimeIdentity = null;
+      retryableRuntimeContext = null;
       return controller.lock(reason);
     },
     reset: () => {
       activeSyncLeases.clear();
       lastAttemptedTenantIdentity = null;
-      retryableRuntimeIdentity = null;
+      retryableRuntimeContext = null;
       return controller.reset();
     },
     getState: () => controller.getState(),

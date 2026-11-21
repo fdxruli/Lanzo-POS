@@ -329,7 +329,7 @@ describe('tenant runtime router', () => {
     }
   });
 
-  it('allows only the previously granted tenant to retry a failed runtime reopen', async () => {
+  it('allows only the inspection for the previously granted tenant to retry a failed runtime reopen', async () => {
     const licenseKey = `RUNTIME-RETRY-FAIL-${crypto.randomUUID()}`;
     const source = { license_key: licenseKey };
     let databaseName = null;
@@ -356,8 +356,16 @@ describe('tenant runtime router', () => {
       await expect(runWithLocalTenantSyncLease(source, { reason: 'individual_product_recovery_inspect' }, async () => (
         assertLocalTenantAccess(source, { reason: 'individual_product_recovery_inspect' })
       ))).rejects.toMatchObject({ code: 'DB_OPEN_RETRY_TEST' });
-      expect(localTenantAccessController.getState().status).toBe('locked');
+      expect(localTenantAccessController.getState()).toMatchObject({
+        status: 'locked',
+        reason: 'tenant_runtime_recovery'
+      });
       expect(getActiveTenantRuntime()).toBeNull();
+
+      for (const reason of ['product_sync', 'individual_product_recovery', 'device_change']) {
+        await expect(runWithLocalTenantSyncLease(source, { reason }, async () => true))
+          .rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
+      }
 
       await expect(runWithLocalTenantSyncLease(
         { license_key: `RUNTIME-RETRY-OTHER-${crypto.randomUUID()}` },
@@ -365,6 +373,15 @@ describe('tenant runtime router', () => {
         async () => true
       )).rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
       expect(getActiveTenantRuntime()).toBeNull();
+
+      localTenantAccessController.lock('device_change');
+      await expect(runWithLocalTenantSyncLease(
+        source,
+        { reason: 'individual_product_recovery_inspect' },
+        async () => true
+      )).rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
+      expect(getActiveTenantRuntime()).toBeNull();
+      localTenantAccessController.lock('tenant_runtime_recovery');
 
       await expect(runWithLocalTenantSyncLease(source, { reason: 'individual_product_recovery_inspect' }, async () => (
         assertLocalTenantAccess(source, { reason: 'individual_product_recovery_inspect' })
