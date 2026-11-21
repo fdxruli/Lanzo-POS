@@ -2,6 +2,7 @@ import './syncDexieBootstrap';
 import { db } from '../db/dexie';
 import Logger from '../Logger';
 import { CONFLICT_STATUS, POS_SYNC_STORES } from './syncConstants';
+import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 
 const nowIso = () => new Date().toISOString();
 
@@ -49,6 +50,21 @@ export const syncConflictService = {
       .equals(CONFLICT_STATUS.PENDING)
       .filter((row) => !entityType || row.entityType === entityType)
       .limit(limit)
+      .toArray();
+  },
+
+  async listConflictsForEntity({ licenseKey = null, entityType = null, entityId = null } = {}) {
+    if (!licenseKey || !entityType || !entityId) {
+      throw Object.assign(new Error('SYNC_CONFLICT_ENTITY_IDENTITY_REQUIRED'), {
+        code: 'SYNC_CONFLICT_ENTITY_IDENTITY_REQUIRED'
+      });
+    }
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'sync_conflict_entity_read' });
+    await ensureOpen();
+    return db.table(POS_SYNC_STORES.CONFLICTS)
+      .where('entityId')
+      .equals(String(entityId))
+      .filter((row) => row.entityType === entityType)
       .toArray();
   },
 

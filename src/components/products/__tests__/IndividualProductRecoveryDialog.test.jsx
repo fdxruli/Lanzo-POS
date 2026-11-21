@@ -68,6 +68,65 @@ describe('IndividualProductRecoveryDialog', () => {
     expect(mocks.recoverProduct).not.toHaveBeenCalled();
   });
 
+  it('shows verified portal absence and the exact product and variant facts without displaying null identifiers', async () => {
+    mocks.inspectProduct.mockResolvedValue({
+      ...report(true),
+      portal: { exists: false },
+      publication: null,
+      product: {
+        ...report(true).product,
+        productType: 'sellable',
+        sku: 'TEE-ORIGINAL',
+        barcode: '7501000000017',
+        rubroContext: 'apparel',
+        references: {
+          category: { id: 'category-playeras', name: 'Playeras', local: 'active', cloud: 'missing', action: 'create_with_original_id' },
+          recipe: []
+        }
+      },
+      batches: [{
+        id: 'variant-size-m-black',
+        productId: product.id,
+        sku: 'TEE-M-BLK',
+        manufacturerBatchId: undefined,
+        attributes: { size: 'M', color: 'black' },
+        label: 'TEE-M-BLK',
+        stock: 5,
+        committedStock: 0,
+        status: 'active',
+        cloudStatus: 'absent'
+      }],
+      issues: [{ code: 'CLOUD_CATEGORY_NAME_CONFLICT', message: 'Cloud ya tiene una categoría del mismo nombre.' }]
+    });
+
+    render(<IndividualProductRecoveryDialog product={product} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/Portal: No existe; la revisión del catálogo Cloud continúa de forma independiente/)).toBeInTheDocument();
+    expect(screen.getByText('Contexto histórico del producto: apparel')).toBeInTheDocument();
+    expect(screen.getByText('SKU: TEE-ORIGINAL')).toBeInTheDocument();
+    expect(screen.getByText('Código de barras: 7501000000017')).toBeInTheDocument();
+    expect(screen.getByText('ID original variant-size-m-black · producto padre local-product-1 · SKU TEE-M-BLK')).toBeInTheDocument();
+    expect(screen.getByText('Atributos: size: M · color: black')).toBeInTheDocument();
+    expect(screen.getByText(/\[CLOUD_CATEGORY_NAME_CONFLICT\]/)).toBeInTheDocument();
+    expect(screen.queryByText(/null|undefined/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Publicación:/)).not.toBeInTheDocument();
+  });
+
+  it('shows a portal read error as unknown while retaining the independent Cloud report and blocker code', async () => {
+    mocks.inspectProduct.mockResolvedValue({
+      ...report(false),
+      portal: { exists: null, verified: false },
+      issues: [{ code: 'ECOMMERCE_STAFF_PERMISSION_DENIED', message: 'No se pudo confirmar el estado del portal.' }]
+    });
+
+    render(<IndividualProductRecoveryDialog product={product} onClose={vi.fn()} />);
+
+    expect(await screen.findByText(/Portal: No se pudo confirmar; la revisión del catálogo Cloud continúa/)).toBeInTheDocument();
+    expect(screen.getByText(/\[ECOMMERCE_STAFF_PERMISSION_DENIED\]/)).toBeInTheDocument();
+    expect(screen.getByText(/Cloud: Sin fuente con este ID/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirmar recuperación' })).not.toBeInTheDocument();
+  });
+
   it('shows a retryable runtime block and refreshes without starting product recovery', async () => {
     mocks.inspectProduct
       .mockResolvedValueOnce({
