@@ -138,6 +138,17 @@ describe('ProductMenu stable real pagination', () => {
     expect(onSelectCategory).toHaveBeenCalledWith('snacks');
   });
 
+  it('distinguishes a failed product search from a successful search with no matches', () => {
+    const props = { ...defaultProps, searchTerm: 'Pilas', products: [], hasMore: false };
+    const { rerender } = render(<ProductMenu {...props} />);
+    expect(screen.getByText('No hay coincidencias.')).toBeInTheDocument();
+
+    rerender(<ProductMenu {...props} searchFailed />);
+    expect(screen.getByRole('status')).toHaveTextContent('No se pudo completar la búsqueda.');
+    expect(screen.queryByText('No hay coincidencias.')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 resultados')).not.toBeInTheDocument();
+  });
+
   it('renders every accumulated page instead of slicing back to the page size', () => {
     const accumulated = Array.from({ length: 15 }, (_, index) => ({
       id: `accumulated-${index}`, name: `Accumulated ${index}`, stock: 10

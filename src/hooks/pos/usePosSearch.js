@@ -1,9 +1,10 @@
-// src/hooks/usePosSearch.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from '../useDebounce';
 import { useCatalogReconnect } from '../useCatalogReconnect';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db, searchProductsInDB, STORES } from '../../services/database';
+import { normalizeProductSearchValue } from '../../services/db/productSearchIndex';
+import { isPosCatalogEligible } from '../../services/products/productCatalogQueryService';
 import {
     CAT_DYNAMIC_EXPIRED,
     CAT_DYNAMIC_OUT_OF_STOCK,
@@ -15,24 +16,9 @@ import {
 } from '../../services/products/productMenuEligibility';
 import Logger from '../../services/Logger';
 
-/**
- * Hook para manejar la busqueda de productos en el POS.
- * Encapsula el debounce, el estado visual (menuVisual) y la sincronizacion de busqueda.
- *
- * @param {Object} options - Opciones del hook
- * @param {number} options.debounceMs - Milisegundos de debounce (default: 300)
- * @returns {{
- *   searchTerm: string,
- *   setSearchTerm: (term: string) => void,
- *   menuVisual: Array,
- *   categories: Array,
- *   activeCategoryId: string|null,
- *   handleSelectCategory: (categoryId: string|null) => void,
- *   hasOutOfStockItems: boolean,
- *   hasExpiredItems: boolean,
- *   refreshOutOfStock: () => Promise<void>
- * }}
- */
+const EMPTY_PRODUCTS = [];
+
+/** Mantiene el catálogo paginado y la consulta activa del POS. */
 export function usePosSearch({ debounceMs = 300 } = {}) {
     const menu = usePosCatalogStore((state) => state.items);
     const categories = usePosCatalogStore((state) => state.categories);
@@ -43,6 +29,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const isLoadingInitial = usePosCatalogStore((state) => state.isLoadingInitial);
     const isLoadingNextPage = usePosCatalogStore((state) => state.isLoadingNextPage);
     const activeViewKey = usePosCatalogStore((state) => state.viewKey);
+    const sessionIdentity = usePosCatalogStore((state) => state.sessionIdentity);
     const loadFirstPage = usePosCatalogStore((state) => state.loadFirstPage);
     const { reconnect, catalogLoading, catalogUnavailable } = useCatalogReconnect(loadFirstPage, activeViewKey);
     const catalogBlocked = catalogLoading || catalogUnavailable;
@@ -55,97 +42,53 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const checkHasExpiredProducts = usePosCatalogStore((state) => state.checkHasExpiredProducts);
 
     const [searchTerm, setSearchTerm] = useState('');
-    const debouncedSearchTerm = useDebounce(searchTerm, debounceMs);
-    const [visualCatalog, setVisualCatalog] = useState({ items: [], reconnect: null });
-    const visualCatalogLoading = visualCatalog.reconnect !== reconnect;
+    const term = normalizeProductSearchValue(searchTerm);
+    const debouncedTerm = useDebounce(term, debounceMs);
+    const [searchResult, setSearchResult] = useState(null);
     const [hasOutOfStockItems, setHasOutOfStockItems] = useState(false);
     const [hasExpiredItems, setHasExpiredItems] = useState(false);
     const [assignedCategoryIds, setAssignedCategoryIds] = useState(null);
 
-    const isSearchEligible = useCallback((item) => {
-        if (item?.isActive === false || item?.productType === 'ingredient' || item?.product_type === 'ingredient') return false;
-        if (item?.deletedAt || item?.deletedTimestamp) return false;
-        if (categoryId !== null && categoryId !== undefined && item.categoryId !== categoryId) return false;
-        const outOfStock = isOutOfStockForPosMenu(item);
-        return outOfStockOnly ? outOfStock : !outOfStock;
-    }, [categoryId, outOfStockOnly]);
-
-    const applyActiveFilters = useCallback(async (items = []) => {
-        const expiredProductIds = await resolveExpiredProductIdsForPosMenu(items, { db, STORES });
-
-        return items.filter((item) => {
-            if (item?.isActive === false) return false;
-            if (item?.productType === 'ingredient') return false;
-
-            const matchesCategory =
-                (categoryId === null || categoryId === undefined) ||
-                item.categoryId === categoryId;
-
-            const isOutOfStock = isOutOfStockForPosMenu(item);
-            const isExpired = expiredProductIds.has(item.id) || isExpiredForPosMenu(item);
-
-            if (outOfStockOnly) {
-                return matchesCategory && isOutOfStock;
-            }
-
-            if (expiredOnly) {
-                return matchesCategory && !isOutOfStock && isExpired;
-            }
-
-            return matchesCategory && !isOutOfStock && !isExpired;
-        });
-    }, [categoryId, outOfStockOnly, expiredOnly]);
+    // Catalog updates invalidate the scoped search, including product reconciliation.
+    const canSearch = Boolean(term) && term === debouncedTerm && !catalogBlocked && !isLoadingInitial;
+    const request = useMemo(() => canSearch ? {
+        term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity
+    } : null, [canSearch, term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity]);
+    const currentSearch = searchResult?.request === request ? searchResult : null;
 
     useEffect(() => {
-        if (catalogBlocked) return;
-        let isActive = true;
+        if (!request) return;
+        let active = true;
+        const { term, categoryId = null, expiredOnly, outOfStockOnly } = request;
 
-        const syncMenuVisual = async () => {
-            const term = debouncedSearchTerm.trim();
-            if (searchTerm.trim() !== term) {
-                setVisualCatalog({ items: [], reconnect });
-                return;
-            }
-
-            if (!term) {
-                const filteredMenu = await applyActiveFilters(menu);
-                if (isActive) {
-                    setVisualCatalog({ items: filteredMenu, reconnect });
-                }
-                return;
-            }
-
+        const search = async () => {
             try {
-                const filteredResults = await searchProductsInDB(term, 'active', categoryId, {
-                    eligible: isSearchEligible,
-                    filterBatch: applyActiveFilters
+                const items = await searchProductsInDB(term, 'active', categoryId, {
+                    eligible: (item) => {
+                        if (!isPosCatalogEligible(item)) return false;
+                        const itemCategoryId = item.categoryId ?? item.category_id ?? null;
+                        if (categoryId !== null && itemCategoryId !== categoryId) return false;
+                        return isOutOfStockForPosMenu(item) === outOfStockOnly;
+                    },
+                    filterBatch: async (items) => {
+                        if (outOfStockOnly) return items;
+                        const expiredIds = await resolveExpiredProductIdsForPosMenu(items, { db, STORES });
+                        return items.filter((item) => (
+                            (expiredIds.has(item.id) || isExpiredForPosMenu(item)) === expiredOnly
+                        ));
+                    }
                 });
-                if (isActive) {
-                    setVisualCatalog({ items: filteredResults, reconnect });
-                }
+                if (active) setSearchResult({ request, items });
             } catch (error) {
+                if (!active) return;
                 Logger.error('Error buscando en POS:', error);
-                if (isActive) {
-                    setVisualCatalog({ items: [], reconnect });
-                }
+                setSearchResult({ request, failed: true });
             }
         };
 
-        syncMenuVisual();
-
-        return () => {
-            isActive = false;
-        };
-    }, [
-        debouncedSearchTerm,
-        searchTerm,
-        menu,
-        applyActiveFilters,
-        catalogBlocked,
-        categoryId,
-        isSearchEligible,
-        reconnect
-    ]);
+        void search();
+        return () => { active = false; };
+    }, [request]);
 
     useEffect(() => {
         if (catalogBlocked) return;
@@ -224,17 +167,20 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         setHasExpiredItems(hasCaducados);
     }, [refreshData, checkHasOutOfStockProducts, checkHasExpiredProducts]);
 
+    const menuVisual = catalogBlocked ? EMPTY_PRODUCTS : term ? currentSearch?.items ?? EMPTY_PRODUCTS : menu;
+
     return {
         searchTerm,
         setSearchTerm,
-        menuVisual: catalogBlocked || visualCatalogLoading ? [] : visualCatalog.items,
+        menuVisual,
+        searchFailed: currentSearch?.failed === true,
         categories: visibleCategories,
         activeCategoryId,
         handleSelectCategory,
         hasOutOfStockItems,
         hasExpiredItems,
-        hasMore: !catalogBlocked && !visualCatalogLoading && hasMore,
-        isLoadingInitial: isLoadingInitial || catalogLoading || visualCatalogLoading,
+        hasMore: !term && !catalogBlocked && hasMore,
+        isLoadingInitial: isLoadingInitial || catalogLoading || (!catalogBlocked && Boolean(term) && !currentSearch),
         catalogUnavailable,
         isLoadingNextPage,
         loadNextPage,
