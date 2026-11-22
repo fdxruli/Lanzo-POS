@@ -3,6 +3,7 @@ import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
+import { useCatalogReconnect } from '../../hooks/useCatalogReconnect';
 import { queryBatchesByProductIdsAndActive, searchProductsInDB } from '../../services/database';
 import {
   INVENTORY_UNCATEGORIZED_FILTER,
@@ -65,11 +66,16 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const hasMore = useInventoryCatalogStore((state) => state.hasMore);
   const isGlobalLoading = useInventoryCatalogStore((state) => state.isLoading);
+  const loadFirstPage = useInventoryCatalogStore((state) => state.loadFirstPage);
+  const filters = useInventoryCatalogStore((state) => state.filters);
+  const { reconnect, catalogLoading, catalogUnavailable } = useCatalogReconnect(loadFirstPage, filters);
+  const catalogBlocked = catalogLoading || catalogUnavailable;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
   const normalizedSearchTerm = searchTerm.trim();
   const [searchResults, setSearchResults] = useState([]);
+  const [searchConnection, setSearchConnection] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearchError, setHasSearchError] = useState(false);
   const [searchExecution, setSearchExecution] = useState(0);
@@ -98,6 +104,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       : `${CATEGORY_OPTION_PREFIX}${categoryFilter}`);
 
   useEffect(() => {
+    if (catalogBlocked) return;
     let isActive = true;
     const requestId = ++searchRequestId.current;
     const term = appliedSearchTerm;
@@ -125,6 +132,8 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         searchTimeout.current = null;
         setIsSearching(false);
         setHasSearchError(true);
+        if (reconnect) setSearchResults([]);
+        setSearchConnection(reconnect);
       }
     }, PRODUCT_SEARCH_TIMEOUT_MS);
     searchTimeout.current = timeoutId;
@@ -152,6 +161,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         console.error('Error buscando productos en ProductList:', error);
         if (isActive && requestId === searchRequestId.current) {
           setHasSearchError(true);
+          if (reconnect) setSearchResults([]);
         }
       } finally {
         if (timeoutId !== null) {
@@ -160,6 +170,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         }
         if (isActive && requestId === searchRequestId.current) {
           setIsSearching(false);
+          setSearchConnection(reconnect);
         }
       }
     };
@@ -173,31 +184,33 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         if (searchTimeout.current === timeoutId) searchTimeout.current = null;
       }
     };
-  }, [appliedSearchTerm, categoryFilter, searchExecution, statusFilter]);
+  }, [appliedSearchTerm, catalogBlocked, categoryFilter, reconnect, searchExecution, statusFilter]);
 
   const isSearchMode = appliedSearchTerm.length > 0;
   const isSearchEditPending = isSearchMode && normalizedSearchTerm !== appliedSearchTerm;
-  const isSearchPending = isSearchMode && isSearching;
-  const showSearchError = isSearchMode && hasSearchError;
+  const isSearchPending = isSearchMode && (isSearching || searchConnection !== reconnect);
+  const showSearchError = !catalogBlocked && searchConnection === reconnect && isSearchMode && hasSearchError;
   const isInitialCatalogLoading = !isSearchMode && (isLoading || isGlobalLoading) && products.length === 0;
-  const displayProducts = useMemo(() => (
-    isSearchMode
-      ? searchResults.filter((product) => isInventoryCatalogEligible(product, {
-        status: statusFilter,
-        productType: 'sellable',
-        categoryId: categoryFilter
-      }))
-      : products
-  ), [categoryFilter, isSearchMode, products, searchResults, statusFilter]);
+  const displayProducts = useMemo(() => {
+    if (catalogBlocked) return [];
+    if (!isSearchMode) return products;
+    if (searchConnection !== reconnect) return [];
+    return searchResults.filter((product) => isInventoryCatalogEligible(product, {
+      status: statusFilter,
+      productType: 'sellable',
+      categoryId: categoryFilter
+    }));
+  }, [catalogBlocked, categoryFilter, isSearchMode, products, reconnect, searchConnection, searchResults, statusFilter]);
   const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
 
   useEffect(() => {
+    if (catalogBlocked) return;
     let cancelled = false;
     queryBatchesByProductIdsAndActive(visibleProductIds)
       .then((batches) => { if (!cancelled) setBatchSummaries(getProductBatchSummaryMap(batches)); })
       .catch(() => { if (!cancelled) setBatchSummaries(new Map()); });
     return () => { cancelled = true; };
-  }, [visibleProductIds]);
+  }, [catalogBlocked, visibleProductIds]);
 
   const handleOpenWaste = (product) => {
     setProductForWaste(product);
@@ -377,7 +390,9 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {isInitialCatalogLoading ? (
+      {catalogUnavailable ? (
+        <p role="status">El catálogo local no está disponible.</p>
+      ) : catalogLoading || isInitialCatalogLoading ? (
         <div className="ui-loading-state loader-container" role="status">
           <div className="ui-spinner spinner" aria-hidden="true" />
           <p>Cargando inventario...</p>
@@ -618,7 +633,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {!isSearchMode && hasMore && (
+      {!catalogBlocked && !isSearchMode && hasMore && (
         <div className="pagination-container">
           <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading}>
             {isGlobalLoading ? 'Cargando...' : 'Cargar más productos'}

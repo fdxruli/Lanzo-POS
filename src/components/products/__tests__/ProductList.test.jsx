@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ProductList from '../ProductList';
 import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 import Dexie from 'dexie';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { searchProductsInTable } from '../../../services/db/productSearch';
 import { buildProductSearchFields } from '../../../services/db/productSearchIndex';
 
@@ -16,8 +17,19 @@ const mocks = vi.hoisted(() => ({
     setFilters: vi.fn(),
     fetchPage: vi.fn(),
     loadInitialProducts: vi.fn(),
+    loadFirstPage: vi.fn(),
     hasMore: false,
     isLoading: false
+  }
+}));
+
+const connection = vi.hoisted(() => ({ attempt: null, listeners: new Set() }));
+vi.mock('../../../services/db/databaseRuntime', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getNativeTenantReconnect: () => connection.attempt,
+  subscribeLocalDatabaseActivity: (listener) => {
+    connection.listeners.add(listener);
+    return () => connection.listeners.delete(listener);
   }
 }));
 
@@ -71,6 +83,8 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  connection.attempt = null;
+  mocks.catalogState.loadFirstPage.mockReset();
   mocks.catalogState.filters = { status: 'all', categoryId: null };
   mocks.catalogState.hasMore = false;
   mocks.catalogState.isLoading = false;
@@ -92,6 +106,34 @@ const createDeferred = () => {
 };
 
 describe('ProductList batch-backed grocery details', () => {
+  it('keeps a stale inventory hidden while reconnecting and waits for a fresh catalog read', async () => {
+    const actor = { generation: 3 };
+    vi.spyOn(actorRuntimeController, 'assertCurrent').mockReturnValue(actor);
+    const query = createDeferred();
+    mocks.catalogState.loadFirstPage.mockReturnValue(query.promise);
+    connection.attempt = { status: 'reconnecting', actor };
+    const product = { id: 'kept', name: 'Producto conservado', stock: 3 };
+    const view = render(<ProductList products={[product]} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Cargando inventario');
+    expect(screen.queryByText('No se encontraron productos')).not.toBeInTheDocument();
+    expect(screen.queryByText(product.name)).not.toBeInTheDocument();
+    expect(mocks.catalogState.loadFirstPage).not.toHaveBeenCalled();
+    expect(mocks.queryBatchesByProductIdsAndActive).not.toHaveBeenCalled();
+
+    await act(async () => {
+      connection.attempt = { status: 'ready', actor };
+      connection.listeners.forEach((listener) => listener());
+    });
+    expect(mocks.catalogState.loadFirstPage).toHaveBeenCalledExactlyOnceWith({ includeCategories: true, assertCurrent: expect.any(Function) });
+    expect(screen.queryByText(product.name)).not.toBeInTheDocument();
+    await act(async () => {
+      view.rerender(<ProductList products={[{ ...product, name: 'Producto actualizado' }]} />);
+      query.resolve(true);
+    });
+    expect(screen.getByText('Producto actualizado')).toBeInTheDocument();
+  });
+
   it('offers a contextual verification action for an active unsynced product only', () => {
     const local = { id: 'local-only', name: 'Algodón QA', isActive: true, syncStatus: 'local', stock: 17, price: 10, cost: 2 };
     const synced = { id: 'cloud-ready', name: 'Gasa ya sincronizada', isActive: true, syncStatus: 'synced', serverVersion: 1, lastSyncedAt: '2026-11-20T12:00:00Z' };

@@ -5,7 +5,10 @@ import forceCloseDatabase from 'fake-indexeddb/lib/forceCloseDatabase';
 import { captureAsyncIncidentNotice } from '../../diagnostics/incidentEventCenter';
 import Dexie from 'dexie';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
-import { getLocalDatabaseRuntimeState, prepareLocalDatabase } from '../databaseRuntime';
+import { evaluateActorAccess } from '../../auth/actorAccessPolicy';
+import { getPendingActorOperations, runTrackedActorOperation } from '../../auth/actorOperationalHandoff';
+import { queryInventoryCatalogPage, queryPosCatalogPage } from '../../products/productCatalogQueryService';
+import { getLocalDatabaseRuntimeState, getNativeTenantReconnect, prepareLocalDatabase } from '../databaseRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assertLocalTenantAccess,
@@ -31,6 +34,7 @@ import {
   closeTenantRuntime,
   configureTenantRuntimeDatabaseFactory,
   db,
+  getActiveTenantDatabase,
   getActiveTenantRuntime,
   getTenantRuntimeReadiness,
   markTenantRuntimeReady,
@@ -320,7 +324,9 @@ describe('tenant runtime router', () => {
         actorType: 'admin', actorId: 'admin', sessionId: 'session',
         authorizationExpiresAt: new Date(Date.now() + 60_000).toISOString()
       });
-      await db.table(STORES.MENU).put({ id: 'keep', stock: 37 });
+      await db.table(STORES.MENU).put({
+        id: 'keep', name: 'Producto conservado', stock: 37, isActive: true, createdAt: '2026-11-01T00:00:00.000Z'
+      });
       db.close();
       nativeOpen = indexedDB.open.bind(indexedDB);
       open = vi.spyOn(indexedDB, 'open');
@@ -421,9 +427,133 @@ describe('tenant runtime router', () => {
         expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
         const trace = readTenantRuntimeTrace().map(({ event, detail }) => `${event}:${detail}`);
         expect(trace).toContain('indexeddb:close');
-        expect(trace.indexOf('proxy_error:closed')).toBeGreaterThan(trace.indexOf('indexeddb:close'));
+        expect(trace.indexOf('reopen:start')).toBeGreaterThan(trace.indexOf('indexeddb:close'));
+        expect(trace.indexOf('proxy_error:reopening')).toBeGreaterThan(trace.indexOf('reopen:start'));
+        await vi.waitFor(() => expect(getTenantRuntimeReadiness().ready).toBe(true));
       } finally {
         stopTenantRuntimeTrace();
+      }
+    });
+
+    const forceNativeClose = async (native = db.backendDB()) => {
+      const closed = new Promise((resolve) => native.addEventListener('close', resolve, { once: true }));
+      forceCloseDatabase(native);
+      await closed;
+    };
+
+    it('recovers a native close proactively and makes the same catalog readable again', async () => {
+      await prepareLocalDatabase();
+      const binding = await getLocalTenantBinding();
+      const native = db.backendDB();
+
+      expect(getLocalDatabaseRuntimeState()).toEqual({ runtime, isOpen: true });
+      await expect(queryInventoryCatalogPage()).resolves.toMatchObject({ data: [{ id: 'keep' }] });
+
+      await forceNativeClose(native);
+      await expect(queryInventoryCatalogPage()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_NOT_READY' });
+
+      await vi.waitFor(() => expect(getLocalDatabaseRuntimeState()).toEqual({ runtime, isOpen: true }));
+      expect(db.backendDB()).not.toBe(native);
+      expect(actorRuntimeController.assertCurrent(actor)).toEqual(actor);
+      await expect(getLocalTenantBinding()).resolves.toEqual(binding);
+      for (const query of [queryInventoryCatalogPage, queryPosCatalogPage]) {
+        await expect(query()).resolves.toMatchObject({ data: [{ id: 'keep', stock: 37 }] });
+      }
+    });
+
+    it('joins a concurrent preparation to the native reconnect without enabling raw Dexie auto-open', async () => {
+      await prepareLocalDatabase();
+      open.mockClear();
+      const database = getActiveTenantDatabase();
+      const table = database.table(STORES.MENU);
+      const native = database.backendDB();
+      await forceNativeClose(native);
+      expect(getNativeTenantReconnect()?.status).toBe('reconnecting');
+      const preparation = prepareLocalDatabase();
+      await expect(table.get('keep')).rejects.toMatchObject({ name: 'DatabaseClosedError' });
+      await expect(preparation).resolves.toMatchObject({ ready: true, runtime });
+      expect(open.mock.calls.filter(([name]) => name === runtime.databaseName)).toHaveLength(2);
+    });
+
+    it('ignores a native close once its actor session was revoked', async () => {
+      await prepareLocalDatabase();
+      open.mockClear();
+      const native = db.backendDB();
+      native.addEventListener('close', () => actorRuntimeController.lock('session_revoked'), { once: true });
+
+      await forceNativeClose(native);
+      await vi.waitFor(() => expect(getNativeTenantReconnect()?.status).toBe('failed'));
+      expect(open).not.toHaveBeenCalled();
+      expect(actorRuntimeController.getState()).toMatchObject({ status: 'locked', reason: 'session_revoked' });
+      expect(getLocalDatabaseRuntimeState()).toEqual({ runtime, isOpen: false });
+    });
+
+    it('does not recreate a physical database deleted during the native close', async () => {
+      await prepareLocalDatabase();
+      const native = db.backendDB();
+      let deleted;
+      native.addEventListener('close', () => { deleted = deletePhysicalDatabase(runtime.databaseName); }, { once: true });
+
+      await forceNativeClose(native);
+      await deleted;
+      await vi.waitFor(() => expect(getNativeTenantReconnect()?.status).toBe('failed'));
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+      expect((await indexedDB.databases()).map(({ name }) => name)).not.toContain(runtime.databaseName);
+    });
+
+    it('fails closed when the single Dexie reopen fails', async () => {
+      await prepareLocalDatabase();
+      const database = getActiveTenantDatabase();
+      const reopen = vi.spyOn(database, 'open').mockRejectedValueOnce(new Error('reopen failed'));
+
+      await forceNativeClose();
+      await vi.waitFor(() => expect(getNativeTenantReconnect()?.status).toBe('failed'));
+      expect(reopen).toHaveBeenCalledOnce();
+      expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.FAILED });
+      await expect(queryPosCatalogPage()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_NOT_READY' });
+      reopen.mockRestore();
+    });
+
+    it('does not redispatch a pending sale or modify its uncertain receipt during reconnect', async () => {
+      await prepareLocalDatabase();
+      const intent = { id: 'uncertain-sale', status: 'ambiguous', dispatchAttemptCount: 1 };
+      await db.table(STORES.FINANCIAL_INTENTS).put(intent);
+      const outcome = Promise.withResolvers();
+      const dispatch = vi.fn(() => outcome.promise);
+      const sale = runTrackedActorOperation('sale_checkout', dispatch);
+      const settled = sale.catch((error) => error);
+
+      try {
+        await forceNativeClose();
+        await vi.waitFor(() => expect(getNativeTenantReconnect()?.status).toBe('ready'));
+        expect(getPendingActorOperations()).toContainEqual(expect.objectContaining({ label: 'sale_checkout' }));
+        expect(dispatch).toHaveBeenCalledOnce();
+        await expect(db.table(STORES.FINANCIAL_INTENTS).get(intent.id)).resolves.toEqual(intent);
+      } finally {
+        outcome.reject(new Error('unknown dispatch outcome'));
+        await settled;
+      }
+      await expect(settled).resolves.toMatchObject({ message: 'unknown dispatch outcome' });
+      expect(dispatch).toHaveBeenCalledOnce();
+    });
+
+    it('keeps both catalog permissions denied to Staff after native recovery', async () => {
+      await prepareLocalDatabase();
+      actorRuntimeController.lock('test_staff_sign_in');
+      actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+      const staff = actorRuntimeController.grant({ actorType: 'staff', actorId: 'staff', sessionId: 'staff-session' });
+
+      await forceNativeClose();
+      await vi.waitFor(() => expect(getNativeTenantReconnect()?.status).toBe('ready'));
+      expect(actorRuntimeController.assertCurrent(staff)).toEqual(staff);
+      const access = evaluateActorAccess({
+        runtimeSnapshot: staff,
+        currentDeviceRole: 'staff',
+        currentStaffUser: { id: 'staff', permissions: {} }
+      });
+      expect(access.isAuthorizedActor).toBe(true);
+      for (const permission of ['pos', 'products', 'inventory']) {
+        expect(access.canAccessPermission(permission)).toBe(false);
       }
     });
 
@@ -463,7 +593,8 @@ describe('tenant runtime router', () => {
       }
     );
 
-    it('lets a real tenant switch proceed without reusing the closed connection', async () => {
+    it('lets a real tenant switch proceed during native recovery without reusing the closed connection', async () => {
+      await prepareLocalDatabase();
       const destination = { license_key: `CLOSED-SWITCH-${crypto.randomUUID()}` };
       let switching;
       open.mockImplementationOnce((...args) => {
@@ -476,7 +607,8 @@ describe('tenant runtime router', () => {
         return request;
       });
 
-      await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_STALE_HANDLE' });
+      await forceNativeClose();
+      await vi.waitFor(() => expect(switching).toBeInstanceOf(Promise));
       await expect(switching).resolves.toMatchObject({ status: 'bound' });
       switchedRuntime = getActiveTenantRuntime();
       expect(switchedRuntime.databaseName).not.toBe(runtime.databaseName);

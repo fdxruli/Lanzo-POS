@@ -238,7 +238,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
     return true;
   },
 
-  loadFirstPage: async ({ includeCategories = false } = {}) => {
+  loadFirstPage: async ({ includeCategories = false, assertCurrent } = {}) => {
     if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) {
       traceTenantRuntime('catalog_skip', 'inventory');
       return false;
@@ -256,8 +256,11 @@ export const useInventoryCatalogStore = create((set, get) => ({
     });
 
     try {
+      assertCurrent?.();
       const categories = includeCategories ? await loadCatalogCategories() : null;
-      const result = await queryInventoryCatalogPage({ ...view, cursor: null, pageSize });
+      assertCurrent?.();
+      const result = await queryInventoryCatalogPage({ ...view, cursor: null, pageSize, ...(assertCurrent ? { assertCurrent } : {}) });
+      assertCurrent?.();
       if (get().requestVersion !== version || !isSameView(get(), view)) return false;
 
       set({

@@ -1,5 +1,5 @@
 import { traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
-import { getActiveTenantDatabase, getActiveTenantRuntime, reopenAuthorizedTenantDatabase } from './tenantRuntimeRouter';
+import { getActiveTenantDatabase, getActiveTenantRuntime, reopenAuthorizedTenantDatabase, TenantRuntimeError } from './tenantRuntimeRouter';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { getActiveNativeOpenOperations, subscribeNativeOpenOperations } from './indexedDbPreflight';
 import {
@@ -17,6 +17,8 @@ import {
 } from './databaseRecoveryState';
 
 let activePreparationCount = 0;
+let nativeTenantReconnect = null;
+let nativeTenantReconnectRevision = 0;
 let failureSequence = 0;
 let activityRevision = 0;
 let activitySourceUnsubscribers = null;
@@ -164,7 +166,36 @@ const publishPreparationFailure = (error, databaseName, {
   });
 };
 
-export const prepareLocalDatabase = async () => {
+export const getNativeTenantReconnect = () => (
+  nativeTenantReconnect
+    && nativeTenantReconnect.runtime.generation === getActiveTenantRuntime()?.generation
+    && nativeTenantReconnect.actor.generation === actorRuntimeController.getState().generation
+    ? nativeTenantReconnect
+    : null
+);
+
+export const getNativeTenantReconnectRevision = () => nativeTenantReconnectRevision;
+
+export const recoverAfterNativeTenantClose = async (runtime) => {
+  const actor = actorRuntimeController.getState();
+  const attempt = { runtime, actor, status: 'reconnecting' };
+  nativeTenantReconnect = attempt;
+  let status = 'failed';
+  try {
+    await prepareLocalDatabase({ expectedRuntime: runtime, expectedActor: actor });
+    status = 'ready';
+  } catch {
+    // Preparation publishes the existing failure state while authority is current.
+  } finally {
+    if (nativeTenantReconnect === attempt) {
+      nativeTenantReconnect = { ...attempt, status };
+      if (status === 'ready') nativeTenantReconnectRevision += 1;
+      publishLocalDatabaseActivity();
+    }
+  }
+};
+
+export const prepareLocalDatabase = async ({ expectedRuntime, expectedActor } = {}) => {
   // The administrative shell starts before a license/tenant is known.  It is
   // intentionally a readiness check only: opening LanzoDB1 here would turn a
   // legacy vault back into a runtime database, while requiring a tenant here
@@ -180,6 +211,9 @@ export const prepareLocalDatabase = async () => {
   const startTime = globalThis.performance?.now?.() ?? Date.now();
   try {
     runtime = getActiveTenantRuntime();
+    if (expectedRuntime && runtime?.generation !== expectedRuntime.generation) {
+      throw new TenantRuntimeError('TENANT_RUNTIME_STALE_HANDLE');
+    }
     restartContext = captureRestartContext(runtime);
     databaseName = runtime?.databaseName || null;
     traceTenantRuntime('prepare', 'start', runtime?.generation);
@@ -200,11 +234,14 @@ export const prepareLocalDatabase = async () => {
         throw error;
       }
 
-      const actor = actorRuntimeController.getState();
+      const actor = expectedActor || actorRuntimeController.getState();
       const isCurrent = () => {
         const currentActor = actorRuntimeController.getState();
         return currentActor.status === 'granted'
           && currentActor.generation === actor.generation
+          && currentActor.actorKey === actor.actorKey
+          && currentActor.sessionId === actor.sessionId
+          && currentActor.deviceRef === actor.deviceRef
           && actor.tenant?.generation === runtime.generation
           && actor.tenant?.opaqueId === runtime.opaqueId
           && actor.tenant?.databaseName === databaseName
@@ -267,7 +304,7 @@ export const prepareLocalDatabase = async () => {
   } catch (error) {
     traceTenantRuntime('prepare', 'failed', runtime?.generation);
     const endTime = globalThis.performance?.now?.() ?? Date.now();
-    if (reopen && (error?.code === 'TENANT_RUNTIME_STALE_HANDLE' || !reopen.isCurrent())) throw error;
+    if (error?.code === 'TENANT_RUNTIME_STALE_HANDLE' || (reopen && !reopen.isCurrent())) throw error;
     publishPreparationFailure(error, databaseName || runtime?.databaseName || null, {
       phase,
       durationMs: Math.max(0, endTime - startTime),

@@ -436,7 +436,7 @@ export const usePosCatalogStore = create((set, get) => ({
   setCategory: (categoryId) => get().setFilters({ categoryId }),
   setCategoryId: (categoryId) => get().setFilters({ categoryId }),
 
-  loadFirstPage: async ({ includeCategories = false } = {}) => {
+  loadFirstPage: async ({ includeCategories = false, assertCurrent } = {}) => {
     if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) {
       traceTenantRuntime('catalog_skip', 'pos');
       return false;
@@ -454,10 +454,12 @@ export const usePosCatalogStore = create((set, get) => ({
     });
 
     try {
+      assertCurrent?.();
       const [result, categories] = await Promise.all([
-        queryPosCatalogPage({ ...view, cursor: null, pageSize }),
+        queryPosCatalogPage({ ...view, cursor: null, pageSize, ...(assertCurrent ? { assertCurrent } : {}) }),
         includeCategories ? loadCatalogCategories() : Promise.resolve(null)
       ]);
+      assertCurrent?.();
       if (get().requestVersion !== version || !isSameView(get(), view)) return false;
 
       set({

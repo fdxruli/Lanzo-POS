@@ -1,5 +1,6 @@
 import { isTenantRuntimeTraceActive, traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 import Dexie from 'dexie';
+import { recoverAfterNativeTenantClose } from './databaseRuntime';
 import {
   areLocalTenantAliasesCompatible,
   getLocalStoreScope,
@@ -517,10 +518,19 @@ const publishTenantDatabaseRecovery = (error, databaseName) => {
   return true;
 };
 
-const observeNativeClose = (database) => {
-  database.backendDB?.()?.addEventListener?.('close', () => {
-    traceTenantRuntime('indexeddb', 'close', active?.database === database ? active.generation : undefined);
-  });
+const observeNativeClose = (runtime) => {
+  const nativeDatabase = runtime.database.backendDB();
+  runtime.nativeDatabase = nativeDatabase;
+  nativeDatabase?.addEventListener('close', () => {
+    traceTenantRuntime('indexeddb', 'close', active === runtime ? runtime.generation : undefined);
+    if (reopening?.runtime === runtime) return;
+
+    // Let Dexie's native onclose handler clear its cached handle first.
+    queueMicrotask(() => {
+      if (active !== runtime || runtime.nativeDatabase !== nativeDatabase || runtime.database.isOpen()) return;
+      void recoverAfterNativeTenantClose(getActiveTenantRuntime());
+    });
+  }, { once: true });
 };
 
 // A closed handle may resume only its previously granted physical database.
@@ -574,7 +584,7 @@ export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlock
       database.on('blocked', onBlocked);
       try {
         await database.open();
-        observeNativeClose(database);
+        observeNativeClose(runtime);
         assertCurrent();
         await assertRuntimeBinding(runtime);
         assertCurrent();
@@ -648,7 +658,6 @@ export const openTenantRuntime = async (identity) => {
       })
     });
     await database.open();
-    observeNativeClose(database);
   } catch (error) {
     const browserStorageError = normalizeBrowserStorageError(error, {
       databaseName: database.name
@@ -671,6 +680,7 @@ export const openTenantRuntime = async (identity) => {
     throw effectiveError;
   }
   active = { opaqueId, database, generation: ++generation, identity };
+  observeNativeClose(active);
   traceTenantRuntime('tenant_open', 'success', generation);
   // A recovery state is cleared only after this tenant's complete
   // preparation succeeded. Do not put this in a finally: structural failures

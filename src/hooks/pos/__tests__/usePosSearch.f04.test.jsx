@@ -7,8 +7,17 @@ import { searchProductsInTable } from '../../../services/db/productSearch';
 import { buildProductSearchFields } from '../../../services/db/productSearchIndex';
 import { usePosSearch } from '../usePosSearch';
 import { searchProductsInDB } from '../../../services/database';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 
-const context = vi.hoisted(() => ({ db: null, state: null }));
+const context = vi.hoisted(() => ({ db: null, state: null, reconnect: null, listeners: new Set() }));
+vi.mock('../../../services/db/databaseRuntime', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getNativeTenantReconnect: () => context.reconnect,
+  subscribeLocalDatabaseActivity: (listener) => {
+    context.listeners.add(listener);
+    return () => context.listeners.delete(listener);
+  }
+}));
 vi.mock('../../../services/database', () => ({
   db: { table: (...args) => context.db.table(...args) },
   STORES: { MENU: 'menu', PRODUCT_BATCHES: 'batches' },
@@ -25,6 +34,7 @@ const make = (id, overrides = {}) => {
   return { ...product, ...buildProductSearchFields(product) };
 };
 beforeEach(async () => {
+  context.reconnect = null;
   searchProductsInDB.mockClear();
   context.db = new Dexie(`f04-${crypto.randomUUID()}`, { indexedDB, IDBKeyRange });
   context.db.version(1).stores({ menu: 'id, name_lower, *search_tokens, barcode_normalized, sku_normalized, *search_ngrams', batches: 'id, productId' });
@@ -32,9 +42,37 @@ beforeEach(async () => {
   context.state = { items: [], categories: [], categoryId: null, outOfStockOnly: false, expiredOnly: false,
     setFilters: vi.fn(), checkHasOutOfStockProducts: vi.fn(async () => false), checkHasExpiredProducts: vi.fn(async () => false) };
 });
-afterEach(async () => { cleanup(); await context.db.delete(); });
+afterEach(async () => { cleanup(); vi.restoreAllMocks(); await context.db.delete(); });
 
 describe('F-04 POS hook with Dexie and fake-indexeddb', () => {
+  it('keeps POS loading during the reconnect and resumes its search against the recovered catalog', async () => {
+    const actor = { generation: 2 };
+    vi.spyOn(actorRuntimeController, 'assertCurrent').mockReturnValue(actor);
+    const read = Promise.withResolvers();
+    context.state.items = [make('stale')];
+    context.state.loadFirstPage = vi.fn(() => read.promise);
+    context.reconnect = { status: 'reconnecting', actor };
+    await context.db.table('menu').put(make('current'));
+    const { result } = renderHook(() => usePosSearch());
+
+    act(() => result.current.setSearchTerm('QA AGUA'));
+    expect(result.current.isLoadingInitial).toBe(true);
+    expect(result.current.menuVisual).toEqual([]);
+    expect(context.state.loadFirstPage).not.toHaveBeenCalled();
+    expect(searchProductsInDB).not.toHaveBeenCalled();
+
+    await act(async () => {
+      context.reconnect = { status: 'ready', actor };
+      context.listeners.forEach((listener) => listener());
+    });
+    expect(context.state.loadFirstPage).toHaveBeenCalledExactlyOnceWith({ includeCategories: true, assertCurrent: expect.any(Function) });
+    expect(result.current.isLoadingInitial).toBe(true);
+    expect(searchProductsInDB).not.toHaveBeenCalled();
+    await act(async () => read.resolve(true));
+    await waitFor(() => expect(result.current.menuVisual.map(({ id }) => id)).toEqual(['current']));
+    expect(result.current.isLoadingInitial).toBe(false);
+  });
+
   it.each(['category', 'mixed', 'outOfStock', 'expired'])(
     'finds eligible products after 60 %s candidates', async (kind) => {
       if (kind === 'category') context.state.categoryId = 'B';

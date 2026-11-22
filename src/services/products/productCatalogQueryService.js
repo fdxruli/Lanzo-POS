@@ -137,7 +137,15 @@ export const queryActiveIngredientsForConfiguration = async () => {
     .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'es'));
 };
 
+const catalogReadDatabase = (assertCurrent) => assertCurrent ? {
+  table(storeName) {
+    assertCurrent();
+    return db.table(storeName);
+  }
+} : db;
+
 export const queryInventoryCatalogPage = async (options = {}) => {
+  const catalogDb = catalogReadDatabase(options.assertCurrent);
   const pageSize = Number.isInteger(options.pageSize) && options.pageSize > 0
     ? options.pageSize
     : INVENTORY_CATALOG_PAGE_SIZE;
@@ -148,7 +156,7 @@ export const queryInventoryCatalogPage = async (options = {}) => {
     }
     : null;
 
-  const allProducts = await db.table(STORES.MENU).toArray();
+  const allProducts = await catalogDb.table(STORES.MENU).toArray();
   let eligible = allProducts.filter((product) => (
     isAfterInventoryCatalogCursor(product, requestedCursor)
     && isInventoryCatalogEligible(product, options)
@@ -157,7 +165,7 @@ export const queryInventoryCatalogPage = async (options = {}) => {
   if (options.expiredOnly) {
     const expiredProductIds = await resolveExpiredProductIdsForPosMenu(
       eligible,
-      { db, STORES }
+      { db: catalogDb, STORES }
     );
     eligible = eligible.filter((product) => (
       !isOutOfStockForPosMenu(product)
@@ -198,6 +206,7 @@ export const queryInventoryCatalogProductById = async (productId, options = {}) 
 };
 
 export const queryPosCatalogPage = async (options = {}) => {
+  const catalogDb = catalogReadDatabase(options.assertCurrent);
   const pageSize = Number.isInteger(options.pageSize) && options.pageSize > 0
     ? options.pageSize
     : POS_CATALOG_PAGE_SIZE;
@@ -214,8 +223,8 @@ export const queryPosCatalogPage = async (options = {}) => {
 
   while (eligible.length < targetSize && !exhausted) {
     let collection = scanCursor
-      ? db.table(STORES.MENU).where('createdAt').belowOrEqual(scanCursor.sortValue).reverse()
-      : db.table(STORES.MENU).orderBy('createdAt').reverse();
+      ? catalogDb.table(STORES.MENU).where('createdAt').belowOrEqual(scanCursor.sortValue).reverse()
+      : catalogDb.table(STORES.MENU).orderBy('createdAt').reverse();
 
     collection = collection.filter((product) => {
       if (!isAfterPosCatalogCursor(product, scanCursor)) return false;
@@ -239,7 +248,7 @@ export const queryPosCatalogPage = async (options = {}) => {
     } else {
       const expiredProductIds = await resolveExpiredProductIdsForPosMenu(
         candidates,
-        { db, STORES }
+        { db: catalogDb, STORES }
       );
       for (const product of candidates) {
         const isExpired = expiredProductIds.has(product.id) || isExpiredForPosMenu(product);

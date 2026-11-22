@@ -49,8 +49,8 @@ export const STORES = {
 };
 
 export class LanzoDatabase extends Dexie {
-  constructor(databaseName = DB_NAME) {
-    super(databaseName);
+  constructor(databaseName = DB_NAME, options) {
+    super(databaseName, options);
     this.version(1).stores({
       // --- Inventario y Productos ---
       [STORES.MENU]: 'id, barcode, name_lower, categoryId', // Índices simples
@@ -557,8 +557,8 @@ export class LanzoDatabase extends Dexie {
  * database. Operational tenant middleware and write hooks intentionally stay
  * attached to the production singleton below.
  */
-export const createCanonicalLanzoDatabase = (databaseName) => (
-  registerCanonicalDexieExtensions(new LanzoDatabase(databaseName), STORES)
+export const createCanonicalLanzoDatabase = (databaseName, options) => (
+  registerCanonicalDexieExtensions(new LanzoDatabase(databaseName, options), STORES)
 );
 
 const operationalDatabases = new WeakSet();
@@ -576,7 +576,10 @@ export const installLanzoOperationalHooks = (database) => {
   installAdminUpdateWriteTracking(database);
   operationalDatabases.add(database); return database;
 };
-export const createOperationalLanzoDatabase = (databaseName) => installLanzoOperationalHooks(installLocalTenantDbMiddleware(createCanonicalLanzoDatabase(databaseName)));
+export const createOperationalLanzoDatabase = (databaseName) => {
+  const database = createCanonicalLanzoDatabase(databaseName, { autoOpen: false });
+  return installLanzoOperationalHooks(installLocalTenantDbMiddleware(database));
+};
 
 // Register only after the complete operational factory exists. The router
 // never imports this module, which keeps the runtime dependency direction
