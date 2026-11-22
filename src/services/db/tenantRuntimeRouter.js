@@ -1,6 +1,5 @@
 import { isTenantRuntimeTraceActive, traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 import Dexie from 'dexie';
-import { recoverAfterNativeTenantClose } from './databaseRuntime';
 import {
   areLocalTenantAliasesCompatible,
   getLocalStoreScope,
@@ -38,15 +37,17 @@ let active = null;
 let generation = 0;
 let reopening = null;
 let tenantDatabaseFactory = null;
+let recoverNativeClose = null;
 
 // The router deliberately owns no dependency on dexie.js. Keeping the
 // operational database factory injected avoids evaluating the legacy-vault
 // module while the tenant runtime is being initialized.
-export const configureTenantRuntimeDatabaseFactory = (factory) => {
+export const configureTenantRuntimeDatabaseFactory = (factory, onNativeClose = recoverNativeClose) => {
   if (typeof factory !== 'function') {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_INVALID');
   }
   tenantDatabaseFactory = factory;
+  recoverNativeClose = onNativeClose;
 };
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('lanzo-tenant-runtime-v1');
 const invalidateForForeignTenant = (opaqueId, origin) => {
@@ -528,7 +529,7 @@ const observeNativeClose = (runtime) => {
     // Let Dexie's native onclose handler clear its cached handle first.
     queueMicrotask(() => {
       if (active !== runtime || runtime.nativeDatabase !== nativeDatabase || runtime.database.isOpen()) return;
-      void recoverAfterNativeTenantClose(getActiveTenantRuntime());
+      void recoverNativeClose?.(getActiveTenantRuntime());
     });
   }, { once: true });
 };
