@@ -1,3 +1,4 @@
+import { isTenantRuntimeTraceActive, traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 import Dexie from 'dexie';
 import {
   areLocalTenantAliasesCompatible,
@@ -47,21 +48,21 @@ export const configureTenantRuntimeDatabaseFactory = (factory) => {
   tenantDatabaseFactory = factory;
 };
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('lanzo-tenant-runtime-v1');
-const invalidateForForeignTenant = (opaqueId) => {
+const invalidateForForeignTenant = (opaqueId, origin) => {
   if (!active?.opaqueId || opaqueId === active.opaqueId) return;
   // A different tab changed tenant context. Closing is conservative: every
   // compatibility-proxy operation now fails instead of writing under B.
   localTenantAccessController.lock('tenant_context_changed');
   suspendTenantStorageWrites();
-  closeTenantRuntime();
+  closeTenantRuntime(origin);
 };
 channel?.addEventListener('message', (event) => {
   if (event?.data?.type !== 'tenant_context_changed') return;
-  invalidateForForeignTenant(event.data.opaqueId);
+  invalidateForForeignTenant(event.data.opaqueId, 'broadcast');
 });
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('storage', (event) => {
   if (event.key !== 'lanzo:tenant-runtime-context:v1' || !event.newValue) return;
-  try { invalidateForForeignTenant(JSON.parse(event.newValue).opaqueId); } catch { /* ignore malformed cross-tab signal */ }
+  try { invalidateForForeignTenant(JSON.parse(event.newValue).opaqueId, 'storage'); } catch { /* ignore malformed cross-tab signal */ }
 });
 
 const hex = (bytes) => Array.from(bytes).map((x) => x.toString(16).padStart(2, '0')).join('');
@@ -431,24 +432,30 @@ const publishTenantDirectoryCorruption = (error) => {
   return true;
 };
 
-const current = () => {
-  if (!active?.database?.isOpen() || reopening?.runtime === active) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+const current = (consumer) => {
+  const isOpen = active?.database?.isOpen();
+  const isReopening = reopening?.runtime === active;
+  if (!isOpen || isReopening) {
+    const detail = !active ? 'missing' : isReopening ? 'reopening' : 'closed';
+    traceTenantRuntime('proxy_error', detail, generation, consumer);
+    throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+  }
   return active;
 };
 const guardedTable = (table, capturedGeneration) => new Proxy(table, { get(target, prop) {
   const value = target[prop];
   if (typeof value !== 'function') return value;
-  return (...args) => { if (current().generation !== capturedGeneration) throw new TenantRuntimeError('TENANT_RUNTIME_STALE_HANDLE'); return value.apply(target, args); };
+  return (...args) => { if (current('table_handle').generation !== capturedGeneration) throw new TenantRuntimeError('TENANT_RUNTIME_STALE_HANDLE'); return value.apply(target, args); };
 } });
 
 export const db = new Proxy({}, { get(_target, prop) {
-  const runtime = current();
+  const runtime = current('db_proxy');
   if (prop === 'table') return (name) => guardedTable(runtime.database.table(name), runtime.generation);
   const value = runtime.database[prop];
   return typeof value === 'function' ? value.bind(runtime.database) : value;
 } });
 
-export const getActiveTenantDatabase = () => current().database;
+export const getActiveTenantDatabase = () => current('database_getter').database;
 export const getActiveTenantRuntime = () => active && ({ opaqueId: active.opaqueId, databaseName: active.database.name, generation: active.generation });
 
 // Cache and event consumers need a non-throwing lifecycle probe.  It is
@@ -460,6 +467,11 @@ export const getActiveTenantRuntime = () => active && ({ opaqueId: active.opaque
 export const getTenantRuntimeReadiness = () => {
   const tenantState = localTenantAccessController.getState();
   if (!tenantState.enabled) return { ready: true, runtime: null };
+  if (isTenantRuntimeTraceActive()) {
+    const physicalState = !active ? 'missing' : reopening?.runtime === active ? 'reopening'
+      : active.database.isOpen() ? 'open' : 'closed';
+    traceTenantRuntime('runtime_state', physicalState, generation);
+  }
   if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED || !active?.database?.isOpen() || reopening?.runtime === active) {
     return { ready: false, runtime: null };
   }
@@ -505,6 +517,12 @@ const publishTenantDatabaseRecovery = (error, databaseName) => {
   return true;
 };
 
+const observeNativeClose = (database) => {
+  database.backendDB?.()?.addEventListener?.('close', () => {
+    traceTenantRuntime('indexeddb', 'close', active?.database === database ? active.generation : undefined);
+  });
+};
+
 // A closed handle may resume only its previously granted physical database.
 // Provisioning and schema repair remain the responsibility of openTenantRuntime.
 export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlocked) => {
@@ -513,44 +531,65 @@ export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlock
     if (!runtime || active !== runtime || runtime.generation !== expected.generation
       || runtime.opaqueId !== expected.opaqueId || runtime.database.name !== expected.databaseName
       || !localTenantAccessController.isGrantedFor(runtime.identity) || !isActorCurrent()) {
+      traceTenantRuntime('reopen', 'authority', generation);
       throw new TenantRuntimeError(code);
     }
   };
   assertCurrent('TENANT_RUNTIME_NOT_READY');
   if (reopening) {
-    if (reopening.runtime === runtime) return reopening.promise;
+    if (reopening.runtime === runtime) {
+      traceTenantRuntime('reopen', 'joined', generation);
+      return reopening.promise;
+    }
+    traceTenantRuntime('reopen', 'rejected', generation);
     throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
   }
   if (runtime.database.isOpen()) return;
 
+  traceTenantRuntime('reopen', 'start', runtime.generation);
   const { database } = runtime;
   const refuseCreation = () => { throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT'); };
   const promise = Promise.resolve().then(async () => {
-    assertCurrent();
-    if (getActiveNativeOpenOperations().length || getActiveIndexedDbPreflightOperations().length) {
-      throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
-    }
-    const inspection = await inspectIndexedDbStructure({
-      databaseName: database.name, existingOnly: true, onBlocked
-    });
-    assertCurrent();
-    if (inspection.classification !== 'compatible') throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
-
-    // A cross-tab deletion between inspection and open must abort creation.
-    database.on('populate', refuseCreation);
-    database.on('blocked', onBlocked);
     try {
-      await database.open();
       assertCurrent();
-      await assertRuntimeBinding(runtime);
+      if (getActiveNativeOpenOperations().length || getActiveIndexedDbPreflightOperations().length) {
+        traceTenantRuntime('reopen', 'native_activity', runtime.generation);
+        throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+      }
+      const inspection = await inspectIndexedDbStructure({
+        databaseName: database.name, existingOnly: true,
+        onBlocked: (error) => {
+          traceTenantRuntime('indexeddb', 'blocked', runtime.generation);
+          onBlocked?.(error);
+        }
+      });
       assertCurrent();
-      if (!database.isOpen()) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+      if (inspection.classification !== 'compatible') {
+        traceTenantRuntime('reopen', 'incompatible', runtime.generation);
+        throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+      }
+
+      // A cross-tab deletion between inspection and open must abort creation.
+      database.on('populate', refuseCreation);
+      database.on('blocked', onBlocked);
+      try {
+        await database.open();
+        observeNativeClose(database);
+        assertCurrent();
+        await assertRuntimeBinding(runtime);
+        assertCurrent();
+        if (!database.isOpen()) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+      } catch (error) {
+        database.close();
+        throw error;
+      } finally {
+        database.on.populate.unsubscribe(refuseCreation);
+        database.on.blocked.unsubscribe(onBlocked);
+      }
+      traceTenantRuntime('reopen', 'success', runtime.generation);
     } catch (error) {
-      database.close();
+      traceTenantRuntime('reopen', 'failed', runtime.generation);
       throw error;
-    } finally {
-      database.on.populate.unsubscribe(refuseCreation);
-      database.on.blocked.unsubscribe(onBlocked);
     }
   }).finally(() => { reopening = null; });
   reopening = { runtime, promise };
@@ -558,33 +597,48 @@ export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlock
 };
 
 export const openTenantRuntime = async (identity) => {
+  traceTenantRuntime('tenant_open', 'start', generation);
   if (!tenantDatabaseFactory) {
+    traceTenantRuntime('tenant_open', 'failed', generation);
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
   }
   let opaqueId;
   try {
     opaqueId = await resolveTenantRuntimeDirectory(identity, { requirePhysicalDatabase: true });
   } catch (error) {
+    traceTenantRuntime('tenant_open', 'failed', generation);
     publishTenantDirectoryCorruption(error);
     throw error;
   }
   // The directory lookup may have overlapped a physical reconnect.
   if (reopening) await reopening.promise.catch(() => {});
-  if (active?.opaqueId === opaqueId && active.database.isOpen()) return active;
+  if (active?.opaqueId === opaqueId && active.database.isOpen()) {
+    traceTenantRuntime('tenant_open', 'success', generation);
+    return active;
+  }
   // Callers must lock the controller before switching tenants. Keep this
   // defensive lock for direct router consumers as well, so B is never opened
   // while A remains granted.
   if (active?.database && active.opaqueId !== opaqueId) {
     localTenantAccessController.lock('tenant_runtime_switch');
     suspendTenantStorageWrites();
+    traceTenantRuntime('tenant_close', 'tenant_runtime_switch', generation);
     active.database.close();
   }
   clearActiveTenantStorageNamespace();
   const database = tenantDatabaseFactory(`LanzoDB_t_${opaqueId}`);
+  for (const event of ['versionchange', 'close', 'blocked']) {
+    database.on?.(event)?.subscribe?.(() => {
+      traceTenantRuntime('dexie', event, active?.database === database ? active.generation : undefined);
+    });
+  }
   try {
     await preflightAndRepairIndexedDb({
       databaseName: database.name,
-      onBlocked: (error) => publishTenantDatabaseRecovery(error, database.name),
+      onBlocked: (error) => {
+        traceTenantRuntime('indexeddb', 'blocked', generation);
+        publishTenantDatabaseRecovery(error, database.name);
+      },
       onProgress: (migration) => setDatabaseRecoveryState({
         status: DATABASE_RECOVERY_STATUS.MIGRATING,
         databaseName: database.name,
@@ -594,6 +648,7 @@ export const openTenantRuntime = async (identity) => {
       })
     });
     await database.open();
+    observeNativeClose(database);
   } catch (error) {
     const browserStorageError = normalizeBrowserStorageError(error, {
       databaseName: database.name
@@ -606,15 +661,17 @@ export const openTenantRuntime = async (identity) => {
       // granted while the browser storage boundary is unavailable.
       try { database.close(); } catch { /* best effort */ }
       localTenantAccessController.lock('browser_storage_unavailable');
-      closeTenantRuntime();
+      closeTenantRuntime('browser_storage_unavailable');
     }
 
     if (publishTenantDatabaseRecovery(effectiveError, database.name)) {
       reportStructuralDatabaseErrorOnce(effectiveError, 'preflight');
     }
+    traceTenantRuntime('tenant_open', 'failed', generation);
     throw effectiveError;
   }
   active = { opaqueId, database, generation: ++generation, identity };
+  traceTenantRuntime('tenant_open', 'success', generation);
   // A recovery state is cleared only after this tenant's complete
   // preparation succeeded. Do not put this in a finally: structural failures
   // must remain visible to DatabaseRecoveryGate.
@@ -635,15 +692,22 @@ export const markTenantRuntimeReady = async () => {
   markTenantStorageReady();
   try {
     await hydrateTenantStorageConsumers();
-    await promoteDirectoryReservationToActive(current());
+    await promoteDirectoryReservationToActive(current('hydration'));
     resumeTenantStorageWrites();
   } catch (error) {
     // A partially hydrated tenant is never usable. Preserve its physical DB
     // and storage payload, lock access, then leave no active runtime handle.
     localTenantAccessController.lock('tenant_storage_hydration_failed');
-    closeTenantRuntime();
+    closeTenantRuntime('tenant_storage_hydration_failed');
     publishTenantDirectoryCorruption(error);
     throw error;
   }
 };
-export const closeTenantRuntime = () => { suspendTenantStorageWrites(); if (active?.database) active.database.close(); active = null; generation += 1; clearActiveTenantStorageNamespace(); };
+export const closeTenantRuntime = (origin = 'other') => {
+  traceTenantRuntime('tenant_close', origin, generation);
+  suspendTenantStorageWrites();
+  if (active?.database) active.database.close();
+  active = null;
+  generation += 1;
+  clearActiveTenantStorageNamespace();
+};

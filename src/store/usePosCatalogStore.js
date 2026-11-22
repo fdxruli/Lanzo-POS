@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../services/diagnostics/tenantRuntimeTrace';
 import { create } from 'zustand';
 import Logger from '../services/Logger';
 import {
@@ -436,7 +437,10 @@ export const usePosCatalogStore = create((set, get) => ({
   setCategoryId: (categoryId) => get().setFilters({ categoryId }),
 
   loadFirstPage: async ({ includeCategories = false } = {}) => {
-    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) {
+      traceTenantRuntime('catalog_skip', 'pos');
+      return false;
+    }
     const version = get().requestVersion + 1;
     const view = currentView(get());
     const pageSize = get().pageSize;

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { traceTenantRuntime } from '../../services/diagnostics/tenantRuntimeTrace';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ShieldX } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -64,8 +65,16 @@ export default function NoPermission() {
   const retryAttempted = access.isVerifyingAccess
     && wasTenantReadinessRecoveryAttempted(runtimeSnapshot?.generation);
 
+  useEffect(() => {
+    if (isVerifyingAccess) {
+      traceTenantRuntime('actor', runtimeSnapshot?.status, runtimeSnapshot?.generation);
+      traceTenantRuntime('session', 'verifying', runtimeSnapshot?.generation);
+    }
+  }, [isVerifyingAccess, runtimeSnapshot?.generation, runtimeSnapshot?.status]);
+
   const retryVerification = async () => {
     if (!access.isVerifyingAccess || isInitializing || isRecovering || retryAttempted) return;
+    traceTenantRuntime('session', 'retry', runtimeSnapshot?.generation);
     setIsRecovering(true);
     setRecoveryError('');
     try {

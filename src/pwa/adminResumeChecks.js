@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../services/diagnostics/tenantRuntimeTrace';
 import Logger from '../services/Logger';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
 
@@ -52,6 +53,7 @@ export const startAdminResumeChecks = ({
       if (!active || document.visibilityState === 'hidden') return;
       if (!sameContext(context, evaluateLocalAuthority()) || !active) return;
       inFlight = true;
+      traceTenantRuntime('resume', selectedReason, context.generation);
       try {
         await performHealthCheck(selectedReason);
       } catch {

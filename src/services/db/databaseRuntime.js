@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 import { getActiveTenantDatabase, getActiveTenantRuntime, reopenAuthorizedTenantDatabase } from './tenantRuntimeRouter';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { getActiveNativeOpenOperations, subscribeNativeOpenOperations } from './indexedDbPreflight';
@@ -181,9 +182,11 @@ export const prepareLocalDatabase = async () => {
     runtime = getActiveTenantRuntime();
     restartContext = captureRestartContext(runtime);
     databaseName = runtime?.databaseName || null;
+    traceTenantRuntime('prepare', 'start', runtime?.generation);
     if (!runtime) {
       setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.CHECKING });
       setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY });
+      traceTenantRuntime('prepare', 'deferred');
       return { ready: true, deferredTenantRuntime: true, databaseName: null, runtime: null };
     }
 
@@ -211,7 +214,10 @@ export const prepareLocalDatabase = async () => {
       reopen = { isCurrent, getOwnedState: () => ownedState };
       // Keep the mounted app and its operations intact during a physical
       // reconnect. The router blocks commercial reads until validation ends.
-      if (![DATABASE_RECOVERY_STATUS.READY, DATABASE_RECOVERY_STATUS.IDLE].includes(ownedState.status)) throw error;
+      if (![DATABASE_RECOVERY_STATUS.READY, DATABASE_RECOVERY_STATUS.IDLE].includes(ownedState.status)) {
+        traceTenantRuntime('prepare', 'rejected', runtime.generation);
+        throw error;
+      }
 
       preparationTimeoutId = setTimeout(() => {
         if (isCurrent()) ownedState = publishPreparationTimeout(databaseName, ownedState) || ownedState;
@@ -227,6 +233,7 @@ export const prepareLocalDatabase = async () => {
       if (getDatabaseRecoveryState() === ownedState) {
         setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY, databaseName });
       }
+      traceTenantRuntime('prepare', 'success', runtime.generation);
       return { ready: true, databaseName, runtime };
     }
 
@@ -254,9 +261,11 @@ export const prepareLocalDatabase = async () => {
       }
     }
     phase = 'ready_confirmation';
+    traceTenantRuntime('prepare', 'success', runtime.generation);
     setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY, databaseName });
     return { ready: true, databaseName, runtime };
   } catch (error) {
+    traceTenantRuntime('prepare', 'failed', runtime?.generation);
     const endTime = globalThis.performance?.now?.() ?? Date.now();
     if (reopen && (error?.code === 'TENANT_RUNTIME_STALE_HANDLE' || !reopen.isCurrent())) throw error;
     publishPreparationFailure(error, databaseName || runtime?.databaseName || null, {

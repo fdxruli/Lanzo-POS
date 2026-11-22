@@ -1,5 +1,8 @@
+import { readTenantRuntimeTrace, startTenantRuntimeTrace, stopTenantRuntimeTrace } from '../../diagnostics/tenantRuntimeTrace';
 /* @vitest-environment jsdom */
 import 'fake-indexeddb/auto';
+import forceCloseDatabase from 'fake-indexeddb/lib/forceCloseDatabase';
+import { captureAsyncIncidentNotice } from '../../diagnostics/incidentEventCenter';
 import Dexie from 'dexie';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
 import { getLocalDatabaseRuntimeState, prepareLocalDatabase } from '../databaseRuntime';
@@ -359,6 +362,68 @@ describe('tenant runtime router', () => {
         await expect(db.table(STORES.MENU).get('keep')).resolves.toMatchObject({ stock: 37 });
       } finally {
         unsubscribe();
+      }
+    });
+
+    it('captures the three real proxy failures across close, reopen and cross-tab invalidation', async () => {
+      expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+      expect(readTenantRuntimeTrace()).toEqual([]);
+      await prepareLocalDatabase();
+      startTenantRuntimeTrace();
+      try {
+        db.close();
+        expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+        const preparation = prepareLocalDatabase();
+        expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+        await preparation;
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'lanzo:tenant-runtime-context:v1',
+          newValue: JSON.stringify({ opaqueId: 'private-foreign-tenant' })
+        }));
+        try {
+          db.table(STORES.MENU);
+        } catch (error) {
+          const notice = captureAsyncIncidentNotice(error);
+          expect(notice?.metadata.code).toBe('TENANT_RUNTIME_NOT_READY');
+        }
+
+        const trace = readTenantRuntimeTrace();
+        const points = trace.map(({ event, detail }) => `${event}:${detail}`);
+        for (const [event, failure] of [
+          ['dexie:close', 'proxy_error:closed'],
+          ['reopen:start', 'proxy_error:reopening'],
+          ['tenant_close:storage', 'proxy_error:missing']
+        ]) {
+          expect(points).toContain(event);
+          expect(points.indexOf(failure)).toBeGreaterThan(points.indexOf(event));
+        }
+        expect(trace.filter(({ event, consumer }) => event === 'proxy_error' && consumer === 'db_proxy')
+          .map(({ detail, code }) => [detail, code])).toEqual([
+          ['closed', 'TENANT_RUNTIME_NOT_READY'],
+          ['reopening', 'TENANT_RUNTIME_NOT_READY'],
+          ['missing', 'TENANT_RUNTIME_NOT_READY']
+        ]);
+        expect(points.indexOf('incident:unhandled_rejection')).toBeGreaterThan(points.indexOf('proxy_error:missing'));
+        expect(JSON.stringify(trace)).not.toMatch(/private-foreign-tenant|LanzoDB_t_|CLOSED-PHYSICAL/);
+      } finally {
+        stopTenantRuntimeTrace();
+      }
+    });
+
+    it('separates an abnormal native close from a deliberate Dexie close', async () => {
+      await prepareLocalDatabase();
+      startTenantRuntimeTrace();
+      try {
+        const native = db.backendDB();
+        const closed = new Promise((resolve) => native.addEventListener('close', resolve, { once: true }));
+        forceCloseDatabase(native);
+        await closed;
+        expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+        const trace = readTenantRuntimeTrace().map(({ event, detail }) => `${event}:${detail}`);
+        expect(trace).toContain('indexeddb:close');
+        expect(trace.indexOf('proxy_error:closed')).toBeGreaterThan(trace.indexOf('indexeddb:close'));
+      } finally {
+        stopTenantRuntimeTrace();
       }
     });
 
