@@ -1,10 +1,13 @@
 /* @vitest-environment jsdom */
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { actorRuntimeController } from '../../auth/actorRuntimeController';
+import { getLocalDatabaseRuntimeState, prepareLocalDatabase } from '../databaseRuntime';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assertLocalTenantAccess,
   initializeLocalTenantGuard,
+  getLocalTenantBinding,
   runWithLocalTenantSyncLease,
   resetLocalTenantGuardForTests,
   resolveActiveTenantIdentity
@@ -296,6 +299,149 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(a);
     expect(getActiveTenantRuntime()).not.toBeNull();
     expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+  });
+
+  describe('preparation of an existing closed connection', () => {
+    let runtime;
+    let switchedRuntime;
+    let actor;
+    let open;
+    let nativeOpen;
+
+    beforeEach(async () => {
+      initializeLocalTenantGuard('closed-physical-test');
+      await assertLocalTenantAccess({ license_key: `CLOSED-PHYSICAL-${crypto.randomUUID()}` });
+      runtime = getActiveTenantRuntime();
+      actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+      actor = actorRuntimeController.grant({
+        actorType: 'admin', actorId: 'admin', sessionId: 'session',
+        authorizationExpiresAt: new Date(Date.now() + 60_000).toISOString()
+      });
+      await db.table(STORES.MENU).put({ id: 'keep', stock: 37 });
+      db.close();
+      nativeOpen = indexedDB.open.bind(indexedDB);
+      open = vi.spyOn(indexedDB, 'open');
+    });
+
+    afterEach(async () => {
+      open?.mockRestore();
+      actorRuntimeController.lock('test_cleanup');
+      closeTenantRuntime();
+      resetLocalTenantGuardForTests();
+      if (runtime) await deletePhysicalDatabase(runtime.databaseName);
+      if (switchedRuntime) await deletePhysicalDatabase(switchedRuntime.databaseName);
+      switchedRuntime = null;
+    });
+
+    it('shares one preflight and reopen, then publishes READY for the same authorized runtime', async () => {
+      const names = (await indexedDB.databases()).map(({ name }) => name).sort();
+      expect(getLocalDatabaseRuntimeState()).toEqual({ runtime, isOpen: false });
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+      expect(() => db.table(STORES.MENU)).toThrow('TENANT_RUNTIME_NOT_READY');
+
+      const ready = vi.fn();
+      const unsubscribe = subscribeDatabaseRecoveryState((state) => {
+        if (state.status === DATABASE_RECOVERY_STATUS.READY) ready(getTenantRuntimeReadiness());
+      });
+      try {
+        const preparation = Promise.all([prepareLocalDatabase(), getLocalTenantBinding()]);
+        expect(getTenantRuntimeReadiness().ready).toBe(false);
+        expect(ready).not.toHaveBeenCalled();
+        await expect(preparation).resolves.toMatchObject([
+          { ready: true, runtime }, { tenantAliases: expect.any(Array) }
+        ]);
+
+        expect(ready).toHaveBeenCalledExactlyOnceWith({ ready: true, runtime });
+        expect(open.mock.calls.filter(([name]) => name === runtime.databaseName)).toHaveLength(2);
+        expect(actorRuntimeController.assertCurrent(actor).generation).toBe(actor.generation);
+        expect(getLocalDatabaseRuntimeState()).toEqual({ runtime, isOpen: true });
+        expect((await indexedDB.databases()).map(({ name }) => name).sort()).toEqual(names);
+        await expect(db.table(STORES.MENU).get('keep')).resolves.toMatchObject({ stock: 37 });
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('leaves an existing migration in control of preparation', async () => {
+      const migrating = setDatabaseRecoveryState({
+        status: DATABASE_RECOVERY_STATUS.MIGRATING, databaseName: runtime.databaseName
+      });
+      await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_NOT_READY' });
+      expect(open).not.toHaveBeenCalled();
+      expect(getDatabaseRecoveryState()).toBe(migrating);
+    });
+
+    it('requires an authorized actor before starting a physical request', async () => {
+      actorRuntimeController.lock('session_revoked');
+      await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_NOT_READY' });
+      expect(open).not.toHaveBeenCalled();
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+    });
+
+    it.each(['actor_revoked', 'tenant_locked', 'runtime_invalidated'])(
+      'rejects a preparation that loses its current context: %s', async (change) => {
+        const stateBefore = getDatabaseRecoveryState();
+        open.mockImplementationOnce((...args) => {
+          const request = nativeOpen(...args);
+          request.addEventListener('success', () => {
+            if (change === 'actor_revoked') actorRuntimeController.lock('session_revoked');
+            if (change === 'tenant_locked') localTenantAccessController.lock('authority_unconfirmed');
+            if (change === 'runtime_invalidated') closeTenantRuntime();
+          });
+          return request;
+        });
+
+        await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_STALE_HANDLE' });
+        expect(getTenantRuntimeReadiness().ready).toBe(false);
+        expect(open.mock.calls.filter(([name]) => name === runtime.databaseName)).toHaveLength(1);
+        expect(getDatabaseRecoveryState()).toBe(stateBefore);
+      }
+    );
+
+    it('lets a real tenant switch proceed without reusing the closed connection', async () => {
+      const destination = { license_key: `CLOSED-SWITCH-${crypto.randomUUID()}` };
+      let switching;
+      open.mockImplementationOnce((...args) => {
+        const request = nativeOpen(...args);
+        request.addEventListener('success', () => {
+          actorRuntimeController.lock('tenant_handoff');
+          closeTenantRuntime();
+          switching = assertLocalTenantAccess(destination);
+        });
+        return request;
+      });
+
+      await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'TENANT_RUNTIME_STALE_HANDLE' });
+      await expect(switching).resolves.toMatchObject({ status: 'bound' });
+      switchedRuntime = getActiveTenantRuntime();
+      expect(switchedRuntime.databaseName).not.toBe(runtime.databaseName);
+      expect(switchedRuntime.generation).toBeGreaterThan(runtime.generation);
+      expect(getDatabaseRecoveryState()).toMatchObject({
+        status: DATABASE_RECOVERY_STATUS.READY, databaseName: switchedRuntime.databaseName
+      });
+      await expect(db.table(STORES.MENU).get('keep')).resolves.toBeUndefined();
+    });
+
+    it('does not recreate the database if it is deleted between inspection and Dexie open', async () => {
+      let deletion;
+      open.mockImplementationOnce((...args) => {
+        const request = nativeOpen(...args);
+        request.addEventListener('success', () => { deletion = deletePhysicalDatabase(runtime.databaseName); });
+        return request;
+      });
+
+      await expect(prepareLocalDatabase()).rejects.toThrow();
+      await deletion;
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+      expect((await indexedDB.databases()).map(({ name }) => name)).not.toContain(runtime.databaseName);
+    });
+
+    it('aborts native creation if the existing physical database disappeared', async () => {
+      await deletePhysicalDatabase(runtime.databaseName);
+      await expect(prepareLocalDatabase()).rejects.toMatchObject({ code: 'DB_NOT_INSPECTABLE' });
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+      expect((await indexedDB.databases()).map(({ name }) => name)).not.toContain(runtime.databaseName);
+    });
   });
 
   it('reopens the same physical tenant runtime after it closes while its tenant grant remains valid', async () => {

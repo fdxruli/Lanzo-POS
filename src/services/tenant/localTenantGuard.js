@@ -1,6 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
-import { closeTenantRuntime, getActiveTenantDatabase, getTenantRuntimeReadiness, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
+import { closeTenantRuntime, getActiveTenantDatabase, getActiveTenantRuntime, getTenantRuntimeReadiness, markTenantRuntimeReady, openTenantRuntime, TenantRuntimeError } from '../db/tenantRuntimeRouter';
 import {
   inspectActiveTenantStorageSnapshot,
   TenantScopedStorageInspectionError
@@ -877,7 +877,12 @@ export const createLocalTenantGuard = ({
   };
 
   const getNativeDatabase = async () => {
-    await ensureReady();
+    const preparation = await ensureReady();
+    if (database === defaultDatabase && (
+      !preparation?.runtime || getActiveTenantRuntime()?.generation !== preparation.runtime.generation
+    )) {
+      throw new TenantRuntimeError('TENANT_RUNTIME_STALE_HANDLE');
+    }
     const nativeDatabase = (database === defaultDatabase ? getActiveTenantDatabase() : database).backendDB();
     if (!nativeDatabase) throw new Error('LOCAL_TENANT_DATABASE_NOT_OPEN');
     return nativeDatabase;

@@ -1,4 +1,4 @@
-import { getActiveTenantDatabase, getActiveTenantRuntime } from './tenantRuntimeRouter';
+import { getActiveTenantDatabase, getActiveTenantRuntime, reopenAuthorizedTenantDatabase } from './tenantRuntimeRouter';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { getActiveNativeOpenOperations, subscribeNativeOpenOperations } from './indexedDbPreflight';
 import {
@@ -71,11 +71,21 @@ const captureRestartContext = (runtime) => {
   };
 };
 
-const publishPreparationTimeout = (databaseName) => {
-  const currentState = getDatabaseRecoveryState();
-  if (currentState.status !== DATABASE_RECOVERY_STATUS.CHECKING) return;
+const publishPreparationBlocked = (databaseName) => setDatabaseRecoveryState({
+  status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+  errorCode: DATABASE_RECOVERY_CODES.BLOCKED,
+  databaseName,
+  isRetryable: true,
+  message: 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo.'
+});
 
-  setDatabaseRecoveryState({
+const publishPreparationTimeout = (databaseName, ownedState) => {
+  const currentState = getDatabaseRecoveryState();
+  if (ownedState
+    ? currentState !== ownedState || currentState.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
+    : currentState.status !== DATABASE_RECOVERY_STATUS.CHECKING) return;
+
+  return setDatabaseRecoveryState({
     status: DATABASE_RECOVERY_STATUS.FAILED,
     errorCode: 'DB_TIMEOUT',
     databaseName,
@@ -89,10 +99,13 @@ const publishPreparationFailure = (error, databaseName, {
   phase = 'unknown',
   durationMs = null,
   runtime = null,
-  restartContext = null
+  restartContext = null,
+  ownedState = null
 } = {}) => {
   const currentState = getDatabaseRecoveryState();
-  if (![DATABASE_RECOVERY_STATUS.IDLE, DATABASE_RECOVERY_STATUS.CHECKING].includes(currentState.status)) {
+  if (ownedState
+    ? currentState !== ownedState || ![DATABASE_RECOVERY_STATUS.READY, DATABASE_RECOVERY_STATUS.IDLE].includes(currentState.status)
+    : ![DATABASE_RECOVERY_STATUS.IDLE, DATABASE_RECOVERY_STATUS.CHECKING].includes(currentState.status)) {
     return;
   }
 
@@ -162,28 +175,66 @@ export const prepareLocalDatabase = async () => {
   let databaseName = null;
   let preparationTimeoutId = null;
   let phase = 'runtime_resolution';
+  let reopen = null;
   const startTime = globalThis.performance?.now?.() ?? Date.now();
   try {
     runtime = getActiveTenantRuntime();
     restartContext = captureRestartContext(runtime);
     databaseName = runtime?.databaseName || null;
-    setDatabaseRecoveryState({
-      status: DATABASE_RECOVERY_STATUS.CHECKING,
-      databaseName
-    });
-
     if (!runtime) {
+      setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.CHECKING });
       setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY });
       return { ready: true, deferredTenantRuntime: true, databaseName: null, runtime: null };
     }
 
     phase = 'database_resolution';
+    let database;
+    try {
+      database = getActiveTenantDatabase();
+    } catch (error) {
+      if (error?.code !== 'TENANT_RUNTIME_NOT_READY') {
+        setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.CHECKING, databaseName });
+        throw error;
+      }
+
+      const actor = actorRuntimeController.getState();
+      const isCurrent = () => {
+        const currentActor = actorRuntimeController.getState();
+        return currentActor.status === 'granted'
+          && currentActor.generation === actor.generation
+          && actor.tenant?.generation === runtime.generation
+          && actor.tenant?.opaqueId === runtime.opaqueId
+          && actor.tenant?.databaseName === databaseName
+          && getActiveTenantRuntime()?.generation === runtime.generation;
+      };
+      let ownedState = getDatabaseRecoveryState();
+      reopen = { isCurrent, getOwnedState: () => ownedState };
+      // Keep the mounted app and its operations intact during a physical
+      // reconnect. The router blocks commercial reads until validation ends.
+      if (![DATABASE_RECOVERY_STATUS.READY, DATABASE_RECOVERY_STATUS.IDLE].includes(ownedState.status)) throw error;
+
+      preparationTimeoutId = setTimeout(() => {
+        if (isCurrent()) ownedState = publishPreparationTimeout(databaseName, ownedState) || ownedState;
+      }, DATABASE_PREPARATION_TIMEOUT_MS);
+
+      await reopenAuthorizedTenantDatabase(runtime, isCurrent, () => {
+        if (isCurrent() && getDatabaseRecoveryState() === ownedState) {
+          ownedState = publishPreparationBlocked(databaseName);
+        }
+      });
+      if (!isCurrent()) throw error;
+      actorRuntimeController.assertCurrent(actor);
+      if (getDatabaseRecoveryState() === ownedState) {
+        setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY, databaseName });
+      }
+      return { ready: true, databaseName, runtime };
+    }
+
+    setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.CHECKING, databaseName });
     preparationTimeoutId = setTimeout(
       () => publishPreparationTimeout(databaseName),
       DATABASE_PREPARATION_TIMEOUT_MS
     );
-
-    const database = getActiveTenantDatabase();
     databaseName = database.name;
     phase = 'database_state_check';
     const databaseIsOpen = database.isOpen();
@@ -193,13 +244,7 @@ export const prepareLocalDatabase = async () => {
       // a version upgrade. Publish that native state immediately so the gate
       // can explain the lock instead of leaving its generic checking screen.
       const blockedEvent = database.on?.('blocked');
-      const onBlocked = () => setDatabaseRecoveryState({
-        status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
-        errorCode: DATABASE_RECOVERY_CODES.BLOCKED,
-        databaseName,
-        isRetryable: true,
-        message: 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo.'
-      });
+      const onBlocked = () => publishPreparationBlocked(databaseName);
       blockedEvent?.subscribe?.(onBlocked);
 
       try {
@@ -213,11 +258,13 @@ export const prepareLocalDatabase = async () => {
     return { ready: true, databaseName, runtime };
   } catch (error) {
     const endTime = globalThis.performance?.now?.() ?? Date.now();
+    if (reopen && (error?.code === 'TENANT_RUNTIME_STALE_HANDLE' || !reopen.isCurrent())) throw error;
     publishPreparationFailure(error, databaseName || runtime?.databaseName || null, {
       phase,
       durationMs: Math.max(0, endTime - startTime),
       runtime,
-      restartContext
+      restartContext,
+      ownedState: reopen?.getOwnedState()
     });
     throw error;
   } finally {
@@ -268,4 +315,12 @@ export const retryLocalDatabaseRecovery = async () => {
   }
   return prepareLocalDatabase();
 };
-export const getLocalDatabaseRuntimeState = () => ({ runtime: getActiveTenantRuntime(), isOpen: Boolean(getActiveTenantRuntime()) });
+export const getLocalDatabaseRuntimeState = () => {
+  const runtime = getActiveTenantRuntime();
+  try {
+    return { runtime, isOpen: Boolean(runtime && getActiveTenantDatabase().isOpen()) };
+  } catch (error) {
+    if (error?.code !== 'TENANT_RUNTIME_NOT_READY') throw error;
+    return { runtime, isOpen: false };
+  }
+};
