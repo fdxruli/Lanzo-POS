@@ -49,12 +49,16 @@ import '../../../services/db/dexie';
 import { resolveActiveTenantIdentity } from '../../../services/tenant/localTenantGuard';
 import {
   closeTenantRuntime,
+  db,
+  getTenantRuntimeReadiness,
   getActiveTenantRuntime,
   openTenantRuntime,
   resolveTenantRuntimeDirectory
 } from '../../../services/db/tenantRuntimeRouter';
 import { CURRENT_NATIVE_DATABASE_VERSION } from '../../../services/db/databaseSchema';
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { localTenantAccessController } from '../../../services/tenant/localTenantPolicy';
+import { readTenantRuntimeTrace, stopTenantRuntimeTrace } from '../../../services/diagnostics/tenantRuntimeTrace';
 
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
@@ -164,6 +168,84 @@ afterEach(() => {
 });
 
 describe('PosApplicationBootstrap initial recovery shell', () => {
+  it('lets an admin copy a real router failure from the recovery shell until capture expires', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: 'TRACE-FIXTURE-PRIVATE' });
+    const { database } = await openTenantRuntime(identity);
+    const runtime = getActiveTenantRuntime();
+    const { loadReadyRuntime } = createReadyRuntime();
+    const reloadPage = vi.fn();
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+    try {
+      renderBootstrap({ prepareLocalDatabase: vi.fn().mockResolvedValue({ ready: true }), loadReadyRuntime, reloadPage });
+      await screen.findByTestId('admin-app');
+      expect(screen.queryByText('Diagnóstico de conexión')).not.toBeInTheDocument();
+
+      vi.useFakeTimers();
+      act(() => {
+        localTenantAccessController.grant(identity);
+        actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+        actorRuntimeController.grant({ actorType: 'staff', actorId: 'private-staff', sessionId: 'private-session' });
+      });
+      expect(screen.queryByText('Diagnóstico de conexión')).not.toBeInTheDocument();
+      act(() => {
+        actorRuntimeController.lock('test_switch');
+        actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+        actorRuntimeController.grant({
+          actorType: 'admin', actorId: 'private-admin', sessionId: 'private-session',
+          authorizationExpiresAt: new Date(Date.now() + 20 * 60_000).toISOString()
+        });
+      });
+
+      const actorGeneration = actorRuntimeController.getState().generation;
+      fireEvent.click(screen.getByText('Diagnóstico de conexión'));
+      fireEvent.click(screen.getByRole('button', { name: 'Iniciar captura' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Detener captura' }));
+      expect(readTenantRuntimeTrace()).toEqual([]);
+      fireEvent.click(screen.getByRole('button', { name: 'Iniciar captura' }));
+      expect(getActiveTenantRuntime()).toEqual(runtime);
+      expect(getTenantRuntimeReadiness()).toEqual({ ready: true, runtime });
+      expect(actorRuntimeController.getState().generation).toBe(actorGeneration);
+
+      act(() => {
+        database.close();
+        expect(() => db.table('menu')).toThrow('TENANT_RUNTIME_NOT_READY');
+        actorRuntimeController.lock('test_unavailable');
+        setRecovery(DATABASE_RECOVERY_STATUS.FAILED, { errorCode: 'DB_OPERATION_FAILED' });
+      });
+      expect(database.isOpen()).toBe(false);
+      expect(getActiveTenantRuntime()).toEqual(runtime);
+      expect(getTenantRuntimeReadiness().ready).toBe(false);
+      expect(() => actorRuntimeController.capture()).toThrow();
+      expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Iniciar captura' })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Consultar traza' }));
+      const report = screen.getByRole('textbox', { name: 'Traza de conexión' }).value;
+      expect(JSON.parse(report)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: 'dexie', detail: 'close' }),
+        expect.objectContaining({ event: 'proxy_error', detail: 'closed', code: 'TENANT_RUNTIME_NOT_READY' })
+      ]));
+      expect(report).not.toMatch(/TRACE-FIXTURE|private-admin|private-session|LanzoDB_t_/);
+
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Copiar traza' })));
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(report);
+      expect(reloadPage).not.toHaveBeenCalled();
+
+      act(() => vi.advanceTimersByTime(10 * 60_000));
+      expect(readTenantRuntimeTrace()).toEqual([]);
+      expect(screen.queryByRole('textbox', { name: 'Traza de conexión' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Copiar traza' })).not.toBeInTheDocument();
+    } finally {
+      stopTenantRuntimeTrace();
+      actorRuntimeController.lock('test_cleanup');
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else delete navigator.clipboard;
+    }
+  });
+
   it('shows DB_BLOCKED while the original preparation promise remains pending', async () => {
     const operation = deferred();
     const prepareLocalDatabase = vi.fn(() => {

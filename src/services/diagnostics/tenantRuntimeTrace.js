@@ -23,10 +23,18 @@ const limit = 64;
 const lifetime = 10 * 60 * 1000;
 let capture = null;
 let timeout;
+const listeners = new Set();
+const notify = () => listeners.forEach((listener) => listener());
 
-const stop = () => {
+export const subscribeTenantRuntimeTrace = (listener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+export const stopTenantRuntimeTrace = () => {
   clearTimeout(timeout);
   capture = null;
+  notify();
 };
 
 export const traceTenantRuntime = (event, detail, generation, consumer) => {
@@ -56,17 +64,11 @@ export const traceTenantRuntime = (event, detail, generation, consumer) => {
 
 export const isTenantRuntimeTraceActive = () => capture !== null;
 
-if (typeof window !== 'undefined' && !Object.hasOwn(window, 'lanzoRuntimeTrace')) {
-  Object.defineProperty(window, 'lanzoRuntimeTrace', {
-    configurable: true,
-    value: Object.freeze({
-      start() {
-        stop();
-        capture = { started: Date.now(), entries: [] };
-        timeout = setTimeout(stop, lifetime);
-      },
-      read: () => capture?.entries.map((entry) => ({ ...entry })) || [],
-      stop
-    })
-  });
-}
+export const startTenantRuntimeTrace = () => {
+  if (capture) return;
+  capture = { started: Date.now(), entries: [] };
+  timeout = setTimeout(stopTenantRuntimeTrace, lifetime);
+  notify();
+};
+
+export const readTenantRuntimeTrace = () => capture?.entries.map((entry) => ({ ...entry })) || [];

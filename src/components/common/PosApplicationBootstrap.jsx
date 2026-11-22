@@ -10,6 +10,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Copy, Mail, RotateCw } from 'lucide-react';
 import DatabaseRecoveryGate from './DatabaseRecoveryGate';
+import TenantRuntimeTracePanel from './TenantRuntimeTracePanel';
 import Logger from '../../services/Logger';
 import { cleanupDevelopmentServiceWorkers as defaultCleanupDevelopmentServiceWorkers } from '../../services/devServiceWorkerCleanup';
 import {
@@ -735,28 +736,31 @@ export default function PosApplicationBootstrap({
   };
 
   return (
-    <DatabaseRecoveryGate
-      getRestartBlockReason={getRestartBlockReason}
-      subscribeRestartSafety={subscribeRestartSafety}
-    >
-      {ReadyApplication
-        ? <ReadyApplication />
-        : (
-          <ReadyRuntimeLoading
-            error={readyRuntimeError}
-            isRecovering={isRecoveringRuntime}
-            onAssetRecovery={retryAssetReadyRuntimeRecovery}
-            onRetryStart={retryAdministrativeStart}
-            onSendSupport={sendSupportReport}
-            onCopySupport={() => { void copySupportReport(); }}
-            copied={copiedSupportReport}
-            supportActionError={supportActionError}
-            isOnline={isOnline}
-          assetRecoveryEnabled={runtimeRecoveryContextGuardRef.current?.() !== false}
-            canRetryStart={canRetryAdministrativeStart()}
-          />
-        )}
-    </DatabaseRecoveryGate>
+    <>
+      <DatabaseRecoveryGate
+        getRestartBlockReason={getRestartBlockReason}
+        subscribeRestartSafety={subscribeRestartSafety}
+      >
+        {ReadyApplication
+          ? <ReadyApplication />
+          : (
+            <ReadyRuntimeLoading
+              error={readyRuntimeError}
+              isRecovering={isRecoveringRuntime}
+              onAssetRecovery={retryAssetReadyRuntimeRecovery}
+              onRetryStart={retryAdministrativeStart}
+              onSendSupport={sendSupportReport}
+              onCopySupport={() => { void copySupportReport(); }}
+              copied={copiedSupportReport}
+              supportActionError={supportActionError}
+              isOnline={isOnline}
+                assetRecoveryEnabled={runtimeRecoveryContextGuardRef.current?.() !== false}
+              canRetryStart={canRetryAdministrativeStart()}
+            />
+          )}
+      </DatabaseRecoveryGate>
+      <TenantRuntimeTracePanel />
+    </>
   );
 }
 

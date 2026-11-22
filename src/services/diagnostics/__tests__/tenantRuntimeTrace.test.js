@@ -1,15 +1,16 @@
 /* @vitest-environment jsdom */
 import { afterEach, expect, it, vi } from 'vitest';
-import { traceTenantRuntime } from '../tenantRuntimeTrace';
+import { readTenantRuntimeTrace, startTenantRuntimeTrace, stopTenantRuntimeTrace, traceTenantRuntime } from '../tenantRuntimeTrace';
 
 afterEach(() => {
-  window.lanzoRuntimeTrace.stop();
+  stopTenantRuntimeTrace();
   vi.useRealTimers();
 });
 
 it('retains only bounded sanitized events until the temporary capture expires', () => {
   vi.useFakeTimers();
-  const { start, read } = window.lanzoRuntimeTrace;
+  const start = startTenantRuntimeTrace;
+  const read = readTenantRuntimeTrace;
   traceTenantRuntime('actor', 'granted', 1);
   expect(read()).toEqual([]);
   start();
