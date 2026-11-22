@@ -37,15 +37,17 @@ let active = null;
 let generation = 0;
 let reopening = null;
 let tenantDatabaseFactory = null;
+let recoverNativeClose = null;
 
 // The router deliberately owns no dependency on dexie.js. Keeping the
 // operational database factory injected avoids evaluating the legacy-vault
 // module while the tenant runtime is being initialized.
-export const configureTenantRuntimeDatabaseFactory = (factory) => {
+export const configureTenantRuntimeDatabaseFactory = (factory, onNativeClose = recoverNativeClose) => {
   if (typeof factory !== 'function') {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_INVALID');
   }
   tenantDatabaseFactory = factory;
+  recoverNativeClose = onNativeClose;
 };
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('lanzo-tenant-runtime-v1');
 const invalidateForForeignTenant = (opaqueId, origin) => {
@@ -517,10 +519,19 @@ const publishTenantDatabaseRecovery = (error, databaseName) => {
   return true;
 };
 
-const observeNativeClose = (database) => {
-  database.backendDB?.()?.addEventListener?.('close', () => {
-    traceTenantRuntime('indexeddb', 'close', active?.database === database ? active.generation : undefined);
-  });
+const observeNativeClose = (runtime) => {
+  const nativeDatabase = runtime.database.backendDB();
+  runtime.nativeDatabase = nativeDatabase;
+  nativeDatabase?.addEventListener('close', () => {
+    traceTenantRuntime('indexeddb', 'close', active === runtime ? runtime.generation : undefined);
+    if (reopening?.runtime === runtime) return;
+
+    // Let Dexie's native onclose handler clear its cached handle first.
+    queueMicrotask(() => {
+      if (active !== runtime || runtime.nativeDatabase !== nativeDatabase || runtime.database.isOpen()) return;
+      void recoverNativeClose?.(getActiveTenantRuntime());
+    });
+  }, { once: true });
 };
 
 // A closed handle may resume only its previously granted physical database.
@@ -574,7 +585,7 @@ export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlock
       database.on('blocked', onBlocked);
       try {
         await database.open();
-        observeNativeClose(database);
+        observeNativeClose(runtime);
         assertCurrent();
         await assertRuntimeBinding(runtime);
         assertCurrent();
@@ -648,7 +659,6 @@ export const openTenantRuntime = async (identity) => {
       })
     });
     await database.open();
-    observeNativeClose(database);
   } catch (error) {
     const browserStorageError = normalizeBrowserStorageError(error, {
       databaseName: database.name
@@ -671,6 +681,7 @@ export const openTenantRuntime = async (identity) => {
     throw effectiveError;
   }
   active = { opaqueId, database, generation: ++generation, identity };
+  observeNativeClose(active);
   traceTenantRuntime('tenant_open', 'success', generation);
   // A recovery state is cleared only after this tenant's complete
   // preparation succeeded. Do not put this in a finally: structural failures

@@ -254,6 +254,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         showExpiredCategory={data.hasExpiredItems}
                         hasMore={data.hasMoreCatalogProducts}
                         isLoadingInitial={data.isLoadingInitialCatalog}
+                        catalogUnavailable={data.catalogUnavailable}
                         isLoadingNextPage={data.isLoadingNextCatalogPage}
                         onLoadNextPage={ui.loadNextCatalogPage}
                         activeViewKey={data.activeCatalogViewKey}

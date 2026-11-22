@@ -138,6 +138,7 @@ export default function ProductMenu({
   showExpiredCategory,
   hasMore,
   isLoadingInitial,
+  catalogUnavailable,
   isLoadingNextPage,
   onLoadNextPage,
   activeViewKey,
@@ -744,7 +745,9 @@ export default function ProductMenu({
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Productos disponibles">
 
-          {isLoadingInitial && visibleProducts.length === 0 ? (
+          {catalogUnavailable ? (
+            <p className="pos-products-loading" role="status">El catálogo local no está disponible.</p>
+          ) : isLoadingInitial && visibleProducts.length === 0 ? (
             <div className="pos-products-loading" role="status">
               Cargando productos...
             </div>

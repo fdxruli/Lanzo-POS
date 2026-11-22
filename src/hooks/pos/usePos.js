@@ -78,6 +78,7 @@ export function usePos() {
             hasExpiredItems: search.hasExpiredItems,
             hasMoreCatalogProducts: search.hasMore,
             isLoadingInitialCatalog: search.isLoadingInitial,
+            catalogUnavailable: search.catalogUnavailable,
             isLoadingNextCatalogPage: search.isLoadingNextPage,
             activeCatalogViewKey: search.activeViewKey,
             catalogScrollPosition: search.savedScrollPosition,

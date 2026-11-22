@@ -6,6 +6,15 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const app = vi.hoisted(() => ({ state: null }));
+const connection = vi.hoisted(() => ({ attempt: null, revision: 0, listeners: new Set() }));
+vi.mock('../../../services/db/databaseRuntime', () => ({
+  getNativeTenantReconnect: () => connection.attempt,
+  getNativeTenantReconnectRevision: () => connection.revision,
+  subscribeLocalDatabaseActivity: (listener) => {
+    connection.listeners.add(listener);
+    return () => connection.listeners.delete(listener);
+  }
+}));
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(app.state)
 }));
@@ -45,11 +54,42 @@ beforeEach(() => {
   vi.useRealTimers();
   tenantState.current = { opaqueId: 'tenant-a', databaseName: 'LanzoDB_t_tenant-a', generation: 1 };
   mounted.mockClear();
+  connection.attempt = null;
+  connection.revision = 0;
   signInStaff();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('direct URLs and protected component mounting', () => {
+  it.each([
+    ['/', { pos: true }, true],
+    ['/productos', { products: true }, true],
+    ['/productos', { pos: true }, false],
+    ['/', {}, false]
+  ])('rechecks permissions for %s entered during native reconnect (%j)', (path, permissions, allowed) => {
+    signInStaff(permissions);
+    const tenant = tenantState.current;
+    tenantState.current = null;
+    connection.attempt = { status: 'reconnecting' };
+
+    render(route(path));
+    expect(screen.getByRole('status')).toHaveTextContent('Restableciendo la conexión');
+    expect(mounted).not.toHaveBeenCalled();
+
+    act(() => {
+      tenantState.current = tenant;
+      connection.attempt = { status: 'ready' };
+      connection.revision += 1;
+      connection.listeners.forEach((listener) => listener());
+    });
+    if (allowed) {
+      expect(screen.getByText('Protected content')).toBeInTheDocument();
+    } else {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(mounted).not.toHaveBeenCalled();
+    }
+  });
+
   it('mounts POS for an authenticated POS-only Staff', () => {
     render(route('/'));
     expect(screen.getByText('Protected content')).toBeInTheDocument();
