@@ -345,6 +345,7 @@ export const inspectIndexedDbStructure = async ({
   factory = globalThis.indexedDB,
   databaseName = DB_NAME,
   onBlocked = null,
+  existingOnly = false,
   openTimeoutMs = OPEN_TIMEOUT_MS
 } = {}) => {
   if (!factory) {
@@ -366,6 +367,13 @@ export const inspectIndexedDbStructure = async ({
     onBlocked,
     openTimeoutMs,
     onUpgrade: ({ oldVersion }) => {
+      if (existingOnly && oldVersion === 0) {
+        throw createDatabaseRecoveryError(makeDiagnostic({
+          code: DATABASE_RECOVERY_CODES.NOT_INSPECTABLE,
+          databaseName,
+          retryable: false
+        }));
+      }
       createdByInspection = oldVersion === 0 && definitelyMissing !== false;
     }
   });

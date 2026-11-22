@@ -9,7 +9,8 @@ import {
   localTenantAccessController
 } from '../tenant/localTenantPolicy';
 import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
-import { preflightAndRepairIndexedDb } from './indexedDbPreflightCoordinator';
+import { getActiveIndexedDbPreflightOperations, preflightAndRepairIndexedDb } from './indexedDbPreflightCoordinator';
+import { getActiveNativeOpenOperations, inspectIndexedDbStructure } from './indexedDbPreflight';
 import {
   DATABASE_RECOVERY_STATUS,
   classifyDatabaseError,
@@ -33,6 +34,7 @@ export class TenantRuntimeError extends Error { constructor(code) { super(code);
 export const isTenantRuntimeError = (error) => error instanceof TenantRuntimeError || String(error?.code || '').startsWith('TENANT_RUNTIME_');
 let active = null;
 let generation = 0;
+let reopening = null;
 let tenantDatabaseFactory = null;
 
 // The router deliberately owns no dependency on dexie.js. Keeping the
@@ -367,12 +369,7 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
   });
 };
 
-const promoteDirectoryReservationToActive = async (runtime) => {
-  const physical = await listPhysicalDatabaseNames();
-  if (!physical.available || !physical.names.has(runtime.database.name)) {
-    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
-  }
-
+const assertRuntimeBinding = async (runtime) => {
   const binding = await runtime.database
     .table(LOCAL_TENANT_BINDING_STORE)
     .get(LOCAL_TENANT_BINDING_KEY);
@@ -383,6 +380,15 @@ const promoteDirectoryReservationToActive = async (runtime) => {
   ) {
     throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
   }
+};
+
+const promoteDirectoryReservationToActive = async (runtime) => {
+  const physical = await listPhysicalDatabaseNames();
+  if (!physical.available || !physical.names.has(runtime.database.name)) {
+    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+  }
+
+  await assertRuntimeBinding(runtime);
   const runtimeDirectoryAliases = await Promise.all(
     runtime.identity.aliases.map(aliasFingerprint)
   );
@@ -426,7 +432,7 @@ const publishTenantDirectoryCorruption = (error) => {
 };
 
 const current = () => {
-  if (!active?.database?.isOpen()) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+  if (!active?.database?.isOpen() || reopening?.runtime === active) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
   return active;
 };
 const guardedTable = (table, capturedGeneration) => new Proxy(table, { get(target, prop) {
@@ -454,7 +460,7 @@ export const getActiveTenantRuntime = () => active && ({ opaqueId: active.opaque
 export const getTenantRuntimeReadiness = () => {
   const tenantState = localTenantAccessController.getState();
   if (!tenantState.enabled) return { ready: true, runtime: null };
-  if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED || !active?.database?.isOpen()) {
+  if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED || !active?.database?.isOpen() || reopening?.runtime === active) {
     return { ready: false, runtime: null };
   }
   return {
@@ -499,6 +505,58 @@ const publishTenantDatabaseRecovery = (error, databaseName) => {
   return true;
 };
 
+// A closed handle may resume only its previously granted physical database.
+// Provisioning and schema repair remain the responsibility of openTenantRuntime.
+export const reopenAuthorizedTenantDatabase = (expected, isActorCurrent, onBlocked) => {
+  const runtime = active;
+  const assertCurrent = (code = 'TENANT_RUNTIME_STALE_HANDLE') => {
+    if (!runtime || active !== runtime || runtime.generation !== expected.generation
+      || runtime.opaqueId !== expected.opaqueId || runtime.database.name !== expected.databaseName
+      || !localTenantAccessController.isGrantedFor(runtime.identity) || !isActorCurrent()) {
+      throw new TenantRuntimeError(code);
+    }
+  };
+  assertCurrent('TENANT_RUNTIME_NOT_READY');
+  if (reopening) {
+    if (reopening.runtime === runtime) return reopening.promise;
+    throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+  }
+  if (runtime.database.isOpen()) return;
+
+  const { database } = runtime;
+  const refuseCreation = () => { throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT'); };
+  const promise = Promise.resolve().then(async () => {
+    assertCurrent();
+    if (getActiveNativeOpenOperations().length || getActiveIndexedDbPreflightOperations().length) {
+      throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+    }
+    const inspection = await inspectIndexedDbStructure({
+      databaseName: database.name, existingOnly: true, onBlocked
+    });
+    assertCurrent();
+    if (inspection.classification !== 'compatible') throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+
+    // A cross-tab deletion between inspection and open must abort creation.
+    database.on('populate', refuseCreation);
+    database.on('blocked', onBlocked);
+    try {
+      await database.open();
+      assertCurrent();
+      await assertRuntimeBinding(runtime);
+      assertCurrent();
+      if (!database.isOpen()) throw new TenantRuntimeError('TENANT_RUNTIME_NOT_READY');
+    } catch (error) {
+      database.close();
+      throw error;
+    } finally {
+      database.on.populate.unsubscribe(refuseCreation);
+      database.on.blocked.unsubscribe(onBlocked);
+    }
+  }).finally(() => { reopening = null; });
+  reopening = { runtime, promise };
+  return promise;
+};
+
 export const openTenantRuntime = async (identity) => {
   if (!tenantDatabaseFactory) {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
@@ -510,6 +568,8 @@ export const openTenantRuntime = async (identity) => {
     publishTenantDirectoryCorruption(error);
     throw error;
   }
+  // The directory lookup may have overlapped a physical reconnect.
+  if (reopening) await reopening.promise.catch(() => {});
   if (active?.opaqueId === opaqueId && active.database.isOpen()) return active;
   // Callers must lock the controller before switching tenants. Keep this
   // defensive lock for direct router consumers as well, so B is never opened
