@@ -132,6 +132,7 @@ export default function ProductMenu({
   selectedCategoryId,
   onSelectCategory,
   searchTerm,
+  searchFailed,
   onSearchChange,
   onOpenScanner,
   showOutofStockCategory,
@@ -650,10 +651,12 @@ export default function ProductMenu({
             <h2>Productos</h2>
             <p>Selecciona un producto para agregarlo al pedido</p>
           </div>
-          <span className="pos-results-count" aria-live="polite">
-            <span aria-hidden="true" />
-            {products.length} {products.length === 1 ? 'resultado' : 'resultados'}
-          </span>
+          {!searchFailed && !catalogUnavailable && (!isLoadingInitial || products.length > 0) && (
+            <span className="pos-results-count" aria-live="polite">
+              <span aria-hidden="true" />
+              {products.length} {products.length === 1 ? 'resultado' : 'resultados'}
+            </span>
+          )}
         </div>
 
         <div className="pos-controls">
@@ -747,12 +750,14 @@ export default function ProductMenu({
 
           {catalogUnavailable ? (
             <p className="pos-products-loading" role="status">El catálogo local no está disponible.</p>
+          ) : searchFailed ? (
+            <p className="pos-products-loading" role="status">No se pudo completar la búsqueda.</p>
           ) : isLoadingInitial && visibleProducts.length === 0 ? (
             <div className="pos-products-loading" role="status">
               Cargando productos...
             </div>
           ) : visibleProducts.length === 0 ? (
-            (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
+            (products.length === 0 && !searchTerm.trim() && !selectedCategoryId) ? (
               <div className="menu-empty-state">
                 <PackageSearch size={38} aria-hidden="true" />
                 <p>No hay productos registrados.</p>

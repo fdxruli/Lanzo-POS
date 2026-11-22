@@ -248,6 +248,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         selectedCategoryId={data.activeCategoryId}
                         onSelectCategory={ui.handleSelectCategory}
                         searchTerm={data.searchTerm}
+                        searchFailed={data.searchFailed}
                         onSearchChange={ui.setSearchTerm}
                         onOpenScanner={() => ui.openModal('scanner')}
                         showOutofStockCategory={data.hasOutOfStockItems}

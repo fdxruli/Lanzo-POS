@@ -74,6 +74,7 @@ export function usePos() {
             categories: search.categories,
             activeCategoryId: search.activeCategoryId,
             searchTerm: search.searchTerm,
+            searchFailed: search.searchFailed,
             hasOutOfStockItems: search.hasOutOfStockItems,
             hasExpiredItems: search.hasExpiredItems,
             hasMoreCatalogProducts: search.hasMore,
