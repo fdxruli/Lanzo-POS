@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../services/diagnostics/tenantRuntimeTrace';
 import { create } from 'zustand';
 import Logger from '../services/Logger';
 import {
@@ -238,7 +239,10 @@ export const useInventoryCatalogStore = create((set, get) => ({
   },
 
   loadFirstPage: async ({ includeCategories = false } = {}) => {
-    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) {
+      traceTenantRuntime('catalog_skip', 'inventory');
+      return false;
+    }
     const version = get().requestVersion + 1;
     const view = currentView(get());
     const pageSize = get().pageSize;

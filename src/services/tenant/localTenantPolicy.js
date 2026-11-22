@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 export const LOCAL_TENANT_BINDING_STORE = 'local_tenant_binding';
 export const LOCAL_TENANT_BINDING_KEY = 'primary';
 
@@ -190,6 +191,8 @@ export const createLocalTenantAccessController = () => {
 
   const replaceState = (nextState) => {
     state = nextState;
+    traceTenantRuntime('tenant', state.status);
+    traceTenantRuntime('tenant_reason', state.reason);
     const snapshot = cloneState(state);
     for (const listener of listeners) {
       try {

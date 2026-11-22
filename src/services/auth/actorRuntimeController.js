@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../diagnostics/tenantRuntimeTrace';
 import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
 
 export const ACTOR_RUNTIME_STATUS = Object.freeze({
@@ -114,6 +115,7 @@ export const createActorRuntimeController = ({
 
   const publish = (nextState) => {
     state = nextState;
+    traceTenantRuntime('actor', state.status, state.generation);
     const snapshot = cloneState(state);
     for (const listener of listeners) {
       try {

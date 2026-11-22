@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../../../services/diagnostics/tenantRuntimeTrace';
 import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifecycle';
 // src/store/slices/license/licenseBootstrapActions.js
 
@@ -203,6 +204,7 @@ const getVerificationUnavailableMessage = (actorType, result) => {
 };
 
 const setVerificationUnavailable = (set, actorType, license, result) => {
+    traceTenantRuntime('session', 'inconclusive');
     const isAdmin = actorType === 'admin';
     const message = result?.userMessage || getVerificationUnavailableMessage(actorType, result);
     const uiCode = result?.uiCode || 'SESSION_VERIFICATION_INCONCLUSIVE';
@@ -276,6 +278,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
 
         const runBootstrap = async () => {
             let bootstrapActorGeneration = actorRuntimeController.getState().generation;
+            traceTenantRuntime('session', 'bootstrap', bootstrapActorGeneration);
             const assertBootstrapActorCurrent = () => {
                 if (actorRuntimeController.getState().generation !== bootstrapActorGeneration) {
                     const stale = new Error('SESSION_VERIFICATION_CONTEXT_STALE');

@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from './tenantRuntimeTrace';
 import { getSafeIncidentMetadata } from './incidentDiagnostics';
 import {
   captureBackendIncident,
@@ -50,6 +51,10 @@ const publishIncidentNotice = (incident, { pathname, online, now = Date.now() } 
     incident,
     isContextCurrent: createRecoveryContextGuard()
   });
+  if (incident.safe_code === 'TENANT_RUNTIME_NOT_READY') {
+    const source = ['global_error', 'unhandled_rejection'].includes(incident.source) ? incident.source : 'other';
+    traceTenantRuntime('incident', source);
+  }
   notices = [notice];
   notify();
   return notice;

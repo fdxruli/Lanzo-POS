@@ -1,3 +1,4 @@
+import { traceTenantRuntime } from '../../../services/diagnostics/tenantRuntimeTrace';
 // src/store/slices/license/licenseMaintenanceActions.js
 
 import Logger from '../../../services/Logger';
@@ -58,7 +59,7 @@ export const createLicenseMaintenanceActions = ({
     performSystemHealthCheck: async (reason = 'wake', metadata = {}) => {
         // Stateful local expiry evaluation must precede every early return.
         // This publishes existing LOCKED semantics without refreshing evidence.
-        actorRuntimeController.getState();
+        const actor = actorRuntimeController.getState();
         const state = get();
 
         // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación.
@@ -70,6 +71,8 @@ export const createLicenseMaintenanceActions = ({
         }
 
         if (!getTenantRuntimeReadiness().ready) {
+            traceTenantRuntime('actor', actor.status, actor.generation);
+            traceTenantRuntime('health', 'runtime_unavailable');
             Logger.warn('[HealthCheck] Se omite ' + reason + ': TenantRuntime no está listo.');
             return;
         }

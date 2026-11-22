@@ -976,7 +976,7 @@ export const createLocalTenantGuard = ({
         ? 'tenant_runtime_recovery'
         : 'tenant_transition';
       controller.lock(preparationReason);
-      if (database === defaultDatabase) closeTenantRuntime();
+      if (database === defaultDatabase) closeTenantRuntime('tenant_transition');
       controller.enable(recoveryPreparation ? preparationReason : reason);
       if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
     }
