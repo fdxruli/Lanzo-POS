@@ -1383,9 +1383,6 @@ const inspectionErrorMessage = (error) => {
   return error?.message || 'No se pudo verificar el producto.';
 };
 
-const museProductId = 'prod_mwlorr9t_d86e4f19';
-const museBatchIds = new Set(['batch_mwlotoyl_578dd8f6', 'batch_mwloxbks_065bcb54', 'batch_mwloxt79_e6e600b5']);
-
 const isLocalWithoutCloudHistory = (record) => record?.id
   && !record.lastSyncedAt && !record.last_synced_at
   && [record.serverVersion, record.server_version].every((version) => version === undefined || version === null || version === 0)
@@ -1398,29 +1395,26 @@ const isUnconflictedLocalRecord = (record) => isLocalWithoutCloudHistory(record)
 const hasZeroBatchStock = (batch) => batch.stock === 0
   && [batch.committedStock, batch.committed_stock].every((value) => (value ?? 0) === 0);
 
-const hasMuseDuplicateNote = (batch) => typeof batch?.notes === 'string'
-  && batch.notes.includes('Prueba negativa: lote duplicado');
-
-const isMuseArchiveConflict = ({ product, localBatches, batch, conflict, licenseKey }) => {
-  const request = conflict?.localPayload;
-  const receipt = conflict?.serverPayload;
-  return product.id === museProductId
-    && localBatches.length === museBatchIds.size
-    && localBatches.every(({ id }) => museBatchIds.has(id))
-    && hasMuseDuplicateNote(batch)
-    && localBatches.filter(hasMuseDuplicateNote).length === 1
-    && batch.syncStatus === PRODUCT_SYNC_STATUS.CONFLICT && batch.conflictReason === 'BATCH_NOT_FOUND'
-    && conflict?.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH && conflict.entityId === batch.id
+const isFailedLocalBatchArchive = ({ product, batch, conflict, licenseKey }) => {
+  const request = conflict.localPayload;
+  const receipt = conflict.serverPayload;
+  // The historical DELETE echoes the repository-generated key in BATCH_NOT_FOUND.
+  const batchKey = batch.id.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const deleteKey = `product:product_batch:delete:${batchKey}:`;
+  return Boolean(batchKey) && batch.syncStatus === PRODUCT_SYNC_STATUS.CONFLICT && batch.conflictReason === 'BATCH_NOT_FOUND'
+    && conflict.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH && conflict.entityId === batch.id
     && conflict.conflictType === 'BATCH_NOT_FOUND' && conflict.metadata?.source === 'productRepository'
     && conflict.metadata.outboxId === null && !hasExplicitTenantMismatch(conflict, licenseKey)
     && request?.id === batch.id && localBatchProductId(request) === product.id
+    && isUnconflictedLocalRecord(request) && !hasExplicitTenantMismatch(request, licenseKey)
     && request.manufacturerBatchId === batch.manufacturerBatchId && request.expiryDate === batch.expiryDate
-    && request.createdAt === batch.createdAt
+    && request.createdAt === batch.createdAt && request.localMutationId === batch.localMutationId
     && request.isActive === false && request.isArchived === true && request.status === 'archived'
-    && Boolean(request.deletedAt) && request.stock === 0 && hasZeroBatchStock(request)
-    && (request.notes === batch.notes || request.notes?.startsWith(batch.notes + ' - Nota del usuario: '))
+    && typeof request.deletedAt === 'string' && Number.isFinite(Date.parse(request.deletedAt))
+    && hasZeroBatchStock(request)
     && receipt?.success === false && receipt.code === 'BATCH_NOT_FOUND'
-    && receipt.idempotency_key?.startsWith('product:product_batch:delete:' + batch.id + ':');
+    && typeof receipt.idempotency_key === 'string' && receipt.idempotency_key.startsWith(deleteKey)
+    && /^[a-z0-9_-]+:[a-z0-9]+:[a-f0-9-]+$/.test(receipt.idempotency_key.slice(deleteKey.length));
 };
 
 const batchArchiveBlocked = () => Object.assign(
@@ -1498,7 +1492,7 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
                   || [product, ...localBatches].some((row) => hasExplicitTenantMismatch(row, licenseKey))
                   || localBatches.some((row) => row.id !== batchId && !isUnconflictedLocalRecord(row))
                   || hasUnresolvedInventory || pendingConflicts.length > 1
-                  || (conflict ? !isMuseArchiveConflict({ product, localBatches, batch, conflict, licenseKey })
+                  || (conflict ? !isFailedLocalBatchArchive({ product, batch, conflict, licenseKey })
                     : !isUnconflictedLocalRecord(batch))) {
                   throw batchArchiveBlocked();
                 }

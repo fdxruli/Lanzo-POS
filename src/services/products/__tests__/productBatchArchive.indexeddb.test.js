@@ -2,7 +2,8 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONFLICT_STATUS, POS_SYNC_STORES } from '../../sync/syncConstants';
+import { generateIdempotencyKey } from '../../sync/idempotency';
+import { CONFLICT_STATUS, POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 
 const mocks = vi.hoisted(() => ({
   pullCatalogSnapshot: vi.fn(),
@@ -48,27 +49,21 @@ const stores = {
   INVENTORY_EVENTS: 'inventory_events',
   SALES: 'sales'
 };
-const productId = 'prod_mwlorr9t_d86e4f19';
-const batchId = 'batch_mwlotoyl_578dd8f6';
+const productId = 'local-product';
+const batchId = 'Local-Batch:01';
 const product = { id: productId, stock: 0, committedStock: 0, syncStatus: 'local' };
 const batch = {
   id: batchId, productId, stock: 0, committedStock: 0, isActive: false, status: 'inactive',
-  syncStatus: 'local', manufacturerBatchId: 'MUSE-VI-001', expiryDate: '2027-01-15',
-  notes: 'Prueba negativa: lote duplicado', createdAt: '2026-11-20T13:00:00.000Z'
+  syncStatus: 'local', manufacturerBatchId: 'LOT-01', expiryDate: '2027-01-15',
+  notes: '', createdAt: '2026-11-20T13:00:00.000Z'
 };
 const archiveRequest = {
   ...batch, status: 'archived', isArchived: true, deletedAt: '2026-11-21T13:00:00.000Z'
 };
-const priorConflict = {
-  id: 'conflict-archive', entityId: batchId, entityType: 'product_batch',
-  conflictType: 'BATCH_NOT_FOUND', status: CONFLICT_STATUS.PENDING, localPayload: archiveRequest,
-  serverPayload: { success: false, code: 'BATCH_NOT_FOUND', idempotency_key: `product:product_batch:delete:${batchId}:device:time:random` },
-  metadata: { source: 'productRepository', outboxId: null }
-};
-
 let db;
 let productRepository;
 let localRepository;
+let productConflictService;
 let queryBatchManagerPage;
 beforeAll(async () => {
   db = new Dexie(`batch-archive-${crypto.randomUUID()}`);
@@ -83,6 +78,7 @@ beforeAll(async () => {
   vi.doMock('../../db/dexie', () => ({ db, STORES: stores }));
   ({ productRepository } = await import('../productRepository'));
   ({ productLocalRepository: localRepository } = await import('../productLocalRepository'));
+  ({ productConflictService } = await import('../productConflictService'));
   ({ queryBatchManagerPage } = await import('../batchManagerQueries'));
 });
 afterAll(async () => db?.delete());
@@ -97,8 +93,8 @@ beforeEach(async () => {
   await Promise.all(db.tables.map((table) => table.clear()));
   await db.table(stores.MENU).put(product);
   await db.table(stores.PRODUCT_BATCHES).bulkPut([
-    batch, { ...batch, id: 'batch_mwloxbks_065bcb54', notes: 'Original' },
-    { ...batch, id: 'batch_mwloxt79_e6e600b5', manufacturerBatchId: 'MUSE-VI-VENCIDO', notes: 'Vencido' }
+    batch, { ...batch, id: 'local-batch-02', notes: 'Original' },
+    { ...batch, id: 'local-batch-03', manufacturerBatchId: 'LOT-EXPIRED', notes: 'Vencido' }
   ]);
   mocks.pullCatalogSnapshot.mockImplementation(async (args) => snapshot(args));
 });
@@ -143,23 +139,39 @@ describe('archiving a batch with Cloud enabled', () => {
   });
 
   it('resolves only the matching conflict after proving all original IDs absent', async () => {
+    const batches = db.table(stores.PRODUCT_BATCHES);
+    const siblings = await batches.where('productId').equals(productId).filter((row) => row.id !== batchId).toArray();
+    const entityType = SYNC_ENTITY_TYPES.PRODUCT_BATCH;
+    const idempotencyKey = generateIdempotencyKey({
+      prefix: 'product', entityType, operation: SYNC_OPERATIONS.DELETE, entityId: batchId
+    });
+    // Reproduce the original deleteBatch -> saveConflict call with the legacy RPC response.
+    const priorConflict = await productConflictService.saveConflict({
+      operation: { entityType, entityId: batchId, payload: { batchId, expectedVersion: null } },
+      response: { success: false, code: 'BATCH_NOT_FOUND', message: 'El lote no existe.', idempotency_key: idempotencyKey },
+      localPayload: archiveRequest,
+      source: 'productRepository'
+    });
     const unrelated = { ...priorConflict, id: 'unrelated', entityId: 'another-batch' };
     const conflicts = db.table(POS_SYNC_STORES.CONFLICTS);
-    await conflicts.bulkPut([priorConflict, unrelated]);
-    await db.table(stores.PRODUCT_BATCHES).update(batchId, { syncStatus: 'conflict', conflictReason: 'BATCH_NOT_FOUND' });
+    await conflicts.put(unrelated);
 
     mocks.pullCatalogSnapshot.mockImplementation(async (args) => snapshot(args, args.entityType === 'product_batch'
-      ? [{ id: 'batch_mwloxbks_065bcb54', product_id: productId }] : []));
+      ? [{ id: 'local-batch-02', product_id: productId }] : []));
     await expect(productRepository.deleteBatch(archiveRequest)).resolves.toMatchObject({ success: false, blocked: true });
     expect(await conflicts.get(priorConflict.id)).toEqual(priorConflict);
 
     mocks.pullCatalogSnapshot.mockImplementation(async (args) => snapshot(args));
     await expect(productRepository.deleteBatch(archiveRequest)).resolves.toMatchObject({ success: true });
     expect(await conflicts.get(priorConflict.id)).toMatchObject({
-      ...priorConflict, status: CONFLICT_STATUS.RESOLVED, resolvedPayload: { productId, batchId, cloudRevision: 8 }
+      ...priorConflict, status: CONFLICT_STATUS.RESOLVED, resolvedAt: expect.any(String),
+      resolvedPayload: { productId, batchId, cloudRevision: 8 }
     });
     expect(await conflicts.get(unrelated.id)).toEqual(unrelated);
-    expect(await db.table(stores.PRODUCT_BATCHES).get(batchId)).toMatchObject({ status: 'archived', conflictReason: null });
+    expect(await batches.get(batchId)).toMatchObject({
+      status: 'archived', conflictReason: null, stock: 0, committedStock: 0
+    });
+    expect(await batches.bulkGet(siblings.map(({ id }) => id))).toEqual(siblings);
     expect(mocks.deleteProductBatch).not.toHaveBeenCalled();
   });
 });
