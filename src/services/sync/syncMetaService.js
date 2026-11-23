@@ -69,6 +69,30 @@ export const syncMetaService = {
     }
   },
 
+  async advanceMeta(key, value, { licenseKey = null } = {}) {
+    const nextValue = Number(value);
+    if (!Number.isFinite(nextValue) || nextValue < 0 || recoveryPaused()) return null;
+    try {
+      if (!await ensureOpen()) return null;
+      recoveryPauseLogged = false;
+      const table = db.table(POS_SYNC_STORES.META);
+      const recordKey = scopedKey(key, licenseKey);
+      return await db.transaction('rw', table, async () => {
+        const record = await table.get(recordKey);
+        const currentValue = Number(record?.value);
+        const safeCurrentValue = Number.isFinite(currentValue) && currentValue >= 0 ? currentValue : 0;
+        const advancedValue = Math.max(safeCurrentValue, nextValue);
+        if (advancedValue > safeCurrentValue || !record) {
+          await table.put({ key: recordKey, value: advancedValue, updatedAt: nowIso() });
+        }
+        return advancedValue;
+      });
+    } catch (error) {
+      handleError(error, 'avanzar');
+      return null;
+    }
+  },
+
   async getLastChangeSeq(licenseKey = null) {
     const value = await this.getMeta(SYNC_META_KEYS.LAST_CHANGE_SEQ, 0, { licenseKey });
     const numericValue = Number(value);

@@ -6,7 +6,8 @@ const tableMock = vi.hoisted(() => ({
 }));
 const dbMock = vi.hoisted(() => ({
   isOpen: vi.fn(() => false),
-  table: vi.fn(() => tableMock)
+  table: vi.fn(() => tableMock),
+  transaction: vi.fn(async (_mode, _table, callback) => callback())
 }));
 const runtimeMocks = vi.hoisted(() => ({ ensureLocalDatabaseReady: vi.fn() }));
 const recoveryMocks = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ describe('POS Sync metadata recovery pause', () => {
     await expect(syncMetaService.setSyncEnabled(true, 'LIC-1')).resolves.toBe(false);
     await expect(syncMetaService.setRealtimeStatus('connected', 'LIC-1')).resolves.toBe(false);
     await expect(syncMetaService.getSyncEnabled('LIC-1')).resolves.toBe(false);
+    await expect(syncMetaService.advanceMeta('cursor', 42, { licenseKey: 'LIC-1' })).resolves.toBeNull();
 
     expect(runtimeMocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
     expect(dbMock.table).not.toHaveBeenCalled();
@@ -51,5 +53,20 @@ describe('POS Sync metadata recovery pause', () => {
     expect(runtimeMocks.ensureLocalDatabaseReady).toHaveBeenCalledTimes(2);
     expect(tableMock.put).toHaveBeenCalledTimes(1);
     expect(tableMock.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('advances metadata atomically without allowing an older response to move it backwards', async () => {
+    recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
+    runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    dbMock.isOpen.mockReturnValue(true);
+    let record = null;
+    tableMock.get.mockImplementation(async (key) => record?.key === key ? record : null);
+    tableMock.put.mockImplementation(async (next) => { record = next; return next.key; });
+
+    await expect(syncMetaService.advanceMeta('catalog-cursor', 42, { licenseKey: 'LIC-1' })).resolves.toBe(42);
+    await expect(syncMetaService.advanceMeta('catalog-cursor', 41, { licenseKey: 'LIC-1' })).resolves.toBe(42);
+
+    expect(record).toMatchObject({ key: 'LIC-1:catalog-cursor', value: 42 });
+    expect(tableMock.put).toHaveBeenCalledTimes(1);
   });
 });
