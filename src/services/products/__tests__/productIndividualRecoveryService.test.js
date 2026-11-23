@@ -37,6 +37,21 @@ const basePublication = (overrides = {}) => ({
   ...overrides
 });
 
+const depletedPublication = (overrides = {}) => basePublication({
+  isAvailable: false,
+  manualAvailable: true,
+  sourceAvailable: false,
+  sourceState: 'out_of_stock',
+  stockSnapshot: 0,
+  requiresConfiguration: false,
+  availabilitySource: 'direct',
+  availabilityReasonCode: 'SOURCE_STOCK_ZERO',
+  businessCapabilityStatus: 'compatible',
+  publicConfigurationMode: 'compatible',
+  syncErrorCode: null,
+  ...overrides
+});
+
 const baseBatch = (overrides = {}) => ({
   id: 'local-batch-1',
   productId: 'local-product-1',
@@ -94,6 +109,57 @@ describe('individual product recovery assessment', () => {
     expect(sameNameOnly.issues.map((issue) => issue.code)).toContain('PUBLICATION_NOT_FOUND');
   });
 
+  it.each([
+    ['unpublished', { isPublished: false }],
+    ['linked to another product', { productId: 'another-id' }],
+    ['from an incompatible source', { sourceType: 'cloud_product' }],
+    ['manually unavailable', { manualAvailable: false }],
+    ['from an unverified source', { sourceState: 'unverified' }],
+    ['without a known source state', { sourceState: undefined }],
+    ['without a confirmed stock snapshot', { stockSnapshot: null }],
+    ['dependent on configuration', { requiresConfiguration: true }],
+    ['with an unverified availability source', { availabilitySource: 'unverified' }],
+    ['with a different availability reason', { availabilityReasonCode: 'CONFIGURATION_REQUIRED' }],
+    ['with incompatible capabilities', { businessCapabilityStatus: 'hidden_incompatible' }],
+    ['with configuration under review', { publicConfigurationMode: 'requires_review' }],
+    ['with an unresolved source conflict', { syncErrorCode: 'ECOMMERCE_CATALOG_SOURCE_CONFLICT' }]
+  ])('keeps a depleted publication blocked when it is %s', (_label, overrides) => {
+    const report = goodAssessment({
+      product: baseProduct(),
+      localBatches: [],
+      publications: [depletedPublication(overrides)]
+    });
+
+    expect(report.canRecover).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('PUBLICATION_SOURCE_MISMATCH');
+  });
+
+  it('keeps ambiguous depleted publications blocked', () => {
+    const report = goodAssessment({
+      product: baseProduct(),
+      localBatches: [],
+      publications: [depletedPublication(), depletedPublication({ id: 'published-2' })]
+    });
+
+    expect(report.canRecover).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('PUBLICATION_AMBIGUOUS');
+  });
+
+  it.each([
+    ['positive stock', { stock: 17 }],
+    ['missing stock', { stock: undefined }],
+    ['untracked stock', { trackStock: false }]
+  ])('keeps the unavailable publication blocked for %s', (_label, overrides) => {
+    const report = goodAssessment({
+      product: baseProduct(overrides),
+      localBatches: [],
+      publications: [depletedPublication()]
+    });
+
+    expect(report.canRecover).toBe(false);
+    expect(report.issues.map((issue) => issue.code)).toContain('PUBLICATION_SOURCE_MISMATCH');
+  });
+
   it('keeps only the selected product and preserves its original active lot IDs', () => {
     const selectedBatch = baseBatch({ stock: 17 });
     const otherBatch = baseBatch({ id: 'other-batch', productId: 'other-product', stock: 999 });
@@ -118,16 +184,21 @@ describe('individual product recovery assessment', () => {
     expect(committedMismatch.issues.map((issue) => issue.code)).toContain('PRODUCT_BATCH_COMMITTED_MISMATCH');
   });
 
-  it('keeps an archived zero-stock lot local and omits it from recovery', () => {
+  it.each([
+    [17, [baseBatch({ stock: 17 })], basePublication()],
+    [0, [], depletedPublication()]
+  ])('keeps an archived zero-stock lot local when the product has stock %i', (stock, batches, publication) => {
     const report = goodAssessment({
+      product: baseProduct({ stock }),
+      publications: [publication],
       localBatches: [
-        baseBatch({ stock: 17 }),
+        ...batches,
         baseBatch({ id: 'archived-batch', manufacturerBatchId: 'QA-ARCHIVED', stock: 0, isActive: false, status: 'archived', deletedAt: '2026-11-01T00:00:00Z' })
       ]
     });
 
     expect(report.canRecover).toBe(true);
-    expect(report.recovery.batchIds).toEqual(['local-batch-1']);
+    expect(report.recovery.batchIds).toEqual(batches.map((batch) => batch.id));
     expect(report.recovery.omittedArchivedBatchIds).toEqual(['archived-batch']);
     expect(report.batches.find((batch) => batch.id === 'archived-batch')).toMatchObject({
       action: 'keep_local',
@@ -456,8 +527,13 @@ const makeServiceHarness = ({
 describe('individual product recovery execution', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it('inspects local Dexie and Cloud without writing either side', async () => {
-    const harness = makeServiceHarness();
+  it.each([
+    [17, [baseBatch({ stock: 17 })], basePublication()],
+    [0, [], depletedPublication()]
+  ])('inspects local stock %i without writing catalog or changing availability', async (stock, batches, publication) => {
+    const harness = makeServiceHarness({ product: { stock }, batches });
+    const publicationSnapshot = { ...publication };
+    harness.listPublishedProducts.mockResolvedValueOnce({ success: true, products: [publication], publishedCount: 1 });
     const report = await harness.service.inspectProduct({ productId: 'local-product-1' });
 
     expect(report.canRecover).toBe(true);
@@ -466,7 +542,10 @@ describe('individual product recovery execution', () => {
       { license_key: 'tenant-a' },
       { reason: 'individual_product_recovery_inspect' }
     );
+    expect(report.publication).toMatchObject({ isAvailable: publicationSnapshot.isAvailable });
+    expect(publication).toEqual(publicationSnapshot);
     expect(harness.cloudRepository.upsertProduct).not.toHaveBeenCalled();
+    expect(harness.cloudRepository.upsertCategory).not.toHaveBeenCalled();
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
     expect(harness.listLocalOnlyInventoryEntries).toHaveBeenCalledTimes(1);
   });
