@@ -33,6 +33,8 @@ import { syncConflictService } from '../sync/syncConflictService';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
+import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
+import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal } from '../restaurant/restaurantCloudTableGuards';
 import { assertValidRecipeReferences, getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const nowIso = () => new Date().toISOString();
@@ -61,15 +63,13 @@ const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
 
-const isActiveCatalogRecord = (record) => (
-  record?.id &&
-  record.isActive !== false &&
-  !record.deletedAt &&
-  !record.deletedTimestamp
+const isDeletedCatalogRecord = (record) => Boolean(
+  record?.deletedAt || record?.deletedTimestamp || record?.deleted_at || record?.deleted_timestamp
 );
+const isActiveCatalogRecord = (record) => record?.id && record.isActive !== false && !isDeletedCatalogRecord(record);
 
 const isUnsyncedCatalogRecord = (record) => {
-  if (!record?.id || record.deletedAt || record.deletedTimestamp) return false;
+  if (!record?.id || isDeletedCatalogRecord(record)) return false;
   return (
     record.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ||
     !record.serverVersion ||
@@ -657,7 +657,7 @@ export const productLocalRepository = {
     });
   },
 
-  async applyCloudCatalog(response = {}, { legacyReceipt = null, requireInventoryProjection = false } = {}) {
+  async applyCloudCatalog(response = {}, { legacyReceipt = null, requireInventoryProjection = false, protectLocalChanges = false, recovery = null } = {}) {
     const applied = { categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
     const collections = [
       ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
@@ -673,7 +673,23 @@ export const productLocalRepository = {
 
     await ensureOpen();
     try {
-      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), db.table(STORES.INVENTORY_EVENTS), db.table(POS_SYNC_STORES.OUTBOX), async () => {
+      const stores = [STORES.CATEGORIES, STORES.MENU, STORES.PRODUCT_BATCHES, STORES.SALES,
+        STORES.INVENTORY_EVENTS, POS_SYNC_STORES.OUTBOX];
+      if (recovery || protectLocalChanges) stores.push(STORES.DELETED_MENU, STORES.DELETED_CATEGORIES);
+      await db.transaction('rw', stores, async () => {
+        if (recovery) {
+          const current = await db.table(recovery.store).get(recovery.record.id);
+          const tombstone = await db.table(recovery.store === STORES.MENU
+            ? STORES.DELETED_MENU : STORES.DELETED_CATEGORIES).get(recovery.record.id);
+          const currentBatches = recovery.batches && await db.table(STORES.PRODUCT_BATCHES)
+            .where('productId').equals(recovery.record.id).toArray();
+          if (tombstone || JSON.stringify(current) !== JSON.stringify(recovery.record)
+            || (currentBatches && JSON.stringify(currentBatches) !== JSON.stringify(recovery.batches))) {
+            throw createProductCatalogSyncError('Los datos locales cambiaron durante la recuperación.', {
+              code: 'PRODUCT_RECOVERY_LOCAL_CHANGED', phase: 'catalog_recovery_confirmation'
+            });
+          }
+        }
         let optimisticBatch = null;
         if (legacyReceipt?.batchId && !response.batches.some(({ id }) => id === legacyReceipt.batchId)) {
           optimisticBatch = await db.table(STORES.PRODUCT_BATCHES).get(legacyReceipt.batchId);
@@ -698,6 +714,23 @@ export const productLocalRepository = {
             }
             try {
               const existing = await db.table(store).get(entityId);
+              if (protectLocalChanges) {
+                const productId = entityType === 'product' ? entityId : parentId;
+                const parent = parentId && await db.table(STORES.MENU).get(parentId);
+                const tombstone = entityType === 'category'
+                  ? await db.table(STORES.DELETED_CATEGORIES).get(entityId)
+                  : productId && await db.table(STORES.DELETED_MENU).get(productId);
+                const incomingDeleted = isDeletedCatalogRecord(record);
+                const localDeleted = tombstone || isDeletedCatalogRecord(existing) || isDeletedCatalogRecord(parent);
+                if (isUnsyncedCatalogRecord(existing) || isUnsyncedCatalogRecord(parent)
+                  || existing?.deletionPending || (tombstone && tombstone.deletionPending !== false)
+                  || (localDeleted && !incomingDeleted)) {
+                  applied.deferredCatalog = (applied.deferredCatalog || 0) + 1;
+                  continue;
+                }
+                if (localDeleted) continue;
+                if (Number(existing?.serverVersion || 0) > Number(record.server_version ?? record.serverVersion ?? 0)) continue;
+              }
               // An idempotent generic entry can return a projection older than a later sale or pull.
               if (requireInventoryProjection && !legacyReceipt && existing
                 && Number(existing.serverVersion || 0) > Number(record.server_version ?? record.serverVersion ?? 0)) {
@@ -758,6 +791,9 @@ export const productLocalRepository = {
             }
           }
         }
+        if (recovery && (applied.rejected.length || applied.deferredInventory)) {
+          throw new Error('PRODUCT_RECOVERY_LOCAL_CONFIRMATION_FAILED');
+        }
         if ((legacyReceipt || requireInventoryProjection) && (applied.rejected.length || applied.deferredInventory)) {
           throw createProductCatalogSyncError('Se requiere revisión del inventario del medicamento.', {
             code: 'PHARMACY_INVENTORY_REVIEW_REQUIRED', phase: 'pharmacy_receipt_projection'
@@ -779,16 +815,20 @@ export const productLocalRepository = {
     return applied;
   },
 
-  async markConflict({ entityType, entityId, reason }) {
+  async markConflict({ entityType, entityId, reason, expected = null }) {
     await ensureOpen();
     const storeName = entityType === 'category'
       ? STORES.CATEGORIES
       : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU);
-    const current = await db.table(storeName).get(entityId);
-    if (!current) return null;
-    const conflict = markProductSyncConflict(current, reason);
-    await db.table(storeName).put(conflict);
-    return conflict;
+    const table = db.table(storeName);
+    const mark = async () => {
+      const current = await table.get(entityId);
+      if (!current || (expected && JSON.stringify(current) !== JSON.stringify(expected))) return null;
+      const conflict = markProductSyncConflict(current, reason);
+      await table.put(conflict);
+      return conflict;
+    };
+    return expected ? db.transaction('rw', table, mark) : mark();
   },
 
   async markCatalogDeletionSynced({ entityType, entityId }) {
@@ -819,7 +859,7 @@ export const productLocalRepository = {
     return conflict;
   },
 
-  async getLocalCatalogForMigration() {
+  async getLocalCatalogForMigration({ includeInactive = false } = {}) {
     await ensureOpen();
     const [categories, products, batches] = await Promise.all([
       db.table(STORES.CATEGORIES).toArray(),
@@ -827,11 +867,42 @@ export const productLocalRepository = {
       db.table(STORES.PRODUCT_BATCHES).toArray()
     ]);
 
+    const includeRecord = includeInactive ? (row) => row.id && !isDeletedCatalogRecord(row) : isActiveCatalogRecord;
     return {
-      categories: categories.filter(isActiveCatalogRecord),
-      products: products.filter(isActiveCatalogRecord),
-      batches: batches.filter(isActiveCatalogRecord)
+      categories: categories.filter(includeRecord),
+      products: products.filter(includeRecord),
+      batches: batches.filter(includeRecord)
     };
+  },
+
+  async listLocalReservationIdsForRecovery(products) {
+    await ensureOpen();
+    const [orders, layaways] = await Promise.all([
+      db.table(STORES.SALES).where('status').equals('open').toArray(),
+      db.table(STORES.LAYAWAYS).where('status').anyOf(['active', 'ready']).toArray()
+    ]);
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const reservedIds = new Set();
+    for (const order of orders) {
+      if (order.splitReservationReconciledAt || isRestaurantCloudTableShadow(order)
+        || isRestaurantCloudTableTerminal(order)) continue;
+      for (const item of order.items || []) {
+        for (const usage of getTableReservationProductQuantities(item, byId.get(item.parentId || item.id))) {
+          if (usage.quantity > 0) reservedIds.add(usage.productId);
+        }
+        if (item.inventoryReservation?.source !== 'table') continue;
+        for (const batch of item.inventoryReservation.committedBatches || []) {
+          if (batch.quantity > 0) reservedIds.add(batch.batchId);
+        }
+      }
+    }
+    for (const layaway of layaways) {
+      if (layaway.cloudLayaway || layaway.sourceMode === 'cloud_committed') continue;
+      for (const usage of layaway.reservedInventory || []) {
+        if (usage.quantity > 0) reservedIds.add(usage.productId);
+      }
+    }
+    return reservedIds;
   },
 
   async listUnsyncedLocalCatalogForCloud() {
@@ -853,7 +924,7 @@ export const productLocalRepository = {
         products: deletedProducts.filter((record) => record?.id && record.deletionPending !== false),
         batches: batches.filter((record) => (
           record?.id
-          && (record.deletedAt || record.deletedTimestamp)
+          && isDeletedCatalogRecord(record)
           && record.deletionPending !== false
         ))
       }
