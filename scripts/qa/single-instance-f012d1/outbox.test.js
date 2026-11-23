@@ -21,6 +21,15 @@ beforeEach(async () => {
       channels.push(channel); return channel;
     }), removeChannel: vi.fn(async () => 'ok')
   };
+  vi.doMock('../../../src/services/auth/actorRuntimeController', () => ({
+    ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
+    actorRuntimeController: {
+      getState: () => ({ status: 'granted', permissions: [] }),
+      subscribe: () => () => {},
+      capture: () => ({ actorKey: 'A', assertCurrent: () => {} })
+    },
+    isActorRuntimeError: () => false
+  }));
   vi.doMock('../../../src/services/db/dexie', () => ({ db: database }));
   vi.doMock('../../../src/services/db/databaseRuntime', () => ({ ensureLocalDatabaseReady: async () => database }));
   vi.doMock('../../../src/services/sync/syncDexieBootstrap', () => ({}));
@@ -41,7 +50,7 @@ beforeEach(async () => {
 afterEach(async () => {
   scope?.quiesce(); await scope?.settleObserved(); vi.restoreAllMocks();
   database?.close(); if (database) await Dexie.delete(database.name);
-  for (const path of ['db/dexie', 'db/databaseRuntime', 'sync/syncDexieBootstrap', 'supabase', 'tenant/localTenantGuard', 'sync/posSyncClient']) {
+  for (const path of ['auth/actorRuntimeController', 'db/dexie', 'db/databaseRuntime', 'sync/syncDexieBootstrap', 'supabase', 'tenant/localTenantGuard', 'sync/posSyncClient']) {
     vi.doUnmock(`../../../src/services/${path}`);
   }
 });
@@ -66,11 +75,11 @@ it('D-14 real outbox preserves durable processing and identity after late handle
   await expect(pos.processOutbox()).rejects.toThrow('QUIESCED'); expect(handler).toHaveBeenCalledTimes(1);
 });
 
-it('quiesce during real markProcessing does not start handler or convert local rejection into retry', async () => {
+it('quiesce during a real claim does not start handler or convert local rejection into retry', async () => {
   await enqueue(); const d = deferred(), started = deferred();
-  const original = outbox.markProcessing.bind(outbox);
-  vi.spyOn(outbox, 'markProcessing').mockImplementation(async (...args) => {
-    await original(...args); started.resolve(); await d.promise;
+  const original = outbox.claimPendingOperation.bind(outbox);
+  vi.spyOn(outbox, 'claimPendingOperation').mockImplementation(async (...args) => {
+    const claimed = await original(...args); started.resolve(); await d.promise; return claimed;
   });
   const handler = vi.fn(); pos.registerEntitySyncHandler('synthetic', { pushOperation: handler });
   const result = pos.processOutbox(); await started.promise; scope.quiesce(); d.resolve(); await result;

@@ -126,10 +126,11 @@ export const salesCloudRepository = {
   },
 
   // IMPORTANTE: estas RPCs son transaccionales/críticas y NO deben pasar por CloudRequestManager.
-  async upsertSaleShadow({ licenseKey, sale, items = [], payments = [], idempotencyKey }) {
+  async upsertSaleShadow({ licenseKey, sale, items = [], payments = [], idempotencyKey, actorHandle = null }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
 
+    actorHandle?.assertCurrent();
     const { data, error } = await supabaseClient.rpc('pos_upsert_sale_shadow', {
       ...baseArgs,
       p_sale: sale || {},

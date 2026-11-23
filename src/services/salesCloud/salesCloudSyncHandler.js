@@ -123,7 +123,7 @@ export const salesCloudSyncHandler = {
     return { applied, latestChangeSeq: sinceChangeSeq };
   },
 
-  async pushOperation(operation = {}) {
+  async pushOperation(operation = {}, { actorHandle } = {}) {
     if (operation.operation !== SYNC_OPERATIONS.UPSERT_SHADOW) {
       throw new Error('SALES_CLOUD_OPERATION_NOT_ALLOWED_IN_6A');
     }
@@ -146,7 +146,8 @@ export const salesCloudSyncHandler = {
       sale: payload.sale,
       items: payload.items || [],
       payments: payload.payments || [],
-      idempotencyKey: operation.idempotencyKey || payload.idempotencyKey
+      idempotencyKey: operation.idempotencyKey || payload.idempotencyKey,
+      actorHandle
     });
 
     if (response?.success === false) {

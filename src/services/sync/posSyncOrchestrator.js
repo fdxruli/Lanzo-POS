@@ -1,4 +1,5 @@
 import Logger from '../Logger';
+import { ACTOR_RUNTIME_STATUS, actorRuntimeController, isActorRuntimeError } from '../auth/actorRuntimeController';
 import { ownsScopedPosRealtimeListener } from './scopedPosRealtimeListener';
 import {
   buildPosRealtimeTopic,
@@ -22,6 +23,8 @@ import {
   isLocalTenantAccessError,
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
+import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
+import { LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
 const entityHandlers = new Map();
@@ -74,6 +77,84 @@ const isRuntimeGenerationCurrent = (generation, licenseKey = runtime.licenseKey)
   runtime.generation === generation && runtime.licenseKey === licenseKey
   && (!executionScope || executionScope.isContextCurrent())
 );
+
+let outboxTimer = null;
+let unsubscribeOutboxChanges = null;
+let unsubscribeOutboxContext = null;
+let outboxWakeRequested = false;
+let actorRevision = 0;
+
+const clearOutboxTimer = () => {
+  outboxTimer?.cancel();
+  outboxTimer = null;
+};
+
+const scheduleOutbox = (retryAt = Date.now()) => {
+  if (!runtime.started || !isBrowserOnline() || !canSchedule()
+    || actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.GRANTED) return;
+  if (runtime.outboxInProgress) {
+    outboxWakeRequested = true;
+    return;
+  }
+  if (outboxTimer && outboxTimer.retryAt <= retryAt) return;
+  clearOutboxTimer();
+
+  const owner = executionScope;
+  const { generation, licenseKey } = runtime;
+  const wake = () => {
+    outboxTimer = null;
+    if (!canSchedule(owner) || !isRuntimeGenerationCurrent(generation, licenseKey)) return;
+    return posSyncOrchestrator.processOutbox('scheduled').catch((error) => {
+      if (!isLocalTenantAccessError(error)) Logger.warn('[PosSync] Outbox programado falló:', error);
+    });
+  };
+  const delay = Math.min(2_147_483_647, Math.max(0, retryAt - Date.now()));
+  if (owner) {
+    const timer = owner.schedule('pos:outbox', wake, delay);
+    outboxTimer = { retryAt, cancel: () => timer.cancel() };
+  } else {
+    const timer = setTimeout(wake, delay);
+    outboxTimer = { retryAt, cancel: () => clearTimeout(timer) };
+  }
+};
+
+const stopOutboxSources = () => {
+  clearOutboxTimer();
+  outboxWakeRequested = false;
+  unsubscribeOutboxChanges?.();
+  unsubscribeOutboxChanges = null;
+  unsubscribeOutboxContext?.();
+  unsubscribeOutboxContext = null;
+  if (typeof window !== 'undefined') window.removeEventListener('offline', clearOutboxTimer);
+};
+
+const outboxActorSignature = (actor) => JSON.stringify([
+  actor.status, actor.generation, actor.sessionId, actor.actorKey, [...actor.permissions].sort()
+]);
+
+const startOutboxSources = () => {
+  let signature = outboxActorSignature(actorRuntimeController.getState());
+  const actorChanged = actorRuntimeController.subscribe((actor) => {
+    const nextSignature = outboxActorSignature(actor);
+    if (nextSignature === signature) return;
+    signature = nextSignature;
+    actorRevision += 1;
+    clearOutboxTimer();
+    scheduleOutbox();
+  });
+  const tenantChanged = localTenantAccessController.subscribe((state) => {
+    actorRevision += 1;
+    clearOutboxTimer();
+    unsubscribeOutboxChanges?.();
+    unsubscribeOutboxChanges = null;
+    if (state.status === LOCAL_TENANT_STATUS.GRANTED) scheduleOutbox();
+  });
+  unsubscribeOutboxContext = () => {
+    actorChanged();
+    tenantChanged();
+  };
+  if (typeof window !== 'undefined') window.addEventListener('offline', clearOutboxTimer);
+};
 
 const applyRuntimeStatus = async (
   status,
@@ -313,6 +394,7 @@ export const posSyncOrchestrator = {
     }
 
     entityHandlers.set(entityType, handler);
+    if (handler.pushOperation) scheduleOutbox();
     Logger.log(`[PosSync] Handler registrado para entidad: ${entityType}`);
 
     return () => {
@@ -389,6 +471,7 @@ export const posSyncOrchestrator = {
       }
 
       startGeneration = ++runtime.generation;
+      stopOutboxSources();
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
         if (runtime.generation !== startGeneration) return { started: false, status: runtime.status };
@@ -397,6 +480,7 @@ export const posSyncOrchestrator = {
       runtime.started = true;
       runtime.licenseKey = licenseKey;
 
+      startOutboxSources();
       attachOnlineListener();
       await syncOutboxService.resetStuckProcessing(
         SYNC_LIMITS.STUCK_PROCESSING_MS,
@@ -470,7 +554,7 @@ export const posSyncOrchestrator = {
         runtime.started = false;
         setActivityFlag('pullInProgress', false);
         runtime.pendingPull = false;
-        setActivityFlag('outboxInProgress', false);
+        stopOutboxSources();
         runtime.lastPullReason = null;
         detachOnlineListener();
 
@@ -499,7 +583,7 @@ export const posSyncOrchestrator = {
     setActivityFlag('startInProgress', false);
     setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;
-    setActivityFlag('outboxInProgress', false);
+    stopOutboxSources();
     runtime.lastPullReason = null;
     detachOnlineListener();
 
@@ -767,119 +851,124 @@ export const posSyncOrchestrator = {
     if (!runtime.started || !runtime.licenseKey || !isBrowserOnline()) {
       return { processed: 0 };
     }
-    const operationLicenseKey = runtime.licenseKey;
-    const operationGeneration = runtime.generation;
-
-    await assertLocalTenantSyncAccess(
-      { license_key: operationLicenseKey },
-      { reason: `pos_sync_outbox_${reason}` }
-    );
-    if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-      return { processed: 0, skipped: true, reason: 'runtime_changed' };
-    }
-
     if (runtime.outboxInProgress) {
-      Logger.log(`[PosSync] Outbox ya en curso; se omite ${reason}.`);
-
-      return {
-        processed: 0,
-        skipped: true,
-        reason: 'outbox_in_progress'
-      };
+      outboxWakeRequested = true;
+      return { processed: 0, skipped: true, reason: 'outbox_in_progress' };
     }
 
-    setActivityFlag('outboxInProgress', true);
-
+    const licenseKey = runtime.licenseKey;
+    const generation = runtime.generation;
+    const revision = actorRevision;
+    let actor;
     try {
-      const pending = await syncOutboxService.getPendingOperations({
-        licenseKey: operationLicenseKey,
-        limit: SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT
-      });
-      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-        return { processed: 0, skipped: true, reason: 'runtime_changed' };
-      }
+      actor = actorRuntimeController.capture();
+    } catch (error) {
+      if (!isActorRuntimeError(error)) throw error;
+      return { processed: 0, skipped: true, reason: 'actor_unavailable' };
+    }
 
-      let processed = 0;
+    const isOutboxRuntimeCurrent = () => runtime.started && canSchedule()
+      && isRuntimeGenerationCurrent(generation, licenseKey);
+    const isCurrent = () => {
+      if (!isOutboxRuntimeCurrent() || !isBrowserOnline() || revision !== actorRevision) return false;
+      try {
+        actor.assertCurrent();
+        return true;
+      } catch (error) {
+        if (!isActorRuntimeError(error)) throw error;
+        return false;
+      }
+    };
+
+    clearOutboxTimer();
+    setActivityFlag('outboxInProgress', true);
+    let processed = 0;
+    let nextRetryAt = Infinity;
+    try {
+      await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: `pos_sync_outbox_${reason}` });
+      if (!isCurrent()) return { processed, skipped: true, reason: 'runtime_changed' };
+
+      unsubscribeOutboxChanges ??= syncOutboxService.observeChanges(() => {
+        if (isRuntimeGenerationCurrent(generation, licenseKey)) scheduleOutbox();
+      });
+
+      const pending = await syncOutboxService.getPendingOperations({
+        licenseKey,
+        limit: SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT,
+        canProcess: (row) => {
+          const handler = entityHandlers.get(row.entityType);
+          return handler?.pushOperation && handler.canPushOperation?.(row) !== false
+            && (!row.originActorKey || row.actorSensitivity === 'tenant_shared' || row.originActorKey === actor.actorKey);
+        },
+        onFutureRetry: (retryAt) => { nextRetryAt = Math.min(nextRetryAt, retryAt); }
+      });
       const updateRequiredFamilies = new Set();
 
       for (const operation of pending) {
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return { processed, skipped: true, reason: 'runtime_changed' };
-        }
-        await assertLocalTenantSyncAccess(
-          { license_key: operationLicenseKey },
-          { reason: `pos_sync_outbox_operation_${reason}` }
-        );
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return { processed, skipped: true, reason: 'runtime_changed' };
-        }
+        if (!isCurrent()) return { processed, skipped: true, reason: 'runtime_changed' };
         const handler = entityHandlers.get(operation.entityType);
-        const protocolFamily = getCloudSyncProtocolFamilyForEntity(operation.entityType);
-        if (protocolFamily && updateRequiredFamilies.has(protocolFamily)) continue;
+        const family = getCloudSyncProtocolFamilyForEntity(operation.entityType);
+        if (!handler?.pushOperation || updateRequiredFamilies.has(family)) continue;
 
-        if (!handler?.pushOperation) {
-          // Fase 0: la cola queda lista, pero sin handlers funcionales aun.
-          continue;
-        }
-
-        try {
-          await syncOutboxService.markProcessing(operation.id, {
-            licenseKey: operationLicenseKey
-          });
-          if (executionScope && (!canSchedule() || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey))) {
-            return { processed, skipped: true, reason: 'runtime_changed' };
-          }
-          unknownHandler(`push:${operation.entityType}`);
-          const result = await runWithLocalTenantSyncLease(
-            { license_key: operationLicenseKey },
-            { reason: `pos_sync_outbox_handler_${operation.entityType}` },
-            () => {
-              if (executionScope && (!canSchedule() || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey))) {
-                throw new Error('SYNC_EXECUTION_CONTEXT_STALE');
-              }
-              return handler.pushOperation(operation);
+        await runWithLocalTenantSyncLease(
+          { license_key: licenseKey },
+          { reason: `pos_sync_outbox_handler_${operation.entityType}` },
+          async () => {
+            const claimed = await syncOutboxService.claimPendingOperation(operation, { licenseKey, isCurrent });
+            if (!claimed || !isOutboxRuntimeCurrent()) return;
+            if (!isCurrent()) {
+              await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
+              return;
             }
-          );
 
-          if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-            return { processed, skipped: true, reason: 'runtime_changed' };
-          }
+            let result;
+            try {
+              unknownHandler(`push:${operation.entityType}`);
+              result = await handler.pushOperation(claimed, { actorHandle: actor });
+            } catch (error) {
+              if (isLocalTenantAccessError(error) || !isOutboxRuntimeCurrent()) throw error;
+              if (isActorRuntimeError(error) && !isCurrent()) {
+                await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
+                return;
+              }
+              Logger.warn('[PosSync] Enviar pendientes falló:', error, { diagnosticOperation: 'sync.outbox' });
+              if (isCloudClientUpdateRequired(error) && (error.family || family)) {
+                const blockedFamily = error.family || family;
+                updateRequiredFamilies.add(blockedFamily);
+                await syncOutboxService.pauseForUpdateRequiredFamily(blockedFamily, { licenseKey });
+              } else {
+                const retryAt = await syncOutboxService.markFailed(operation.id, error, {
+                  retry: !classifyActorAuthorityError(error) && !isCloudClientUpdateRequired(error)
+                    && error?.retryable !== false && error?.response?.retryable !== false,
+                  onlyProcessing: true,
+                  licenseKey
+                });
+                if (retryAt) nextRetryAt = Math.min(nextRetryAt, Date.parse(retryAt));
+              }
+              return;
+            }
 
-          if (result?.conflict) {
-            await syncOutboxService.markConflict(operation.id, result.conflict, {
-              licenseKey: operationLicenseKey
-            });
-          } else {
-            await syncOutboxService.markSynced(operation.id, result || null, {
-              licenseKey: operationLicenseKey
-            });
+            // A quiesced runtime leaves an in-flight claim for recovery.
+            if (!isOutboxRuntimeCurrent()) return;
+            if (result?.conflict) {
+              await syncOutboxService.markConflict(operation.id, result.conflict, { licenseKey });
+            } else {
+              await syncOutboxService.markSynced(operation.id, result || null, { licenseKey });
+            }
+            processed += 1;
           }
-
-          processed += 1;
-        } catch (error) {
-          if (isLocalTenantAccessError(error)) throw error;
-          if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) throw error;
-          Logger.warn('[PosSync] Enviar pendientes falló:', error, { diagnosticOperation: 'sync.outbox' });
-          if (isCloudClientUpdateRequired(error)) {
-            const family = error.family || protocolFamily;
-            if (family) updateRequiredFamilies.add(family);
-            await syncOutboxService.pauseForUpdateRequiredFamily(family, {
-              licenseKey: operationLicenseKey
-            });
-          } else {
-            await syncOutboxService.markFailed(operation.id, error, {
-              retry: true,
-              licenseKey: operationLicenseKey
-            });
-          }
-        }
+        );
       }
 
+      if (!isCurrent()) return { processed, skipped: true, reason: 'runtime_changed' };
+      if (pending.length === SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT) nextRetryAt = Date.now();
       return { processed };
     } finally {
-      if (isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) {
-        setActivityFlag('outboxInProgress', false);
-      }
+      const wakeRequested = outboxWakeRequested;
+      outboxWakeRequested = false;
+      setActivityFlag('outboxInProgress', false);
+      if (wakeRequested || !isRuntimeGenerationCurrent(generation, licenseKey)) scheduleOutbox();
+      else if (Number.isFinite(nextRetryAt) && isCurrent()) scheduleOutbox(nextRetryAt);
     }
   },
 
