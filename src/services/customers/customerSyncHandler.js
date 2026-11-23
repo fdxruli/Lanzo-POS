@@ -221,6 +221,8 @@ export const customerSyncHandler = {
     return { applied, latestChangeSeq: sinceChangeSeq };
   },
 
+  canPushOperation: canSyncCustomers,
+
   async pushOperation(operation) {
     const licenseKey = operation?.licenseKey || getRuntimeLicenseKey();
     if (!licenseKey) {
@@ -344,7 +346,8 @@ export const customerSyncHandler = {
                   licenseKey,
                   customer: rebasedPayload.customer,
                   expectedVersion,
-                  idempotencyKey
+                  idempotencyKey,
+                  actorHandle
                 });
 
                 if (response?.success === false && response.code === 'VERSION_CONFLICT') {

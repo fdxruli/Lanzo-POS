@@ -262,7 +262,7 @@ export const productSyncHandler = {
     return pullCatalogChanges(licenseKey);
   },
 
-  async pushOperation(operation = {}) {
+  async pushOperation(operation = {}, { actorHandle: outboxActor } = {}) {
     const licenseKey = operation.licenseKey || getRuntimeLicenseKey();
     if (!licenseKey) throw new Error('PRODUCT_OUTBOX_LICENSE_REQUIRED');
 
@@ -283,6 +283,10 @@ export const productSyncHandler = {
     // tenant-scoped replay semantics; they must not be assigned currentActor
     // during replay. The cloud repository still validates the current request
     // context at the RPC boundary without persisting it into the old row.
+    if (outboxActor && operation.actorSensitivity !== 'actor_bound') {
+      outboxActor.assertCurrent();
+      actorHandle = captureProductInventoryMutation(actorRequirementFlags);
+    }
     if (mutationRequirements.length > 0 && operation.actorSensitivity === 'actor_bound') {
       try {
         if (!pharmacyReceipt && !cloudInventoryEntry) assertProductInventoryOperationActorCurrent(operation);

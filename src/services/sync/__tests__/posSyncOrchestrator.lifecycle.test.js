@@ -35,10 +35,21 @@ vi.mock('../syncMetaService', () => ({
   }
 }));
 
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: {
+    capture: () => ({ assertCurrent: vi.fn() }),
+    getState: () => ({ status: 'granted', permissions: [] }),
+    subscribe: () => vi.fn()
+  },
+  ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
+  isActorRuntimeError: () => false
+}));
+
 vi.mock('../syncOutboxService', () => ({
   syncOutboxService: {
     resetStuckProcessing: mocks.resetStuckProcessing,
-    getPendingOperations: mocks.getPendingOperations
+    getPendingOperations: mocks.getPendingOperations,
+    observeChanges: () => vi.fn()
   }
 }));
 

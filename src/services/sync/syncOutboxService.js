@@ -129,6 +129,13 @@ const computeRetryAt = (attempts = 0) => {
   return new Date(Date.now() + delay).toISOString();
 };
 
+const pendingForTenant = (licenseKey) => db.table(POS_SYNC_STORES.OUTBOX)
+  .where('[status+createdAt]')
+  .between([OUTBOX_STATUS.PENDING, Dexie.minKey], [OUTBOX_STATUS.PENDING, Dexie.maxKey])
+  .filter((row) => row.licenseKey === licenseKey && hasBoundActorOrigin(row));
+
+const isDue = (row, now) => !row.nextRetryAt || Date.parse(row.nextRetryAt) <= now;
+
 export const syncOutboxService = {
   async assertTenantAccess({ licenseKey = null } = {}) {
     if (!licenseKey) {
@@ -225,6 +232,42 @@ export const syncOutboxService = {
     });
   },
 
+  // Claim the version selected by the drain. Another tab or a protocol pause
+  // may have changed it since the pending batch was read.
+  async claimPendingOperation(operation, { licenseKey, isCurrent }) {
+    await ensureOpen();
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_claim' });
+    const table = db.table(POS_SYNC_STORES.OUTBOX);
+    return db.transaction('rw', table, async () => {
+      const row = await table.get(operation.id);
+      if (!isCurrent() || !row || row.licenseKey !== licenseKey || !hasBoundActorOrigin(row)
+        || row.status !== OUTBOX_STATUS.PENDING || !isDue(row, Date.now())
+        || row.updatedAt !== operation.updatedAt || row.idempotencyKey !== operation.idempotencyKey) return null;
+
+      const updatedAt = nowIso();
+      await table.update(row.id, { status: OUTBOX_STATUS.PROCESSING, updatedAt });
+      return { ...row, updatedAt };
+    });
+  },
+
+  async releaseUnsentOperation(operation, { licenseKey }) {
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_release_unsent' });
+    return db.table(POS_SYNC_STORES.OUTBOX).where('id').equals(operation.id)
+      .and((row) => row.licenseKey === licenseKey && row.status === OUTBOX_STATUS.PROCESSING
+        && row.updatedAt === operation.updatedAt)
+      .modify({ status: OUTBOX_STATUS.PENDING });
+  },
+
+  observeChanges(onChange) {
+    const storePrefix = `idb://${db.name}/${POS_SYNC_STORES.OUTBOX}/`;
+    // Dexie emits this event after commit, including transactional writers.
+    const onMutation = (parts) => {
+      if (Object.keys(parts).some((part) => part.startsWith(storePrefix))) onChange();
+    };
+    Dexie.on('storagemutated', onMutation);
+    return () => Dexie.on.storagemutated.unsubscribe(onMutation);
+  },
+
   async markSynced(id, result = null, { licenseKey = null } = {}) {
     await ensureOpen();
     await assertOperationOwnership(id, licenseKey);
@@ -237,20 +280,25 @@ export const syncOutboxService = {
     });
   },
 
-  async markFailed(id, error, { retry = true, licenseKey = null } = {}) {
+  async markFailed(id, error, { retry = true, licenseKey = null, onlyProcessing = false } = {}) {
     await ensureOpen();
     const table = db.table(POS_SYNC_STORES.OUTBOX);
     const row = await assertOperationOwnership(id, licenseKey);
     const attempts = Number(row?.attempts || 0) + 1;
     const shouldRetry = retry && attempts < RETRY_CONFIG.MAX_ATTEMPTS;
 
-    await table.update(id, {
-      status: shouldRetry ? OUTBOX_STATUS.PENDING : OUTBOX_STATUS.FAILED,
-      attempts,
-      lastError: error?.message || String(error || 'Error desconocido'),
-      nextRetryAt: shouldRetry ? computeRetryAt(attempts) : null,
-      updatedAt: nowIso()
-    });
+    const nextRetryAt = shouldRetry ? computeRetryAt(attempts) : null;
+    const updated = await table.where('id').equals(id)
+      .and((current) => current.licenseKey === licenseKey
+        && (!onlyProcessing || current.status === OUTBOX_STATUS.PROCESSING))
+      .modify({
+        status: shouldRetry ? OUTBOX_STATUS.PENDING : OUTBOX_STATUS.FAILED,
+        attempts,
+        lastError: error?.message || String(error || 'Error desconocido'),
+        nextRetryAt,
+        updatedAt: nowIso()
+      });
+    return updated ? nextRetryAt : null;
   },
 
   async pauseForUpdateRequiredFamily(family, { licenseKey = null } = {}) {
@@ -425,7 +473,10 @@ export const syncOutboxService = {
       .toArray();
   },
 
-  async getPendingOperations({ limit = SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT, licenseKey = null } = {}) {
+  async getPendingOperations({
+    limit = SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT, licenseKey = null,
+    canProcess = () => true, onFutureRetry = () => {}
+  } = {}) {
     if (!licenseKey) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
         reason: 'outbox_license_missing'
@@ -435,16 +486,13 @@ export const syncOutboxService = {
     await ensureOpen();
     const now = Date.now();
 
-    return db.table(POS_SYNC_STORES.OUTBOX)
-      .where('[status+createdAt]')
-      .between([OUTBOX_STATUS.PENDING, Dexie.minKey], [OUTBOX_STATUS.PENDING, Dexie.maxKey])
+    return pendingForTenant(licenseKey)
       .filter((row) => {
-        if (licenseKey && row.licenseKey !== licenseKey) return false;
-        // Actor-bound legacy rows with no immutable origin proof remain in the
-        // database but are an effective HOLD: currentActor is never substituted.
-        if (!hasBoundActorOrigin(row)) return false;
-        if (!row.nextRetryAt) return true;
-        return Date.parse(row.nextRetryAt) <= now;
+        if (!canProcess(row)) return false;
+        if (isDue(row, now)) return true;
+        const retryAt = Date.parse(row.nextRetryAt);
+        if (Number.isFinite(retryAt)) onFutureRetry(retryAt);
+        return false;
       })
       .limit(limit)
       .toArray();
@@ -473,13 +521,17 @@ export const syncOutboxService = {
         ))
         .toArray();
 
-      await Promise.all(rows.map((row) => db.table(POS_SYNC_STORES.OUTBOX).update(row.id, {
-        status: OUTBOX_STATUS.PENDING,
-        updatedAt: nowIso(),
-        lastError: 'Operación regresada a pending por timeout local.'
-      })));
+      const updated = await Promise.all(rows.map((row) => db.table(POS_SYNC_STORES.OUTBOX)
+        .where('id').equals(row.id)
+        .and((current) => current.licenseKey === licenseKey && current.status === OUTBOX_STATUS.PROCESSING
+          && current.updatedAt === row.updatedAt)
+        .modify({
+          status: OUTBOX_STATUS.PENDING,
+          updatedAt: nowIso(),
+          lastError: 'Operación regresada a pending por timeout local.'
+        })));
 
-      return rows.length;
+      return updated.reduce((total, count) => total + count, 0);
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[PosSync/Outbox] No se pudo resetear processing atorado:', error);
