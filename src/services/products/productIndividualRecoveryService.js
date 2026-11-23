@@ -308,6 +308,21 @@ export const assessIndividualProductRecovery = ({
   const cloudBatchById = new Map(cloudBatches.map((row) => [cloudBatchId(row), row]));
   const publicationMatches = publications.filter((row) => String(row?.localProductRef ?? '') === productId);
   const publication = publicationMatches.length === 1 ? publicationMatches[0] : null;
+  const localStock = product?.stock;
+  // The admin snapshot identifies stock depletion separately from manual and configuration blocks.
+  const publicationDepleted = publication?.isAvailable === false
+    && (localStock === 0 || (typeof localStock === 'string' && localStock.trim() !== '' && Number(localStock) === 0))
+    && (product.trackStock ?? product.track_stock) !== false
+    && publication.manualAvailable === true
+    && publication.sourceAvailable === false
+    && publication.sourceState === 'out_of_stock'
+    && publication.stockSnapshot === 0
+    && publication.requiresConfiguration === false
+    && publication.availabilitySource === 'direct'
+    && (publication.availabilityReasonCode == null || publication.availabilityReasonCode === 'SOURCE_STOCK_ZERO')
+    && ['compatible', 'simple_override'].includes(publication.businessCapabilityStatus)
+    && ['compatible', 'simple_override'].includes(publication.publicConfigurationMode)
+    && publication.syncErrorCode == null;
   const activeCloudProduct = cloudProductsForId.find(isCloudActive) || null;
   const categoryId = localCategoryId(product);
   const cloudRecovery = product ? cloudRecoveryMatches({
@@ -374,8 +389,8 @@ export const assessIndividualProductRecovery = ({
     } else if (publication.sourceType !== 'local_snapshot'
       || (publication.productId && String(publication.productId) !== productId)
       || publication.isPublished !== true
-      || publication.isAvailable !== true) {
-      addIssue(issues, 'PUBLICATION_SOURCE_MISMATCH', 'La publicación no coincide con una fuente local_snapshot activa y disponible.', publication.id || null);
+      || (publication.isAvailable !== true && !publicationDepleted)) {
+      addIssue(issues, 'PUBLICATION_SOURCE_MISMATCH', 'Se requiere una publicación local_snapshot vinculada al producto original, publicada y con disponibilidad o agotamiento confirmado.', publication.id || null);
     }
   }
 
