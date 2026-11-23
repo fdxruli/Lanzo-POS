@@ -41,7 +41,7 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(screen.getByRole('article').querySelector('.staff-audit-item-header strong')).toHaveTextContent('Caja Samsung');
     expect(screen.getByText('abierta')).toBeVisible();
     expect(screen.getByText('Apertura')).toBeVisible();
-    expect(screen.getByText('$3450.00')).toBeVisible();
+    expect(screen.getByText('$3,450.00')).toBeVisible();
     expect(screen.getByText('Diferencia de cierre')).toBeVisible();
     expect(screen.getByText('No calculada')).toBeVisible();
     expect(screen.getByText('Pendiente de conteo físico')).toBeVisible();
@@ -70,6 +70,72 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(onReviewSession).toHaveBeenCalledWith(staffSession);
   });
 
+  it('shows net cash sales alongside the existing totals for an open admin session', async () => {
+    const adminSession = {
+      ...staffSession,
+      id: 'admin-open-session',
+      staff_display_name: undefined,
+      responsible_name: 'Administradora',
+      opened_by_device_name: 'Chrome en Linux',
+      monto_inicial: '1000',
+      ventas_efectivo: 65,
+      entradas_efectivo: '0',
+      salidas_efectivo: '0',
+      abonos_fiado: '70',
+      expected_cash_total: undefined
+    };
+    const listCashSessionsForAudit = vi.fn().mockResolvedValue({ cashSessions: [adminSession] });
+    const onReviewSession = vi.fn();
+
+    render(<CajaStaffAuditPanel
+      adminCashSessions={[adminSession]}
+      listCashSessionsForAudit={listCashSessionsForAudit}
+      onReviewSession={onReviewSession}
+    />);
+
+    await screen.findByText(/^Actualizado:/);
+    expect(screen.getByRole('article').querySelector('.staff-audit-item-header strong')).toHaveTextContent('Chrome en Linux');
+    expect(screen.getByText('Responsable: Administradora')).toBeVisible();
+    expect(screen.getByText('No calculada')).toBeVisible();
+    expect(screen.getByText('Efectivo esperado').parentElement).toHaveTextContent('$1,135.00');
+
+    const details = screen.getByText('Detalles');
+    fireEvent.click(details);
+
+    for (const [label, value] of [
+      ['Monto inicial', '$1,000.00'],
+      ['Ventas en efectivo netas', '$65.00'],
+      ['Entradas', '$0.00'],
+      ['Salidas', '$0.00'],
+      ['Abonos/clientes', '$70.00']
+    ]) {
+      const field = screen.getByText(label).parentElement;
+      expect(field).toBeVisible();
+      expect(field).toHaveTextContent(value);
+    }
+
+    fireEvent.click(details);
+    expect(screen.getByText('Ventas en efectivo netas')).not.toBeVisible();
+    expect(screen.getByText('Efectivo esperado').parentElement).toHaveTextContent('$1,135.00');
+    expect(listCashSessionsForAudit).toHaveBeenCalledTimes(1);
+    expect(onReviewSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a real zero', { ventas_efectivo: 0 }, '$0.00'],
+    ['a null value', { ventas_efectivo: null }, 'No disponible'],
+    ['an absent value', {}, 'No disponible'],
+    ['a negative canonical total', { cash_sales_total: '-25.50' }, '-$25.50']
+  ])('shows %s in the net cash sales detail', (_case, salesFields, expectedValue) => {
+    render(<CajaStaffAuditPanel adminCashSessions={[{ ...staffSession, ...salesFields }]} />);
+
+    fireEvent.click(screen.getByText('Detalles'));
+
+    const label = screen.getByText('Ventas en efectivo netas');
+    expect(label).toBeVisible();
+    expect(label.parentElement.querySelector('strong').textContent).toBe(expectedValue);
+  });
+
   it('distinguishes missing audit values from a real zero count and difference', () => {
     render(<CajaStaffAuditPanel adminCashSessions={[
       { ...staffSession, diferencia: null, movements_count: undefined },
@@ -87,7 +153,7 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     ]} />);
 
     expect(screen.getByText('No calculada')).toBeVisible();
-    expect(screen.getByText('No disponible')).toBeVisible();
+    expect(screen.getByText('Movimientos').parentElement).toHaveTextContent('No disponible');
     expect(screen.queryByText('0')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Filtrar auditoria por estado'), { target: { value: 'closed' } });
