@@ -1,5 +1,5 @@
 import { db, STORES } from '../db/dexie';
-import { POS_SYNC_STORES, OUTBOX_STATUS, SYNC_ENTITY_TYPES, getLicenseKeyFromDetails } from '../sync/syncConstants';
+import { POS_SYNC_STORES, OUTBOX_STATUS, CONFLICT_STATUS, SYNC_ENTITY_TYPES, getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
 import {
   createProductWithInitialInventorySafe,
@@ -29,6 +29,7 @@ import {
   normalizeNameKey,
   normalizeSkuKey
 } from './productMapper';
+import { syncConflictService } from '../sync/syncConflictService';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
@@ -564,6 +565,61 @@ export const productLocalRepository = {
       deletionPending: true,
       lastSyncedAt: null
     }, { ...sync, deletionPending: true, lastSyncedAt: null });
+  },
+
+  async withLocalBatchArchiveState({ productId, licenseKey }, operation) {
+    await ensureOpen();
+    const batches = db.table(STORES.PRODUCT_BATCHES);
+    const outbox = db.table(POS_SYNC_STORES.OUTBOX);
+    const conflicts = db.table(POS_SYNC_STORES.CONFLICTS);
+    const inventory = db.table(STORES.INVENTORY_EVENTS);
+    return db.transaction('rw', [STORES.MENU, STORES.DELETED_MENU, batches, outbox, conflicts, inventory], async () => {
+      const product = await db.table(STORES.MENU).get(productId);
+      const localBatches = await batches.where('productId').equals(productId).toArray();
+      const ids = [productId, ...localBatches.map(({ id }) => id)];
+      const [tombstone, catalogOperations, inventoryOperations, pendingConflicts, inventoryEntries] = await Promise.all([
+        this.getProductDeletionTombstoneById(productId),
+        outbox.where('entityType').anyOf(SYNC_ENTITY_TYPES.PRODUCT, SYNC_ENTITY_TYPES.PRODUCT_BATCH)
+          .filter((row) => ids.includes(row.entityId)).toArray(),
+        outbox.where('entityType').anyOf(SYNC_ENTITY_TYPES.INVENTORY_ENTRY, SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT)
+          .filter((row) => {
+            const entry = row.payload?.entry || row.payload?.inventoryEntry || row.payload?.movement || row.payload;
+            return [entry?.productId, entry?.product_id, entry?.batchId, entry?.batch_id, entry?.variantBatchId]
+              .some((id) => ids.includes(id)) || ids.includes(row.entityId);
+          }).toArray(),
+        conflicts.where('entityId').anyOf(ids).filter((row) => row.status === CONFLICT_STATUS.PENDING).toArray(),
+        inventory.where('productId').equals(productId)
+          .filter((event) => event.syncDisposition === 'local_only'
+            || (event.syncDisposition !== 'cloud_authoritative' && !event.synced)).toArray()
+      ]);
+      const hasUnresolvedInventory = catalogOperations.length > 0 || inventoryEntries.length > 0
+        || inventoryOperations.some((row) => row.licenseKey !== licenseKey || row.status !== OUTBOX_STATUS.SYNCED);
+      return operation({ product, localBatches, tombstone, pendingConflicts, hasUnresolvedInventory }, async ({
+        batch, notes, conflict, cloudRevision
+      }) => {
+        const deletedAt = nowIso();
+        await batches.update(batch.id, {
+          ...createLocalMutationSync(),
+          notes,
+          stock: 0,
+          committedStock: 0,
+          isActive: false,
+          isArchived: true,
+          status: 'archived',
+          deletedAt,
+          updatedAt: deletedAt,
+          deletionPending: false
+        });
+        if (conflict) {
+          await syncConflictService.markResolved(conflict.id, {
+            action: 'archive_never_synced_batch',
+            productId,
+            batchId: batch.id,
+            cloudRevision
+          });
+        }
+      });
+    });
   },
 
   async applyCloudCategory(category, { beforeWrite = null } = {}) {

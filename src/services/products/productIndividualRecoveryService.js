@@ -652,7 +652,9 @@ const readCloudRows = async (cloudRepository, licenseKey, entityType) => {
     const responseLimit = Number(response.limit);
     const total = Number(response.total);
     const changeSeq = Number(response.latest_change_seq);
-    if (!Number.isInteger(responseOffset)
+    if ([response.offset, response.limit, response.total, response.latest_change_seq]
+      .some((value) => value === null || value === undefined)
+      || !Number.isInteger(responseOffset)
       || responseOffset !== offset
       || response.entity_type !== entityType
       || !Number.isInteger(responseLimit)
@@ -1381,6 +1383,45 @@ const inspectionErrorMessage = (error) => {
   return error?.message || 'No se pudo verificar el producto.';
 };
 
+const isLocalWithoutCloudHistory = (record) => record?.id
+  && !record.lastSyncedAt && !record.last_synced_at
+  && [record.serverVersion, record.server_version].every((version) => version === undefined || version === null || version === 0)
+  && !record.pendingOperationId && !record.deletionPending;
+
+const isUnconflictedLocalRecord = (record) => isLocalWithoutCloudHistory(record)
+  && ((record.syncStatus ?? PRODUCT_SYNC_STATUS.LOCAL) === PRODUCT_SYNC_STATUS.LOCAL)
+  && !record.conflictReason;
+
+const hasZeroBatchStock = (batch) => batch.stock === 0
+  && [batch.committedStock, batch.committed_stock].every((value) => (value ?? 0) === 0);
+
+const isFailedLocalBatchArchive = ({ product, batch, conflict, licenseKey }) => {
+  const request = conflict.localPayload;
+  const receipt = conflict.serverPayload;
+  // The historical DELETE echoes the repository-generated key in BATCH_NOT_FOUND.
+  const batchKey = batch.id.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const deleteKey = `product:product_batch:delete:${batchKey}:`;
+  return Boolean(batchKey) && batch.syncStatus === PRODUCT_SYNC_STATUS.CONFLICT && batch.conflictReason === 'BATCH_NOT_FOUND'
+    && conflict.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH && conflict.entityId === batch.id
+    && conflict.conflictType === 'BATCH_NOT_FOUND' && conflict.metadata?.source === 'productRepository'
+    && conflict.metadata.outboxId === null && !hasExplicitTenantMismatch(conflict, licenseKey)
+    && request?.id === batch.id && localBatchProductId(request) === product.id
+    && isUnconflictedLocalRecord(request) && !hasExplicitTenantMismatch(request, licenseKey)
+    && request.manufacturerBatchId === batch.manufacturerBatchId && request.expiryDate === batch.expiryDate
+    && request.createdAt === batch.createdAt && request.localMutationId === batch.localMutationId
+    && request.isActive === false && request.isArchived === true && request.status === 'archived'
+    && typeof request.deletedAt === 'string' && Number.isFinite(Date.parse(request.deletedAt))
+    && hasZeroBatchStock(request)
+    && receipt?.success === false && receipt.code === 'BATCH_NOT_FOUND'
+    && typeof receipt.idempotency_key === 'string' && receipt.idempotency_key.startsWith(deleteKey)
+    && /^[a-z0-9_-]+:[a-z0-9]+:[a-f0-9-]+$/.test(receipt.idempotency_key.slice(deleteKey.length));
+};
+
+const batchArchiveBlocked = () => Object.assign(
+  new Error('No se pudo confirmar que el lote y su producto sean exclusivamente locales y estén libres de cambios pendientes.'),
+  { code: 'LOCAL_BATCH_ARCHIVE_UNVERIFIED' }
+);
+
 const defaultDependencies = {
   getAppState: () => useAppStore.getState(),
   actorController: actorRuntimeController,
@@ -1427,6 +1468,80 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
   };
 
   return {
+    async archiveNeverSyncedBatch({ batchId, productId, notes, licenseKey, actorHandle }) {
+      try {
+        return await runInCurrentTenant(licenseKey, 'archive_never_synced_batch', (context) => (
+          deps.runWithRecoveryLock({
+            licenseKey,
+            requireWebLock: true,
+            operation: async () => {
+              const assertCurrent = () => {
+                assertRecoveryTenant(deps, licenseKey);
+                assertInspectionActor(deps, context.actorSessionId);
+                deps.assertMutationCurrent(actorHandle, { inventory: true });
+              };
+              const readState = (operation) => deps.localRepository.withLocalBatchArchiveState({
+                productId, licenseKey
+              }, operation);
+              const inspect = ({ product, localBatches, tombstone, pendingConflicts, hasUnresolvedInventory }) => {
+                assertCurrent();
+                const batch = localBatches.find(({ id }) => id === batchId);
+                const conflict = pendingConflicts[0];
+                if (!isUnconflictedLocalRecord(product) || isDeleted(product) || tombstone
+                  || !isLocalWithoutCloudHistory(batch) || isArchived(batch) || !hasZeroBatchStock(batch)
+                  || [product, ...localBatches].some((row) => hasExplicitTenantMismatch(row, licenseKey))
+                  || localBatches.some((row) => row.id !== batchId && !isUnconflictedLocalRecord(row))
+                  || hasUnresolvedInventory || pendingConflicts.length > 1
+                  || (conflict ? !isFailedLocalBatchArchive({ product, batch, conflict, licenseKey })
+                    : !isUnconflictedLocalRecord(batch))) {
+                  throw batchArchiveBlocked();
+                }
+                return { batch, conflict };
+              };
+              if (!deps.isOnline() || !deps.isCloudSyncEnabled(context.appState?.licenseDetails)) {
+                throw batchArchiveBlocked();
+              }
+              const before = await readState((state) => {
+                inspect(state);
+                return state;
+              });
+              const [products, batches] = await Promise.all([
+                readCloudRows(deps.cloudRepository, licenseKey, 'product'),
+                readCloudRows(deps.cloudRepository, licenseKey, 'product_batch')
+              ]);
+              const cloudRevision = products.snapshotMeta.latestChangeSeq;
+              const batchIds = new Set(before.localBatches.map(({ id }) => id));
+              if (new Set(products.map(cloudProductId)).size !== products.length
+                || new Set(batches.map(cloudBatchId)).size !== batches.length
+                || cloudRevision !== batches.snapshotMeta.latestChangeSeq
+                || products.some((row) => !cloudProductId(row) || cloudProductId(row) === productId)
+                || batches.some((row) => !cloudBatchId(row) || !cloudBatchParentId(row)
+                  || cloudBatchParentId(row) === productId || batchIds.has(cloudBatchId(row)))) {
+                throw batchArchiveBlocked();
+              }
+              return readState(async (state, commit) => {
+                const { batch, conflict } = inspect(state);
+                if (!sameLocalSnapshot(before, state)
+                  || stableStringify(before.pendingConflicts) !== stableStringify(state.pendingConflicts)) {
+                  throw batchArchiveBlocked();
+                }
+                const originalNotes = batch.notes || '';
+                if (notes !== undefined && notes !== null && notes !== originalNotes
+                  && !notes.startsWith(originalNotes + ' - Nota del usuario: ')) {
+                  throw batchArchiveBlocked();
+                }
+                await commit({ batch, notes: notes ?? originalNotes, conflict, cloudRevision });
+                assertCurrent();
+                return { success: true, archivedLocalOnly: true };
+              });
+            }
+          })
+        ));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+
     async inspectProduct({ productId, licenseKey = null } = {}) {
       try {
         return await runInCurrentTenant(licenseKey, 'individual_product_recovery_inspect', async (context) => {

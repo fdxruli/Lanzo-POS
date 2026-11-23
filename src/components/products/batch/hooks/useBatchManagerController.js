@@ -436,7 +436,7 @@ export function useBatchManagerController({
         throw archiveResult?.error || new Error(archiveResult?.message || 'No se pudo archivar el lote.');
       }
 
-      if (stockNumber !== 0) {
+      if (stockNumber !== 0 && !archiveResult.archivedLocalOnly) {
         const valueDifference = -(stockNumber * Number(batch.cost || 0));
         if (valueDifference !== 0) await adjustInventoryValue(valueDifference);
       }
@@ -447,7 +447,7 @@ export function useBatchManagerController({
       showMessageModal(
         archiveResult.pending
           ? 'Lote archivado localmente. Se sincronizará al volver internet.'
-          : (actionType === 'Normal' ? 'Lote archivado correctamente.' : `Lote archivado (${actionType} registrada).`)
+          : (archiveResult.archivedLocalOnly || actionType === 'Normal' ? 'Lote archivado correctamente.' : `Lote archivado (${actionType} registrada).`)
       );
     } catch (error) {
       Logger.error(error);

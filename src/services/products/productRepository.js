@@ -1295,12 +1295,29 @@ export const productRepository = {
       return result;
     }
 
+    const current = typeof batchOrId === 'string' ? batch : await productLocalRepository.getBatchById(batchId);
+    const version = Number(current?.serverVersion ?? current?.server_version);
+    if (!Number.isSafeInteger(version) || version <= 0) {
+      const productId = current?.productId || current?.product_id;
+      if (!productId || options.idempotencyKey || (options.expectedVersion ?? null) !== null) {
+        return { success: false, code: 'LOCAL_BATCH_ARCHIVE_UNVERIFIED', message: 'No se pudo verificar el estado Cloud del lote.' };
+      }
+      const { productIndividualRecoveryService } = await import('./productIndividualRecoveryService');
+      const result = await productIndividualRecoveryService.archiveNeverSyncedBatch({
+        productId, batchId, notes: batch?.notes, licenseKey: mode.licenseKey, actorHandle
+      });
+      if (result.success) {
+        notifyProductMutation({ productId, operation: 'updated', source: 'productRepository.deleteBatch.localOnly' });
+      }
+      return result;
+    }
+
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
       entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
       operation: SYNC_OPERATIONS.DELETE,
       entityId: batchId
     });
-    const expectedVersion = options.expectedVersion ?? batch?.serverVersion ?? null;
+    const expectedVersion = options.expectedVersion ?? batch?.serverVersion ?? version;
     const payload = { batchId, expectedVersion };
 
     const enqueuePending = async (message) => {
