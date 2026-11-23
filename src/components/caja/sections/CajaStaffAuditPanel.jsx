@@ -68,13 +68,14 @@ const getExpectedCash = (session = {}) => (
   )
 );
 
-const getMovementCount = (session = {}) => (
-  session.movements_count ??
-  session.movement_count ??
-  session.movementsCount ??
-  session.metadata?.movements_count ??
-  0
-);
+const getMovementCount = (session) => {
+  const count = session.movements_count ??
+    session.movement_count ??
+    session.movementsCount ??
+    session.metadata?.movements_count;
+  const number = typeof count === 'string' && /^\d+$/.test(count.trim()) ? Number(count) : count;
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+};
 
 const matchesStatusFilter = (session = {}, statusFilter) => {
   if (!statusFilter || statusFilter === 'all') return true;
@@ -208,7 +209,7 @@ const CajaStaffAuditPanel = ({
           </span>
           <div>
             <p className="section-eyebrow">Auditoria admin</p>
-            <h3 id="staff-audit-title" className="section-title">Cajas de staff</h3>
+            <h3 id="staff-audit-title" className="section-title">Cajas auditables</h3>
           </div>
         </div>
         <span className="items-count">{visibleSessions.length}</span>
@@ -216,7 +217,7 @@ const CajaStaffAuditPanel = ({
 
       <div className="cash-opening-notice">
         <ShieldCheck size={18} aria-hidden="true" />
-        <p>Vista separada para auditar cajas de staff. La caja propia del admin se mantiene fuera de este panel.</p>
+        <p>La auditoría incluye cajas de staff y puede mostrar tu propia caja de administrador.</p>
       </div>
 
       {(message || isReadOnly) && (
@@ -270,7 +271,7 @@ const CajaStaffAuditPanel = ({
         {visibleSessions.length === 0 ? (
           <div className="empty-state">
             <UsersRound className="empty-state-icon" size={30} aria-hidden="true" />
-            <p>No hay cajas de staff para los filtros actuales.</p>
+            <p>No hay cajas para los filtros actuales.</p>
           </div>
         ) : (
           visibleSessions.map((session) => {
@@ -278,7 +279,13 @@ const CajaStaffAuditPanel = ({
             const deviceLabel = getDeviceLabel(session);
             const statusLabel = getStatusLabel(session);
             const statusTone = statusLabel === 'abierta' ? 'success' : 'neutral';
-            const difference = Money.init(session.diferencia || session.cash_difference || 0);
+            const rawDifference = session.diferencia ?? session.cash_difference;
+            const countedAmount = session.monto_cierre ?? session.closing_counted_amount;
+            const awaitingCount = statusLabel === 'abierta' && (countedAmount == null || countedAmount === '');
+            const difference = awaitingCount || rawDifference == null || rawDifference === ''
+              ? null
+              : Money.init(rawDifference);
+            const movementCount = getMovementCount(session);
 
             return (
               <article key={session.id} className="staff-audit-item">
@@ -302,12 +309,16 @@ const CajaStaffAuditPanel = ({
                     <strong>{formatMoney(getExpectedCash(session))}</strong>
                   </span>
                   <span className="staff-audit-primary-field staff-audit-primary-field--difference">
-                    <small>Diferencia</small>
-                    <strong className={difference.eq(0) ? '' : difference.gt(0) ? 'amount positive' : 'amount negative'}>{formatMoney(difference)}</strong>
+                    <small>Diferencia de cierre</small>
+                    <strong className={!difference || difference.eq(0) ? '' : difference.gt(0) ? 'amount positive' : 'amount negative'}>
+                      {difference ? formatMoney(difference) : 'No calculada'}
+                    </strong>
+                    {awaitingCount && <small>Pendiente de conteo físico</small>}
                   </span>
                   <span className="staff-audit-primary-field">
                     <small>Movimientos</small>
-                    <strong>{getMovementCount(session)}</strong>
+                    <strong>{movementCount ?? 'No disponible'}</strong>
+                    {movementCount !== null && <small>Según el resumen de la sesión. Los tipos incluidos pueden variar.</small>}
                   </span>
                 </div>
 

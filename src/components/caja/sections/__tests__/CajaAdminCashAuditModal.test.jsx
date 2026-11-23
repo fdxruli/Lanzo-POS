@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CajaAdminCashAuditModal from '../CajaAdminCashAuditModal';
 
@@ -47,6 +47,30 @@ describe('CajaAdminCashAuditModal', () => {
     expect(screen.getByText(/OPENED/)).toBeVisible();
   });
 
+  it.each([
+    [{}, 'No disponible'],
+    [{ movements: [] }, '0']
+  ])('shows the opening reference and the available movement count (%j)', async (response, count) => {
+    renderModal({
+      getCashSessionDetailForAudit: vi.fn().mockResolvedValue({
+        ...detail,
+        movements: [],
+        response,
+        cashSession: {
+          ...detail.cashSession,
+          opening_amount: '1000',
+          opening_counted_amount: '1000',
+          opening_suggested_amount: 0,
+          opening_difference: '1000'
+        }
+      })
+    });
+    await screen.findByText('Caja sintetica');
+    expect(within(screen.getByText('Fondo de referencia al abrir').parentElement).getByText('$0.00')).toBeVisible();
+    expect(within(screen.getByText('Diferencia de apertura respecto al fondo de referencia').parentElement).getByText('$1000.00')).toBeVisible();
+    expect(screen.getByText(`Movimientos (${count}) y eventos (1)`)).toBeVisible();
+  });
+
   it('renders the safe opening device name and station label without exposing identifiers', async () => {
     renderModal({
       getCashSessionDetailForAudit: vi.fn().mockResolvedValue({
@@ -70,6 +94,7 @@ describe('CajaAdminCashAuditModal', () => {
     await screen.findByText('Caja sintetica');
     fireEvent.click(screen.getByText(/conte fisicamente/i));
     expect(screen.getByRole('button', { name: /revisar confirmacion/i })).toBeDisabled();
+    expect(screen.getByText('Diferencia orientativa:').parentElement).toHaveTextContent('No calculada');
     fireEvent.change(screen.getByLabelText(/efectivo contado/i), { target: { value: '1180' } });
     expect(screen.getByText(/\$-16\.00/)).toBeVisible();
     fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });

@@ -154,7 +154,7 @@ const CajaHistoryList = ({
                     <span>Fondo inicial: {c.fondoInicial !== null && c.fondoInicial !== undefined ? `$${Money.toNumber(c.fondoInicial).toFixed(2)}` : 'No disponible'}</span>
                     <span>Contado al abrir: {c.aperturaContada !== null && c.aperturaContada !== undefined ? `$${Money.toNumber(c.aperturaContada).toFixed(2)}` : 'No disponible'}</span>
                     <span>Fondo de referencia al abrir: {c.aperturaSugerida !== null && c.aperturaSugerida !== undefined ? `$${Money.toNumber(c.aperturaSugerida).toFixed(2)}` : 'No disponible'}</span>
-                    <span>Diferencia de apertura: {c.diferenciaApertura !== null && c.diferenciaApertura !== undefined ? `$${Money.toNumber(c.diferenciaApertura).toFixed(2)}` : 'No calculada'}</span>
+                    <span>Diferencia de apertura respecto al fondo de referencia: {c.diferenciaApertura !== null && c.diferenciaApertura !== undefined ? `$${Money.toNumber(c.diferenciaApertura).toFixed(2)}` : 'No calculada'}</span>
                     <span>Fondo declarado para el siguiente turno: {c.fondoSiguiente !== null && c.fondoSiguiente !== undefined ? `$${Money.toNumber(c.fondoSiguiente).toFixed(2)}` : 'No declarado'}</span>
                     {c.comentarios && <span>Comentarios: {c.comentarios}</span>}
                   </div>
