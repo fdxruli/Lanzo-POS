@@ -185,8 +185,10 @@ describe('POS Outbox con IndexedDB', () => {
       if (change === 'actor') grant('another', 'session-two');
     }
     confirm({ success: true });
-    if (change === 'tenant') await expect(run).rejects.toMatchObject({ code: 'LOCAL_TENANT_SYNC_BLOCKED' });
-    else await expect(run).resolves.toMatchObject({ skipped: true, reason: 'runtime_changed' });
+    await expect(run).resolves.toMatchObject({ skipped: true, reason: 'runtime_changed' });
+    expect((await table.get('b-in-flight')).status).toBe(
+      change === 'tenant' || change === 'stop' ? OUTBOX_STATUS.PROCESSING : OUTBOX_STATUS.SYNCED
+    );
     await vi.advanceTimersByTimeAsync(RETRY_CONFIG.BASE_DELAY_MS + 500);
     expect(push.mock.calls.map(([row]) => row.id)).toEqual(['a-retry', 'b-in-flight']);
     expect((await table.get('a-retry')).status).toBe(OUTBOX_STATUS.PENDING);

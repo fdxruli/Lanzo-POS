@@ -15,7 +15,16 @@ vi.mock('../../../src/services/tenant/localTenantGuard',()=>({assertLocalTenantS
 vi.mock('../../../src/services/posRealtime',()=>({buildPosRealtimeTopic:()=>m.topic,startPosRealtimeListener:m.realtime,stopPosRealtimeListener:m.stopRealtime}));
 vi.mock('../../../src/services/sync/posSyncClient',()=>({posSyncClient:{pullSyncEvents:m.pull}}));
 vi.mock('../../../src/services/sync/syncMetaService',()=>({syncMetaService:{getLastChangeSeq:async()=>0,setLastChangeSeq:m.cursor,setLastPullAt:m.pullAt,setLastPullError:m.pullError,setRealtimeStatus:m.status,setSyncEnabled:m.enabled}}));
-vi.mock('../../../src/services/sync/syncOutboxService',()=>({getCloudSyncProtocolFamilyForEntity:()=>null,syncOutboxService:{resetStuckProcessing:m.reset,getPendingOperations:m.pending,markProcessing:m.processing,markSynced:m.synced,markFailed:m.failed,markConflict:m.conflict}}));
+vi.mock('../../../src/services/auth/actorRuntimeController',()=>({
+  ACTOR_RUNTIME_STATUS:{GRANTED:'granted'},
+  actorRuntimeController:{
+    getState:()=>({status:'granted',permissions:[]}),
+    subscribe:()=>()=>{},
+    capture:()=>({actorKey:'actor-A',assertCurrent:()=>{}})
+  },
+  isActorRuntimeError:()=>false
+}));
+vi.mock('../../../src/services/sync/syncOutboxService',()=>({getCloudSyncProtocolFamilyForEntity:()=>null,syncOutboxService:{resetStuckProcessing:m.reset,getPendingOperations:m.pending,observeChanges:()=>()=>{},claimPendingOperation:m.processing,markSynced:m.synced,markFailed:m.failed,markConflict:m.conflict}}));
 vi.mock('../../../src/services/products/productLocalRepository',()=>({productLocalRepository:{getLocalCatalogForMigration:m.cache}}));
 vi.mock('../../../src/services/products/productSyncHandler.js',()=>({productSyncHandler:{onStart:m.snapshot}}));
 vi.mock('../../../src/services/customers/customerSyncHandler',()=>({customerSyncHandler:{onStart:m.snapshot}}));
@@ -39,7 +48,7 @@ beforeEach(async()=>{
   window.history.replaceState({},'', '/f012d-no-demand');
   m.state={appStatus:'ready',licenseDetails:details,currentDeviceRole:'admin'};
   m.assertTenant.mockResolvedValue(true);m.lease.mockImplementation(async(_a,_b,fn)=>fn());
-  m.pull.mockResolvedValue({...response});m.pending.mockResolvedValue([]);m.cache.mockResolvedValue({products:[{id:'synthetic'}]});
+  m.pull.mockResolvedValue({...response});m.pending.mockResolvedValue([]);m.processing.mockImplementation(async row=>row);m.cache.mockResolvedValue({products:[{id:'synthetic'}]});
   m.snapshot.mockResolvedValue({success:true});m.realtime.mockImplementation(({callbacks})=>{m.callbacks=callbacks;return{id:'synthetic-channel'};});
   m.stopRealtime.mockResolvedValue();
   pos=(await import('../../../src/services/sync/posSyncOrchestrator')).posSyncOrchestrator;

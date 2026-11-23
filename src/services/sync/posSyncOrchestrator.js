@@ -867,9 +867,10 @@ export const posSyncOrchestrator = {
       return { processed: 0, skipped: true, reason: 'actor_unavailable' };
     }
 
+    const isOutboxRuntimeCurrent = () => runtime.started && canSchedule()
+      && isRuntimeGenerationCurrent(generation, licenseKey);
     const isCurrent = () => {
-      if (!runtime.started || !isBrowserOnline() || !canSchedule()
-        || !isRuntimeGenerationCurrent(generation, licenseKey) || revision !== actorRevision) return false;
+      if (!isOutboxRuntimeCurrent() || !isBrowserOnline() || revision !== actorRevision) return false;
       try {
         actor.assertCurrent();
         return true;
@@ -914,7 +915,7 @@ export const posSyncOrchestrator = {
           { reason: `pos_sync_outbox_handler_${operation.entityType}` },
           async () => {
             const claimed = await syncOutboxService.claimPendingOperation(operation, { licenseKey, isCurrent });
-            if (!claimed) return;
+            if (!claimed || !isOutboxRuntimeCurrent()) return;
             if (!isCurrent()) {
               await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
               return;
@@ -925,7 +926,7 @@ export const posSyncOrchestrator = {
               unknownHandler(`push:${operation.entityType}`);
               result = await handler.pushOperation(claimed, { actorHandle: actor });
             } catch (error) {
-              if (isLocalTenantAccessError(error)) throw error;
+              if (isLocalTenantAccessError(error) || !isOutboxRuntimeCurrent()) throw error;
               if (isActorRuntimeError(error) && !isCurrent()) {
                 await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
                 return;
@@ -947,8 +948,8 @@ export const posSyncOrchestrator = {
               return;
             }
 
-            // Persist an already dispatched result under the original tenant lease.
-            // The next dispatch still requires a current actor and generation.
+            // A quiesced runtime leaves an in-flight claim for recovery.
+            if (!isOutboxRuntimeCurrent()) return;
             if (result?.conflict) {
               await syncOutboxService.markConflict(operation.id, result.conflict, { licenseKey });
             } else {
