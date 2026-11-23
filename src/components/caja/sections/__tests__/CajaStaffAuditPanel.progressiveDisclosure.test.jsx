@@ -42,8 +42,10 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(screen.getByText('abierta')).toBeVisible();
     expect(screen.getByText('Apertura')).toBeVisible();
     expect(screen.getByText('$3450.00')).toBeVisible();
-    expect(screen.getByText('Diferencia')).toBeVisible();
-    expect(screen.getByText('$0.00')).toBeVisible();
+    expect(screen.getByText('Diferencia de cierre')).toBeVisible();
+    expect(screen.getByText('No calculada')).toBeVisible();
+    expect(screen.getByText('Pendiente de conteo físico')).toBeVisible();
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
     expect(screen.getByText('18')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Revisar' })).toBeVisible();
 
@@ -66,6 +68,33 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
     expect(onReviewSession).toHaveBeenCalledWith(staffSession);
+  });
+
+  it('distinguishes missing audit values from a real zero count and difference', () => {
+    render(<CajaStaffAuditPanel adminCashSessions={[
+      { ...staffSession, diferencia: null, movements_count: undefined },
+      {
+        ...staffSession,
+        id: 'admin-session',
+        staff_display_name: undefined,
+        responsible_name: 'Administradora',
+        status: 'closed',
+        monto_cierre: '0',
+        diferencia: 0,
+        cash_difference: '50',
+        movements_count: 0
+      }
+    ]} />);
+
+    expect(screen.getByText('No calculada')).toBeVisible();
+    expect(screen.getByText('No disponible')).toBeVisible();
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Filtrar auditoria por estado'), { target: { value: 'closed' } });
+    expect(screen.getByText('Responsable: Administradora')).toBeVisible();
+    expect(screen.getByText('$0.00')).toBeVisible();
+    expect(screen.getByText('0')).toBeVisible();
+    expect(screen.getByText(/según el resumen de la sesión/i)).toBeVisible();
   });
 
   it('preserves the manual refresh and read-only review behavior', async () => {

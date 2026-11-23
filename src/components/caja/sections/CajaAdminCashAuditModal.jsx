@@ -94,6 +94,11 @@ const CajaAdminCashAuditModal = ({
   }, [cashSessionId, getCashSessionDetailForAudit]);
 
   const session = detail?.cashSession || null;
+  const openingSession = detail?.response?.cash_session ?? detail?.response?.cashSession ?? session;
+  const movementCount = Array.isArray(detail?.movements)
+    && (!detail.response || Array.isArray(detail.response.movements))
+    ? detail.movements.length
+    : null;
   const closingEvent = detail?.auditEvents?.find((event) => /CLOS/i.test(event.event_type || '')) || null;
   const closingActorName = closingEvent?.actor_name
     || (session?.closedByAdminUserId ? 'Administrador' : null);
@@ -213,7 +218,8 @@ const CajaAdminCashAuditModal = ({
               <div className="admin-cash-audit-totals">
                 <DetailValue label="Fondo inicial">{formatMoney(session.opening_amount ?? session.monto_inicial)}</DetailValue>
                 <DetailValue label="Efectivo contado al abrir">{nullableMoney(session.opening_counted_amount ?? session.monto_conteo_inicial, 'No contado')}</DetailValue>
-                <DetailValue label="Diferencia de apertura">{nullableMoney(session.opening_difference ?? session.diferencia_apertura, 'No calculada')}</DetailValue>
+                <DetailValue label="Fondo de referencia al abrir">{nullableMoney(openingSession.opening_suggested_amount ?? openingSession.monto_fondo_sugerido, 'No disponible')}</DetailValue>
+                <DetailValue label="Diferencia de apertura respecto al fondo de referencia">{nullableMoney(openingSession.opening_difference ?? openingSession.diferencia_apertura, 'No calculada')}</DetailValue>
                 <DetailValue label="Ventas efectivo">{formatMoney(session.cash_sales_total ?? session.ventas_efectivo)}</DetailValue>
                 <DetailValue label="Abonos">{formatMoney(session.customer_payments_total ?? session.abonos_fiado)}</DetailValue>
                 <DetailValue label="Entradas / Salidas">{formatMoney(session.cash_entries_total ?? session.entradas_efectivo)} / {formatMoney(session.cash_exits_total ?? session.salidas_efectivo)}</DetailValue>
@@ -224,7 +230,8 @@ const CajaAdminCashAuditModal = ({
               {(session.audit_comments || session.comentarios_auditoria) && (
                 <p className="admin-cash-audit-comment"><strong>Comentarios:</strong> {session.audit_comments || session.comentarios_auditoria}</p>
               )}
-              <details className="admin-cash-audit-details"><summary>Movimientos ({detail.movements?.length || 0}) y eventos ({detail.auditEvents?.length || 0})</summary>
+              <details className="admin-cash-audit-details"><summary>Movimientos ({movementCount ?? 'No disponible'}) y eventos ({detail.auditEvents?.length ?? 'No disponible'})</summary>
+                {movementCount !== null && <p>El contador corresponde a los movimientos listados en este detalle de la sesión.</p>}
                 <div className="admin-cash-audit-stream">{detail.movements?.map((movement) => <p key={movement.id}><strong>{movement.type || movement.tipo}</strong> {formatMoney(movementAmount(movement))} · {movement.concept || movement.concepto || 'Sin concepto'} · {date(movement.created_at || movement.fecha)}</p>)}</div>
                 <div className="admin-cash-audit-stream">{detail.auditEvents?.map((event) => <p key={event.id}><strong>{event.event_type}</strong> · {event.actor_name || 'Sistema'} · {date(event.created_at)}</p>)}</div>
               </details>
@@ -264,7 +271,7 @@ const CajaAdminCashAuditModal = ({
                       onCountsChange={setDenominationCounts}
                     />
                     <label>Fondo siguiente turno<input type="number" min="0" step="0.01" value={nextShiftFund} onChange={(event) => setNextShiftFund(event.target.value)} /></label>
-                    <p className="admin-cash-audit-difference">Diferencia orientativa: <strong>{formatMoney(difference)}</strong></p>
+                    <p className="admin-cash-audit-difference">Diferencia orientativa: <strong>{countedAmount === '' ? 'No calculada' : formatMoney(difference)}</strong></p>
                   </> : <div className="caja-modal__notice caja-modal__notice--warning"><AlertTriangle size={18} /><p>Este cierre no afirma cuanto efectivo existia fisicamente. Conteo: No disponible. Diferencia: No determinada.</p></div>}
                   <label>Motivo<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}><option value="">Selecciona un motivo</option>{REASONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
                   <label>Comentarios {requiresComment && <span>Obligatorio</span>}<textarea rows="3" value={comments} onChange={(event) => setComments(event.target.value)} placeholder="Documenta el cierre administrativo" /></label>
