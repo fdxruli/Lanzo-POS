@@ -1,600 +1,231 @@
+// @vitest-environment node
+import 'fake-indexeddb/auto';
+import { execFileSync } from 'node:child_process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  getMeta: vi.fn(),
-  setMeta: vi.fn(),
-  saveConflict: vi.fn(),
-  listUnsynced: vi.fn(),
-  getLocalCatalog: vi.fn(),
-  applyCloudCatalog: vi.fn(),
-  markDeletionSynced: vi.fn(),
-  markDeletionConflict: vi.fn(),
-  migrateLocalCatalog: vi.fn(),
-  upsertCategory: vi.fn(),
-  upsertProduct: vi.fn(),
-  upsertProductBatch: vi.fn(),
-  deleteCategory: vi.fn(),
-  deleteProduct: vi.fn(),
-  deleteBatch: vi.fn(),
-  listInventoryEntriesForRecovery: vi.fn(),
-  listLocalOnlyInventoryEntriesForRecovery: vi.fn(),
-  processOutbox: vi.fn(),
-  pullCatalogSnapshot: vi.fn(),
-  events: []
+  recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), getMeta: vi.fn(), setMeta: vi.fn(),
+  tenantLease: vi.fn(), readInventory: vi.fn(), saveConflict: vi.fn()
 }));
 
+vi.mock('../../db/dexie', async () => {
+  const { default: Dexie } = await import('dexie');
+  const db = new Dexie('catalog-recovery-cutover');
+  db.version(1).stores({
+    menu: '&id', categories: '&id', productBatches: '&id,productId', deletedMenu: '&id',
+    deletedCategories: '&id', sales: '&id,status', layaways: '&id,status', inventoryEvents: '&id,productId',
+    posSyncOutbox: '&id,entityType'
+  });
+  return { db, STORES: {
+    MENU: 'menu', CATEGORIES: 'categories', PRODUCT_BATCHES: 'productBatches', DELETED_MENU: 'deletedMenu',
+    DELETED_CATEGORIES: 'deletedCategories', SALES: 'sales', LAYAWAYS: 'layaways', INVENTORY_EVENTS: 'inventoryEvents'
+  } };
+});
+vi.mock('../../sync/syncConstants', async (loadActual) => {
+  const actual = await loadActual();
+  return { ...actual, POS_SYNC_STORES: { ...actual.POS_SYNC_STORES, OUTBOX: 'posSyncOutbox' } };
+});
+vi.mock('../../database', () => ({}));
+vi.mock('../../db/general', () => ({ categoriesRepository: {} }));
+vi.mock('../../utils', () => ({ generateID: vi.fn() }));
+vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({}) } }));
+vi.mock('../../tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(),
+  isLocalTenantAccessError: (error) => error.code === 'TENANT_RUNTIME_STALE',
+  runWithLocalTenantSyncLease: mocks.tenantLease
+}));
 vi.mock('../../inventory/inventoryEntryService', () => ({
-  listLocalOnlyInventoryEntriesForRecovery: mocks.listLocalOnlyInventoryEntriesForRecovery
+  listLocalOnlyInventoryEntriesForRecovery: vi.fn(async () => [])
 }));
 vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: {
-  listInventoryEntriesForRecovery: mocks.listInventoryEntriesForRecovery
+  listInventoryEntriesForRecovery: mocks.readInventory,
+  listOperationsForEntity: vi.fn(async () => [])
 } }));
-vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: {
-  processOutbox: mocks.processOutbox
-} }));
-
 vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
-  getMeta: mocks.getMeta,
-  setMeta: mocks.setMeta
+  getMeta: mocks.getMeta, setMeta: mocks.setMeta
 } }));
-vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: {
-  saveConflict: mocks.saveConflict
-} }));
-vi.mock('../../tenant/tenantScopedStorage', () => ({
-  getTenantStorageState: () => ({ opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })
-}));
-vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
-  listUnsyncedLocalCatalogForCloud: mocks.listUnsynced,
-  getLocalCatalogForMigration: mocks.getLocalCatalog,
-  applyCloudCatalog: mocks.applyCloudCatalog,
-  markCatalogDeletionSynced: mocks.markDeletionSynced,
-  markCatalogDeletionConflict: mocks.markDeletionConflict,
-  markConflict: vi.fn()
-} }));
+vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: { saveConflict: mocks.saveConflict } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
-  migrateLocalCatalog: mocks.migrateLocalCatalog,
-  upsertCategory: mocks.upsertCategory,
-  upsertProduct: mocks.upsertProduct,
-  upsertProductBatch: mocks.upsertProductBatch,
-  pullCatalogSnapshot: mocks.pullCatalogSnapshot,
-  deleteCategory: mocks.deleteCategory,
-  deleteProduct: mocks.deleteProduct,
-  deleteProductBatch: mocks.deleteBatch
-} }));
-vi.mock('../productMigrationValidation', () => ({
-  validateLocalCatalogForMigration: vi.fn(() => [])
-}));
-vi.mock('../productMapper', () => ({
-  batchToCloudPayload: (value) => value,
-  categoryToCloudPayload: (value) => value,
-  productToCloudPayload: (value) => value
-}));
-vi.mock('../../Logger', () => ({ default: {
-  log: vi.fn(),
-  warn: vi.fn()
+  recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract, pullCatalogSnapshot: mocks.snapshot, upsertCategory: mocks.category
 } }));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
+import { db } from '../../db/dexie';
 import { productLocalCatalogRecovery } from '../productLocalCatalogRecovery';
+import { productLocalRepository } from '../productLocalRepository';
+import { productMigrationService } from '../productMigrationService';
 
-const recoveryTenantId = 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const licenseKey = 'CUTOVER';
+const createdAt = '2026-08-01T00:00:00.000Z';
+const local = (id) => ({
+  id, name: id, sku: id, stock: 4, committedStock: 0, cost: 5, price: 10, createdAt,
+  rubroContext: 'apparel', syncStatus: 'local', batchManagement: { enabled: true }
+});
+const lot = (id) => ({
+  id: 'lot-' + id, productId: id, stock: 4, committedStock: 0, price: 10, cost: 5,
+  createdAt, status: 'active', attributes: { size: 'M' }, syncStatus: 'local'
+});
+const asReceipt = ({ product, batches, idempotencyKey }) => ({
+  success: true, product: { ...product, server_version: 2 }, outcome: 'created',
+  batches: batches.map((batch) => ({ ...batch, server_version: 1 })), idempotency_key: idempotencyKey
+});
 
-const localCatalog = {
-  categories: [],
-  products: [
-    { id: 'existing-product', name: 'Existing', price: 120, cost: 50, stock: 1, serverVersion: 4 },
-    { id: 'new-product', name: 'New', price: 25, cost: 10, stock: 2 }
-  ],
-  batches: []
+const seed = async (products) => {
+  await db.table('menu').bulkPut(products);
+  await db.table('productBatches').bulkPut(products.map(({ id }) => lot(id)));
 };
 
-describe('repeated FREE to PRO catalog recovery', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.events.length = 0;
-    mocks.getMeta.mockResolvedValue(null);
-    mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
-    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([]);
-    mocks.processOutbox.mockResolvedValue({ processed: 0 });
-    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
-      success: true, has_more: false,
-      products: entityType === 'product' ? [] : undefined,
-      batches: entityType === 'product_batch' ? [] : undefined
-    }));
-    mocks.setMeta.mockResolvedValue(undefined);
-    mocks.saveConflict.mockResolvedValue({ id: 'recovery-conflict' });
-    mocks.getLocalCatalog.mockResolvedValue(localCatalog);
-    mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 0, batches: 0, rejected: [] });
-    mocks.markDeletionSynced.mockResolvedValue(undefined);
-    mocks.markDeletionConflict.mockResolvedValue(undefined);
-    mocks.upsertCategory.mockImplementation(async ({ category }) => ({ success: true, category }));
-    mocks.upsertProduct.mockImplementation(async ({ product }) => ({ success: true, product }));
-    mocks.upsertProductBatch.mockImplementation(async ({ batch }) => ({ success: true, batch }));
-    mocks.migrateLocalCatalog.mockImplementation(async (payload) => {
-      mocks.events.push({ type: 'migrate', payload });
-      return { success: true };
+describe('atomic catalog recovery and local confirmation', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    await db.open();
+    await Promise.all(db.tables.map((table) => table.clear()));
+    mocks.tenantLease.mockImplementation(async (source, _options, operation) => {
+      if (source.license_key !== licenseKey) {
+        throw Object.assign(new Error('tenant changed'), { code: 'TENANT_RUNTIME_STALE' });
+      }
+      return operation();
     });
-    mocks.deleteCategory.mockImplementation(async (payload) => {
-      mocks.events.push({ type: 'delete-category', payload });
-      return { success: true };
+    mocks.readInventory.mockResolvedValue([]);
+    mocks.contract.mockResolvedValue({ success: true, contract_version: 1 });
+    mocks.getMeta.mockResolvedValue(true);
+    mocks.snapshot.mockResolvedValue({ success: true, categories: [], products: [], batches: [] });
+    mocks.recover.mockImplementation(async (args) => asReceipt(args));
+  });
+
+  it.each([false, true])('recovers all safe groups with 13 already confirmed, conflict = %s', async (conflict) => {
+    await db.table('menu').bulkPut(Array.from({ length: 13 }, (_, index) => ({
+      ...local('cloud-' + index), stock: 9, committedStock: 3, syncStatus: 'synced', serverVersion: 4,
+      lastSyncedAt: createdAt
+    })));
+    await db.table('categories').put({ id: 'apparel', name: 'Apparel', color: '#cccccc', createdAt, syncStatus: 'local' });
+    mocks.category.mockImplementation(async ({ category }) => ({ success: true, category: { ...category, server_version: 1 } }));
+    await seed(Array.from({ length: 24 }, (_, index) => ({
+      ...local('apparel-' + index), categoryId: 'apparel'
+    })));
+    if (conflict) mocks.recover.mockResolvedValueOnce({ success: false, code: 'DUPLICATE_SKU' });
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey })).resolves.toMatchObject({
+      success: !conflict, recovery: {
+        recovered: conflict ? 24 : 25,
+        issues: conflict ? [{ entityId: 'apparel-0', code: 'DUPLICATE_SKU' }] : []
+      }
     });
-    mocks.deleteProduct.mockImplementation(async (payload) => {
-      mocks.events.push({ type: 'delete-product', payload });
-      return { success: true };
+    expect(await db.table('menu').count()).toBe(37);
+    expect(await db.table('productBatches').count()).toBe(24);
+    expect(await db.table('menu').get('cloud-0')).toMatchObject({
+      stock: 9, committedStock: 3, syncStatus: 'synced', serverVersion: 4
     });
-    mocks.deleteBatch.mockImplementation(async (payload) => {
-      mocks.events.push({ type: 'delete-batch', payload });
-      return { success: true };
+    expect(await db.table('menu').get('apparel-0')).toMatchObject({
+      stock: 4, syncStatus: conflict ? 'conflict' : 'synced', conflictReason: conflict ? 'DUPLICATE_SKU' : null
+    });
+    expect(await db.table('menu').get('apparel-23')).toMatchObject({ stock: 4, syncStatus: 'synced' });
+    expect(await db.table('categories').get('apparel')).toMatchObject({ syncStatus: 'synced' });
+    expect(await db.table('productBatches').get('lot-apparel-23')).toMatchObject({
+      stock: 4, committedStock: 0, syncStatus: 'synced'
     });
   });
 
-  const medicine = {
-    id: 'medicine-1', name: 'Amoxicilina', stock: 15,
-    metadata: { pharmacy: { kind: 'medicine', status: 'confirmed', fraction: 'IV' } }
-  };
-  const receipt = (status) => ({
-    id: 'entry-op-original', idempotencyKey: 'entry-op-original',
-    entityType: 'inventory_entry', entityId: 'medicine-1',
-    status, licenseKey: 'PHARMA-TEST',
-    payload: { entry: { productId: 'medicine-1', quantity: 5,
-      metadata: { pharmacyReceipt: { documentReference: 'QA-FAC-1' } } } }
-  });
+  it('recovers unrelated Apparel while the original pharmacy receipt is still outstanding', async () => {
+    await seed([{ ...local('medicine'), metadata: { pharmacy: { kind: 'medicine' } } }, local('apparel')]);
+    mocks.readInventory.mockResolvedValue([{ entityId: 'medicine', status: 'failed' }]);
 
-  it('replays a pending documented receipt through the original outbox before snapshot', async () => {
-    mocks.listInventoryEntriesForRecovery
-      .mockResolvedValueOnce([receipt('pending')])
-      .mockResolvedValueOnce([receipt('synced')]);
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({ success: true });
-    expect(mocks.processOutbox).toHaveBeenCalledTimes(1);
-    expect(mocks.upsertProduct).not.toHaveBeenCalled();
-    expect(mocks.upsertProductBatch).not.toHaveBeenCalled();
-  });
-
-  it('holds a Free/Local pharmacy receipt with no outbox even when catalog says synced', async () => {
-    mocks.listInventoryEntriesForRecovery.mockResolvedValue([]);
-    mocks.listLocalOnlyInventoryEntriesForRecovery.mockResolvedValue([{
-      type: 'INVENTORY_ENTRY', operationId: 'free-local-entry', productId: medicine.id,
-      batchId: null, licenseKey: 'PHARMA-TEST', syncDisposition: 'local_only',
-      metadata: { pharmacyReceipt: { documentReference: 'QA-LOCAL' } }
-    }]);
-    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    mocks.pullCatalogSnapshot.mockResolvedValue({
-      success: true, has_more: false, products: [{ id: medicine.id, stock: 10 }]
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey })).resolves.toMatchObject({
+      recovered: 1, blocked: true, issues: [{ entityId: 'medicine', code: 'PRODUCT_RECOVERY_ORIGINAL_INVENTORY_OPERATION_PENDING' }]
     });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({
-      success: false, blocked: true, reason: 'pharmacy_local_only_reconciliation_required'
-    });
-    expect(mocks.upsertProduct).not.toHaveBeenCalled();
-    expect(mocks.saveConflict).toHaveBeenCalled();
+    expect(await db.table('menu').get('medicine')).toMatchObject({ stock: 4, syncStatus: 'local' });
+    expect(await db.table('menu').get('apparel')).toMatchObject({ rubroContext: 'apparel', syncStatus: 'synced' });
   });
 
-  it('keeps an unconfirmed original receipt and never applies a catalog snapshot', async () => {
-    mocks.listInventoryEntriesForRecovery.mockResolvedValue([receipt('pending')]);
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    mocks.listUnsynced.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({
-      success: false, blocked: true, reason: 'pharmacy_receipts_unconfirmed'
-    });
-    expect(mocks.upsertProduct).not.toHaveBeenCalled();
-    expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+  it('retains pending data after an uncertain response and reuses the exact request', async () => {
+    await seed([local('apparel')]);
+    mocks.recover.mockRejectedValueOnce(new Error('Network timeout'));
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey })).resolves.toMatchObject({ blocked: true });
+    expect(await db.table('menu').get('apparel')).toMatchObject({ stock: 4, syncStatus: 'local' });
+
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey })).resolves.toMatchObject({ success: true });
+    expect(mocks.recover.mock.calls[0]).toEqual(mocks.recover.mock.calls[1]);
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey }))
+      .resolves.toMatchObject({ reason: 'no_unsynced_catalog' });
+    expect(mocks.recover).toHaveBeenCalledTimes(2);
   });
 
-  it('recognizes an already synced receipt without a second replay', async () => {
-    mocks.listInventoryEntriesForRecovery.mockResolvedValue([receipt('synced')]);
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    mocks.listUnsynced.mockResolvedValue({ products: [], batches: [], categories: [] });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({ success: true });
-    expect(mocks.processOutbox).not.toHaveBeenCalled();
+  it('keeps pending changes and tombstones through pulls and delayed confirmations', async () => {
+    await seed([local('edited')]);
+    await db.table('deletedMenu').put({ id: 'deleted', deletionPending: true });
+    const stale = asReceipt({
+      product: { id: 'edited', stock: 1 }, batches: [], idempotencyKey: 'stale'
+    });
+    await expect(productLocalRepository.applyCloudCatalog({
+      ...stale, products: [{ id: 'deleted', name: 'Deleted', stock: 2 }]
+    }, { protectLocalChanges: true })).resolves.toMatchObject({ deferredCatalog: 2 });
+    expect(await db.table('menu').get('deleted')).toBeUndefined();
+
+    mocks.recover.mockImplementationOnce(async (args) => {
+      await db.table('menu').update('edited', { price: 20 });
+      return asReceipt(args);
+    });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey })).resolves.toMatchObject({
+      blocked: true, issues: expect.arrayContaining([expect.objectContaining({ code: 'PRODUCT_RECOVERY_LOCAL_CHANGED' })])
+    });
+    expect(await db.table('menu').get('edited')).toMatchObject({ price: 20, stock: 4, syncStatus: 'local' });
   });
 
-  it('patches pharmacy batch attributes without sending stock or committed stock', async () => {
-    const batch = { id: 'batch-1', productId: medicine.id, stock: 15,
-      committedStock: 0, serverVersion: 4, supplier: 'Proveedor QA' };
-    mocks.listUnsynced.mockResolvedValue({
-      products: [], batches: [batch], categories: [], deletes: {}
+  it('preserves active local reservations even if their cached commitment is missing', async () => {
+    await seed([local('held'), local('independent')]);
+    await db.table('layaways').put({
+      id: 'active-layaway', status: 'active', reservedInventory: [{ productId: 'held', quantity: 2 }]
     });
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [batch], categories: [] });
-    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
-      success: true, has_more: false,
-      products: entityType === 'product' ? [{ id: medicine.id, stock: 15 }] : undefined,
-      batches: entityType === 'product_batch' ? [{ id: batch.id, stock: 15 }] : undefined
-    }));
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({ success: true, recovered: 1 });
-    const sent = mocks.upsertProductBatch.mock.calls[0][0].batch;
-    expect(Object.keys(sent)).not.toContain('stock');
-    expect(Object.keys(sent)).not.toContain('committedStock');
-    expect(Object.keys(sent)).not.toContain('committed_stock');
-    expect(sent.supplier).toBe('Proveedor QA');
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey })).resolves.toMatchObject({
+      recovered: 1, blocked: true, issues: [{ entityId: 'held', code: 'RECOVERY_LOCAL_RESERVATION_UNVERIFIED' }]
+    });
+    expect(mocks.recover).toHaveBeenCalledOnce();
+    expect(await db.table('layaways').get('active-layaway')).toMatchObject({
+      reservedInventory: [{ productId: 'held', quantity: 2 }]
+    });
   });
 
-  it('holds an unexplained historical delta without inventing an inventory receipt', async () => {
-    mocks.listUnsynced.mockResolvedValue({
-      products: [medicine], batches: [], categories: [], deletes: {}
+  it('keeps the catalog pending without writes when the server migration is missing', async () => {
+    await seed([local('apparel')]);
+    await db.table('categories').put({ id: 'apparel', name: 'Apparel', createdAt, syncStatus: 'local' });
+    mocks.contract.mockRejectedValueOnce({ code: 'PGRST202' });
+    await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey })).resolves.toMatchObject({
+      success: false, blocked: true, recovery: { issues: [{ code: 'PGRST202' }] }
     });
-    mocks.getLocalCatalog.mockResolvedValue({ products: [medicine], batches: [], categories: [] });
-    mocks.pullCatalogSnapshot.mockResolvedValue({
-      success: true, has_more: false, products: [{ id: medicine.id, stock: 10 }]
-    });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'PHARMA-TEST'
-    })).resolves.toMatchObject({ success: false, blocked: true });
-    expect(mocks.upsertProduct).not.toHaveBeenCalled();
-    expect(mocks.upsertProductBatch).not.toHaveBeenCalled();
-    expect(mocks.saveConflict).toHaveBeenCalled();
+    expect(mocks.category).not.toHaveBeenCalled();
+    expect(mocks.recover).not.toHaveBeenCalled();
   });
 
-  it('reconciles FREE updates and creates through canonical OCC upserts', async () => {
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: localCatalog.products,
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-UPDATE-CREATE'
-    })).resolves.toMatchObject({ success: true, recovered: 2 });
-
-    expect(mocks.migrateLocalCatalog).not.toHaveBeenCalled();
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
-       licenseKey: 'CUTOVER-UPDATE-CREATE',
-       expectedVersion: 4,
-       idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:existing-product:4:legacy`
-     }));
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      licenseKey: 'CUTOVER-UPDATE-CREATE',
-      expectedVersion: null,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:new-product:new:legacy`
-    }));
-    expect(mocks.upsertProduct).toHaveBeenCalledTimes(2);
-    expect(mocks.events).toEqual([]);
-    expect(mocks.deleteProduct).not.toHaveBeenCalled();
+  it('does not send cross-tenant or unauthorized local data', async () => {
+    await seed([local('apparel')]);
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey: 'OTHER' }))
+      .rejects.toMatchObject({ code: 'TENANT_RUNTIME_STALE' });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey, canMigrateProducts: false }))
+      .resolves.toMatchObject({ blocked: true, reason: 'permission_denied' });
+    expect(mocks.recover).not.toHaveBeenCalled();
   });
 
-  it('uses OCC for category and batch updates and keeps deterministic retry keys', async () => {
-    const category = {
-      id: 'category-1',
-      name: 'Category',
-      serverVersion: 2,
-      updatedAt: '2026-08-15T00:00:00.000Z',
-      pendingOperationId: 'old-category-operation',
-      localMutationId: 'category-mutation-2'
+  it.runIf(process.env.LANZO_CATALOG_TEST_POSTGRES === '1')('applies a real PostgreSQL receipt after losing the first response', async () => {
+    const id = 'client-pg-' + process.pid;
+    await seed([local(id)]);
+    const execute = ({ product, batches, idempotencyKey }) => {
+      const sql = `select public.pos_recover_local_product_group_v1('one','device-a','token-one',null,
+        $p$${JSON.stringify(product)}$p$::jsonb, $b$${JSON.stringify(batches)}$b$::jsonb, '${idempotencyKey}');`;
+      return JSON.parse(execFileSync('docker', [
+        'exec', '-i', 'lanzo-catalog-recovery-pg', 'psql', '-X', '-qAt', '-U', 'postgres',
+        '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'
+      ], { input: sql, encoding: 'utf8' }));
     };
-    const batch = {
-      id: 'batch-1',
-      productId: 'existing-product',
-      stock: 3,
-      serverVersion: 6,
-      updatedAt: '2026-08-15T00:00:01.000Z',
-      pendingOperationId: 'old-batch-operation',
-      localMutationId: 'batch-mutation-6'
-    };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [category],
-      products: [],
-      batches: [batch],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [category], products: [], batches: [batch] });
+    mocks.recover.mockImplementationOnce(async (args) => {
+      execute(args);
+      throw new Error('response lost after commit');
+    }).mockImplementation(async (args) => execute(args));
 
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-CATEGORY-BATCH'
-    })).resolves.toMatchObject({ success: true, recovered: 2 });
-
-    expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
-      expectedVersion: 2,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:category:category-1:2:category-mutation-2`
-    }));
-    expect(mocks.upsertProductBatch).toHaveBeenCalledWith(expect.objectContaining({
-      expectedVersion: 6,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product_batch:batch-1:6:batch-mutation-6`
-    }));
-    expect(mocks.upsertCategory).not.toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'old-category-operation' }));
-    expect(mocks.upsertProductBatch).not.toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'old-batch-operation' }));
-  });
-
-  it('recovers inactive unsynced products as upserts and keeps real deletes on the tombstone path', async () => {
-    const deactivated = {
-      id: 'deactivated-product',
-      name: 'Deactivated',
-      isActive: false,
-      serverVersion: 10,
-      syncStatus: 'local',
-      lastSyncedAt: null,
-      localMutationId: 'mutation-deactivate'
-    };
-    const activated = {
-      id: 'activated-product',
-      name: 'Activated',
-      isActive: true,
-      serverVersion: 11,
-      syncStatus: 'local',
-      lastSyncedAt: null,
-      localMutationId: 'mutation-activate'
-    };
-    const tombstone = {
-      id: 'deleted-product',
-      isActive: false,
-      deletedAt: '2026-08-15T00:00:00.000Z',
-      deletionPending: true,
-      serverVersion: 12,
-      localMutationId: 'mutation-delete'
-    };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [deactivated, activated],
-      batches: [],
-      deletes: { categories: [], products: [tombstone], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [deactivated, activated], batches: [] });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-INACTIVE-INTENT'
-    })).resolves.toMatchObject({ success: true, recovered: 3 });
-
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      expectedVersion: 10,
-      product: expect.objectContaining({ id: 'deactivated-product', isActive: false }),
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:deactivated-product:10:mutation-deactivate`
-    }));
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      expectedVersion: 11,
-      product: expect.objectContaining({ id: 'activated-product', isActive: true }),
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:activated-product:11:mutation-activate`
-    }));
-    expect(mocks.deleteProduct).toHaveBeenCalledWith(expect.objectContaining({
-      productId: 'deleted-product',
-      idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:12:mutation-delete`
-    }));
-  });
-
-  it('does not replay an old outbox key, keeps retries stable, and changes key after a second edit', async () => {
-    const firstEdit = {
-      id: 'reused-key-product',
-      name: 'New FREE edit',
-      serverVersion: 7,
-      updatedAt: '2026-08-15T00:00:00.000Z',
-      pendingOperationId: 'old-completed-operation-k',
-      localMutationId: 'new-free-mutation-a'
-    };
-    const catalog = (record) => ({
-      categories: [],
-      products: [record],
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-    mocks.listUnsynced.mockResolvedValue(catalog(firstEdit));
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [firstEdit], batches: [] });
-    mocks.upsertProduct
-      .mockRejectedValueOnce(new Error('transient failure'))
-      .mockResolvedValueOnce({ success: true, product: firstEdit });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-IDEMPOTENCY-RETRY'
-    })).resolves.toMatchObject({ success: false, blocked: true });
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-IDEMPOTENCY-RETRY'
-    })).resolves.toMatchObject({ success: true, recovered: 1 });
-
-    const firstKey = mocks.upsertProduct.mock.calls[0][0].idempotencyKey;
-    const retryKey = mocks.upsertProduct.mock.calls[1][0].idempotencyKey;
-    expect(firstKey).toBe(retryKey);
-    expect(firstKey).not.toBe('old-completed-operation-k');
-    expect(firstKey).not.toContain('CUTOVER-IDEMPOTENCY-RETRY');
-
-    const secondEdit = { ...firstEdit, name: 'Second FREE edit', localMutationId: 'new-free-mutation-b' };
-    // Recovery reads the unsynced catalog twice per invocation (initial guard and post-reconciliation).
-    // Model both reads for each distinct edit instead of mixing versions within one attempt.
-    mocks.listUnsynced
-      .mockResolvedValueOnce(catalog(firstEdit))
-      .mockResolvedValueOnce(catalog(firstEdit))
-      .mockResolvedValueOnce(catalog(secondEdit))
-      .mockResolvedValueOnce(catalog(secondEdit));
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [secondEdit], batches: [] });
-    mocks.upsertProduct.mockResolvedValue({ success: true, product: secondEdit });
-
-    await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey: 'CUTOVER-IDEMPOTENCY-SECOND-EDIT' });
-    await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey: 'CUTOVER-IDEMPOTENCY-SECOND-EDIT' });
-
-    const secondEditKeys = mocks.upsertProduct.mock.calls.slice(-2).map(([payload]) => payload.idempotencyKey);
-    expect(secondEditKeys[0]).not.toBe(secondEditKeys[1]);
-    expect(secondEditKeys[0]).toContain('new-free-mutation-a');
-    expect(secondEditKeys[1]).toContain('new-free-mutation-b');
-  });
-
-  it('treats a server replay on the old key as stale and surfaces VERSION_CONFLICT for the new mutation', async () => {
-    const record = {
-      id: 'server-replay-product',
-      name: 'Current FREE edit',
-      serverVersion: 3,
-      pendingOperationId: 'old-completed-operation-k',
-      localMutationId: 'current-mutation'
-    };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [record],
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [record], batches: [] });
-    mocks.upsertProduct.mockImplementation(async ({ idempotencyKey }) => (
-      idempotencyKey === 'old-completed-operation-k'
-        ? { success: true, product: { id: 'server-replay-product', name: 'Old response' } }
-        : { success: false, code: 'VERSION_CONFLICT', message: 'Current server version is newer.' }
-    ));
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-SERVER-REPLAY'
-    })).resolves.toMatchObject({ success: false, blocked: true });
-
-    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:server-replay-product:3:current-mutation`
-    }));
-    expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
-      localPayload: { issues: [expect.objectContaining({ code: 'VERSION_CONFLICT' })] }
-    }));
-  });
-
-  it('reconciles mixed create, update, and delete intent in one cutover', async () => {
-    const updatedProduct = { id: 'updated-product', name: 'Updated', serverVersion: 5 };
-    const newProduct = { id: 'new-product', name: 'New', price: 25 };
-    const tombstone = {
-      id: 'deleted-product',
-      serverVersion: 8,
-      deletedTimestamp: '2026-08-15T00:00:00.000Z',
-      deletionPending: true,
-      pendingOperationId: 'old-upsert-operation',
-      localMutationId: 'delete-after-upsert'
-    };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [updatedProduct, newProduct],
-      batches: [],
-      deletes: { categories: [], products: [tombstone], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [updatedProduct, newProduct], batches: [] });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-MIXED-INTENT'
-    })).resolves.toMatchObject({ success: true, recovered: 3 });
-
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      expectedVersion: 5,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:updated-product:5:legacy`
-    }));
-    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      expectedVersion: null,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:new-product:new:legacy`
-    }));
-    expect(mocks.deleteProduct).toHaveBeenCalledWith(expect.objectContaining({
-      expectedVersion: 8,
-      idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:8:delete-after-upsert`
-    }));
-    expect(mocks.markDeletionSynced).toHaveBeenCalledWith({
-      entityType: 'product',
-      entityId: 'deleted-product'
-    });
-  });
-
-  it('blocks VERSION_CONFLICT without snapshot or clearing the local record', async () => {
-    const product = { id: 'stale-product', name: 'Stale', serverVersion: 5, updatedAt: '2026-08-15T00:00:00.000Z' };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [product],
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [product], batches: [] });
-    mocks.upsertProduct.mockResolvedValue({
-      success: false,
-      code: 'VERSION_CONFLICT',
-      message: 'Cloud version advanced.',
-      server_version: 6,
-      product: { id: 'stale-product', server_version: 6 }
-    });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-VERSION-CONFLICT'
-    })).resolves.toMatchObject({ success: false, blocked: true, unsynced: 1 });
-
-    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
-    expect(mocks.markDeletionSynced).not.toHaveBeenCalled();
-    expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
-      localPayload: { issues: [expect.objectContaining({
-        entityType: 'product',
-        entityId: 'stale-product',
-        code: 'VERSION_CONFLICT',
-        serverVersion: 6
-      })] }
-    }));
-  });
-
-  it('fails closed for duplicate barcode and preserves active local conflict state', async () => {
-    const product = { id: 'duplicate-product', name: 'Duplicate', serverVersion: 5 };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [product],
-      batches: [],
-      deletes: { categories: [], products: [], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [product], batches: [] });
-    mocks.upsertProduct.mockResolvedValue({ success: false, code: 'DUPLICATE_BARCODE' });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-DUPLICATE'
-    })).resolves.toMatchObject({ success: false, blocked: true });
-
-    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
-  });
-
-  it('pushes FREE product deletes before a later authoritative snapshot can reinsert them', async () => {
-    const tombstone = {
-      id: 'deleted-product',
-      serverVersion: 8,
-      deletedTimestamp: '2026-08-15T00:00:00.000Z',
-      deletionPending: true
-    };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [],
-      batches: [],
-      deletes: { categories: [], products: [tombstone], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [], batches: [] });
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-DELETE'
-    })).resolves.toMatchObject({ success: true, recovered: 1 });
-
-    expect(mocks.deleteProduct).toHaveBeenCalledWith({
-      licenseKey: 'CUTOVER-DELETE',
-      productId: 'deleted-product',
-       expectedVersion: 8,
-       idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:8:2026-08-15T00-00-00.000Z`
-    });
-    expect(mocks.markDeletionSynced).toHaveBeenCalledWith({
-      entityType: 'product',
-      entityId: 'deleted-product'
-    });
-    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
-  });
-
-  it('preserves local intent and blocks cutover when delete reconciliation fails', async () => {
-    const tombstone = { id: 'delete-failure', serverVersion: 3, deletionPending: true };
-    mocks.listUnsynced.mockResolvedValue({
-      categories: [],
-      products: [],
-      batches: [],
-      deletes: { categories: [], products: [tombstone], batches: [] }
-    });
-    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [], batches: [] });
-    mocks.deleteProduct.mockRejectedValue(new Error('forced delete failure'));
-
-    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
-      licenseKey: 'CUTOVER-DELETE-FAILURE'
-    })).resolves.toMatchObject({
-      success: false,
-      blocked: true,
-      unsynced: 1
-    });
-    expect(mocks.markDeletionSynced).not.toHaveBeenCalled();
-    expect(mocks.markDeletionConflict).toHaveBeenCalledWith({
-      entityType: 'product',
-      entityId: 'delete-failure',
-      reason: 'PRODUCT_RECOVERY_RPC_FAILED'
-    });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey }))
+      .resolves.toMatchObject({ blocked: true });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey }))
+      .resolves.toMatchObject({ success: true });
+    expect(await db.table('menu').get(id)).toMatchObject({ syncStatus: 'synced', stock: 4, committedStock: 0, serverVersion: 2 });
+    expect(await db.table('productBatches').get('lot-' + id)).toMatchObject({ syncStatus: 'synced', stock: 4, committedStock: 0 });
   });
 });

@@ -162,6 +162,27 @@ export const productCloudRepository = {
     });
   },
 
+  async getLocalCatalogRecoveryContract({ licenseKey }) {
+    return callRpc('pos_recover_local_product_group_v1', {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_product: null,
+      p_batches: [],
+      p_idempotency_key: null
+    });
+  },
+
+  async recoverLocalProductGroup({ licenseKey, product, batches, idempotencyKey }) {
+    return callCatalogMutationRpc('pos_recover_local_product_group_v1', licenseKey, {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_product: product,
+      p_batches: batches,
+      p_idempotency_key: idempotencyKey
+    }, null, {
+      products: true,
+      inventory: !product.server_version && (batches.length > 0 || hasInitialProductStock(product))
+    });
+  },
+
   async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_delete_product', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),

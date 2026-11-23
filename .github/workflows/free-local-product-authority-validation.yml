@@ -10,6 +10,10 @@ on:
       - 'src/services/products/productRepository.js'
       - 'src/services/products/__tests__/productRepository.freeLocalAuthority.test.js'
       - 'src/services/products/__tests__/productSyncHandler.cutover.test.js'
+      - 'src/services/products/productLocalCatalogRecovery.js'
+      - 'src/services/products/productMigrationService.js'
+      - 'scripts/supabase/catalog_recovery_pg_regression.py'
+      - 'supabase/migrations/*_recover_local_product_group.sql'
       - 'src/services/inventory/inventoryEntryService.js'
       - 'src/services/inventory/__tests__/inventoryEntryService*.test.js'
       - 'src/store/slices/license/licenseSessionTransitions.test.js'
@@ -58,6 +62,19 @@ jobs:
           src/services/inventory/__tests__/inventoryEntryService.freeLocalAuthority.test.js
           src/store/slices/license/licenseSessionTransitions.test.js
           --maxWorkers=4
+
+      - name: Catalog recovery and lost-response integration on isolated PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name lanzo-catalog-recovery-pg -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17
+          trap 'docker rm --force lanzo-catalog-recovery-pg' EXIT
+          timeout 45s docker exec lanzo-catalog-recovery-pg sh -c 'until pg_isready -h 127.0.0.1 -q; do sleep 1; done'
+          python3 scripts/supabase/catalog_recovery_pg_regression.py
+          LANZO_CATALOG_TEST_POSTGRES=1 npx vitest run \
+            src/services/products/__tests__/productLocalCatalogRecovery.cutover.test.js \
+            src/services/products/__tests__/productMigrationService.cutover.test.js \
+            src/services/sync/__tests__/posSyncBootstrapCoordinator.test.js
 
       - name: Existing Admin/Staff product-inventory authority contract
         run: npm run test:admin-staff-product-inventory-authority-contract
