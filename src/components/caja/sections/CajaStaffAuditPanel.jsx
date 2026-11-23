@@ -7,6 +7,7 @@ import {
   UsersRound
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { formatCurrencyMXN } from '../../../utils/formatCurrencyMXN';
 import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
 import { formatBusinessInstant } from '../../../utils/businessTime';
 
@@ -286,6 +287,7 @@ const CajaStaffAuditPanel = ({
               ? null
               : Money.init(rawDifference);
             const movementCount = getMovementCount(session);
+            const cashSales = session.ventas_efectivo ?? session.cash_sales_total;
 
             return (
               <article key={session.id} className="staff-audit-item">
@@ -306,7 +308,7 @@ const CajaStaffAuditPanel = ({
                   </span>
                   <span className="staff-audit-primary-field staff-audit-primary-field--expected">
                     <small>Efectivo esperado</small>
-                    <strong>{formatMoney(getExpectedCash(session))}</strong>
+                    <strong>{formatCurrencyMXN(Money.toNumber(getExpectedCash(session)))}</strong>
                   </span>
                   <span className="staff-audit-primary-field staff-audit-primary-field--difference">
                     <small>Diferencia de cierre</small>
@@ -332,7 +334,8 @@ const CajaStaffAuditPanel = ({
                     <summary>Detalles</summary>
                     <div className="staff-audit-secondary">
                       <span><small>Cierre</small><strong>{formatDate(session.fecha_cierre, businessTimezone)}</strong></span>
-                      <span><small>Monto inicial</small><strong>{formatMoney(session.monto_inicial)}</strong></span>
+                      <span><small>Monto inicial</small><strong>{formatCurrencyMXN(Money.toNumber(session.monto_inicial))}</strong></span>
+                      <span><small>Ventas en efectivo netas</small><strong>{formatCurrencyMXN(cashSales, 'No disponible')}</strong></span>
                       <span><small>Entradas</small><strong>{formatMoney(session.entradas_efectivo)}</strong></span>
                       <span><small>Salidas</small><strong>{formatMoney(session.salidas_efectivo)}</strong></span>
                       <span><small>Abonos/clientes</small><strong>{formatMoney(session.abonos_fiado || session.customer_payments_total)}</strong></span>
