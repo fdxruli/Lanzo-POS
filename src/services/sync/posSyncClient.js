@@ -39,6 +39,9 @@ const normalizePullResponse = (data, sinceChangeSeq = 0) => {
     latestChangeSeq: Number(payload.latest_change_seq ?? payload.latestChangeSeq ?? sinceChangeSeq) || 0,
     serverLatestChangeSeq: Number(payload.server_latest_change_seq ?? payload.serverLatestChangeSeq ?? payload.latest_change_seq ?? sinceChangeSeq) || 0,
     hasMore: Boolean(payload.has_more ?? payload.hasMore),
+    // `has_more` remains immediate pagination; this optional bit means later incremental work is blocked.
+    syncDeferred: payload.sync_deferred === true || payload.syncDeferred === true,
+    retryable: payload.retryable === true,
     syncContext: payload.sync_context || payload.syncContext || null,
     raw: payload
   };

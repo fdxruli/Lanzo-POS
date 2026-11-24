@@ -104,6 +104,23 @@ export const syncMetaService = {
     return this.setMeta(SYNC_META_KEYS.LAST_CHANGE_SEQ, Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0, { licenseKey });
   },
 
+  advanceLastChangeSeq(changeSeq, licenseKey = null) {
+    const numericValue = Number(changeSeq);
+    return this.advanceMeta(
+      SYNC_META_KEYS.LAST_CHANGE_SEQ,
+      Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0,
+      { licenseKey }
+    );
+  },
+
+  async getDeferredReadPending(licenseKey = null) {
+    return (await this.getMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, false, { licenseKey })) === true;
+  },
+
+  setDeferredReadPending(pending, licenseKey = null) {
+    return this.setMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, Boolean(pending), { licenseKey });
+  },
+
   getSyncEnabled(licenseKey = null) {
     return this.getMeta(SYNC_META_KEYS.SYNC_ENABLED, false, { licenseKey });
   },

@@ -71,6 +71,38 @@ describe('posSyncClient tenant isolation', () => {
     }));
   });
 
+  it('normalizes the optional deferred-read contract without changing legacy responses', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        events: [],
+        latest_change_seq: 175,
+        server_latest_change_seq: 177,
+        sync_deferred: true
+      },
+      error: null
+    });
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A', sinceChangeSeq: 175 }))
+      .resolves.toMatchObject({ latestChangeSeq: 175, serverLatestChangeSeq: 177, syncDeferred: true, retryable: false });
+
+    mocks.rpc.mockResolvedValueOnce({
+      data: { success: true, events: [], latest_change_seq: 175, has_more: false },
+      error: null
+    });
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A', sinceChangeSeq: 175 }))
+      .resolves.toMatchObject({ latestChangeSeq: 175, hasMore: false, syncDeferred: false, retryable: false });
+  });
+
+  it('normalizes recoverable RPC responses explicitly', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { success: false, code: 'POS_READ_TEMPORARILY_UNAVAILABLE', retryable: true },
+      error: null
+    });
+
+    await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A' }))
+      .resolves.toMatchObject({ success: false, code: 'POS_READ_TEMPORARILY_UNAVAILABLE', retryable: true, syncDeferred: false });
+  });
+
   it('fails closed when the device token is absent and never turns an invalid token into success', async () => {
     mocks.getSecurityToken.mockResolvedValueOnce(null);
     await expect(posSyncClient.pullSyncEvents({ licenseKey: 'TENANT-A' }))

@@ -14,6 +14,7 @@ import {
   isCloudPosSyncEnabled,
   POS_SYNC_FOCUS_PULL_COOLDOWN_MS,
   POS_SYNC_REALTIME_PULL_DEBOUNCE_MS,
+  POS_SYNC_DEFERRED_PULL_RETRY,
   shouldDeferPosBootstrapStartHook,
   SYNC_LIMITS,
   SYNC_STATUS
@@ -53,6 +54,9 @@ const runtime = {
   outboxInProgress: false,
   realtimePullScheduled: false,
   realtimePullTimer: null,
+  deferredPullTimer: null,
+  deferredPullPending: false,
+  deferredPullRetryAttempt: 0,
   lastPullReason: null,
   lastPullStartedAt: 0,
   lastPullFinishedAt: 0,
@@ -61,7 +65,8 @@ const runtime = {
   realtimeStatus: SYNC_STATUS.DISABLED,
   realtimeTopic: null,
   onlineListener: null,
-  visibilityListener: null
+  visibilityListener: null,
+  offlineListener: null
 };
 
 const setActivityFlag = (name, value) => {
@@ -121,12 +126,16 @@ const scheduleOutbox = (retryAt = Date.now()) => {
 
 const stopOutboxSources = () => {
   clearOutboxTimer();
+  clearDeferredPullTimer();
   outboxWakeRequested = false;
   unsubscribeOutboxChanges?.();
   unsubscribeOutboxChanges = null;
   unsubscribeOutboxContext?.();
   unsubscribeOutboxContext = null;
-  if (typeof window !== 'undefined') window.removeEventListener('offline', clearOutboxTimer);
+  if (runtime.offlineListener && typeof window !== 'undefined') {
+    window.removeEventListener('offline', runtime.offlineListener);
+  }
+  runtime.offlineListener = null;
 };
 
 const outboxActorSignature = (actor) => JSON.stringify([
@@ -142,19 +151,39 @@ const startOutboxSources = () => {
     actorRevision += 1;
     clearOutboxTimer();
     scheduleOutbox();
+    clearDeferredPullTimer();
+    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED && runtime.deferredPullPending && runtime.started) {
+      posSyncOrchestrator.schedulePullIncremental('actor_context_changed').catch((error) => {
+        Logger.warn('[PosSync] Pull tras cambio de actor fallo:', error, { diagnosticOperation: 'sync.pull' });
+      });
+    }
   });
   const tenantChanged = localTenantAccessController.subscribe((state) => {
     actorRevision += 1;
     clearOutboxTimer();
     unsubscribeOutboxChanges?.();
     unsubscribeOutboxChanges = null;
-    if (state.status === LOCAL_TENANT_STATUS.GRANTED) scheduleOutbox();
+    clearDeferredPullTimer();
+    if (state.status === LOCAL_TENANT_STATUS.GRANTED) {
+      scheduleOutbox();
+      if (runtime.deferredPullPending && runtime.started) {
+        posSyncOrchestrator.schedulePullIncremental('tenant_context_changed').catch((error) => {
+          Logger.warn('[PosSync] Pull tras cambio de tenant fallo:', error, { diagnosticOperation: 'sync.pull' });
+        });
+      }
+    }
   });
   unsubscribeOutboxContext = () => {
     actorChanged();
     tenantChanged();
   };
-  if (typeof window !== 'undefined') window.addEventListener('offline', clearOutboxTimer);
+  if (typeof window !== 'undefined') {
+    runtime.offlineListener = () => {
+      clearOutboxTimer();
+      clearDeferredPullTimer();
+    };
+    window.addEventListener('offline', runtime.offlineListener);
+  }
 };
 
 const applyRuntimeStatus = async (
@@ -220,6 +249,101 @@ const clearRealtimePullTimer = () => {
   runtime.realtimePullScheduled = false;
 };
 
+const clearDeferredPullTimer = () => {
+  const timer = runtime.deferredPullTimer;
+  if (!timer) return;
+  if (timer?.cancel) timer.cancel();
+  else if (typeof window !== 'undefined') window.clearTimeout(timer);
+  else clearTimeout(timer);
+  runtime.deferredPullTimer = null;
+};
+
+const setDeferredReadPending = async (
+  pending,
+  { licenseKey = runtime.licenseKey, generation = runtime.generation, capturedActorRevision = actorRevision } = {}
+) => {
+  if (!isRuntimeGenerationCurrent(generation, licenseKey) || capturedActorRevision !== actorRevision) return false;
+
+  const nextPending = Boolean(pending);
+  const changed = runtime.deferredPullPending !== nextPending;
+  runtime.deferredPullPending = nextPending;
+  if (!nextPending) {
+    clearDeferredPullTimer();
+    runtime.deferredPullRetryAttempt = 0;
+  }
+  if (!changed) return true;
+
+  const persisted = await syncMetaService.setDeferredReadPending(nextPending, licenseKey);
+  return persisted !== false
+    && isRuntimeGenerationCurrent(generation, licenseKey)
+    && capturedActorRevision === actorRevision;
+};
+
+const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
+  if (!runtime.deferredPullPending || runtime.deferredPullTimer || !runtime.started
+    || !runtime.licenseKey || !isBrowserOnline() || !canSchedule()) return false;
+
+  let actorHandle;
+  try {
+    actorHandle = actorRuntimeController.capture();
+  } catch {
+    return false;
+  }
+
+  const owner = executionScope;
+  const { generation, licenseKey } = runtime;
+  const capturedActorRevision = actorRevision;
+  const retryIndex = Math.min(runtime.deferredPullRetryAttempt, 10);
+  const delayMs = Math.min(
+    POS_SYNC_DEFERRED_PULL_RETRY.MAX_DELAY_MS,
+    POS_SYNC_DEFERRED_PULL_RETRY.BASE_DELAY_MS * (2 ** retryIndex)
+  );
+  runtime.deferredPullRetryAttempt = Math.min(runtime.deferredPullRetryAttempt + 1, Number.MAX_SAFE_INTEGER);
+
+  const wake = () => {
+    runtime.deferredPullTimer = null;
+    if (!runtime.deferredPullPending || !runtime.started || !isBrowserOnline()
+      || !canSchedule(owner) || !isRuntimeGenerationCurrent(generation, licenseKey)
+      || actorRevision !== capturedActorRevision) return null;
+    try {
+      actorHandle.assertCurrent();
+    } catch {
+      return null;
+    }
+    return posSyncOrchestrator.pullIncremental(reason);
+  };
+
+  try {
+    runtime.deferredPullTimer = owner
+      ? owner.schedule('pos:deferred_pull', wake, delayMs)
+      : setTimeout(wake, delayMs);
+    Logger.log('[POS Sync] Lectura aplazada; siguiente intento programado.', { delayMs });
+    return true;
+  } catch (error) {
+    runtime.deferredPullTimer = null;
+    if (!isLocalTenantAccessError(error)) {
+      Logger.warn('[PosSync] No se pudo programar recuperación de lectura:', error);
+    }
+    return false;
+  }
+};
+
+const isRecoverablePullFailure = (error) => {
+  if (!error || isLocalTenantAccessError(error) || isActorRuntimeError(error)
+    || classifyActorAuthorityError(error)) return false;
+  const code = String(error.code || error.response?.code || '').toUpperCase();
+  if (['401', '403', '42501', 'PGRST301', 'PGRST302'].includes(code)) return false;
+  if (error.retryable === true || error.response?.retryable === true
+    || error.catalogSyncContext?.retryable === true) return true;
+  if (error.retryable === false || error.response?.retryable === false
+    || error.catalogSyncContext?.retryable === false) return false;
+
+  const status = Number(error.status ?? error.response?.status);
+  if (status === 401 || status === 403) return false;
+  if (status === 408 || status === 429 || status >= 500) return true;
+  return !error.code;
+};
+
 const stopRealtimeChannel = async () => {
   const channelToStop = runtime.realtimeChannel;
   runtime.realtimeChannel = null;
@@ -253,8 +377,8 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
   }
 };
 
-const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey) => {
-  if (!Array.isArray(events) || events.length === 0) return;
+const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey, { isCurrent = null } = {}) => {
+  if (!Array.isArray(events) || events.length === 0) return { applied: true };
 
   const grouped = events.reduce((acc, event) => {
     const key = event.entity_type || event.entityType || 'generic';
@@ -267,18 +391,28 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
   for (const [entityType, entityEvents] of grouped.entries()) {
     const handler = entityHandlers.get(entityType);
     if (!handler?.onEvents) continue;
+    if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale' };
 
     try {
-      if (executionScope && !canSchedule()) return;
+      if (executionScope && !canSchedule()) return { applied: false, retryable: false, reason: 'scope_closed' };
       unknownHandler(`events:${entityType}`);
-      await runWithLocalTenantSyncLease(
+      const handlerResult = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_event_handler_${entityType}` },
         () => {
           if (executionScope && !canSchedule()) return { skipped: true, reason: 'scope_closed' };
+          if (isCurrent && !isCurrent()) return { skipped: true, reason: 'context_stale' };
           return handler.onEvents(entityEvents, { licenseKey });
         }
       );
+      if (handlerResult?.skipped === true || handlerResult?.deferred === true || handlerResult?.success === false) {
+        return {
+          applied: false,
+          retryable: handlerResult.retryable === true,
+          reason: handlerResult.reason || null
+        };
+      }
+      if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale' };
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
@@ -288,6 +422,7 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
   // Let independent entity cursors progress, but acknowledge the POS page only
   // when every handler succeeded. A retry resumes each entity at its own cursor.
   if (handlerError) throw handlerError;
+  return { applied: true };
 };
 
 // Shared by startup and the first online event after an offline start.
@@ -501,6 +636,10 @@ export const posSyncOrchestrator = {
       runtime.lastForegroundPullAt = 0;
       detachVisibilityListener();
       stopOutboxSources();
+      if (runtime.licenseKey && runtime.licenseKey !== licenseKey) {
+        runtime.deferredPullPending = false;
+        runtime.deferredPullRetryAttempt = 0;
+      }
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
         if (runtime.generation !== startGeneration) return { started: false, status: runtime.status };
@@ -508,6 +647,12 @@ export const posSyncOrchestrator = {
 
       runtime.started = true;
       runtime.licenseKey = licenseKey;
+      const persistedDeferredReadPending = await syncMetaService.getDeferredReadPending(licenseKey);
+      if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+        return { started: false, status: runtime.status, stale: true };
+      }
+      runtime.deferredPullPending = runtime.deferredPullPending || persistedDeferredReadPending === true;
+      if (!runtime.deferredPullPending) runtime.deferredPullRetryAttempt = 0;
 
       startOutboxSources();
       attachOnlineListener();
@@ -573,6 +718,8 @@ export const posSyncOrchestrator = {
         }
       }
 
+      if (runtime.deferredPullPending) scheduleDeferredPullRecovery('deferred_startup');
+
       return {
         started: true,
         status: runtime.status
@@ -580,6 +727,7 @@ export const posSyncOrchestrator = {
     } catch (error) {
       if (startGeneration !== null && isRuntimeGenerationCurrent(startGeneration, licenseKey)) {
         clearRealtimePullTimer();
+        clearDeferredPullTimer();
         runtime.started = false;
         setActivityFlag('pullInProgress', false);
         runtime.pendingPull = false;
@@ -608,11 +756,13 @@ export const posSyncOrchestrator = {
     runtime.startAttempt += 1;
     const stopGeneration = ++runtime.generation;
     clearRealtimePullTimer();
+    clearDeferredPullTimer();
     runtime.started = false;
     runtime.lastForegroundPullAt = 0;
     setActivityFlag('startInProgress', false);
     setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;
+    runtime.deferredPullRetryAttempt = 0;
     stopOutboxSources();
     runtime.lastPullReason = null;
     detachOnlineListener();
@@ -640,6 +790,13 @@ export const posSyncOrchestrator = {
     if (!runtime.started || !runtime.licenseKey) return null;
 
     const safeReason = String(reason || 'manual');
+    if (runtime.deferredPullTimer) clearDeferredPullTimer();
+    if (runtime.pullInProgress) {
+      runtime.pendingPull = true;
+      runtime.lastPullReason = safeReason;
+      Logger.log('[POS Sync] Pull incremental pendiente; se ejecutará al terminar el actual.');
+      return { skipped: true, reason: 'pull_in_progress_pending' };
+    }
     const resolvedDebounceMs = debounceMs ?? (
       shouldUseRealtimeDebounce(safeReason) ? POS_SYNC_REALTIME_PULL_DEBOUNCE_MS : 0
     );
@@ -687,6 +844,7 @@ export const posSyncOrchestrator = {
 
     if (
       runtime.realtimeStatus === SYNC_STATUS.ONLINE &&
+      !runtime.deferredPullPending &&
       runtime.lastForegroundPullAt > 0 &&
       elapsedSinceLastForegroundPull < POS_SYNC_FOCUS_PULL_COOLDOWN_MS
     ) {
@@ -706,6 +864,7 @@ export const posSyncOrchestrator = {
     if (!runtime.started || !runtime.licenseKey) return null;
     const operationLicenseKey = runtime.licenseKey;
     const operationGeneration = runtime.generation;
+    let operationActorRevision = actorRevision;
 
     await assertLocalTenantSyncAccess(
       { license_key: operationLicenseKey },
@@ -716,6 +875,7 @@ export const posSyncOrchestrator = {
     }
 
     if (!isBrowserOnline()) {
+      clearDeferredPullTimer();
       await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
         licenseKey: operationLicenseKey,
         generation: operationGeneration,
@@ -726,6 +886,7 @@ export const posSyncOrchestrator = {
     }
 
     if (runtime.pullInProgress) {
+      clearDeferredPullTimer();
       runtime.pendingPull = true;
       runtime.lastPullReason = reason;
       Logger.log('[POS Sync] Pull incremental omitido: ya hay uno en curso.');
@@ -737,29 +898,40 @@ export const posSyncOrchestrator = {
     }
 
     setActivityFlag('pullInProgress', true);
+    clearDeferredPullTimer();
     runtime.lastPullReason = reason;
     runtime.lastPullStartedAt = Date.now();
 
-    try {
-      let sinceChangeSeq = await syncMetaService.getLastChangeSeq(operationLicenseKey);
-      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-        return null;
+    let actorHandle = null;
+    const isPullContextCurrent = () => {
+      if (!actorHandle || actorRevision !== operationActorRevision
+        || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)
+        || !runtime.started) return false;
+      try {
+        actorHandle.assertCurrent();
+        return true;
+      } catch (error) {
+        if (isActorRuntimeError(error)) return false;
+        throw error;
       }
+    };
+
+    try {
+      actorHandle = actorRuntimeController.capture();
+      operationActorRevision = actorRevision;
+      let sinceChangeSeq = await syncMetaService.getLastChangeSeq(operationLicenseKey);
+      if (!isPullContextCurrent()) return null;
       let latestResponse = null;
       let totalEvents = 0;
       let hasMore = true;
 
       while (hasMore) {
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return null;
-        }
+        if (!isPullContextCurrent()) return null;
         await assertLocalTenantSyncAccess(
           { license_key: operationLicenseKey },
           { reason: `pos_sync_pull_rpc_${reason}` }
         );
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return null;
-        }
+        if (!isPullContextCurrent()) return null;
         const batchSinceChangeSeq = Number(sinceChangeSeq) || 0;
         const response = await posSyncClient.pullSyncEvents({
           licenseKey: operationLicenseKey,
@@ -767,16 +939,33 @@ export const posSyncOrchestrator = {
           limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
         });
 
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return null;
-        }
+        if (!isPullContextCurrent()) return null;
 
         latestResponse = response;
+        await assertLocalTenantSyncAccess(
+          { license_key: operationLicenseKey },
+          { reason: `pos_sync_pull_apply_${reason}` }
+        );
+        if (!isPullContextCurrent()) return null;
 
         if (!response.success) {
+          runtime.pendingPull = false;
           const nextStatus = response.code === 'CLOUD_POS_SYNC_DISABLED'
             ? SYNC_STATUS.DISABLED
             : SYNC_STATUS.DEGRADED;
+
+          if (response.code === 'CLOUD_POS_SYNC_DISABLED') {
+            await setDeferredReadPending(false, {
+              licenseKey: operationLicenseKey,
+              generation: operationGeneration,
+              capturedActorRevision: operationActorRevision
+            });
+          } else if (response.retryable && runtime.deferredPullPending
+            && isRecoverablePullFailure(response)) {
+            scheduleDeferredPullRecovery('deferred_retryable_response');
+          } else {
+            clearDeferredPullTimer();
+          }
 
           await setRuntimeStatus(nextStatus, {
             licenseKey: operationLicenseKey,
@@ -786,47 +975,67 @@ export const posSyncOrchestrator = {
           return response;
         }
 
+        if (response.syncDeferred) {
+          await setDeferredReadPending(true, {
+            licenseKey: operationLicenseKey,
+            generation: operationGeneration,
+            capturedActorRevision: operationActorRevision
+          });
+          if (!isPullContextCurrent()) return null;
+        }
+
         const pulledEvents = Array.isArray(response.events) ? response.events : [];
         totalEvents += pulledEvents.length;
-        await assertLocalTenantSyncAccess(
-          { license_key: operationLicenseKey },
-          { reason: `pos_sync_pull_apply_${reason}` }
-        );
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return null;
-        }
-        await dispatchPulledEvents(pulledEvents, operationLicenseKey);
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+        const pageApplied = await dispatchPulledEvents(pulledEvents, operationLicenseKey, {
+          isCurrent: isPullContextCurrent
+        });
+        if (pageApplied?.applied !== true || !isPullContextCurrent()) {
+          if (pageApplied?.retryable && runtime.deferredPullPending) {
+            scheduleDeferredPullRecovery('deferred_handler_retry');
+          }
           return null;
         }
         await assertLocalTenantSyncAccess(
           { license_key: operationLicenseKey },
           { reason: `pos_sync_pull_cursor_${reason}` }
         );
-        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-          return null;
-        }
+        if (!isPullContextCurrent()) return null;
 
         const latestChangeSeq = Number(response.latestChangeSeq ?? batchSinceChangeSeq) || batchSinceChangeSeq;
         if (latestChangeSeq > batchSinceChangeSeq) {
-          sinceChangeSeq = latestChangeSeq;
-          await syncMetaService.setLastChangeSeq(latestChangeSeq, operationLicenseKey);
+          const advancedCursor = await syncMetaService.advanceLastChangeSeq(latestChangeSeq, operationLicenseKey);
+          sinceChangeSeq = advancedCursor !== null && advancedCursor !== undefined
+            && Number.isFinite(Number(advancedCursor)) && Number(advancedCursor) >= batchSinceChangeSeq
+            ? Number(advancedCursor)
+            : latestChangeSeq;
+          if (!isPullContextCurrent()) return null;
+        }
+
+        if (!response.syncDeferred && runtime.deferredPullPending) {
+          await setDeferredReadPending(false, {
+            licenseKey: operationLicenseKey,
+            generation: operationGeneration,
+            capturedActorRevision: operationActorRevision
+          });
+          if (!isPullContextCurrent()) return null;
         }
 
         hasMore = Boolean(response.hasMore);
         if (hasMore && latestChangeSeq <= batchSinceChangeSeq) {
-          Logger.warn('[POS Sync] Pull incremental detenido: has_more sin avance de cursor.');
+          Logger.warn(response.syncDeferred
+            ? '[POS Sync] Pull incremental aplazado: el cursor seguro no avanzó.'
+            : '[POS Sync] Pull incremental detenido: has_more sin avance de cursor.');
           hasMore = false;
         }
       }
+
+      if (runtime.deferredPullPending) scheduleDeferredPullRecovery('deferred_retry');
 
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
         { reason: `pos_sync_pull_commit_${reason}` }
       );
-      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
-        return null;
-      }
+      if (!isPullContextCurrent()) return null;
       await syncMetaService.setLastPullAt(operationLicenseKey);
       await syncMetaService.setLastPullError(null, operationLicenseKey);
 
@@ -845,9 +1054,21 @@ export const posSyncOrchestrator = {
         latestChangeSeq: Number(sinceChangeSeq) || 0
       };
     } catch (error) {
-      if (isLocalTenantAccessError(error)) throw error;
+      if (isLocalTenantAccessError(error)) {
+        clearDeferredPullTimer();
+        runtime.pendingPull = false;
+        throw error;
+      }
       if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) return null;
       Logger.warn('[PosSync] Pull incremental fallo:', error, { diagnosticOperation: 'sync.pull' });
+      if (runtime.deferredPullPending) {
+        runtime.pendingPull = false;
+        if (isRecoverablePullFailure(error) && isPullContextCurrent() && isBrowserOnline()) {
+          scheduleDeferredPullRecovery('deferred_retry');
+        } else {
+          clearDeferredPullTimer();
+        }
+      }
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
         { reason: `pos_sync_pull_error_${reason}` }
@@ -1003,10 +1224,11 @@ export const posSyncOrchestrator = {
   },
 
   getStatus() {
-    const { realtimePullTimer, ...safeRuntime } = runtime;
+    const { realtimePullTimer, deferredPullTimer, ...safeRuntime } = runtime;
     return {
       ...safeRuntime,
       realtimePullScheduled: Boolean(realtimePullTimer) || runtime.realtimePullScheduled,
+      deferredPullScheduled: Boolean(deferredPullTimer),
       handlers: Array.from(entityHandlers.keys())
     };
   }
