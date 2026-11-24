@@ -44,7 +44,6 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
       () => channels.delete(channel),
       () => retiring.delete(channel)
     );
-    pending.catch(() => owner.markUnobservable('pos_realtime_channel_cleanup_failed'));
     return pending;
   };
   const clearSources = () => {
@@ -58,27 +57,40 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
     clearSources();
     return source.stop();
   };
-  const reconnect = () => {
+  const nextReconnectDelay = () => {
+    const backoffStep = Math.min(attempts, MAX_BACKOFF_STEP);
+    const delay = Math.min(MAX_RECONNECT_DELAY_MS, BASE_RECONNECT_DELAY_MS * 2 ** backoffStep);
+    attempts += 1;
+    return delay;
+  };
+  const schedule = (factory, { waitForOnline = false } = {}) => {
     if (!allowed() || timer || online) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (waitForOnline && typeof navigator !== 'undefined' && navigator.onLine === false) {
       const listener = () => {
         if (online !== listener || !allowed()) return;
         window.removeEventListener('online', listener); online = null;
         attempts = 0;
-        observe('online', connect);
+        observe('online', factory);
       };
       online = listener;
       window.addEventListener('online', listener);
       return;
     }
-    const backoffStep = Math.min(attempts, MAX_BACKOFF_STEP);
-    const delay = Math.min(MAX_RECONNECT_DELAY_MS, BASE_RECONNECT_DELAY_MS * 2 ** backoffStep);
     timer = owner.schedule('pos_realtime:reconnect', token => {
       timer = null;
-      if (allowed()) return connect(token);
-    }, delay);
-    attempts += 1;
+      if (allowed()) return factory(token);
+    }, nextReconnectDelay());
   };
+  const reconnect = () => schedule(connect, { waitForOnline: true });
+  const retryRetirement = channel => schedule(async token => {
+    try {
+      await retire(channel);
+    } catch {
+      retryRetirement(channel);
+      return;
+    }
+    if (allowed()) return connect(token);
+  });
   const connect = async () => {
     if (!allowed() || connecting) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -127,8 +139,14 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
           try {
             // Loss of the subscription is effective before cleanup finishes.
             await notify('onStatusChange', { status: 'degraded', reason: status });
-          } finally {
+          } catch {
+            // The source remains degraded while its channel removal is retried.
+          }
+          try {
             await retirement;
+          } catch {
+            if (allowed()) retryRetirement(channel);
+            return;
           }
           if (!allowed()) return;
           reconnect();

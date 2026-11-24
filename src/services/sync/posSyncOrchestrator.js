@@ -389,17 +389,20 @@ const attachOnlineListener = () => {
   }
 };
 
+const detachVisibilityListener = () => {
+  if (runtime.visibilityListener && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', runtime.visibilityListener);
+  }
+  runtime.visibilityListener = null;
+};
+
 const detachOnlineListener = () => {
   if (runtime.onlineListener && typeof window !== 'undefined') {
     window.removeEventListener('online', runtime.onlineListener);
   }
 
   runtime.onlineListener = null;
-
-  if (runtime.visibilityListener && typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', runtime.visibilityListener);
-  }
-  runtime.visibilityListener = null;
+  detachVisibilityListener();
 };
 
 const shouldUseRealtimeDebounce = (reason = '') => String(reason || '').toLowerCase().includes('realtime');
@@ -496,6 +499,7 @@ export const posSyncOrchestrator = {
 
       startGeneration = ++runtime.generation;
       runtime.lastForegroundPullAt = 0;
+      detachVisibilityListener();
       stopOutboxSources();
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();

@@ -151,7 +151,15 @@ const startLegacyPosRealtimeListener = ({ posTopic, licenseDetails, callbacks = 
       if (reason === 'closed') Logger.warn('[PosRealtime] Canal POS cerrado inesperadamente.');
       notifyStatus(callbacks, SYNC_STATUS.DEGRADED, { reason });
     }
-    await retirement;
+    try {
+      await retirement;
+    } catch (error) {
+      Logger.warn('[PosRealtime] No se pudo retirar el canal POS; se reintentará:', error);
+      if (!wasManualClose && epoch === legacyEpoch && attempt === legacyAttempt) {
+        scheduleReconnect(resolvedTopic, callbacks, epoch, { cleanupChannel: channel });
+      }
+      return;
+    }
     if (!wasManualClose && epoch === legacyEpoch && attempt === legacyAttempt) {
       scheduleReconnect(resolvedTopic, callbacks, epoch);
     }
@@ -214,7 +222,7 @@ const retireLegacyChannel = channel => {
   return pending;
 };
 
-const scheduleReconnect = (posTopic, callbacks = {}, epoch = legacyEpoch) => {
+const scheduleReconnect = (posTopic, callbacks = {}, epoch = legacyEpoch, { cleanupChannel = null } = {}) => {
   if (epoch !== legacyEpoch || reconnectTimer || onlineListener) return;
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -225,7 +233,11 @@ const scheduleReconnect = (posTopic, callbacks = {}, epoch = legacyEpoch) => {
       onlineListenerEpoch = null;
       reconnectAttempts = 0;
       Logger.log('[PosRealtime] Red recuperada. Reconectando POS realtime.');
-      startLegacyPosRealtimeListener({ posTopic, callbacks, epoch });
+      if (cleanupChannel) {
+        scheduleReconnect(posTopic, callbacks, epoch, { cleanupChannel });
+      } else {
+        startLegacyPosRealtimeListener({ posTopic, callbacks, epoch });
+      }
     };
     onlineListener = listener;
     onlineListenerEpoch = epoch;
@@ -238,10 +250,20 @@ const scheduleReconnect = (posTopic, callbacks = {}, epoch = legacyEpoch) => {
   const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * 2 ** backoffStep);
   reconnectAttempts += 1;
 
-  reconnectTimer = setTimeout(() => {
+  reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
     reconnectTimerEpoch = null;
     if (epoch !== legacyEpoch) return;
+    if (cleanupChannel) {
+      try {
+        await retireLegacyChannel(cleanupChannel);
+      } catch (error) {
+        Logger.warn('[PosRealtime] El retiro sigue pendiente; se reintentará:', error);
+        if (epoch === legacyEpoch) scheduleReconnect(posTopic, callbacks, epoch, { cleanupChannel });
+        return;
+      }
+      if (epoch !== legacyEpoch) return;
+    }
     startLegacyPosRealtimeListener({ posTopic, callbacks, epoch });
   }, delay);
   reconnectTimerEpoch = epoch;
