@@ -69,6 +69,8 @@ The matrix below ran against the exact SQL file in branch commit `d52b87d85e968f
 
 Baseline and candidate used the same PG 17.6 lab, fixture, exported Production functions, loopback connections, warmed paths, and controlled resets. Single/multi-event samples used four clients; contention used two writers and two readers for five seconds. Pulls used a 500-event page. WAL deltas were measured between LSNs after checkpointing, with seed data excluded.
 
+An earlier 600-pull sample measured 108,368 bytes of WAL on the candidate and zero on baseline, so it was not used as a comparable WAL result. After resetting the device-session timestamp and checkpointing, a balanced 400-pull repeat produced zero WAL on both; those repeat numbers appear in the table.
+
 | Scenario | Operations | Baseline p50 / p95 | Candidate p50 / p95 | WAL per event (baseline / candidate) |
 | --- | ---: | ---: | ---: | ---: |
 | One event per transaction | 1,200 transactions each | 1.547 / 2.544 ms | 2.187 / 4.738 ms | 1,018.6 / 1,008.7 bytes |
