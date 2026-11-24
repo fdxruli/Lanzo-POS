@@ -60,7 +60,8 @@ const runtime = {
   realtimeChannel: null,
   realtimeStatus: SYNC_STATUS.DISABLED,
   realtimeTopic: null,
-  onlineListener: null
+  onlineListener: null,
+  visibilityListener: null
 };
 
 const setActivityFlag = (name, value) => {
@@ -337,37 +338,55 @@ const startRealtimeChannel = ({ posTopic, licenseKey, generation }) => {
 };
 
 const attachOnlineListener = () => {
-  if (runtime.onlineListener || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
 
   const owner = executionScope;
-  runtime.onlineListener = async () => {
-    if (!canSchedule(owner) || !runtime.started) return;
+  if (!runtime.onlineListener) {
+    runtime.onlineListener = async () => {
+      if (!canSchedule(owner) || !runtime.started) return;
+      const generation = runtime.generation;
+      const licenseKey = runtime.licenseKey;
+      const posTopic = runtime.realtimeTopic;
+      if (!runtime.realtimeChannel && posTopic) {
+        try {
+          await observeJob('online_realtime', () => startRealtimeChannel({ posTopic, licenseKey, generation }));
+        } catch (error) {
+          Logger.warn('[PosSync] Inicio de realtime al reconectar fallo:', error);
+        }
+      }
+      if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule(owner)) return;
+      Logger.log('[POS Sync] Procesando outbox online.');
+
+      try {
+        await posSyncOrchestrator.processOutbox('online');
+      } catch (error) {
+        Logger.warn('[PosSync] Outbox al reconectar fallo:', error, { diagnosticOperation: 'sync.outbox' });
+      }
+
+      if (!canSchedule(owner)) return;
+      posSyncOrchestrator.schedulePullIncremental('online').catch((error) => {
+        Logger.warn('[PosSync] Pull al reconectar fallo:', error);
+      });
+    };
+
+    window.addEventListener('online', runtime.onlineListener);
+  }
+
+  if (!runtime.visibilityListener && typeof document !== 'undefined') {
     const generation = runtime.generation;
     const licenseKey = runtime.licenseKey;
-    const posTopic = runtime.realtimeTopic;
-    if (!runtime.realtimeChannel && posTopic) {
-      try {
-        await observeJob('online_realtime', () => startRealtimeChannel({ posTopic, licenseKey, generation }));
-      } catch (error) {
-        Logger.warn('[PosSync] Inicio de realtime al reconectar fallo:', error);
-      }
-    }
-    if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule(owner)) return;
-    Logger.log('[POS Sync] Procesando outbox online.');
+    runtime.visibilityListener = () => {
+      if (document.visibilityState !== 'visible'
+        || !runtime.started
+        || !canSchedule(owner)
+        || !isRuntimeGenerationCurrent(generation, licenseKey)) return;
 
-    try {
-      await posSyncOrchestrator.processOutbox('online');
-    } catch (error) {
-      Logger.warn('[PosSync] Outbox al reconectar fallo:', error, { diagnosticOperation: 'sync.outbox' });
-    }
-
-    if (!canSchedule(owner)) return;
-    posSyncOrchestrator.schedulePullIncremental('online').catch((error) => {
-      Logger.warn('[PosSync] Pull al reconectar fallo:', error);
-    });
-  };
-
-  window.addEventListener('online', runtime.onlineListener);
+      posSyncOrchestrator.handleForegroundResume('visibilitychange').catch((error) => {
+        Logger.warn('[PosSync] Pull al volver a primer plano fallo:', error, { diagnosticOperation: 'sync.pull' });
+      });
+    };
+    document.addEventListener('visibilitychange', runtime.visibilityListener);
+  }
 };
 
 const detachOnlineListener = () => {
@@ -376,6 +395,11 @@ const detachOnlineListener = () => {
   }
 
   runtime.onlineListener = null;
+
+  if (runtime.visibilityListener && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', runtime.visibilityListener);
+  }
+  runtime.visibilityListener = null;
 };
 
 const shouldUseRealtimeDebounce = (reason = '') => String(reason || '').toLowerCase().includes('realtime');
@@ -471,6 +495,7 @@ export const posSyncOrchestrator = {
       }
 
       startGeneration = ++runtime.generation;
+      runtime.lastForegroundPullAt = 0;
       stopOutboxSources();
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
@@ -580,6 +605,7 @@ export const posSyncOrchestrator = {
     const stopGeneration = ++runtime.generation;
     clearRealtimePullTimer();
     runtime.started = false;
+    runtime.lastForegroundPullAt = 0;
     setActivityFlag('startInProgress', false);
     setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;

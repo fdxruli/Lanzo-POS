@@ -1,6 +1,9 @@
 // The WeakMap attests handles created by this implementation, not a provider's
 // self-declared version/flag. Neither the handle nor its scope grants authority.
 const handles = new WeakMap();
+const BASE_RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
+const MAX_BACKOFF_STEP = 5;
 export const ownsScopedPosRealtimeListener = (handle, owner) => (
   Boolean(handle && owner && handles.get(handle)?.owner === owner)
 );
@@ -37,7 +40,10 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
       }
     });
     retiring.set(channel, pending);
-    pending.then(() => channels.delete(channel), () => channels.delete(channel));
+    pending.then(
+      () => channels.delete(channel),
+      () => retiring.delete(channel)
+    );
     pending.catch(() => owner.markUnobservable('pos_realtime_channel_cleanup_failed'));
     return pending;
   };
@@ -65,11 +71,13 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
       window.addEventListener('online', listener);
       return;
     }
-    if (attempts >= 5) return;
+    const backoffStep = Math.min(attempts, MAX_BACKOFF_STEP);
+    const delay = Math.min(MAX_RECONNECT_DELAY_MS, BASE_RECONNECT_DELAY_MS * 2 ** backoffStep);
     timer = owner.schedule('pos_realtime:reconnect', token => {
       timer = null;
       if (allowed()) return connect(token);
-    }, 3000 * 2 ** attempts++);
+    }, delay);
+    attempts += 1;
   };
   const connect = async () => {
     if (!allowed() || connecting) return;

@@ -29,10 +29,10 @@ vi.mock('../../tenant/localTenantGuard', () => ({
 
 const details = { license_key: 'SYNTHETIC', realtime_topic: 'license:synthetic', features: { cloud_pos_sync: true } };
 const flush = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
-let orchestrator, channels, online, scope, syncMetaService;
+let orchestrator, channels, online, scope, syncMetaService, contextCurrent;
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); vi.useFakeTimers();
-  online = true; channels = []; scope = null; mocks.cursor = 0;
+  online = true; channels = []; scope = null; contextCurrent = true; mocks.cursor = 0;
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
   mocks.assertTenant.mockResolvedValue(true);
   mocks.client.removeChannel.mockResolvedValue('ok');
@@ -52,12 +52,14 @@ beforeEach(async () => {
 afterEach(async () => {
   await orchestrator.stop({ preserveStatus: true });
   if (scope) await scope.settleObserved();
+  delete document.visibilityState;
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode => {
   const start = async (licenseDetails = details) => {
-    if (mode === 'scoped') scope = createSyncExecutionScope();
+    if (mode === 'scoped') scope = createSyncExecutionScope({ isContextCurrent: () => contextCurrent });
     const result = await orchestrator.start({ licenseDetails, reason: 'initial_bootstrap', executionScope: scope });
     await flush(); return result;
   };
@@ -104,6 +106,152 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     await vi.advanceTimersByTimeAsync(1000);
     expect(mocks.pull).toHaveBeenCalledTimes(calls + 1);
     expect(orchestrator.getStatus().status).toBe('online');
+  });
+
+  it('continues after five consecutive reconnect failures and caps the retry delay', async () => {
+    await start();
+
+    // One initial error followed by five failed reconnect attempts crosses the
+    // previous five-attempt cutoff and verifies the capped sixth delay.
+    for (let failure = 0; failure < 6; failure += 1) {
+      channels[failure].status('CHANNEL_ERROR');
+      await flush();
+
+      const delay = Math.min(60_000, 3000 * 2 ** Math.min(failure, 5));
+      await vi.advanceTimersByTimeAsync(delay);
+      await flush();
+      expect(channels).toHaveLength(failure + 2);
+    }
+
+    expect(mocks.client.removeChannel).toHaveBeenCalledTimes(6);
+  });
+
+  it('coalesces duplicate channel errors into one retry and pull after recovery', async () => {
+    await start();
+    mocks.cursor = 7;
+    mocks.pull.mockResolvedValueOnce({ success: true, events: [], latestChangeSeq: 9, hasMore: false });
+    mocks.pull.mockClear();
+
+    channels[0].status('CHANNEL_ERROR');
+    channels[0].status('TIMED_OUT');
+    channels[0].status('CLOSED');
+    await flush();
+    expect(mocks.client.removeChannel).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    await flush();
+    expect(channels).toHaveLength(2);
+    channels[1].status('SUBSCRIBED');
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+
+    expect(mocks.client.channel).toHaveBeenCalledTimes(2);
+    expect(mocks.pull).toHaveBeenCalledTimes(1);
+    expect(mocks.pull).toHaveBeenCalledWith(expect.objectContaining({ sinceChangeSeq: 7 }));
+    expect(mocks.cursor).toBe(9);
+    expect(orchestrator.getStatus().status).toBe('online');
+
+    await orchestrator.stop({ preserveStatus: true });
+    expect(mocks.client.removeChannel).toHaveBeenCalledWith(channels[1]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(channels).toHaveLength(2);
+  });
+
+  it('waits for transport cleanup before opening the replacement channel', async () => {
+    await start();
+    let finishRemoval;
+    mocks.client.removeChannel.mockReturnValueOnce(new Promise(resolve => { finishRemoval = resolve; }));
+
+    channels[0].status('CHANNEL_ERROR');
+    await flush();
+    expect(finishRemoval).toEqual(expect.any(Function));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(channels).toHaveLength(1);
+
+    finishRemoval('ok');
+    await flush();
+    await vi.advanceTimersByTimeAsync(3000);
+    await flush();
+    expect(channels).toHaveLength(2);
+  });
+
+  it('waits for online after a channel error while the browser is offline', async () => {
+    await start();
+    online = false;
+    channels[0].status('CHANNEL_ERROR');
+    await flush();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(channels).toHaveLength(1);
+
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    await flush();
+    expect(channels).toHaveLength(2);
+    channels[1].status('SUBSCRIBED');
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(orchestrator.getStatus().status).toBe('online');
+  });
+
+  it('runs one incremental pull when the hidden tab becomes visible and honors cooldown', async () => {
+    const addListener = vi.spyOn(document, 'addEventListener');
+    const removeListener = vi.spyOn(document, 'removeEventListener');
+    await start();
+    await orchestrator.start({ licenseDetails: details, reason: 'duplicate_start' });
+    expect(addListener.mock.calls.filter(([type]) => type === 'visibilitychange')).toHaveLength(1);
+
+    channels[0].status('SUBSCRIBED');
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    mocks.pull.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(mocks.pull).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(mocks.pull).toHaveBeenCalledTimes(1);
+
+    const visibilityListener = addListener.mock.calls.find(([type]) => type === 'visibilitychange')?.[1];
+    await orchestrator.stop({ preserveStatus: true });
+    expect(removeListener).toHaveBeenCalledWith('visibilitychange', visibilityListener);
+  });
+
+  it('fences a pending retry when its tenant or execution context is replaced', async () => {
+    await start();
+    channels[0].status('CHANNEL_ERROR');
+    await flush();
+
+    if (mode === 'scoped') {
+      contextCurrent = false;
+      scope.quiesce();
+      await scope.settleObserved();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(channels).toHaveLength(1);
+      return;
+    }
+
+    const otherTenant = {
+      ...details,
+      license_key: 'SYNTHETIC-B',
+      realtime_topic: 'license:synthetic-b'
+    };
+    await orchestrator.start({ licenseDetails: otherTenant, reason: 'tenant_change' });
+    const replacedTenantChannel = channels[1];
+    channels[0].status('CHANNEL_ERROR');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+
+    expect(channels).toHaveLength(2);
+    expect(mocks.client.removeChannel).toHaveBeenCalledWith(channels[0]);
+    expect(mocks.client.channel).toHaveBeenLastCalledWith('pos:synthetic-b', { config: { private: true } });
+    expect(replacedTenantChannel).toBe(channels[1]);
   });
 
   it('keeps a failed page pending, lets other entity cursors progress, and recovers on the next notice', async () => {
