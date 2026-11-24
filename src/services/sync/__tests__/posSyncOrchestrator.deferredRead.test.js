@@ -217,6 +217,38 @@ describe('POS incremental recovery from a deferred safe frontier', () => {
     expect(mocks.deferredReadPending).toBe(false);
   });
 
+  it('finishes immediately available pages before clearing the deferred marker', async () => {
+    mocks.cursor = 175;
+    replyWith({
+      events: [{ entity_type: 'product', change_seq: 176 }],
+      latest_change_seq: 176,
+      server_latest_change_seq: 177,
+      has_more: true,
+      sync_deferred: true
+    });
+    replyWith({
+      events: [{ entity_type: 'customer', change_seq: 177 }],
+      latest_change_seq: 177,
+      server_latest_change_seq: 177,
+      has_more: false
+    });
+    const applyProducts = vi.fn();
+    const applyCustomers = vi.fn();
+
+    await start();
+    orchestrator.registerEntitySyncHandler('product', { onEvents: applyProducts });
+    orchestrator.registerEntitySyncHandler('customer', { onEvents: applyCustomers });
+    await orchestrator.pullIncremental('safe_pages');
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls.map(([, args]) => args.p_since_change_seq)).toEqual([175, 176]);
+    expect(applyProducts).toHaveBeenCalledTimes(1);
+    expect(applyCustomers).toHaveBeenCalledTimes(1);
+    expect(mocks.cursor).toBe(177);
+    expect(mocks.deferredReadPending).toBe(false);
+    expect(orchestrator.getStatus().deferredPullScheduled).toBe(false);
+  });
+
   it('does not confirm the general cursor when a handler defers its page', async () => {
     mocks.cursor = 175;
     replyWith({

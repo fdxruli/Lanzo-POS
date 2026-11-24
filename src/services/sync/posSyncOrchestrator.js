@@ -1011,21 +1011,21 @@ export const posSyncOrchestrator = {
           if (!isPullContextCurrent()) return null;
         }
 
-        if (!response.syncDeferred && runtime.deferredPullPending) {
-          await setDeferredReadPending(false, {
-            licenseKey: operationLicenseKey,
-            generation: operationGeneration,
-            capturedActorRevision: operationActorRevision
-          });
-          if (!isPullContextCurrent()) return null;
-        }
-
         hasMore = Boolean(response.hasMore);
         if (hasMore && latestChangeSeq <= batchSinceChangeSeq) {
           Logger.warn(response.syncDeferred
             ? '[POS Sync] Pull incremental aplazado: el cursor seguro no avanzó.'
             : '[POS Sync] Pull incremental detenido: has_more sin avance de cursor.');
           hasMore = false;
+        }
+
+        if (!response.syncDeferred && !hasMore && runtime.deferredPullPending) {
+          await setDeferredReadPending(false, {
+            licenseKey: operationLicenseKey,
+            generation: operationGeneration,
+            capturedActorRevision: operationActorRevision
+          });
+          if (!isPullContextCurrent()) return null;
         }
       }
 
