@@ -1,6 +1,9 @@
 // The WeakMap attests handles created by this implementation, not a provider's
 // self-declared version/flag. Neither the handle nor its scope grants authority.
 const handles = new WeakMap();
+const BASE_RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
+const MAX_BACKOFF_STEP = 5;
 export const ownsScopedPosRealtimeListener = (handle, owner) => (
   Boolean(handle && owner && handles.get(handle)?.owner === owner)
 );
@@ -37,8 +40,10 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
       }
     });
     retiring.set(channel, pending);
-    pending.then(() => channels.delete(channel), () => channels.delete(channel));
-    pending.catch(() => owner.markUnobservable('pos_realtime_channel_cleanup_failed'));
+    pending.then(
+      () => channels.delete(channel),
+      () => retiring.delete(channel)
+    );
     return pending;
   };
   const clearSources = () => {
@@ -52,25 +57,40 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
     clearSources();
     return source.stop();
   };
-  const reconnect = () => {
+  const nextReconnectDelay = () => {
+    const backoffStep = Math.min(attempts, MAX_BACKOFF_STEP);
+    const delay = Math.min(MAX_RECONNECT_DELAY_MS, BASE_RECONNECT_DELAY_MS * 2 ** backoffStep);
+    attempts += 1;
+    return delay;
+  };
+  const schedule = (factory, { waitForOnline = false } = {}) => {
     if (!allowed() || timer || online) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (waitForOnline && typeof navigator !== 'undefined' && navigator.onLine === false) {
       const listener = () => {
         if (online !== listener || !allowed()) return;
         window.removeEventListener('online', listener); online = null;
         attempts = 0;
-        observe('online', connect);
+        observe('online', factory);
       };
       online = listener;
       window.addEventListener('online', listener);
       return;
     }
-    if (attempts >= 5) return;
     timer = owner.schedule('pos_realtime:reconnect', token => {
       timer = null;
-      if (allowed()) return connect(token);
-    }, 3000 * 2 ** attempts++);
+      if (allowed()) return factory(token);
+    }, nextReconnectDelay());
   };
+  const reconnect = () => schedule(connect, { waitForOnline: true });
+  const retryRetirement = channel => schedule(async token => {
+    try {
+      await retire(channel);
+    } catch {
+      retryRetirement(channel);
+      return;
+    }
+    if (allowed()) return connect(token);
+  });
   const connect = async () => {
     if (!allowed() || connecting) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -119,8 +139,14 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
           try {
             // Loss of the subscription is effective before cleanup finishes.
             await notify('onStatusChange', { status: 'degraded', reason: status });
-          } finally {
+          } catch {
+            // The source remains degraded while its channel removal is retried.
+          }
+          try {
             await retirement;
+          } catch {
+            if (allowed()) retryRetirement(channel);
+            return;
           }
           if (!allowed()) return;
           reconnect();
