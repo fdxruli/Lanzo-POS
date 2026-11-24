@@ -206,6 +206,25 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     expect(mocks.cursor).toBe(6);
   });
 
+  it('cancels a scheduled cleanup retry when the synchronizer stops', async () => {
+    await start();
+    mocks.client.removeChannel
+      .mockRejectedValueOnce(new Error('TEMPORARY_REMOVE_FAILURE'))
+      .mockResolvedValue('ok');
+
+    channels[0].status('CHANNEL_ERROR');
+    await flush();
+    expect(mocks.client.removeChannel).toHaveBeenCalledTimes(1);
+
+    await orchestrator.stop({ preserveStatus: true });
+    expect(mocks.client.removeChannel).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await flush();
+
+    expect(mocks.client.removeChannel).toHaveBeenCalledTimes(2);
+    expect(channels).toHaveLength(1);
+  });
+
   it('waits for online after a channel error while the browser is offline', async () => {
     await start();
     online = false;
