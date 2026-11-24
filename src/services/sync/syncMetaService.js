@@ -104,6 +104,37 @@ export const syncMetaService = {
     return this.setMeta(SYNC_META_KEYS.LAST_CHANGE_SEQ, Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0, { licenseKey });
   },
 
+  advanceLastChangeSeq(changeSeq, licenseKey = null) {
+    const numericValue = Number(changeSeq);
+    return this.advanceMeta(
+      SYNC_META_KEYS.LAST_CHANGE_SEQ,
+      Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0,
+      { licenseKey }
+    );
+  },
+
+  async getDeferredReadPending(licenseKey = null) {
+    return (await this.getMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, false, { licenseKey })) === true;
+  },
+
+  setDeferredReadPending(pending, licenseKey = null) {
+    return this.setMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, Boolean(pending), { licenseKey });
+  },
+
+  async getDeferredHandlerReads(licenseKey = null) {
+    const value = await this.getMeta(SYNC_META_KEYS.DEFERRED_HANDLER_READS, [], { licenseKey });
+    return Array.isArray(value)
+      ? [...new Set(value.filter((entityType) => typeof entityType === 'string' && entityType.trim()))]
+      : [];
+  },
+
+  setDeferredHandlerReads(entityTypes = [], licenseKey = null) {
+    const normalized = Array.isArray(entityTypes)
+      ? [...new Set(entityTypes.filter((entityType) => typeof entityType === 'string' && entityType.trim()))]
+      : [];
+    return this.setMeta(SYNC_META_KEYS.DEFERRED_HANDLER_READS, normalized, { licenseKey });
+  },
+
   getSyncEnabled(licenseKey = null) {
     return this.getMeta(SYNC_META_KEYS.SYNC_ENABLED, false, { licenseKey });
   },

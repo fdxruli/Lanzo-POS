@@ -26,7 +26,7 @@ export const restaurantOrdersSyncHandler = {
   async onEvents(events = []) {
     const restaurantEvents = (Array.isArray(events) ? events : []).filter(isRestaurantOrderEvent);
     if (restaurantEvents.length === 0) {
-      return { skipped: true, notified: false };
+      return { skipped: true, notified: false, reason: 'module_not_applicable' };
     }
 
     notifyRestaurantOrdersCloudChanged(restaurantEvents);

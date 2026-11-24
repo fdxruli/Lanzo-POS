@@ -21,7 +21,14 @@ vi.mock('../../posRealtime', () => ({
 }));
 vi.mock('../posSyncClient', () => ({ posSyncClient: {} }));
 vi.mock('../syncMetaService', () => ({
-  syncMetaService: { setRealtimeStatus: vi.fn(), setSyncEnabled: vi.fn() }
+  syncMetaService: {
+    getDeferredReadPending: vi.fn(async () => false),
+    setDeferredReadPending: vi.fn(async () => true),
+    getDeferredHandlerReads: vi.fn(async () => []),
+    setDeferredHandlerReads: vi.fn(async () => true),
+    setRealtimeStatus: vi.fn(),
+    setSyncEnabled: vi.fn()
+  }
 }));
 vi.mock('../../tenant/localTenantGuard', () => {
   const assertAccess = async ({ license_key }) => {

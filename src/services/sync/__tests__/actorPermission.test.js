@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTOR_RUNTIME_STATUS } from '../../auth/actorRuntimeController';
-import { hasActorPermission } from '../actorPermission';
+import { hasActorAnyPermission, hasActorPermission } from '../actorPermission';
 
 describe('actor permission capability checks', () => {
   it('fails closed while the actor runtime is not granted', () => {
@@ -15,11 +15,22 @@ describe('actor permission capability checks', () => {
   });
 
   it('preserves Admin wildcard authority', () => {
-    expect(hasActorPermission({
+    const admin = {
       status: ACTOR_RUNTIME_STATUS.GRANTED,
       actorType: 'admin',
       permissions: ['*']
-    }, 'customers')).toBe(true);
+    };
+
+    expect(hasActorPermission(admin, 'customers')).toBe(true);
+    expect(hasActorAnyPermission(admin, ['products', 'pos', 'inventory'])).toBe(true);
+  });
+
+  it('allows a handler capability when any listed permission is granted', () => {
+    const state = { status: ACTOR_RUNTIME_STATUS.GRANTED, actorType: 'staff', permissions: ['pos'] };
+
+    expect(hasActorAnyPermission(state, ['products', 'pos', 'inventory'])).toBe(true);
+    expect(hasActorAnyPermission(state, ['customers', 'cash_register'])).toBe(false);
+    expect(hasActorAnyPermission(state, 'pos')).toBe(true);
   });
 
   it('does not treat malformed or empty permission names as granted', () => {

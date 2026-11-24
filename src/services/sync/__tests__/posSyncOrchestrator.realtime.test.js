@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   client: { channel: vi.fn(), removeChannel: vi.fn() },
   pull: vi.fn(),
   cursor: 0,
+  deferredReadPending: false,
   status: vi.fn(),
   assertTenant: vi.fn()
 }));
@@ -14,13 +15,27 @@ vi.mock('../../Logger', () => ({ default: { log: vi.fn(), warn: vi.fn() } }));
 vi.mock('../posSyncClient', () => ({ posSyncClient: { pullSyncEvents: mocks.pull } }));
 vi.mock('../syncMetaService', () => ({ syncMetaService: {
   getLastChangeSeq: async () => mocks.cursor,
+  advanceLastChangeSeq: async value => { mocks.cursor = Math.max(mocks.cursor, value); return mocks.cursor; },
   setLastChangeSeq: async value => { mocks.cursor = value; },
+  getDeferredReadPending: async () => mocks.deferredReadPending,
+  setDeferredReadPending: async value => { mocks.deferredReadPending = value; return true; },
+  getDeferredHandlerReads: async () => [],
+  setDeferredHandlerReads: async () => true,
   setLastPullAt: vi.fn(), setLastPullError: vi.fn(),
   setRealtimeStatus: mocks.status, setSyncEnabled: vi.fn()
 } }));
 vi.mock('../syncOutboxService', () => ({ syncOutboxService: {
-  resetStuckProcessing: vi.fn(), getPendingOperations: async () => []
+  resetStuckProcessing: vi.fn(), getPendingOperations: async () => [], observeChanges: () => vi.fn()
 } }));
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: {
+    capture: () => ({ assertCurrent: vi.fn() }),
+    getState: () => ({ status: 'granted', permissions: [] }),
+    subscribe: () => vi.fn()
+  },
+  ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
+  isActorRuntimeError: () => false
+}));
 vi.mock('../../tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: mocks.assertTenant,
   runWithLocalTenantSyncLease: async (_source, _options, operation) => operation(),
@@ -32,7 +47,7 @@ const flush = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(
 let orchestrator, channels, online, scope, syncMetaService, contextCurrent;
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); vi.useFakeTimers();
-  online = true; channels = []; scope = null; contextCurrent = true; mocks.cursor = 0;
+  online = true; channels = []; scope = null; contextCurrent = true; mocks.cursor = 0; mocks.deferredReadPending = false;
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
   mocks.assertTenant.mockResolvedValue(true);
   mocks.client.removeChannel.mockResolvedValue('ok');
@@ -366,7 +381,9 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     await flush(); await vi.advanceTimersByTimeAsync(1000);
     expect(mocks.pull).toHaveBeenLastCalledWith(expect.objectContaining({ sinceChangeSeq: 0 }));
     expect(customer).toHaveBeenCalledTimes(2);
-    expect(customer).toHaveBeenLastCalledWith([events[0]], { licenseKey: details.license_key });
+    expect(customer).toHaveBeenLastCalledWith([events[0]], {
+      licenseKey: details.license_key, force: true, reason: 'pos_sync_events'
+    });
     expect(productApplications).toBe(1);
     expect(mocks.cursor).toBe(2);
     expect(syncMetaService.setLastPullError).toHaveBeenLastCalledWith(null, details.license_key);

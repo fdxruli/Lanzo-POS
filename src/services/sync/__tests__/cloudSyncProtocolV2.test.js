@@ -214,6 +214,22 @@ const envelope = (overrides = {}) => ({
 });
 
 describe('cloud sync protocol v2', () => {
+  it('preserves additive deferred flags from the RPC envelope and payload', () => {
+    const context = {
+      expectedTenantId: 'tenant-1',
+      expectedEndpoint: 'pos_pull_customer_credit_changes_v2',
+      expectedFamily: 'customer_credit'
+    };
+    const envelopeFlag = validateCloudSyncV2Envelope(envelope({ sync_deferred: true }), context);
+    const payloadFlag = validateCloudSyncV2Envelope(envelope({
+      payload: { ...envelope().payload, sync_deferred: true }
+    }), context);
+
+    expect(envelopeFlag.sync_deferred).toBe(true);
+    expect(payloadFlag.sync_deferred).toBe(true);
+    expect(validateCloudSyncV2Envelope(envelope(), context)).not.toHaveProperty('sync_deferred');
+  });
+
   it('discovers the contract and calls only the requested v2 route', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: contract, error: null })

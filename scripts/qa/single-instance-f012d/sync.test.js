@@ -14,7 +14,7 @@ vi.mock('../../../src/services/Logger',()=>({default:{log:vi.fn(),warn:vi.fn(),e
 vi.mock('../../../src/services/tenant/localTenantGuard',()=>({assertLocalTenantSyncAccess:m.assertTenant,runWithLocalTenantSyncLease:m.lease,isLocalTenantAccessError:e=>String(e?.code||'').startsWith('LOCAL_TENANT_')}));
 vi.mock('../../../src/services/posRealtime',()=>({buildPosRealtimeTopic:()=>m.topic,startPosRealtimeListener:m.realtime,stopPosRealtimeListener:m.stopRealtime}));
 vi.mock('../../../src/services/sync/posSyncClient',()=>({posSyncClient:{pullSyncEvents:m.pull}}));
-vi.mock('../../../src/services/sync/syncMetaService',()=>({syncMetaService:{getLastChangeSeq:async()=>0,setLastChangeSeq:m.cursor,setLastPullAt:m.pullAt,setLastPullError:m.pullError,setRealtimeStatus:m.status,setSyncEnabled:m.enabled}}));
+vi.mock('../../../src/services/sync/syncMetaService',()=>({syncMetaService:{getLastChangeSeq:async()=>0,setLastChangeSeq:m.cursor,getDeferredReadPending:async()=>false,setDeferredReadPending:async()=>true,getDeferredHandlerReads:async()=>[],setDeferredHandlerReads:async()=>true,setLastPullAt:m.pullAt,setLastPullError:m.pullError,setRealtimeStatus:m.status,setSyncEnabled:m.enabled}}));
 vi.mock('../../../src/services/auth/actorRuntimeController',()=>({
   ACTOR_RUNTIME_STATUS:{GRANTED:'granted'},
   actorRuntimeController:{

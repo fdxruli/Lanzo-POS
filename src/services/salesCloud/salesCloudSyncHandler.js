@@ -14,12 +14,15 @@ import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { salesCloudShadowService } from './salesCloudShadowService';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const SALES_LAST_CHANGE_SEQ_KEY = 'sales_cloud_base_last_change_seq';
 let registered = false;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+const getRuntimeLicenseDetails = () => useAppStore.getState()?.licenseDetails || null;
 
 const notifySalesCloudChanged = () => {
   if (typeof window === 'undefined') return;
@@ -41,17 +44,22 @@ const hasSalesEvents = (events = []) => events.some((event) => {
     || entityType === SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT;
 });
 
-const applySalesPayload = async (response = {}) => {
-  const result = await salesCloudLocalRepository.applyCloudSalesPayload(response);
+const applySalesPayload = async (response = {}, actorHandle = null) => {
+  actorHandle?.assertCurrent();
+  const result = await salesCloudLocalRepository.applyCloudSalesPayload(response, { actorHandle });
+  actorHandle?.assertCurrent();
   return Number(result.cached || 0) + Number(result.patchedLocal || 0);
 };
 
 export const salesCloudSyncHandler = {
+  actorPermission: 'pos',
+
   async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isOnline() || !isCloudSalesBaseSyncEnabled(licenseDetails)) {
       return { skipped: true };
     }
+    if (!hasCurrentActorPermission('pos')) return { skipped: true, reason: 'actor_permission_missing' };
 
     if (shouldDeferPosBootstrapStartHook(reason, { force })) {
       Logger.log('[SalesCloud/Sync] Snapshot inicial diferido por bootstrap inteligente.');
@@ -89,38 +97,59 @@ export const salesCloudSyncHandler = {
 
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
-    if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
-    if (events.length > 0 && !hasSalesEvents(events)) return { applied: 0, skipped: true };
+    if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
+    if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
+    if (!isCloudSalesBaseSyncEnabled(getRuntimeLicenseDetails())) {
+      return { applied: 0, skipped: true, reason: 'module_not_applicable' };
+    }
+    if (!hasCurrentActorPermission('pos')) {
+      return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    }
+    if (events.length > 0 && !hasSalesEvents(events)) {
+      return { applied: 0, skipped: true, reason: 'module_not_applicable' };
+    }
 
+    const actorHandle = actorRuntimeController.capture('pos');
     let sinceChangeSeq = Number(await syncMetaService.getMeta(SALES_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
+    actorHandle.assertCurrent();
     let hasMore = true;
     let applied = 0;
+    let syncDeferred = false;
 
     while (hasMore) {
+      const pageSinceChangeSeq = sinceChangeSeq;
       const response = await salesCloudRepository.pullSalesChanges({
         licenseKey,
         sinceChangeSeq,
         limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
       });
+      actorHandle.assertCurrent();
 
       if (response?.success === false) {
-        throw new Error(response.message || response.code || 'SALES_CLOUD_CHANGES_PULL_FAILED');
+        const error = new Error(response.message || response.code || 'SALES_CLOUD_CHANGES_PULL_FAILED');
+        error.code = response.code || 'SALES_CLOUD_CHANGES_PULL_FAILED';
+        error.retryable = response.retryable === true;
+        error.response = response;
+        throw error;
+      }
+      syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
+
+      applied += await applySalesPayload(response, actorHandle);
+
+      const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
+      if (latestChangeSeq > pageSinceChangeSeq) {
+        actorHandle.assertCurrent();
+        sinceChangeSeq = await syncMetaService.advanceMeta(SALES_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
+          ?? latestChangeSeq;
+        actorHandle.assertCurrent();
       }
 
-      applied += await applySalesPayload(response);
-
-      const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
-      if (latestChangeSeq > sinceChangeSeq) {
-        sinceChangeSeq = latestChangeSeq;
-        await syncMetaService.setMeta(SALES_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
-      }
-
-      hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
-      if (!response.has_more && !response.hasMore) hasMore = false;
+      hasMore = Boolean(response.has_more || response.hasMore)
+        && latestChangeSeq > pageSinceChangeSeq;
     }
 
     if (applied > 0) notifySalesCloudChanged();
-    return { applied, latestChangeSeq: sinceChangeSeq };
+    return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
   },
 
   async pushOperation(operation = {}, { actorHandle } = {}) {

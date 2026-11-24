@@ -141,6 +141,8 @@ const validateRebasedCustomer = (customer, operation, referenceCustomer) => {
 };
 
 export const customerSyncHandler = {
+  actorPermission: 'customers',
+
   async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
     if (!canSyncCustomers()) return { skipped: true, reason: 'actor_permission_missing' };
@@ -168,13 +170,14 @@ export const customerSyncHandler = {
 
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
-    if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
+    if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
+    if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
     if (!canSyncCustomers()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
     const actorHandle = actorRuntimeController.capture('customers');
 
     const hasCustomerEvents = events.some((event) => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.CUSTOMER);
     if (events.length > 0 && !hasCustomerEvents) {
-      return { applied: 0, skipped: true };
+      return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
     let sinceChangeSeq = await syncMetaService.getMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, 0, { licenseKey });
@@ -183,6 +186,7 @@ export const customerSyncHandler = {
 
     let hasMore = true;
     let applied = 0;
+    let syncDeferred = false;
 
     while (hasMore) {
       const pageSinceChangeSeq = sinceChangeSeq;
@@ -195,8 +199,13 @@ export const customerSyncHandler = {
       actorHandle.assertCurrent();
 
       if (response?.success === false) {
-        throw new Error(response.message || response.code || 'CUSTOMER_CHANGES_PULL_FAILED');
+        const error = new Error(response.message || response.code || 'CUSTOMER_CHANGES_PULL_FAILED');
+        error.code = response.code || 'CUSTOMER_CHANGES_PULL_FAILED';
+        error.retryable = response.retryable === true;
+        error.response = response;
+        throw error;
       }
+      syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
 
       const customers = Array.isArray(response.customers) ? response.customers : [];
       const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
@@ -219,7 +228,7 @@ export const customerSyncHandler = {
       }
     }
 
-    return { applied, latestChangeSeq: sinceChangeSeq };
+    return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
   },
 
   canPushOperation: canSyncCustomers,

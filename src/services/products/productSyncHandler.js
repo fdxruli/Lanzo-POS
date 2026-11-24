@@ -26,6 +26,8 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../inventory/inventoryEntryService';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import {
   assertProductInventoryMutationCurrent,
@@ -38,6 +40,10 @@ let registered = false;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+const PRODUCT_CATALOG_READ_PERMISSIONS = Object.freeze(['products', 'pos', 'inventory']);
+
+const getProductCatalogReadPermission = () => PRODUCT_CATALOG_READ_PERMISSIONS
+  .find((permission) => hasCurrentActorPermission(permission)) || null;
 
 const canMigrateProductCatalog = () => {
   const state = useAppStore.getState();
@@ -143,28 +149,33 @@ const saveStaleConflict = async (operation, response, phase) => {
   });
 };
 
-export const pullCatalogChanges = async (licenseKeyOverride = null) => {
+export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandle = null } = {}) => {
   const licenseKey = licenseKeyOverride || getRuntimeLicenseKey();
   if (!licenseKey || !isOnline()) return { skipped: true };
 
   let sinceChangeSeq = Number(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey })) || 0;
   let hasMore = true;
   let applied = 0;
+  let syncDeferred = false;
   const changedProductIds = new Set();
 
   while (hasMore) {
+    actorHandle?.assertCurrent();
     const pageSinceChangeSeq = sinceChangeSeq;
     const response = await productCloudRepository.pullCatalogChanges({
       licenseKey,
       sinceChangeSeq: pageSinceChangeSeq,
       limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
     });
+    actorHandle?.assertCurrent();
 
     if (response?.success === false) {
       throw asError(response, 'PRODUCT_CHANGES_PULL_FAILED');
     }
+    syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
 
     const counts = await productLocalRepository.applyCloudCatalog(response, { protectLocalChanges: true });
+    actorHandle?.assertCurrent();
     if (counts.deferredCatalog) {
       throw asError({ code: 'PRODUCT_CATALOG_LOCAL_CHANGES_PENDING' });
     }
@@ -215,10 +226,12 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
       timestamp: Date.now()
     });
   }
-  return { success: true, applied, latestChangeSeq: sinceChangeSeq };
+  return { success: true, applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
 };
 
 export const productSyncHandler = {
+  actorPermissions: PRODUCT_CATALOG_READ_PERMISSIONS,
+
   async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
 
@@ -253,14 +266,20 @@ export const productSyncHandler = {
 
   async onEvents(events = [], context = {}) {
     const licenseKey = context.licenseKey || getRuntimeLicenseKey();
-    if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
+    if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
+    if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
+    const readPermission = getProductCatalogReadPermission();
+    if (!readPermission) {
+      return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    }
 
     if (!context.force && events.length > 0) {
       const hasCatalogEvents = events.some((event) => PRODUCT_CATALOG_ENTITY_TYPES.has(event.entity_type || event.entityType));
-      if (!hasCatalogEvents) return { applied: 0, skipped: true };
+      if (!hasCatalogEvents) return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
-    return pullCatalogChanges(licenseKey);
+    const actorHandle = actorRuntimeController.capture(readPermission);
+    return pullCatalogChanges(licenseKey, { actorHandle });
   },
 
   async pushOperation(operation = {}, { actorHandle: outboxActor } = {}) {

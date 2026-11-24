@@ -55,6 +55,48 @@ describe('POS Sync metadata recovery pause', () => {
     expect(tableMock.get).toHaveBeenCalledTimes(1);
   });
 
+  it('stores deferred state per license and advances the incremental cursor monotonically', async () => {
+    recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
+    runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    dbMock.isOpen.mockReturnValue(true);
+    const records = new Map();
+    tableMock.get.mockImplementation(async key => records.get(key) || null);
+    tableMock.put.mockImplementation(async record => {
+      records.set(record.key, record);
+      return record.key;
+    });
+
+    await expect(syncMetaService.advanceLastChangeSeq(175, 'LIC-A')).resolves.toBe(175);
+    await expect(syncMetaService.advanceLastChangeSeq(174, 'LIC-A')).resolves.toBe(175);
+    await expect(syncMetaService.getLastChangeSeq('LIC-A')).resolves.toBe(175);
+    await expect(syncMetaService.getLastChangeSeq('LIC-B')).resolves.toBe(0);
+
+    await expect(syncMetaService.setDeferredReadPending(true, 'LIC-A')).resolves.toBe(true);
+    await expect(syncMetaService.getDeferredReadPending('LIC-A')).resolves.toBe(true);
+    await expect(syncMetaService.getDeferredReadPending('LIC-B')).resolves.toBe(false);
+
+    expect(records.get('LIC-A:pos_last_change_seq')).toMatchObject({ value: 175 });
+    expect(records.get('LIC-A:pos_deferred_read_pending')).toMatchObject({ value: true });
+  });
+
+  it('stores deferred handler work per license and normalizes duplicate entity keys', async () => {
+    recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
+    runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    dbMock.isOpen.mockReturnValue(true);
+    const records = new Map();
+    tableMock.get.mockImplementation(async key => records.get(key) || null);
+    tableMock.put.mockImplementation(async record => {
+      records.set(record.key, record);
+      return record.key;
+    });
+
+    await expect(syncMetaService.setDeferredHandlerReads(['customer', 'customer', '', null], 'LIC-A')).resolves.toBe(true);
+    await expect(syncMetaService.getDeferredHandlerReads('LIC-A')).resolves.toEqual(['customer']);
+    await expect(syncMetaService.getDeferredHandlerReads('LIC-B')).resolves.toEqual([]);
+
+    expect(records.get('LIC-A:pos_deferred_handler_reads')).toMatchObject({ value: ['customer'] });
+  });
+
   it('advances metadata atomically without allowing an older response to move it backwards', async () => {
     recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
     runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
