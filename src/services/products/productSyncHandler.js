@@ -153,9 +153,10 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
   const changedProductIds = new Set();
 
   while (hasMore) {
+    const pageSinceChangeSeq = sinceChangeSeq;
     const response = await productCloudRepository.pullCatalogChanges({
       licenseKey,
-      sinceChangeSeq,
+      sinceChangeSeq: pageSinceChangeSeq,
       limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
     });
 
@@ -193,14 +194,14 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
       throw error;
     }
 
-    const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
-    if (latestChangeSeq > sinceChangeSeq) {
-      sinceChangeSeq = latestChangeSeq;
-      await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, sinceChangeSeq, { licenseKey });
+    const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
+    if (latestChangeSeq > pageSinceChangeSeq) {
+      sinceChangeSeq = await syncMetaService.advanceMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey })
+        ?? latestChangeSeq;
     }
 
     hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
-    if ((counts.categories + counts.products + counts.batches) === 0 && latestChangeSeq === sinceChangeSeq) {
+    if (latestChangeSeq <= pageSinceChangeSeq) {
       hasMore = false;
     }
   }
@@ -477,11 +478,7 @@ export const productSyncHandler = {
       await markInventoryEntrySynced(idempotencyKey, response);
     }
 
-    const latestChangeSeq = normalizeChangeSeq(response, 0);
-    if (latestChangeSeq > 0 && !cloudConfirmation) {
-      await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
-    }
-
+    // A write ACK confirms this mutation only; pullCatalogChanges owns the read cursor.
     const changedProductId = operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY
       ? operation.entityId : operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
       ? (payload.productId || payload.product?.id || operation.entityId)

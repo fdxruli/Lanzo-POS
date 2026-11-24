@@ -185,9 +185,10 @@ export const customerSyncHandler = {
     let applied = 0;
 
     while (hasMore) {
+      const pageSinceChangeSeq = sinceChangeSeq;
       const response = await customerCloudRepository.pullCustomerChanges({
         licenseKey,
-        sinceChangeSeq,
+        sinceChangeSeq: pageSinceChangeSeq,
         limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
         actorHandle
       });
@@ -201,19 +202,19 @@ export const customerSyncHandler = {
       const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
       applied += appliedCustomers.length;
 
-      const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
+      const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
       actorHandle.assertCurrent();
       // This page is committed. A later page may fail, so notify before its
       // cursor makes a retry skip these already-applied customers.
       if (appliedCustomers.length > 0) notifyCustomersChanged();
-      if (latestChangeSeq > sinceChangeSeq) {
-        sinceChangeSeq = latestChangeSeq;
-        await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
+      if (latestChangeSeq > pageSinceChangeSeq) {
+        sinceChangeSeq = await syncMetaService.advanceMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
+          ?? latestChangeSeq;
         actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
-      if (customers.length === 0 && latestChangeSeq === sinceChangeSeq) {
+      if (latestChangeSeq <= pageSinceChangeSeq) {
         hasMore = false;
       }
     }
@@ -420,12 +421,7 @@ export const customerSyncHandler = {
       });
     }
 
-    const latestChangeSeq = Number(response?.change_seq ?? response?.changeSeq);
-    if (Number.isFinite(latestChangeSeq) && latestChangeSeq > 0) {
-      await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
-      actorHandle.assertCurrent();
-    }
-
+    // A write ACK confirms this mutation only; onEvents owns the customer read cursor.
     notifyCustomersChanged();
     return response;
   }

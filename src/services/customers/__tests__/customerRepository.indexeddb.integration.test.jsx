@@ -37,7 +37,7 @@ import CustomerForm from '../../../components/customers/CustomerForm';
 import { useAppStore } from '../../../store/useAppStore';
 import { db, STORES } from '../../db/dexie';
 import { openTenantRuntime } from '../../db/tenantRuntimeRouter';
-import { POS_SYNC_STORES, SYNC_OPERATIONS } from '../../sync/syncConstants';
+import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 import { syncOutboxService } from '../../sync/syncOutboxService';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { customerLocalRepository } from '../customerLocalRepository';
@@ -77,6 +77,34 @@ const remoteCustomer = (id, overrides = {}) => ({
   server_version: 1,
   metadata: {},
   ...overrides
+});
+
+const pendingDirectoryCustomer = (id, name) => ({
+  id,
+  name,
+  phone: '5551112200',
+  phoneKey: '5551112200',
+  address: '',
+  debt: 0,
+  debtCents: 0,
+  creditLimit: 80,
+  serverVersion: null,
+  syncStatus: 'pending',
+  pendingOperationId: id
+});
+
+const customerUpsertOperation = (id, name) => ({
+  id,
+  idempotencyKey: id,
+  licenseKey: TEST_LICENSE_KEY,
+  entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+  entityId: id,
+  operation: SYNC_OPERATIONS.UPSERT,
+  metadata: { creditLimitContext: 'quick_add', minimumCreditLimit: 80 },
+  payload: {
+    customer: { id, name, phone: '5551112200', phone_key: '5551112200', credit_limit: 80 },
+    expectedVersion: null
+  }
 });
 
 const setCloudMode = () => useAppStore.setState({ licenseDetails: CLOUD_LICENSE });
@@ -294,6 +322,87 @@ describe('customerRepository IndexedDB integration', () => {
       apply.mockRestore();
       window.removeEventListener('lanzo:customers-sync-updated', onUpdate);
     }
+  });
+
+  it('keeps a customer ACK at seq 42 from skipping remote seq 41 on the next pull', async () => {
+    setCloudMode();
+    const ownId = 'customer-own-seq-42';
+    const own = pendingDirectoryCustomer(ownId, 'Cliente propio');
+    await db.table(STORES.CUSTOMERS).put(own);
+    await syncMetaService.setMeta('customers_last_change_seq', 40, { licenseKey: TEST_LICENSE_KEY });
+    const ownCloud = remoteCustomer(ownId, {
+      name: own.name,
+      phone: own.phone,
+      phone_key: own.phoneKey,
+      credit_limit: own.creditLimit,
+      server_version: 1
+    });
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: true, customer: ownCloud, change_seq: 42 });
+
+    await expect(customerSyncHandler.pushOperation(customerUpsertOperation(ownId, own.name)))
+      .resolves.toMatchObject({ success: true, change_seq: 42 });
+    expect(await customerLocalRepository.getCustomerById(ownId)).toMatchObject({ name: own.name, syncStatus: 'synced', serverVersion: 1 });
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(40);
+
+    const remote41 = remoteCustomer('customer-remote-seq-41', {
+      name: 'Cambio remoto anterior', phone: '5558887700', phone_key: '5558887700', server_version: 1
+    });
+    mocks.cloud.pullCustomerChanges.mockResolvedValueOnce({
+      success: true, customers: [remote41, ownCloud], latest_change_seq: 42, has_more: false
+    });
+    await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 42 }], { licenseKey: TEST_LICENSE_KEY }))
+      .resolves.toMatchObject({ applied: 2, latestChangeSeq: 42 });
+
+    expect(mocks.cloud.pullCustomerChanges.mock.calls[0][0].sinceChangeSeq).toBe(40);
+    expect(await customerLocalRepository.getCustomerById(remote41.id)).toMatchObject({ name: 'Cambio remoto anterior', serverVersion: 1 });
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(2);
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(42);
+  });
+
+  it('keeps pending local customer fields intact when a remote pull overlaps them', async () => {
+    setCloudMode();
+    const pending = pendingDirectoryCustomer('customer-pending-local', 'Edición local pendiente');
+    pending.serverVersion = 1;
+    await db.table(STORES.CUSTOMERS).put(pending);
+    await syncMetaService.setMeta('customers_last_change_seq', 40, { licenseKey: TEST_LICENSE_KEY });
+    mocks.cloud.pullCustomerChanges.mockResolvedValueOnce({
+      success: true,
+      customers: [remoteCustomer(pending.id, { name: 'Versión remota', server_version: 2 })],
+      latest_change_seq: 41,
+      has_more: false
+    });
+
+    await customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 41 }], { licenseKey: TEST_LICENSE_KEY });
+
+    expect(await customerLocalRepository.getCustomerById(pending.id)).toMatchObject({
+      name: 'Edición local pendiente', syncStatus: 'pending', pendingOperationId: pending.id,
+      latestCloudSnapshot: { name: 'Versión remota', serverVersion: 2 }
+    });
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(41);
+  });
+
+  it('rejects a late customer ACK after the actor session changes without touching either license cursor', async () => {
+    setCloudMode();
+    await syncMetaService.setMeta('customers_last_change_seq', 40, { licenseKey: TEST_LICENSE_KEY });
+    const otherLicense = 'license-key-sha256:other-business';
+    await syncMetaService.setMeta('customers_last_change_seq', 90, { licenseKey: otherLicense });
+    let resolveCloud;
+    mocks.cloud.upsertCustomer.mockImplementationOnce(() => new Promise((resolve) => { resolveCloud = resolve; }));
+    const operation = customerUpsertOperation('customer-actor-fenced', 'Cliente tardío');
+    const push = customerSyncHandler.pushOperation(operation);
+    await waitFor(() => expect(resolveCloud).toBeTypeOf('function'));
+
+    actorRuntimeController.lock('customer_session_changed');
+    resolveCloud({
+      success: true,
+      customer: remoteCustomer(operation.entityId, { name: 'Cliente tardío', server_version: 1 }),
+      change_seq: 41
+    });
+    await expect(push).rejects.toMatchObject({ code: expect.stringMatching(/^ACTOR_/) });
+
+    expect(await customerLocalRepository.getCustomerById(operation.entityId)).toBeUndefined();
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(40);
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: otherLicense })).toBe(90);
   });
 
   it('preserves Local financial history and its conflict atomically inside a customer batch', async () => {
