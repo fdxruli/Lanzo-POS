@@ -79,6 +79,8 @@ const applyCreditPayload = async (response = {}, actorHandle) => {
 };
 
 export const customerCreditSyncHandler = {
+  actorPermission: 'customers',
+
   async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isBrowserOnline() || !isCloudCustomerCreditSyncEnabled(licenseDetails)) {
@@ -152,7 +154,8 @@ export const customerCreditSyncHandler = {
 
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
-    if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
+    if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
+    if (!isBrowserOnline()) return { applied: 0, skipped: true, reason: 'offline' };
     if (!canSyncCustomerCredit()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
     const actorHandle = actorRuntimeController.capture('customers');
 
@@ -166,15 +169,17 @@ export const customerCreditSyncHandler = {
     });
 
     if (events.length > 0 && !hasCreditEvents) {
-      return { applied: 0, skipped: true };
+      return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
     let sinceChangeSeq = Number(await syncMetaService.getMeta(CREDIT_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
     actorHandle.assertCurrent();
     let hasMore = true;
     let applied = 0;
+    let syncDeferred = false;
 
     while (hasMore) {
+      const pageSinceChangeSeq = sinceChangeSeq;
       const response = await customerCreditCloudRepository.pullCreditChanges({
         licenseKey,
         sinceChangeSeq,
@@ -184,25 +189,30 @@ export const customerCreditSyncHandler = {
       actorHandle.assertCurrent();
 
       if (response?.success === false) {
-        throw new Error(response.message || response.code || 'CUSTOMER_CREDIT_CHANGES_PULL_FAILED');
+        const error = new Error(response.message || response.code || 'CUSTOMER_CREDIT_CHANGES_PULL_FAILED');
+        error.code = response.code || 'CUSTOMER_CREDIT_CHANGES_PULL_FAILED';
+        error.retryable = response.retryable === true;
+        error.response = response;
+        throw error;
       }
+      syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
 
       applied += await applyCreditPayload(response, actorHandle);
 
-      const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
-      if (latestChangeSeq > sinceChangeSeq) {
+      const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
+      if (latestChangeSeq > pageSinceChangeSeq) {
         actorHandle.assertCurrent();
-        sinceChangeSeq = latestChangeSeq;
-        await syncMetaService.setMeta(CREDIT_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
+        sinceChangeSeq = await syncMetaService.advanceMeta(CREDIT_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
+          ?? latestChangeSeq;
         actorHandle.assertCurrent();
       }
 
-      hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
-      if (!response.has_more && !response.hasMore) hasMore = false;
+      hasMore = Boolean(response.has_more || response.hasMore)
+        && latestChangeSeq > pageSinceChangeSeq;
     }
 
     if (applied > 0) notifyCreditChanged();
-    return { applied, latestChangeSeq: sinceChangeSeq };
+    return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
   },
 
   async pushOperation() {

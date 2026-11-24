@@ -13,6 +13,8 @@ import { cashCloudRepository } from './cashCloudRepository';
 import { cashLocalRepository } from './cashLocalRepository';
 import { isBrowserOnline } from './cashActor';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const CASH_LAST_CHANGE_SEQ_KEY = 'cash_last_change_seq';
 let registered = false;
@@ -41,21 +43,26 @@ const normalizeChangeSeq = (response, fallback = 0) => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
-const applyCashPayload = async (response = {}) => {
+const applyCashPayload = async (response = {}, actorHandle = null) => {
   const sessions = Array.isArray(response.cash_sessions) ? response.cash_sessions : [];
   const movements = Array.isArray(response.movements) ? response.movements : [];
 
-  const appliedSessions = await cashLocalRepository.applyCloudCashSessions(sessions);
-  const appliedMovements = await cashLocalRepository.applyCloudCashMovements(movements);
+  const appliedSessions = await cashLocalRepository.applyCloudCashSessions(sessions, { actorHandle });
+  const appliedMovements = await cashLocalRepository.applyCloudCashMovements(movements, { actorHandle });
 
   return appliedSessions.length + appliedMovements.length;
 };
 
 export const cashSyncHandler = {
+  actorPermission: 'cash_register',
+
   async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isBrowserOnline() || !isCloudCashSyncEnabled(licenseDetails)) {
       return { skipped: true };
+    }
+    if (!hasCurrentActorPermission('cash_register')) {
+      return { skipped: true, reason: 'actor_permission_missing' };
     }
 
     if (shouldDeferPosBootstrapStartHook(reason, { force })) {
@@ -96,7 +103,12 @@ export const cashSyncHandler = {
 
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
-    if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
+    if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
+    if (!isBrowserOnline()) return { applied: 0, skipped: true, reason: 'offline' };
+    if (!hasCurrentActorPermission('cash_register')) {
+      return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    }
+    const actorHandle = actorRuntimeController.capture('cash_register');
 
     const hasCashEvents = events.some((event) => {
       const entityType = event.entity_type || event.entityType;
@@ -104,40 +116,48 @@ export const cashSyncHandler = {
     });
 
     if (events.length > 0 && !hasCashEvents) {
-      return { applied: 0, skipped: true };
+      return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
     let sinceChangeSeq = Number(await syncMetaService.getMeta(CASH_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
     let hasMore = true;
     let applied = 0;
+    let syncDeferred = false;
 
     while (hasMore) {
+      const pageSinceChangeSeq = sinceChangeSeq;
       const response = await cashCloudRepository.pullCashChanges({
         licenseKey,
         sinceChangeSeq,
         limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
       });
+      actorHandle.assertCurrent();
 
       if (response?.success === false) {
-        throw new Error(response.message || response.code || 'CASH_CHANGES_PULL_FAILED');
+        const error = new Error(response.message || response.code || 'CASH_CHANGES_PULL_FAILED');
+        error.code = response.code || 'CASH_CHANGES_PULL_FAILED';
+        error.retryable = response.retryable === true;
+        error.response = response;
+        throw error;
+      }
+      syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
+
+      applied += await applyCashPayload(response, actorHandle);
+
+      const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
+      if (latestChangeSeq > pageSinceChangeSeq) {
+        actorHandle.assertCurrent();
+        sinceChangeSeq = await syncMetaService.advanceMeta(CASH_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
+          ?? latestChangeSeq;
+        actorHandle.assertCurrent();
       }
 
-      applied += await applyCashPayload(response);
-
-      const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
-      if (latestChangeSeq > sinceChangeSeq) {
-        sinceChangeSeq = latestChangeSeq;
-        await syncMetaService.setMeta(CASH_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
-      }
-
-      hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
-      if (latestChangeSeq === sinceChangeSeq && !response.has_more && !response.hasMore) {
-        hasMore = false;
-      }
+      hasMore = Boolean(response.has_more || response.hasMore)
+        && latestChangeSeq > pageSinceChangeSeq;
     }
 
     if (applied > 0) notifyCashChanged();
-    return { applied, latestChangeSeq: sinceChangeSeq };
+    return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
   },
 
   async pushOperation() {

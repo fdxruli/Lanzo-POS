@@ -24,6 +24,8 @@ vi.mock('../syncMetaService', () => ({
   syncMetaService: {
     getDeferredReadPending: vi.fn(async () => false),
     setDeferredReadPending: vi.fn(async () => true),
+    getDeferredHandlerReads: vi.fn(async () => []),
+    setDeferredHandlerReads: vi.fn(async () => true),
     setRealtimeStatus: vi.fn(),
     setSyncEnabled: vi.fn()
   }

@@ -19,6 +19,8 @@ vi.mock('../syncMetaService', () => ({ syncMetaService: {
   setLastChangeSeq: async value => { mocks.cursor = value; },
   getDeferredReadPending: async () => mocks.deferredReadPending,
   setDeferredReadPending: async value => { mocks.deferredReadPending = value; return true; },
+  getDeferredHandlerReads: async () => [],
+  setDeferredHandlerReads: async () => true,
   setLastPullAt: vi.fn(), setLastPullError: vi.fn(),
   setRealtimeStatus: mocks.status, setSyncEnabled: vi.fn()
 } }));
@@ -379,7 +381,9 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     await flush(); await vi.advanceTimersByTimeAsync(1000);
     expect(mocks.pull).toHaveBeenLastCalledWith(expect.objectContaining({ sinceChangeSeq: 0 }));
     expect(customer).toHaveBeenCalledTimes(2);
-    expect(customer).toHaveBeenLastCalledWith([events[0]], { licenseKey: details.license_key });
+    expect(customer).toHaveBeenLastCalledWith([events[0]], {
+      licenseKey: details.license_key, force: true, reason: 'pos_sync_events'
+    });
     expect(productApplications).toBe(1);
     expect(mocks.cursor).toBe(2);
     expect(syncMetaService.setLastPullError).toHaveBeenLastCalledWith(null, details.license_key);

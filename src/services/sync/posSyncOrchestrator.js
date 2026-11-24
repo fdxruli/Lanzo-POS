@@ -25,6 +25,7 @@ import {
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
+import { hasActorPermission } from './actorPermission';
 import { LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
@@ -56,6 +57,9 @@ const runtime = {
   realtimePullTimer: null,
   deferredPullTimer: null,
   deferredPullPending: false,
+  deferredHandlerReads: new Set(),
+  deferredHandlerBlocked: new Set(),
+  permissionRefreshEntityTypes: new Set(),
   deferredPullRetryAttempt: 0,
   lastPullReason: null,
   lastPullStartedAt: 0,
@@ -78,6 +82,13 @@ const setActivityFlag = (name, value) => {
 };
 
 const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+
+const hasDeferredHandlerReadWork = () => runtime.deferredHandlerReads.size > 0;
+const hasDeferredReadWork = () => runtime.deferredPullPending || hasDeferredHandlerReadWork();
+const hasSchedulableDeferredReadWork = () => runtime.deferredPullPending
+  || [...runtime.deferredHandlerReads].some((entityType) => !runtime.deferredHandlerBlocked.has(entityType)
+    && entityHandlers.get(entityType)?.onEvents)
+  || [...runtime.permissionRefreshEntityTypes].some((entityType) => entityHandlers.get(entityType)?.onEvents);
 
 const isRuntimeGenerationCurrent = (generation, licenseKey = runtime.licenseKey) => (
   runtime.generation === generation && runtime.licenseKey === licenseKey
@@ -144,15 +155,29 @@ const outboxActorSignature = (actor) => JSON.stringify([
 
 const startOutboxSources = () => {
   let signature = outboxActorSignature(actorRuntimeController.getState());
+  let previousActor = actorRuntimeController.getState();
   const actorChanged = actorRuntimeController.subscribe((actor) => {
     const nextSignature = outboxActorSignature(actor);
     if (nextSignature === signature) return;
     signature = nextSignature;
+    const priorActor = previousActor;
+    previousActor = actor;
+    const newlyGrantedHandlers = new Set();
+    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED) {
+      for (const [entityType, handler] of entityHandlers.entries()) {
+        const permission = handler?.actorPermission;
+        if (!permission || hasActorPermission(priorActor, permission) || !hasActorPermission(actor, permission)) continue;
+        newlyGrantedHandlers.add(handler);
+        runtime.permissionRefreshEntityTypes.add(entityType);
+      }
+    }
     actorRevision += 1;
     clearOutboxTimer();
     scheduleOutbox();
     clearDeferredPullTimer();
-    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED && runtime.deferredPullPending && runtime.started) {
+    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED && runtime.started
+      && (hasDeferredReadWork() || newlyGrantedHandlers.size > 0)) {
+      runtime.deferredHandlerBlocked.clear();
       posSyncOrchestrator.schedulePullIncremental('actor_context_changed').catch((error) => {
         Logger.warn('[PosSync] Pull tras cambio de actor fallo:', error, { diagnosticOperation: 'sync.pull' });
       });
@@ -166,7 +191,8 @@ const startOutboxSources = () => {
     clearDeferredPullTimer();
     if (state.status === LOCAL_TENANT_STATUS.GRANTED) {
       scheduleOutbox();
-      if (runtime.deferredPullPending && runtime.started) {
+      if (hasDeferredReadWork() && runtime.started) {
+        runtime.deferredHandlerBlocked.clear();
         posSyncOrchestrator.schedulePullIncremental('tenant_context_changed').catch((error) => {
           Logger.warn('[PosSync] Pull tras cambio de tenant fallo:', error, { diagnosticOperation: 'sync.pull' });
         });
@@ -266,21 +292,61 @@ const setDeferredReadPending = async (
 
   const nextPending = Boolean(pending);
   const changed = runtime.deferredPullPending !== nextPending;
-  runtime.deferredPullPending = nextPending;
-  if (!nextPending) {
-    clearDeferredPullTimer();
-    runtime.deferredPullRetryAttempt = 0;
+  if (changed) {
+    const persisted = await syncMetaService.setDeferredReadPending(nextPending, licenseKey);
+    if (persisted === false || !isRuntimeGenerationCurrent(generation, licenseKey)
+      || capturedActorRevision !== actorRevision) return false;
   }
-  if (!changed) return true;
+  runtime.deferredPullPending = nextPending;
+  if (!hasSchedulableDeferredReadWork()) {
+    clearDeferredPullTimer();
+    if (!hasDeferredReadWork()) runtime.deferredPullRetryAttempt = 0;
+  }
+  return true;
+};
 
-  const persisted = await syncMetaService.setDeferredReadPending(nextPending, licenseKey);
-  return persisted !== false
-    && isRuntimeGenerationCurrent(generation, licenseKey)
-    && capturedActorRevision === actorRevision;
+const persistDeferredHandlerRead = async (
+  entityType,
+  { state = 'deferred', handler = entityHandlers.get(entityType), licenseKey = runtime.licenseKey,
+    generation = runtime.generation, capturedActorRevision = actorRevision } = {}
+) => {
+  if (!entityType || !isRuntimeGenerationCurrent(generation, licenseKey)
+    || capturedActorRevision !== actorRevision) return false;
+
+  const next = new Set(runtime.deferredHandlerReads);
+  const handlerEntityTypes = handler
+    ? [...entityHandlers.entries()].filter(([, candidate]) => candidate === handler).map(([type]) => type)
+    : [entityType];
+  if (state === 'complete') {
+    next.delete(entityType);
+    handlerEntityTypes.forEach((type) => next.delete(type));
+  } else {
+    next.add(entityType);
+  }
+
+  const persisted = await syncMetaService.setDeferredHandlerReads([...next], licenseKey);
+  if (persisted === false || !isRuntimeGenerationCurrent(generation, licenseKey)
+    || capturedActorRevision !== actorRevision) return false;
+
+  runtime.deferredHandlerReads = next;
+  handlerEntityTypes.forEach((type) => {
+    if (state === 'permission' || state === 'offline' || state === 'blocked') {
+      runtime.deferredHandlerBlocked.add(type);
+    } else {
+      runtime.deferredHandlerBlocked.delete(type);
+    }
+  });
+  if (state === 'complete') {
+    runtime.permissionRefreshEntityTypes.delete(entityType);
+    handlerEntityTypes.forEach((type) => runtime.permissionRefreshEntityTypes.delete(type));
+  }
+
+  if (!hasSchedulableDeferredReadWork()) clearDeferredPullTimer();
+  return true;
 };
 
 const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
-  if (!runtime.deferredPullPending || runtime.deferredPullTimer || !runtime.started
+  if (!hasSchedulableDeferredReadWork() || runtime.deferredPullTimer || !runtime.started
     || !runtime.licenseKey || !isBrowserOnline() || !canSchedule()) return false;
 
   let actorHandle;
@@ -302,7 +368,7 @@ const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
 
   const wake = () => {
     runtime.deferredPullTimer = null;
-    if (!runtime.deferredPullPending || !runtime.started || !isBrowserOnline()
+    if (!hasSchedulableDeferredReadWork() || !runtime.started || !isBrowserOnline()
       || !canSchedule(owner) || !isRuntimeGenerationCurrent(generation, licenseKey)
       || actorRevision !== capturedActorRevision) return null;
     try {
@@ -377,52 +443,169 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
   }
 };
 
-const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey, { isCurrent = null } = {}) => {
-  if (!Array.isArray(events) || events.length === 0) return { applied: true };
+const isModulePermissionFailure = (error) => {
+  const code = String(error?.code || error?.response?.code || '').toUpperCase();
+  return code === 'ACTOR_PERMISSION_DENIED'
+    || code === 'POS_PERMISSION_DENIED'
+    || code.startsWith('POS_PERMISSION_DENIED:')
+    || code === 'NO_PERMISSION'
+    || ['CUSTOMER_PERMISSION_REQUIRED', 'CASH_PERMISSION_REQUIRED', 'PRODUCT_PERMISSION_REQUIRED', 'PRODUCTS_PERMISSION_REQUIRED'].includes(code);
+};
 
-  const grouped = events.reduce((acc, event) => {
+const clearPermissionRefreshForHandler = (entityType, handler) => {
+  runtime.permissionRefreshEntityTypes.delete(entityType);
+  for (const pendingType of runtime.permissionRefreshEntityTypes) {
+    if (entityHandlers.get(pendingType) === handler) runtime.permissionRefreshEntityTypes.delete(pendingType);
+  }
+};
+
+const hasDeferredHandlerReadFor = (handler) => [...runtime.deferredHandlerReads].some((entityType) => (
+  entityHandlers.get(entityType) === handler
+));
+
+const dispatchPulledEvents = async (
+  events = [],
+  licenseKey = runtime.licenseKey,
+  { isCurrent = null, entityTypes = [], force = false, generation = runtime.generation,
+    capturedActorRevision = actorRevision } = {}
+) => {
+  const grouped = (Array.isArray(events) ? events : []).reduce((acc, event) => {
     const key = event.entity_type || event.entityType || 'generic';
     if (!acc.has(key)) acc.set(key, []);
     acc.get(key).push(event);
     return acc;
   }, new Map());
+  for (const entityType of entityTypes) {
+    if (!grouped.has(entityType)) grouped.set(entityType, []);
+  }
+  if (grouped.size === 0) return { applied: true, processedHandlers: new Set() };
 
-  let handlerError = null;
+  const processedHandlers = new Set();
+  let retryableFailure = false;
+  let recoverableFailureError = null;
   for (const [entityType, entityEvents] of grouped.entries()) {
     const handler = entityHandlers.get(entityType);
     if (!handler?.onEvents) continue;
-    if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale' };
+    if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale', processedHandlers };
 
+    let handlerResult;
     try {
-      if (executionScope && !canSchedule()) return { applied: false, retryable: false, reason: 'scope_closed' };
+      if (executionScope && !canSchedule()) {
+        return { applied: false, retryable: false, reason: 'scope_closed', processedHandlers };
+      }
       unknownHandler(`events:${entityType}`);
-      const handlerResult = await runWithLocalTenantSyncLease(
+      handlerResult = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_event_handler_${entityType}` },
         () => {
           if (executionScope && !canSchedule()) return { skipped: true, reason: 'scope_closed' };
           if (isCurrent && !isCurrent()) return { skipped: true, reason: 'context_stale' };
-          return handler.onEvents(entityEvents, { licenseKey });
+          return handler.onEvents(entityEvents, {
+            licenseKey,
+            force: force || runtime.deferredHandlerReads.has(entityType),
+            reason: force ? 'deferred_handler_retry' : 'pos_sync_events'
+          });
         }
       );
-      if (handlerResult?.skipped === true || handlerResult?.deferred === true || handlerResult?.success === false) {
-        return {
-          applied: false,
-          retryable: handlerResult.retryable === true,
-          reason: handlerResult.reason || null
-        };
-      }
-      if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale' };
     } catch (error) {
+      clearPermissionRefreshForHandler(entityType, handler);
       if (isLocalTenantAccessError(error)) throw error;
+      if (isCurrent && !isCurrent()) {
+        return { applied: false, retryable: false, reason: 'context_stale', processedHandlers };
+      }
+      if (isActorRuntimeError(error) && !isModulePermissionFailure(error)) {
+        return { applied: false, retryable: false, reason: 'authority_lost', processedHandlers };
+      }
+      if (isModulePermissionFailure(error)) {
+        const persisted = await persistDeferredHandlerRead(entityType, {
+          state: 'permission', handler, licenseKey, generation, capturedActorRevision
+        });
+        if (!persisted) return { applied: false, retryable: false, reason: 'permission_marker_persist_failed', processedHandlers };
+        continue;
+      }
+
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
-      handlerError ||= error;
+      if (isRecoverablePullFailure(error)) {
+        const persisted = await persistDeferredHandlerRead(entityType, {
+          state: 'deferred', handler, licenseKey, generation, capturedActorRevision
+        });
+        if (!persisted) return { applied: false, retryable: true, reason: 'deferred_marker_persist_failed', processedHandlers };
+        retryableFailure = true;
+        recoverableFailureError ||= error;
+        continue;
+      }
+      if (runtime.deferredHandlerReads.has(entityType)) {
+        runtime.deferredHandlerBlocked.add(entityType);
+      }
+      return { applied: false, retryable: false, reason: error?.code || 'handler_failed', processedHandlers };
+    }
+
+    if (isCurrent && !isCurrent()) {
+      return { applied: false, retryable: false, reason: 'context_stale', processedHandlers };
+    }
+    processedHandlers.add(handler);
+    clearPermissionRefreshForHandler(entityType, handler);
+
+    const result = handlerResult || {};
+    const reason = String(result.reason || '');
+    const isPermissionSkip = result.skipped === true && reason === 'actor_permission_missing';
+    const isOfflineSkip = result.skipped === true && reason === 'offline';
+    const isNotApplicableSkip = result.skipped === true && reason === 'module_not_applicable';
+    const isContextSkip = result.skipped === true
+      && ['context_invalidated', 'context_stale', 'scope_closed', 'runtime_changed'].includes(reason);
+    if (isContextSkip) {
+      return { applied: false, retryable: false, reason: reason || 'context_invalidated', processedHandlers };
+    }
+
+    if (isPermissionSkip || isOfflineSkip) {
+      const persisted = await persistDeferredHandlerRead(entityType, {
+        state: isPermissionSkip ? 'permission' : 'offline',
+        handler,
+        licenseKey,
+        generation,
+        capturedActorRevision
+      });
+      if (!persisted) {
+        return { applied: false, retryable: false, reason: 'handler_skip_marker_persist_failed', processedHandlers };
+      }
+      continue;
+    }
+
+    if (isNotApplicableSkip) continue;
+    const handlerDeferred = result.sync_deferred === true || result.syncDeferred === true
+      || (result.deferred === true && reason !== 'bootstrap_deferred_snapshot');
+    const handlerRetryable = handlerDeferred || result.retryable === true;
+    if (handlerRetryable) {
+      const persisted = await persistDeferredHandlerRead(entityType, {
+        state: 'deferred', handler, licenseKey, generation, capturedActorRevision
+      });
+      if (!persisted) {
+        return { applied: false, retryable: true, reason: 'deferred_marker_persist_failed', processedHandlers };
+      }
+      retryableFailure = true;
+      continue;
+    }
+    if (result.skipped === true || result.success === false || result.applied === false) {
+      if (runtime.deferredHandlerReads.has(entityType)) runtime.deferredHandlerBlocked.add(entityType);
+      return { applied: false, retryable: false, reason: reason || 'handler_incomplete', processedHandlers };
+    }
+
+    if (hasDeferredHandlerReadFor(handler)) {
+      const persisted = await persistDeferredHandlerRead(entityType, {
+        state: 'complete', handler, licenseKey, generation, capturedActorRevision
+      });
+      if (!persisted) {
+        return { applied: false, retryable: true, reason: 'deferred_marker_clear_failed', processedHandlers };
+      }
     }
   }
-  // Let independent entity cursors progress, but acknowledge the POS page only
-  // when every handler succeeded. A retry resumes each entity at its own cursor.
-  if (handlerError) throw handlerError;
-  return { applied: true };
+  return {
+    applied: !retryableFailure,
+    retryable: retryableFailure,
+    reason: retryableFailure ? 'handler_read_deferred' : null,
+    error: recoverableFailureError,
+    processedHandlers
+  };
 };
 
 // Shared by startup and the first online event after an offline start.
@@ -499,6 +682,7 @@ const attachOnlineListener = () => {
       }
 
       if (!canSchedule(owner)) return;
+      runtime.deferredHandlerBlocked.clear();
       posSyncOrchestrator.schedulePullIncremental('online').catch((error) => {
         Logger.warn('[PosSync] Pull al reconectar fallo:', error);
       });
@@ -557,6 +741,10 @@ export const posSyncOrchestrator = {
 
     entityHandlers.set(entityType, handler);
     if (handler.pushOperation) scheduleOutbox();
+    if (runtime.started && (runtime.deferredHandlerReads.has(entityType)
+      || runtime.permissionRefreshEntityTypes.has(entityType))) {
+      scheduleDeferredPullRecovery('deferred_handler_registered');
+    }
     Logger.log(`[PosSync] Handler registrado para entidad: ${entityType}`);
 
     return () => {
@@ -638,6 +826,9 @@ export const posSyncOrchestrator = {
       stopOutboxSources();
       if (runtime.licenseKey && runtime.licenseKey !== licenseKey) {
         runtime.deferredPullPending = false;
+        runtime.deferredHandlerReads = new Set();
+        runtime.deferredHandlerBlocked.clear();
+        runtime.permissionRefreshEntityTypes.clear();
         runtime.deferredPullRetryAttempt = 0;
       }
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
@@ -647,12 +838,20 @@ export const posSyncOrchestrator = {
 
       runtime.started = true;
       runtime.licenseKey = licenseKey;
-      const persistedDeferredReadPending = await syncMetaService.getDeferredReadPending(licenseKey);
+      const [persistedDeferredReadPending, persistedDeferredHandlerReads] = await Promise.all([
+        syncMetaService.getDeferredReadPending(licenseKey),
+        syncMetaService.getDeferredHandlerReads(licenseKey)
+      ]);
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
         return { started: false, status: runtime.status, stale: true };
       }
       runtime.deferredPullPending = runtime.deferredPullPending || persistedDeferredReadPending === true;
-      if (!runtime.deferredPullPending) runtime.deferredPullRetryAttempt = 0;
+      runtime.deferredHandlerReads = new Set([
+        ...runtime.deferredHandlerReads,
+        ...(Array.isArray(persistedDeferredHandlerReads) ? persistedDeferredHandlerReads : [])
+      ]);
+      runtime.deferredHandlerBlocked.clear();
+      if (!hasDeferredReadWork()) runtime.deferredPullRetryAttempt = 0;
 
       startOutboxSources();
       attachOnlineListener();
@@ -718,7 +917,7 @@ export const posSyncOrchestrator = {
         }
       }
 
-      if (runtime.deferredPullPending) scheduleDeferredPullRecovery('deferred_startup');
+      if (hasSchedulableDeferredReadWork()) scheduleDeferredPullRecovery('deferred_startup');
 
       return {
         started: true,
@@ -763,6 +962,8 @@ export const posSyncOrchestrator = {
     setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;
     runtime.deferredPullRetryAttempt = 0;
+    runtime.deferredHandlerBlocked.clear();
+    runtime.permissionRefreshEntityTypes.clear();
     stopOutboxSources();
     runtime.lastPullReason = null;
     detachOnlineListener();
@@ -844,7 +1045,7 @@ export const posSyncOrchestrator = {
 
     if (
       runtime.realtimeStatus === SYNC_STATUS.ONLINE &&
-      !runtime.deferredPullPending &&
+      !hasDeferredReadWork() &&
       runtime.lastForegroundPullAt > 0 &&
       elapsedSinceLastForegroundPull < POS_SYNC_FOCUS_PULL_COOLDOWN_MS
     ) {
@@ -924,6 +1125,7 @@ export const posSyncOrchestrator = {
       let latestResponse = null;
       let totalEvents = 0;
       let hasMore = true;
+      const processedHandlers = new Set();
 
       while (hasMore) {
         if (!isPullContextCurrent()) return null;
@@ -960,7 +1162,7 @@ export const posSyncOrchestrator = {
               generation: operationGeneration,
               capturedActorRevision: operationActorRevision
             });
-          } else if (response.retryable && runtime.deferredPullPending
+          } else if (response.retryable && hasSchedulableDeferredReadWork()
             && isRecoverablePullFailure(response)) {
             scheduleDeferredPullRecovery('deferred_retryable_response');
           } else {
@@ -987,11 +1189,27 @@ export const posSyncOrchestrator = {
         const pulledEvents = Array.isArray(response.events) ? response.events : [];
         totalEvents += pulledEvents.length;
         const pageApplied = await dispatchPulledEvents(pulledEvents, operationLicenseKey, {
-          isCurrent: isPullContextCurrent
+          isCurrent: isPullContextCurrent,
+          generation: operationGeneration,
+          capturedActorRevision: operationActorRevision
         });
+        for (const handler of pageApplied.processedHandlers || []) processedHandlers.add(handler);
         if (pageApplied?.applied !== true || !isPullContextCurrent()) {
-          if (pageApplied?.retryable && runtime.deferredPullPending) {
+          if (pageApplied?.retryable && hasSchedulableDeferredReadWork()) {
             scheduleDeferredPullRecovery('deferred_handler_retry');
+          }
+          if (pageApplied?.error && isPullContextCurrent()) {
+            await assertLocalTenantSyncAccess(
+              { license_key: operationLicenseKey },
+              { reason: `pos_sync_pull_handler_error_${reason}` }
+            );
+            if (!isPullContextCurrent()) return null;
+            await syncMetaService.setLastPullError(pageApplied.error, operationLicenseKey);
+            await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
+              licenseKey: operationLicenseKey,
+              generation: operationGeneration,
+              reason: 'handler_read_retryable_failure'
+            });
           }
           return null;
         }
@@ -1029,7 +1247,38 @@ export const posSyncOrchestrator = {
         }
       }
 
-      if (runtime.deferredPullPending) scheduleDeferredPullRecovery('deferred_retry');
+      const recoveryEntityTypes = [];
+      const recoveryHandlers = new Set(processedHandlers);
+      const recoveryCandidates = [
+        ...runtime.deferredHandlerReads,
+        ...runtime.permissionRefreshEntityTypes
+      ];
+      for (const entityType of recoveryCandidates) {
+        if (runtime.deferredHandlerBlocked.has(entityType)) continue;
+        const handler = entityHandlers.get(entityType);
+        if (!handler?.onEvents || recoveryHandlers.has(handler)) continue;
+        recoveryHandlers.add(handler);
+        recoveryEntityTypes.push(entityType);
+      }
+      if (recoveryEntityTypes.length > 0) {
+        const recoveryResult = await dispatchPulledEvents([], operationLicenseKey, {
+          isCurrent: isPullContextCurrent,
+          entityTypes: recoveryEntityTypes,
+          force: true,
+          generation: operationGeneration,
+          capturedActorRevision: operationActorRevision
+        });
+        if (recoveryResult?.applied !== true || !isPullContextCurrent()) {
+          if (recoveryResult?.retryable && hasSchedulableDeferredReadWork()) {
+            scheduleDeferredPullRecovery('deferred_handler_retry');
+          }
+          return null;
+        }
+      }
+
+      if (hasSchedulableDeferredReadWork()) {
+        scheduleDeferredPullRecovery(runtime.deferredPullPending ? 'deferred_retry' : 'deferred_handler_retry');
+      }
 
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
@@ -1061,10 +1310,10 @@ export const posSyncOrchestrator = {
       }
       if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) return null;
       Logger.warn('[PosSync] Pull incremental fallo:', error, { diagnosticOperation: 'sync.pull' });
-      if (runtime.deferredPullPending) {
+      if (hasSchedulableDeferredReadWork()) {
         runtime.pendingPull = false;
         if (isRecoverablePullFailure(error) && isPullContextCurrent() && isBrowserOnline()) {
-          scheduleDeferredPullRecovery('deferred_retry');
+          scheduleDeferredPullRecovery(runtime.deferredPullPending ? 'deferred_retry' : 'deferred_handler_retry');
         } else {
           clearDeferredPullTimer();
         }

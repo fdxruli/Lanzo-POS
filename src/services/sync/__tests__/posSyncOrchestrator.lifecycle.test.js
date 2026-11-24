@@ -31,6 +31,8 @@ vi.mock('../syncMetaService', () => ({
     setLastChangeSeq: vi.fn(async () => true),
     getDeferredReadPending: vi.fn(async () => false),
     setDeferredReadPending: vi.fn(async () => true),
+    getDeferredHandlerReads: vi.fn(async () => []),
+    setDeferredHandlerReads: vi.fn(async () => true),
     setLastPullAt: vi.fn(async () => true),
     setLastPullError: vi.fn(async () => true),
     setRealtimeStatus: mocks.setRealtimeStatus,

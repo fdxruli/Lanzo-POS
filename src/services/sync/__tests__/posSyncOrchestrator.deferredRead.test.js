@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   cursor: 0,
   deferredReadPending: false,
   deferredByLicense: new Map(),
+  deferredHandlersByLicense: new Map(),
   assertTenant: vi.fn(),
   actor: { status: 'granted', generation: 1, sessionId: 'session-a', actorKey: 'admin:a', permissions: [] },
   actorListeners: new Set(),
@@ -70,6 +71,11 @@ vi.mock('../syncMetaService', () => ({
       if (licenseKey === 'TENANT-A') mocks.deferredReadPending = Boolean(value);
       return true;
     }),
+    getDeferredHandlerReads: vi.fn(async licenseKey => mocks.deferredHandlersByLicense.get(licenseKey) || []),
+    setDeferredHandlerReads: vi.fn(async (entityTypes, licenseKey) => {
+      mocks.deferredHandlersByLicense.set(licenseKey, [...entityTypes]);
+      return true;
+    }),
     setLastPullAt: vi.fn(async () => true),
     setLastPullError: vi.fn(async () => true),
     setRealtimeStatus: vi.fn(async () => true),
@@ -130,6 +136,7 @@ beforeEach(async () => {
   mocks.cursor = 0;
   mocks.deferredReadPending = false;
   mocks.deferredByLicense.clear();
+  mocks.deferredHandlersByLicense.clear();
   mocks.actor = { status: 'granted', generation: 1, sessionId: 'session-a', actorKey: 'admin:a', permissions: [] };
   mocks.actorListeners.clear();
   mocks.tenantListeners.clear();
@@ -203,7 +210,10 @@ describe('POS incremental recovery from a deferred safe frontier', () => {
     orchestrator.registerEntitySyncHandler('customer', { onEvents: applyCustomers });
     await orchestrator.pullIncremental('partial_page');
 
-    expect(applyProducts).toHaveBeenCalledWith([{ entity_type: 'product', change_seq: 176, id: 'product-176' }], { licenseKey: 'TENANT-A' });
+    expect(applyProducts).toHaveBeenCalledWith(
+      [{ entity_type: 'product', change_seq: 176, id: 'product-176' }],
+      { licenseKey: 'TENANT-A', force: false, reason: 'pos_sync_events' }
+    );
     expect(applyCustomers).not.toHaveBeenCalled();
     expect(mocks.cursor).toBe(176);
     expect(mocks.deferredReadPending).toBe(true);

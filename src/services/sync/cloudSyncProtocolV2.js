@@ -384,6 +384,11 @@ export const validateCloudSyncV2Envelope = (rawEnvelope, {
   const payload = operationResult
     ? tagOperationResult(envelope.payload, envelope.customer_projections)
     : attachProjections(envelope.payload, envelope.customer_projections);
+  // Additive read flags may be carried by the v2 payload or by the envelope.
+  // Keep them on the normalized result so entity handlers can report deferred
+  // work to the POS orchestrator without changing legacy responses.
+  if (envelope.sync_deferred === true) payload.sync_deferred = true;
+  if (envelope.retryable === true && payload.retryable === undefined) payload.retryable = true;
   if (envelope.cursor) {
     const cursor = envelope.cursor;
     const responseSeq = payload.latest_change_seq ?? payload.latestChangeSeq;

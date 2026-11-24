@@ -79,6 +79,24 @@ describe('POS Sync metadata recovery pause', () => {
     expect(records.get('LIC-A:pos_deferred_read_pending')).toMatchObject({ value: true });
   });
 
+  it('stores deferred handler work per license and normalizes duplicate entity keys', async () => {
+    recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
+    runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    dbMock.isOpen.mockReturnValue(true);
+    const records = new Map();
+    tableMock.get.mockImplementation(async key => records.get(key) || null);
+    tableMock.put.mockImplementation(async record => {
+      records.set(record.key, record);
+      return record.key;
+    });
+
+    await expect(syncMetaService.setDeferredHandlerReads(['customer', 'customer', '', null], 'LIC-A')).resolves.toBe(true);
+    await expect(syncMetaService.getDeferredHandlerReads('LIC-A')).resolves.toEqual(['customer']);
+    await expect(syncMetaService.getDeferredHandlerReads('LIC-B')).resolves.toEqual([]);
+
+    expect(records.get('LIC-A:pos_deferred_handler_reads')).toMatchObject({ value: ['customer'] });
+  });
+
   it('advances metadata atomically without allowing an older response to move it backwards', async () => {
     recoveryMocks.isDatabaseRecoveryPending.mockReturnValue(false);
     runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);

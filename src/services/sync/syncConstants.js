@@ -75,6 +75,7 @@ export const SYNC_OPERATIONS = Object.freeze({
 export const SYNC_META_KEYS = Object.freeze({
   LAST_CHANGE_SEQ: 'pos_last_change_seq',
   DEFERRED_READ_PENDING: 'pos_deferred_read_pending',
+  DEFERRED_HANDLER_READS: 'pos_deferred_handler_reads',
   SYNC_ENABLED: 'pos_sync_enabled',
   LAST_FULL_PULL_AT: 'pos_last_full_pull_at',
   REALTIME_STATUS: 'pos_realtime_status',

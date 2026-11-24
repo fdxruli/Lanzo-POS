@@ -121,6 +121,20 @@ export const syncMetaService = {
     return this.setMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, Boolean(pending), { licenseKey });
   },
 
+  async getDeferredHandlerReads(licenseKey = null) {
+    const value = await this.getMeta(SYNC_META_KEYS.DEFERRED_HANDLER_READS, [], { licenseKey });
+    return Array.isArray(value)
+      ? [...new Set(value.filter((entityType) => typeof entityType === 'string' && entityType.trim()))]
+      : [];
+  },
+
+  setDeferredHandlerReads(entityTypes = [], licenseKey = null) {
+    const normalized = Array.isArray(entityTypes)
+      ? [...new Set(entityTypes.filter((entityType) => typeof entityType === 'string' && entityType.trim()))]
+      : [];
+    return this.setMeta(SYNC_META_KEYS.DEFERRED_HANDLER_READS, normalized, { licenseKey });
+  },
+
   getSyncEnabled(licenseKey = null) {
     return this.getMeta(SYNC_META_KEYS.SYNC_ENABLED, false, { licenseKey });
   },
