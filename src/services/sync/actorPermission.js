@@ -8,6 +8,11 @@ export const hasActorPermission = (actorState, permission) => {
   return permissions.includes('*') || permissions.includes(normalizedPermission);
 };
 
+export const hasActorAnyPermission = (actorState, permissions) => {
+  const candidates = Array.isArray(permissions) ? permissions : [permissions];
+  return candidates.some((permission) => hasActorPermission(actorState, permission));
+};
+
 export const hasCurrentActorPermission = (permission) => (
   hasActorPermission(actorRuntimeController.getState(), permission)
 );

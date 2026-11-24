@@ -43,14 +43,23 @@ vi.mock('../../auth/actorRuntimeController', () => ({
       mocks.actorListeners.add(listener);
       return () => mocks.actorListeners.delete(listener);
     },
-    capture: () => {
+    capture: (permission = null) => {
       const captured = { ...mocks.actor };
+      const hasPermission = (requiredPermission) => !requiredPermission
+        || captured.permissions.includes('*')
+        || captured.permissions.includes(requiredPermission);
+      if (!hasPermission(permission)) {
+        throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+      }
       return {
         actorKey: captured.actorKey,
-        assertCurrent: () => {
+        assertCurrent: (requiredPermission = permission) => {
           if (captured.status !== 'granted' || captured.generation !== mocks.actor.generation
             || captured.sessionId !== mocks.actor.sessionId) {
             throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' });
+          }
+          if (!hasPermission(requiredPermission)) {
+            throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
           }
           return { ...mocks.actor };
         }
@@ -160,9 +169,25 @@ vi.mock('../../products/productLocalCatalogRecovery', () => ({
 }));
 vi.mock('../../products/productConflictService', () => ({ productConflictService: { saveConflict: async () => true } }));
 vi.mock('../../auth/productInventoryAuthority', () => ({
-  assertProductInventoryMutationCurrent: () => undefined,
+  assertProductInventoryMutationCurrent: (_handle, requirements = {}) => {
+    const permissions = mocks.actor.permissions || [];
+    for (const permission of ['products', 'inventory']) {
+      if (requirements[permission] === true && !permissions.includes('*') && !permissions.includes(permission)) {
+        throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+      }
+    }
+    return true;
+  },
   assertProductInventoryOperationActorCurrent: () => undefined,
-  captureProductInventoryMutation: () => ({}),
+  captureProductInventoryMutation: (requirements = {}) => {
+    const permissions = mocks.actor.permissions || [];
+    for (const permission of ['products', 'inventory']) {
+      if (requirements[permission] === true && !permissions.includes('*') && !permissions.includes(permission)) {
+        throw Object.assign(new Error('ACTOR_PERMISSION_DENIED'), { code: 'ACTOR_PERMISSION_DENIED' });
+      }
+    }
+    return { assertCurrent: () => undefined };
+  },
   getProductInventoryMutationRequirements: () => ({})
 }));
 vi.mock('../../inventory/inventoryEntryService', () => ({
@@ -354,6 +379,162 @@ describe('real incremental handlers propagate deferred reads to the central reco
     expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(177);
     expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
     expect(mocks.globalPull).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets POS-only Staff read catalog prices and stock through the real handler', async () => {
+    setActorPermissions(['pos']);
+    mocks.catalogResponses.push({
+      success: true,
+      products: [{ id: 'product-pos', name: 'Cafe', price: 12.5, stock: 7 }],
+      batches: [{ id: 'batch-pos', product_id: 'product-pos', quantity: 7 }],
+      latest_change_seq: 176
+    });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({
+      events: [{ entity_type: 'product', change_seq: 176 }],
+      latestChangeSeq: 176,
+      serverLatestChangeSeq: 176
+    }));
+    await start();
+
+    await orchestrator.pullIncremental('staff_pos_catalog_read');
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_pull_product_catalog_changes', expect.objectContaining({
+      p_since_change_seq: 175
+    }));
+    expect(mocks.catalogApplied.at(-1).products).toEqual([
+      expect.objectContaining({ id: 'product-pos', price: 12.5, stock: 7 })
+    ]);
+    expect(mocks.catalogApplied.at(-1).batches).toEqual([
+      expect.objectContaining({ id: 'batch-pos', quantity: 7 })
+    ]);
+    expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(176);
+  });
+
+  it('lets inventory-only Staff read catalog changes through the real handler', async () => {
+    setActorPermissions(['inventory']);
+    mocks.catalogResponses.push({
+      success: true,
+      products: [{ id: 'product-inventory', name: 'Stock item', price: 8.25, stock: 3 }],
+      latest_change_seq: 176
+    });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({
+      events: [{ entity_type: 'product', change_seq: 176 }],
+      latestChangeSeq: 176,
+      serverLatestChangeSeq: 176
+    }));
+    await start();
+
+    await orchestrator.pullIncremental('staff_inventory_catalog_read');
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_pull_product_catalog_changes', expect.objectContaining({
+      p_since_change_seq: 175
+    }));
+    expect(mocks.catalogApplied.at(-1).products).toEqual([
+      expect.objectContaining({ id: 'product-inventory', price: 8.25, stock: 3 })
+    ]);
+    expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(176);
+  });
+
+  it('does not request catalog changes when Staff has none of the SQL read permissions', async () => {
+    setActorPermissions(['customers']);
+    mocks.catalogResponses.push({
+      success: true,
+      products: [{ id: 'restricted-product', price: 4, stock: 2 }],
+      latest_change_seq: 176
+    });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({
+      events: [{ entity_type: 'product', change_seq: 176 }],
+      latestChangeSeq: 176,
+      serverLatestChangeSeq: 176
+    }));
+    await start();
+
+    await orchestrator.pullIncremental('staff_without_catalog_read_permission');
+
+    expect(mocks.rpc).not.toHaveBeenCalledWith('pos_pull_product_catalog_changes', expect.anything());
+    expect(mocks.catalogApplied).toEqual([]);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['product']);
+    expect(mocks.generalCursor).toBe(176);
+  });
+
+  it('recovers a deferred catalog read for POS-only Staff through the central timer', async () => {
+    setActorPermissions(['pos']);
+    mocks.catalogResponses.push(
+      { success: true, products: [], latest_change_seq: 175, server_latest_change_seq: 177, sync_deferred: true },
+      { success: true, products: [{ id: 'product-pos-177', price: 19.5, stock: 5 }], latest_change_seq: 177 }
+    );
+    mocks.globalPull
+      .mockResolvedValueOnce(globalPage({
+        events: [{ entity_type: 'product', change_seq: 177 }],
+        latestChangeSeq: 175,
+        serverLatestChangeSeq: 177
+      }))
+      .mockResolvedValueOnce(globalPage());
+    await start();
+
+    await orchestrator.pullIncremental('staff_pos_catalog_deferred');
+
+    expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(175);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['product']);
+    expect(orchestrator.getStatus().deferredPullScheduled).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+
+    expect(mocks.catalogApplied.at(-1).products).toEqual([
+      expect.objectContaining({ id: 'product-pos-177', price: 19.5, stock: 5 })
+    ]);
+    expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(177);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
+    expect(mocks.globalPull).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the deferred catalog handler when a SQL read permission is granted', async () => {
+    setActorPermissions(['customers']);
+    mocks.globalPull.mockResolvedValueOnce(globalPage({
+      events: [{ entity_type: 'product', change_seq: 176 }],
+      latestChangeSeq: 176,
+      serverLatestChangeSeq: 176
+    }));
+    await start();
+
+    await orchestrator.pullIncremental('catalog_permission_missing');
+
+    expect(mocks.rpc).not.toHaveBeenCalledWith('pos_pull_product_catalog_changes', expect.anything());
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['product']);
+
+    mocks.catalogResponses.push({
+      success: true,
+      products: [{ id: 'product-restored', price: 14, stock: 2 }],
+      latest_change_seq: 176
+    });
+    mocks.globalPull.mockResolvedValueOnce(globalPage());
+    setActorPermissions(['customers', 'pos']);
+    await flush();
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_pull_product_catalog_changes', expect.objectContaining({
+      p_since_change_seq: 175
+    }));
+    expect(mocks.catalogApplied.at(-1).products).toEqual([
+      expect.objectContaining({ id: 'product-restored', price: 14, stock: 2 })
+    ]);
+    expect(mocks.meta.get(metaKey('TENANT-A', PRODUCT_SEQ))).toBe(176);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
+  });
+
+  it('keeps catalog writes restricted to products permission when POS or inventory grants read access', async () => {
+    const { productCloudRepository } = await import('../../products/productCloudRepository');
+
+    for (const permission of ['pos', 'inventory']) {
+      setActorPermissions([permission]);
+      await expect(productCloudRepository.upsertProduct({
+        licenseKey: 'TENANT-A',
+        product: { id: `product-write-${permission}`, name: 'Read only', price: 1 },
+        idempotencyKey: `write-${permission}`
+      })).rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+    }
+
+    expect(mocks.rpc).not.toHaveBeenCalledWith('pos_upsert_product', expect.anything());
   });
 
   it('keeps a deferred customer marker while the real catalog handler finishes', async () => {

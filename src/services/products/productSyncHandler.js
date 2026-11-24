@@ -27,6 +27,7 @@ import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../inventory/inventoryEntryService';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import {
   assertProductInventoryMutationCurrent,
@@ -39,6 +40,10 @@ let registered = false;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+const PRODUCT_CATALOG_READ_PERMISSIONS = Object.freeze(['products', 'pos', 'inventory']);
+
+const getProductCatalogReadPermission = () => PRODUCT_CATALOG_READ_PERMISSIONS
+  .find((permission) => hasCurrentActorPermission(permission)) || null;
 
 const canMigrateProductCatalog = () => {
   const state = useAppStore.getState();
@@ -225,7 +230,7 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
 };
 
 export const productSyncHandler = {
-  actorPermission: 'products',
+  actorPermissions: PRODUCT_CATALOG_READ_PERMISSIONS,
 
   async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
@@ -263,7 +268,8 @@ export const productSyncHandler = {
     const licenseKey = context.licenseKey || getRuntimeLicenseKey();
     if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
     if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
-    if (!canMigrateProductCatalog()) {
+    const readPermission = getProductCatalogReadPermission();
+    if (!readPermission) {
       return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
     }
 
@@ -272,7 +278,7 @@ export const productSyncHandler = {
       if (!hasCatalogEvents) return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
-    const actorHandle = actorRuntimeController.capture('products');
+    const actorHandle = actorRuntimeController.capture(readPermission);
     return pullCatalogChanges(licenseKey, { actorHandle });
   },
 

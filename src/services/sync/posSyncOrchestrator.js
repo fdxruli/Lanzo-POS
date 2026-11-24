@@ -25,7 +25,7 @@ import {
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
-import { hasActorPermission } from './actorPermission';
+import { hasActorAnyPermission } from './actorPermission';
 import { LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
@@ -165,8 +165,9 @@ const startOutboxSources = () => {
     const newlyGrantedHandlers = new Set();
     if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED) {
       for (const [entityType, handler] of entityHandlers.entries()) {
-        const permission = handler?.actorPermission;
-        if (!permission || hasActorPermission(priorActor, permission) || !hasActorPermission(actor, permission)) continue;
+        const permissions = handler?.actorPermissions ?? handler?.actorPermission;
+        if (!permissions || hasActorAnyPermission(priorActor, permissions)
+          || !hasActorAnyPermission(actor, permissions)) continue;
         newlyGrantedHandlers.add(handler);
         runtime.permissionRefreshEntityTypes.add(entityType);
       }
