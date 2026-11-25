@@ -13,7 +13,6 @@ export const readProductCatalog = async ({
 }) => {
   const handle = actorHandle?.assertCurrent ? actorHandle : actorRuntimeController.capture();
   const assertCurrent = async () => {
-    handle.assertCurrent();
     await assertContextCurrent?.();
     handle.assertCurrent();
   };

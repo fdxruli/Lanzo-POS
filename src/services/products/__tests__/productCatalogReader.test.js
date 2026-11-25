@@ -55,7 +55,7 @@ describe('read-only product catalog keyset reader', () => {
     const args = harness(first);
     let stale = false;
     args.actorHandle.assertCurrent.mockImplementation(() => { if (stale) throw new Error('ACTOR_CONTEXT_STALE'); });
-    args.cloudRepository.pullCatalogSnapshot.mockImplementationOnce(async () => { stale = true; return first; });
+    args.cloudRepository.pullCatalogSnapshot.mockReset().mockImplementationOnce(async () => { stale = true; return first; });
     await expect(readProductCatalog(args)).rejects.toThrow('ACTOR_CONTEXT_STALE');
     expect(args.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledOnce();
   });

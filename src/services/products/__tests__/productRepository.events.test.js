@@ -176,9 +176,12 @@ const apparelPreparedProduct = ({ serverVersion = 10, updated = [], created = []
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  for (const mock of Object.values(mocks)) {
+    if (typeof mock?.mockReset === 'function') mock.mockReset();
+  }
   mocks.cloudEnabled = false;
   mocks.businessTypes = ['abarrotes'];
-  mocks.licenseDetails = {};
+  mocks.licenseDetails = { valid: true, license_key: 'license-key' };
   mocks.appStatus = 'ready';
   mocks.assertProductActorCurrent.mockReset();
   mocks.captureProductActor.mockReset().mockImplementation(() => ({

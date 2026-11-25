@@ -125,7 +125,7 @@ const reconcileCategory = async ({ licenseKey, category, cloud, outbox, actorHan
   }
   actorHandle.assertCurrent('products');
   await productLocalRepository.applyCloudCatalog({ category: confirmed }, {
-    recovery: { store: STORES.CATEGORIES, record: category }
+    recovery: { store: STORES.CATEGORIES, record: category }, actorHandle
   });
 };
 
