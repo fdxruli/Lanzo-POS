@@ -1966,7 +1966,7 @@ export const cashRepository = {
           localStationKey,
           limit: filters.limit || 100
         });
-      return { success: true, cashSessions, readOnly: mode.readOnly };
+      return { success: true, cashSessions, readOnly: mode.readOnly, source: 'local', nextOffset: null };
     }
     let station = null;
     try {
@@ -1985,7 +1985,16 @@ export const cashRepository = {
     }
 
     const applied = await applyCloudResponse(response);
-    return { success: true, cashSessions: applied.cashSessions, response };
+    const rawRows = response.cash_sessions ?? response.cashSessions;
+    const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
+    return {
+      success: true,
+      cashSessions: applied.cashSessions,
+      source: 'cloud',
+      nextOffset: Array.isArray(rawRows) && rawRows.length === limit ? offset + rawRows.length : null,
+      response
+    };
   }
 };
 
