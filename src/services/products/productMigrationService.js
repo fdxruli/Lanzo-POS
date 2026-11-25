@@ -15,6 +15,7 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const nowIso = () => new Date().toISOString();
 const initialMigrationByLicense = new Map();
@@ -32,6 +33,7 @@ export const productMigrationService = {
     const snapshotProtocol = negotiatedProtocol
       || await productCloudRepository.negotiateSnapshotProtocol({ licenseKey, actorHandle });
     actorHandle?.assertCurrent?.();
+    requireCloudSnapshotContract(snapshotProtocol);
 
     if (snapshotProtocol.supported) {
       const contextId = buildSnapshotContextId({

@@ -663,6 +663,15 @@ const unsupportedSnapshotContract = (reason, tenantId = null) => ({
   contractVersion: 1
 });
 
+export const requireCloudSnapshotContract = (snapshotContract) => {
+  if (snapshotContract?.supported === true) return snapshotContract;
+  const error = new Error('CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE');
+  error.code = 'CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE';
+  error.retryable = false;
+  error.snapshotContractReason = snapshotContract?.reason || 'snapshot_negotiation_unavailable';
+  throw error;
+};
+
 /**
  * Negotiate the additive keyset snapshot family once for a tenant/device
  * context. The result is only a capability hint; each page RPC still

@@ -215,4 +215,17 @@ grant execute on function public.pos_snapshot_sync_contract_v1(text,text,text,te
 comment on function public.pos_snapshot_sync_contract_v1(text,text,text,text,integer) is
   'Read-only keyset snapshot capability discovery, independent of FIN01 write-pilot activation. Each snapshot RPC enforces its own access checks.';
 
+-- Fence the client-facing OFFSET snapshot entrypoints when the versioned
+-- reference/keyset contract becomes discoverable. Older clients must fail
+-- closed instead of marking a mutable, incomplete traversal as complete.
+-- New clients use the five versioned Block 2 RPCs above. Preserve explicit
+-- service_role grants for trusted server-side maintenance tooling.
+revoke all on function public.pos_pull_product_catalog_snapshot(text,text,text,text,text,integer,integer,boolean) from public,anon,authenticated;
+revoke all on function public.pos_pull_customers_snapshot(text,text,text,text,integer,integer,boolean) from public,anon,authenticated;
+revoke all on function public.pos_pull_customers_snapshot_v2(text,text,text,text,integer,integer,boolean,jsonb) from public,anon,authenticated;
+revoke all on function public.pos_pull_customer_credit_snapshot(text,text,text,text,integer,integer,text,boolean) from public,anon,authenticated;
+revoke all on function public.pos_pull_customer_credit_snapshot_v2(text,text,text,text,integer,integer,text,boolean,jsonb) from public,anon,authenticated;
+revoke all on function public.pos_pull_sales_snapshot(text,text,text,text,integer,integer,timestamptz,timestamptz,boolean) from public,anon,authenticated;
+revoke all on function public.pos_pull_cash_snapshot(text,text,text,text,text,integer,integer,boolean) from public,anon,authenticated;
+
 commit;

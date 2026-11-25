@@ -17,6 +17,7 @@ import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const CASH_LAST_CHANGE_SEQ_KEY = 'cash_last_change_seq';
 const CASH_SNAPSHOT_STREAM = 'cash_register';
@@ -127,6 +128,7 @@ export const cashSyncHandler = {
         licenseKey: resolvedLicenseKey, actorHandle, force
       }) || { supported: false, reason: 'snapshot_negotiation_unavailable' };
       actorHandle.assertCurrent();
+      requireCloudSnapshotContract(snapshotProtocol);
       if (snapshotProtocol.supported) {
         const snapshot = await runCashSnapshot({ licenseKey: resolvedLicenseKey, actorHandle, snapshotProtocol, scope, force });
         actorHandle.assertCurrent();

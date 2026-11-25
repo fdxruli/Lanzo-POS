@@ -9,6 +9,7 @@ import { localCustomerToCloudPayload } from './customerMapper';
 import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
@@ -59,6 +60,7 @@ const pullFullSnapshot = async (licenseKey, actorHandle = actorRuntimeController
   const snapshotProtocol = await customerCloudRepository.negotiateSnapshotProtocol?.({ licenseKey, actorHandle })
     || { supported: false, reason: 'snapshot_negotiation_unavailable' };
   actorHandle.assertCurrent();
+  requireCloudSnapshotContract(snapshotProtocol);
   if (snapshotProtocol.supported) {
     const contextId = buildSnapshotContextId({
       licenseKey,

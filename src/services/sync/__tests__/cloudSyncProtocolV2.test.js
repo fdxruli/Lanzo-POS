@@ -10,6 +10,7 @@ import {
   callCloudSyncRpc,
   callCloudSnapshotRpc,
   negotiateCloudSnapshotContract,
+  requireCloudSnapshotContract,
   validateCloudSyncV2Envelope
 } from '../cloudSyncProtocolV2';
 
@@ -280,6 +281,20 @@ describe('cloud sync protocol v2', () => {
       p_security_token: 'secret', p_staff_session_token: null
     } });
     expect(negotiated).toMatchObject({ supported: false, reason: 'contract_discovery_unavailable' });
+    expect(rpc).toHaveBeenCalledOnce();
+  });
+
+  it('prevents a new client build from consuming OFFSET snapshots before discovery is installed', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({
+      data: null, error: { code: 'PGRST202', message: 'pos_snapshot_sync_contract_v1 is not in the schema cache' }
+    });
+    const negotiated = await negotiateCloudSnapshotContract({ client: { rpc }, authArgs: {
+      p_license_key: 'snapshot-before-install', p_device_fingerprint: 'device-1',
+      p_security_token: 'secret', p_staff_session_token: null
+    } });
+    expect(() => requireCloudSnapshotContract(negotiated)).toThrow(expect.objectContaining({
+      code: 'CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE', retryable: false
+    }));
     expect(rpc).toHaveBeenCalledOnce();
   });
 

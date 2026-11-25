@@ -21,6 +21,7 @@ import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { db, STORES } from '../db/dexie';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const CREDIT_LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
 let registered = false;
@@ -152,6 +153,7 @@ export const customerCreditSyncHandler = {
         licenseKey: resolvedLicenseKey, actorHandle, force
       }) || { supported: false, reason: 'snapshot_negotiation_unavailable' };
       actorHandle.assertCurrent();
+      requireCloudSnapshotContract(snapshotProtocol);
       if (snapshotProtocol.supported) {
         const snapshot = await runCreditSnapshot({
           licenseKey: resolvedLicenseKey, actorHandle, snapshotProtocol, force

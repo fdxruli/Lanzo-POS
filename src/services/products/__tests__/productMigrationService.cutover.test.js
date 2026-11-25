@@ -30,6 +30,15 @@ import { productMigrationService } from '../productMigrationService';
 
 const licenseKey = 'CUTOVER';
 const migratedKey = buildProductsMigratedMetaKey(licenseKey);
+const consistentSnapshotPage = {
+  success: true,
+  snapshot_contract: 'keyset_reference_v1',
+  snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 18,
+  safe_change_seq: 18,
+  categories: [], products: [], batches: [],
+  has_more: false, snapshot_complete: true, next_page_cursor: null
+};
 
 describe('product migration FREE to PRO coordination', () => {
   beforeEach(() => {
@@ -67,17 +76,20 @@ describe('product migration FREE to PRO coordination', () => {
 
   it.each([false, true])('reconciles before hydration with prior migration marker %s', async (migrated) => {
     mocks.getMeta.mockResolvedValue(migrated);
-    const result = await productMigrationService.runInitialMigrationIfNeeded({ licenseKey });
-    expect(result).toMatchObject({ success: true, recovery: { recovered: 1 } });
+    if (migrated) {
+      const result = await productMigrationService.runInitialMigrationIfNeeded({ licenseKey });
+      expect(result).toMatchObject({ success: true, recovery: { recovered: 1 }, alreadyMigrated: true });
+      expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+    } else {
+      await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey }))
+        .rejects.toMatchObject({ code: 'CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE' });
+      expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+      expect(mocks.setMeta).not.toHaveBeenCalledWith(migratedKey, true, { licenseKey });
+    }
 
     expect(mocks.runRecovery.mock.invocationCallOrder[0])
-      .toBeLessThan((migrated ? mocks.negotiateSnapshotProtocol : mocks.pullCatalogSnapshot).mock.invocationCallOrder[0]);
-    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(migrated ? 0 : 3);
-    if (!migrated) {
-      expect(mocks.setMeta).toHaveBeenCalledWith(migratedKey, true, { licenseKey });
-    } else {
-      expect(result).toMatchObject({ skipped: true, alreadyMigrated: true, consistent: false, legacyFallback: true });
-    }
+      .toBeLessThan(mocks.negotiateSnapshotProtocol.mock.invocationCallOrder[0]);
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(0);
   });
 
   it('coalesces concurrent startup and retries without marking partial recovery complete', async () => {
@@ -91,26 +103,33 @@ describe('product migration FREE to PRO coordination', () => {
     expect(mocks.setMeta).not.toHaveBeenCalled();
     expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
 
+    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: true, tenantId: 'tenant-cutover' });
+    mocks.pullCatalogSnapshot.mockResolvedValue(consistentSnapshotPage);
     await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey }))
       .resolves.toMatchObject({ success: true });
     expect(mocks.setMeta).toHaveBeenCalledWith(migratedKey, true, { licenseKey });
   });
 
   it('protects pending local records on direct read-only snapshots and retains the cursor', async () => {
+    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: true, tenantId: 'tenant-cutover' });
+    mocks.pullCatalogSnapshot.mockResolvedValue(consistentSnapshotPage);
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 0, batches: 0, deferredCatalog: 1 });
     await expect(productMigrationService.pullFullSnapshot({ licenseKey }))
-      .resolves.toMatchObject({ success: false, blocked: true, reason: 'local_catalog_pending' });
+      .rejects.toThrow('PRODUCT_CATALOG_LOCAL_PENDING');
     expect(mocks.runRecovery).not.toHaveBeenCalled();
     expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(expect.anything(), { protectLocalChanges: true });
     expect(mocks.setMeta).not.toHaveBeenCalledWith(PRODUCT_CATALOG_LAST_SEQ_KEY, expect.anything(), expect.anything());
   });
 
   it('preserves the migration marker on interrupted hydration', async () => {
+    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: true, tenantId: 'tenant-cutover' });
     mocks.pullCatalogSnapshot.mockRejectedValueOnce(new Error('response lost'));
     await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey }))
       .rejects.toThrow('response lost');
-    expect(mocks.setMeta).not.toHaveBeenCalled();
+    expect(mocks.setMeta).not.toHaveBeenCalledWith(migratedKey, true, { licenseKey });
+    expect(mocks.setMeta).not.toHaveBeenCalledWith(PRODUCT_CATALOG_LAST_SEQ_KEY, expect.anything(), { licenseKey });
+    mocks.pullCatalogSnapshot.mockResolvedValue(consistentSnapshotPage);
     await expect(productMigrationService.runInitialMigrationIfNeeded({ licenseKey }))
-      .resolves.toMatchObject({ success: true });
+      .resolves.toMatchObject({ success: true, consistent: true });
   });
 });

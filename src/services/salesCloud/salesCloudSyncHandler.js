@@ -17,6 +17,7 @@ import { salesCloudShadowService } from './salesCloudShadowService';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const SALES_LAST_CHANGE_SEQ_KEY = 'sales_cloud_base_last_change_seq';
 const SALES_SNAPSHOT_STREAM = 'sales';
@@ -140,6 +141,7 @@ export const salesCloudSyncHandler = {
         licenseKey: resolvedLicenseKey, actorHandle, force
       }) || { supported: false, reason: 'snapshot_negotiation_unavailable' };
       actorHandle.assertCurrent();
+      requireCloudSnapshotContract(snapshotProtocol);
 
       if (snapshotProtocol.supported) {
         const snapshot = await runSalesSnapshot({ licenseKey: resolvedLicenseKey, actorHandle, snapshotProtocol, force });

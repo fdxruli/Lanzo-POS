@@ -2,6 +2,8 @@
 
 **Estado:** código preparado en el PR Draft #593; no está aprobado para merge ni instalación. Esta nota separa evidencia integrada, pruebas previas reutilizadas y condiciones pendientes de 4F.
 
+> **Actualización 4F (2026-11-25):** este reporte conserva el estado y los hashes observados al cierre del Bloque 4. Las conclusiones históricas de transición, clientes legacy y preparación de instalación que aparecen más abajo quedaron reemplazadas por el runbook actual [pos-sync-4f-transition.md](./pos-sync-4f-transition.md), que incluye el fail-closed del cliente, el fence ACL de B3, la PWA con actualización por confirmación y la pausa Cloud global requerida.
+
 ## Base y migraciones
 
 - PR: [#593](https://github.com/fdxruli/Lanzo-POS/pull/593), rama `codex/lanzo-pos-stage-4de-frontier-block1`.

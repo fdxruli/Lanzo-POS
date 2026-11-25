@@ -3,16 +3,24 @@
 // repositories, snapshot handlers, tenant context, and Dexie remain real.
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const harness = vi.hoisted(() => ({ rpc: vi.fn(), auth: null }));
 
-vi.mock('../../supabase', () => ({ supabaseClient: { rpc: harness.rpc } }));
-vi.mock('../posSyncClient', () => ({
-  buildPosSyncAuthContext: vi.fn(async ({ licenseKey }) => ({ ...harness.auth, licenseKey }))
+vi.mock('../../supabase', () => ({
+  supabaseClient: { rpc: harness.rpc },
+  getStableDeviceId: vi.fn(async () => harness.auth?.deviceFingerprint || null),
+  getDeviceSecurityToken: vi.fn(async () => harness.auth?.securityToken || null),
+  getActorSessionToken: vi.fn(async () => harness.auth?.staffSessionToken || null)
 }));
-vi.mock('../posSyncOrchestrator', () => ({ posSyncOrchestrator: { registerEntitySyncHandler: vi.fn() } }));
+vi.mock('../posSyncClient', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    buildPosSyncAuthContext: vi.fn(async ({ licenseKey }) => ({ ...harness.auth, licenseKey }))
+  };
+});
 vi.mock('../../auth/actorRuntimeController', async (importOriginal) => {
   const actual = await importOriginal();
   const { getActiveTenantRuntime } = await import('../../db/tenantRuntimeRouter');
@@ -25,11 +33,15 @@ vi.mock('../../salesCloud/salesCloudShadowService', () => ({
 }));
 
 import { useAppStore } from '../../../store/useAppStore';
-import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
+import { closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
+import { openTenantRuntime, getActiveTenantDatabase, getActiveTenantRuntime } from '../../db/tenantRuntimeRouter';
 import { db, STORES } from '../../db/dexie';
-import { getActiveTenantRuntime } from '../../db/tenantRuntimeRouter';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
+import { assertLocalTenantAccess, resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
+import { posSyncOrchestrator } from '../posSyncOrchestrator';
+import { syncMetaService } from '../syncMetaService';
 import { customerMigrationService } from '../../customers/customerMigrationService';
+import { customerSyncHandler } from '../../customers/customerSyncHandler';
 import { customerCreditSyncHandler } from '../../customerCredit/customerCreditSyncHandler';
 import { salesCloudSyncHandler } from '../../salesCloud/salesCloudSyncHandler';
 import { cashSyncHandler } from '../../cash/cashSyncHandler';
@@ -55,6 +67,9 @@ const LICENSE_DETAILS = {
 
 const sqlText = (value) => value === null || value === undefined
   ? 'null' : `'${String(value).replaceAll("'", "''")}'`;
+const sqlTextArray = (value) => Array.isArray(value)
+  ? `array[${value.map((entry) => sqlText(entry)).join(',')}]::text[]`
+  : 'array[]::text[]';
 const sqlNumber = (value) => value === null || value === undefined ? 'null' : String(Number(value));
 const sqlJson = (value) => value === null || value === undefined
   ? 'null::jsonb' : `${sqlText(JSON.stringify(value))}::jsonb`;
@@ -65,6 +80,75 @@ const runPsql = (query) => execFileSync('docker', [
   'exec', 'lanzo-pos-b1-pg176', 'psql', '-U', 'postgres', '-d', process.env.LANZO_BLOCK3_PG_DB,
   '-X', '-A', '-t', '-q', '-v', 'ON_ERROR_STOP=1', '-c', query
 ], { encoding: 'utf8' }).trim();
+
+const waitForOutput = (child, marker, timeoutMs = 8_000) => new Promise((resolve, reject) => {
+  let output = '';
+  const timeout = setTimeout(() => reject(new Error(`Timed out waiting for psql marker ${marker}: ${output}`)), timeoutMs);
+  const onData = (chunk) => {
+    output += chunk.toString();
+    if (!output.includes(marker)) return;
+    clearTimeout(timeout);
+    child.stdout.off('data', onData);
+    resolve(output);
+  };
+  const onExit = (code) => {
+    if (output.includes(marker)) return;
+    clearTimeout(timeout);
+    child.stdout.off('data', onData);
+    reject(new Error(`psql exited ${code} before ${marker}: ${output}`));
+  };
+  child.stdout.on('data', onData);
+  child.once('exit', onExit);
+});
+
+const openPendingPgTransaction = async ({ licenseId, customerId }) => {
+  const child = spawn('docker', [
+    'exec', '-i', 'lanzo-pos-b1-pg176', 'psql', '-U', 'postgres', '-d', process.env.LANZO_BLOCK3_PG_DB,
+    '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'
+  ], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+  const pendingReady = waitForOutput(child, 'B4_PENDING_READY');
+  child.stdin.write(`begin;
+    update public.pos_customers set name='B4 pending rollback',server_version=server_version+1,updated_at=clock_timestamp()
+     where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(customerId)};
+    select private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'customer',${sqlText(customerId)},'update',null,null,null,
+      jsonb_build_object('customer_id',${sqlText(customerId)}),
+      (select server_version from public.pos_customers where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(customerId)}));
+    \\echo B4_PENDING_READY
+  `);
+  try {
+    await pendingReady;
+  } catch (error) {
+    child.kill();
+    throw new Error(`${error.message}\n${stderr}`);
+  }
+  return {
+    rollback: async () => {
+      child.stdin.write('rollback;\n\\echo B4_ROLLBACK_DONE\n');
+      try {
+        await waitForOutput(child, 'B4_ROLLBACK_DONE');
+      } catch (error) {
+        child.kill();
+        throw new Error(`${error.message}\n${stderr}`);
+      }
+      child.stdin.end();
+      await new Promise((resolve, reject) => {
+        child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`psql rollback exited ${code}: ${stderr}`)));
+      });
+    },
+    close: () => child.kill()
+  };
+};
+
+const waitUntil = async (predicate, timeoutMs = 10_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+};
 
 const prepareCashStaffSnapshotFixture = () => runPsql(`
   insert into public.pos_cash_stations(id,license_id,station_key,status,binding_mode,metadata)
@@ -173,6 +257,40 @@ const authArgs = () => [
 
 const callPostgresRpc = (rpcName, args) => {
   const common = authArgs();
+  if (rpcName === 'pos_fin01_sync_contract_v1') {
+    return runPsql(`select public.${rpcName}(${[
+      ...common,
+      sqlNumber(args.p_requested_contract),
+      sqlTextArray(args.p_capabilities)
+    ].join(',')})::text`);
+  }
+  if (rpcName === 'pos_pull_sync_events') {
+    return runPsql(`select public.${rpcName}(${[
+      ...common,
+      sqlNumber(args.p_since_change_seq),
+      sqlNumber(args.p_limit)
+    ].join(',')})::text`);
+  }
+  if ([
+    'pos_pull_customer_changes',
+    'pos_pull_customer_credit_changes',
+    'pos_pull_sales_changes',
+    'pos_pull_cash_changes'
+  ].includes(rpcName)) {
+    return runPsql(`select public.${rpcName}(${[
+      ...common,
+      sqlNumber(args.p_since_change_seq),
+      sqlNumber(args.p_limit)
+    ].join(',')})::text`);
+  }
+  if (['pos_pull_customer_changes_v2', 'pos_pull_customer_credit_changes_v2'].includes(rpcName)) {
+    return runPsql(`select public.${rpcName}(${[
+      ...common,
+      sqlNumber(args.p_since_change_seq),
+      sqlNumber(args.p_limit),
+      sqlJson(args.p_sync_contract)
+    ].join(',')})::text`);
+  }
   if (rpcName === 'pos_snapshot_sync_contract_v1') {
     return runPsql(`select public.${rpcName}(${[
       ...common, sqlNumber(args.p_requested_contract)
@@ -209,11 +327,18 @@ describe('Block 4 PostgreSQL-to-Dexie snapshot consumers', () => {
   beforeEach(async () => {
     if (!process.env.LANZO_BLOCK3_PG_DB) return;
     // Establish a known admin session only in the disposable local fixture.
-    runPsql(`update public.license_admin_sessions
-       set session_token_hash=extensions.crypt(${sqlText(ADMIN_SESSION_TOKEN)},extensions.gen_salt('bf'))
-     where device_id=(select d.id from public.license_devices d
+    runPsql(`with selected as (
+      select s.id,s.device_id from public.license_admin_sessions s
+       join public.license_devices d on d.id=s.device_id
        join public.licenses l on l.id=d.license_id
-      where l.license_key=${sqlText(LICENSE_KEY)} and d.device_fingerprint=${sqlText(DEVICE_FINGERPRINT)})`);
+       where l.license_key=${sqlText(LICENSE_KEY)} and d.device_fingerprint=${sqlText(DEVICE_FINGERPRINT)}
+       order by s.id limit 1
+    ) update public.license_admin_sessions s
+       set session_token_hash=case when s.id=selected.id
+             then extensions.crypt(${sqlText(ADMIN_SESSION_TOKEN)},extensions.gen_salt('bf'))
+             else s.session_token_hash end,
+           revoked_at=case when s.id=selected.id then null else coalesce(s.revoked_at,clock_timestamp()) end
+      from selected where s.device_id=selected.device_id`);
     prepareCashStaffSnapshotFixture();
     const securityToken = runPsql(`select d.security_token from public.license_devices d
       join public.licenses l on l.id=d.license_id
@@ -224,12 +349,16 @@ describe('Block 4 PostgreSQL-to-Dexie snapshot consumers', () => {
       securityToken,
       staffSessionToken: ADMIN_SESSION_TOKEN
     };
-    harness.rpc.mockReset().mockImplementation(async (rpcName, args) => ({
-      data: JSON.parse(callPostgresRpc(rpcName, args)),
-      error: null
-    }));
+    harness.rpc.mockReset().mockImplementation((rpcName, args) => {
+      const response = Promise.resolve({ data: JSON.parse(callPostgresRpc(rpcName, args)), error: null });
+      response.abortSignal = () => response;
+      return response;
+    });
 
-    await openTestTenantRuntime();
+    await openTenantRuntime(await resolveActiveTenantIdentity(LICENSE_KEY));
+    await assertLocalTenantAccess({ license_key: LICENSE_KEY });
+    const tenantDatabase = getActiveTenantDatabase();
+    await Promise.all(tenantDatabase.tables.map((table) => table.clear()));
     useAppStore.setState({ licenseDetails: LICENSE_DETAILS, currentDeviceRole: 'admin' });
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
     actorRuntimeController.lock('block4_snapshot_fixture_reset');
@@ -243,6 +372,7 @@ describe('Block 4 PostgreSQL-to-Dexie snapshot consumers', () => {
   });
 
   afterEach(async () => {
+    await posSyncOrchestrator.stop({ preserveStatus: true });
     actorRuntimeController.lock('block4_snapshot_fixture_closed');
     useAppStore.setState({ licenseDetails: null, currentDeviceRole: 'admin' });
     await closeTestTenantRuntime();
@@ -302,6 +432,88 @@ describe('Block 4 PostgreSQL-to-Dexie snapshot consumers', () => {
       expect(await db.table(STORES.CAJAS).count()).toBe(501);
       expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(501);
 
+      // Apply one committed server change per consumer and fetch it through
+      // the real incremental SQL readers, client handlers, and Dexie stores.
+      const licenseId = runPsql(`select id::text from public.licenses where license_key=${sqlText(LICENSE_KEY)}`);
+      const customerId = runPsql(`select id from public.pos_customers where license_id=${sqlText(licenseId)}::uuid order by id limit 1`);
+      const ledgerId = runPsql(`select id from public.pos_customer_ledger where license_id=${sqlText(licenseId)}::uuid order by id limit 1`);
+      const saleId = runPsql(`select id from public.pos_sales where license_id=${sqlText(licenseId)}::uuid order by id limit 1`);
+      const movementId = runPsql(`select id from public.pos_cash_movements where license_id=${sqlText(licenseId)}::uuid and id like 'b4-staff-cash-movement-%' order by id limit 1`);
+      expect(customerId && ledgerId && saleId && movementId).toBeTruthy();
+
+      runPsql(`do $delta$
+      declare v_version integer;
+      begin
+        update public.pos_customers set name='B4 delta customer',server_version=server_version+1,updated_at=clock_timestamp()
+         where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(customerId)} returning server_version into v_version;
+        perform private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'customer',${sqlText(customerId)},'update',null,null,null,
+          jsonb_build_object('customer_id',${sqlText(customerId)}),v_version);
+        update public.pos_customer_ledger set metadata=coalesce(metadata,'{}'::jsonb)||'{"qa_delta_marker":"credit"}'::jsonb,
+          server_version=server_version+1 where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(ledgerId)} returning server_version into v_version;
+        perform private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'customer_ledger',${sqlText(ledgerId)},'update',null,null,null,
+          jsonb_build_object('customer_id',(select customer_id from public.pos_customer_ledger where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(ledgerId)})),v_version);
+        update public.pos_sales set metadata=coalesce(metadata,'{}'::jsonb)||'{"qa_delta_marker":"sales"}'::jsonb,
+          server_version=server_version+1,updated_at=clock_timestamp() where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(saleId)} returning server_version::integer into v_version;
+        perform private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'sale',${sqlText(saleId)},'update',null,null,null,
+          jsonb_build_object('sale_id',${sqlText(saleId)}),v_version);
+        update public.pos_cash_movements set amount=11,server_version=server_version+1
+         where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(movementId)} returning server_version into v_version;
+        perform private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'cash_movement',${sqlText(movementId)},'update',null,null,null,
+          jsonb_build_object('movement_id',${sqlText(movementId)}),v_version);
+      end;
+      $delta$;`);
+
+      actorRuntimeController.lock('block4_return_to_admin_for_delta');
+      actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: 'block4-snapshot-device' });
+      actorRuntimeController.grant({
+        actorType: 'admin', actorId: 'block4-snapshot-admin', sessionId: 'block4-snapshot-session',
+        deviceRef: 'block4-snapshot-device', permissions: ['*'],
+        tenantOpaqueId: getActiveTenantRuntime().opaqueId,
+        authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      });
+      useAppStore.setState({ licenseDetails: LICENSE_DETAILS, currentDeviceRole: 'admin' });
+      harness.auth = {
+        licenseKey: LICENSE_KEY,
+        deviceFingerprint: DEVICE_FINGERPRINT,
+        securityToken: runPsql(`select d.security_token from public.license_devices d
+          join public.licenses l on l.id=d.license_id
+         where l.license_key=${sqlText(LICENSE_KEY)} and d.device_fingerprint=${sqlText(DEVICE_FINGERPRINT)}`),
+        staffSessionToken: ADMIN_SESSION_TOKEN
+      };
+
+      await expect(customerSyncHandler.onEvents([], { licenseKey: LICENSE_KEY, force: true }))
+        .resolves.toMatchObject({ applied: 1, syncDeferred: false });
+      await expect(customerCreditSyncHandler.onEvents([], { licenseKey: LICENSE_KEY, force: true }))
+        .resolves.toMatchObject({ syncDeferred: false });
+      await expect(salesCloudSyncHandler.onEvents([], { licenseKey: LICENSE_KEY, force: true }))
+        .resolves.toMatchObject({ syncDeferred: false });
+      expect((await db.table(STORES.CUSTOMERS).get(customerId))?.name).toBe('B4 delta customer');
+      expect((await db.table(STORES.CUSTOMER_LEDGER).get(ledgerId))?.metadata?.qa_delta_marker).toBe('credit');
+      const changedSale = await db.table(STORES.SYNC_CACHE).get(`cloud_sale:${saleId}`);
+      expect(changedSale?.value?.sale?.metadata?.qa_delta_marker).toBe('sales');
+
+      actorRuntimeController.lock('block4_return_to_staff_for_cash_delta');
+      actorRuntimeController.beginAuthentication({ actorType: 'staff', deviceRef: 'block4-staff-cash-device' });
+      actorRuntimeController.grant({
+        actorType: 'staff', actorId: '00000000-0000-0000-0000-00000000c107',
+        sessionId: STAFF_SESSION_ID, deviceRef: 'block4-staff-cash-device', permissions: ['cash_register'],
+        tenantOpaqueId: getActiveTenantRuntime().opaqueId,
+        authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      });
+      useAppStore.setState({ licenseDetails: LICENSE_DETAILS, currentDeviceRole: 'staff' });
+      harness.auth = {
+        licenseKey: LICENSE_KEY,
+        deviceFingerprint: STAFF_FINGERPRINT,
+        securityToken: runPsql(`select d.security_token from public.license_devices d
+          join public.licenses l on l.id=d.license_id
+         where l.license_key=${sqlText(LICENSE_KEY)} and d.device_fingerprint=${sqlText(STAFF_FINGERPRINT)}`),
+        staffSessionToken: STAFF_SESSION_TOKEN
+      };
+      await expect(cashSyncHandler.onEvents([], { licenseKey: LICENSE_KEY, force: true }))
+        .resolves.toMatchObject({ syncDeferred: false });
+      const changedMovement = await db.table(STORES.MOVIMIENTOS_CAJA).get(movementId);
+      expect(Number(changedMovement?.amount ?? changedMovement?.monto)).toBe(11);
+
       const discovered = harness.rpc.mock.calls.filter(([name]) => name === 'pos_snapshot_sync_contract_v1');
       const pageCalls = harness.rpc.mock.calls.filter(([name]) => name.endsWith('_snapshot_v2') || name.endsWith('_snapshot_v3'));
       expect(discovered).toHaveLength(4);
@@ -311,6 +523,93 @@ describe('Block 4 PostgreSQL-to-Dexie snapshot consumers', () => {
       expect(pageCalls.some(([name]) => name === 'pos_pull_sales_snapshot_v2')).toBe(true);
       expect(pageCalls.some(([name]) => name === 'pos_pull_cash_snapshot_v2')).toBe(true);
       expect(pageCalls.every(([, args]) => Number(args.p_limit) <= 500)).toBe(true);
+
+      const legacySnapshotAcl = JSON.parse(runPsql(`select jsonb_agg(jsonb_build_object(
+        'function',p::text,
+        'anon',has_function_privilege('anon',p,'EXECUTE'),
+        'authenticated',has_function_privilege('authenticated',p,'EXECUTE'),
+        'service_role',has_function_privilege('service_role',p,'EXECUTE')
+      ) order by p::text) from unnest(array[
+        'public.pos_pull_product_catalog_snapshot(text,text,text,text,text,integer,integer,boolean)'::regprocedure,
+        'public.pos_pull_customers_snapshot(text,text,text,text,integer,integer,boolean)'::regprocedure,
+        'public.pos_pull_customers_snapshot_v2(text,text,text,text,integer,integer,boolean,jsonb)'::regprocedure,
+        'public.pos_pull_customer_credit_snapshot(text,text,text,text,integer,integer,text,boolean)'::regprocedure,
+        'public.pos_pull_customer_credit_snapshot_v2(text,text,text,text,integer,integer,text,boolean,jsonb)'::regprocedure,
+        'public.pos_pull_sales_snapshot(text,text,text,text,integer,integer,timestamptz,timestamptz,boolean)'::regprocedure,
+        'public.pos_pull_cash_snapshot(text,text,text,text,text,integer,integer,boolean)'::regprocedure
+      ]) p`));
+      expect(legacySnapshotAcl).toHaveLength(7);
+      expect(legacySnapshotAcl.every((row) => (
+        row.anon === false && row.authenticated === false && row.service_role === true
+      ))).toBe(true);
+      expect(runPsql(`select has_function_privilege('authenticated',
+        'public.pos_snapshot_sync_contract_v1(text,text,text,text,integer)'::regprocedure,'EXECUTE')`))
+        .toBe('t');
+
+      // Exercise the production scheduler against the actual general pull RPC.
+      // A holds the earlier event open, B commits a later customer update, and
+      // the first pull must defer without advancing. Roll A back without any
+      // Realtime/Broadcast notification; the persisted retry must apply B.
+      actorRuntimeController.lock('block4_return_to_admin_for_scheduler');
+      actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: 'block4-snapshot-device' });
+      actorRuntimeController.grant({
+        actorType: 'admin', actorId: 'block4-snapshot-admin', sessionId: 'block4-snapshot-session',
+        deviceRef: 'block4-snapshot-device', permissions: ['*'],
+        tenantOpaqueId: getActiveTenantRuntime().opaqueId,
+        authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      });
+      useAppStore.setState({ licenseDetails: LICENSE_DETAILS, currentDeviceRole: 'admin' });
+      harness.auth = {
+        licenseKey: LICENSE_KEY,
+        deviceFingerprint: DEVICE_FINGERPRINT,
+        securityToken: runPsql(`select d.security_token from public.license_devices d
+          join public.licenses l on l.id=d.license_id
+         where l.license_key=${sqlText(LICENSE_KEY)} and d.device_fingerprint=${sqlText(DEVICE_FINGERPRINT)}`),
+        staffSessionToken: ADMIN_SESSION_TOKEN
+      };
+      const schedulerCustomerIds = runPsql(`select string_agg(id, E'\\n' order by id) from (
+        select id from public.pos_customers where license_id=${sqlText(licenseId)}::uuid
+        order by id limit 2
+      ) customers`).split('\n');
+      const [pendingCustomerId, committedCustomerId] = schedulerCustomerIds;
+      expect(pendingCustomerId && committedCustomerId && pendingCustomerId !== committedCustomerId).toBe(true);
+      const schedulerCommittedName = `B4 scheduler committed ${Date.now()}`;
+      const baseSafeCursor = Number(runPsql(`select safe_change_seq from private.pos_sync_safe_frontier_v1(${sqlText(licenseId)}::uuid)`));
+      await syncMetaService.setLastChangeSeq(baseSafeCursor, LICENSE_KEY);
+      await syncMetaService.setDeferredReadPending(false, LICENSE_KEY);
+      await syncMetaService.setDeferredHandlerReads([], LICENSE_KEY);
+      const started = await posSyncOrchestrator.start({ licenseDetails: LICENSE_DETAILS, reason: 'initial_bootstrap' });
+      expect(started).toMatchObject({ started: true });
+
+      const pendingTransaction = await openPendingPgTransaction({ licenseId, customerId: pendingCustomerId });
+      try {
+        runPsql(`do $scheduler$
+        declare v_version integer;
+        begin
+          update public.pos_customers set name=${sqlText(schedulerCommittedName)},server_version=server_version+1,updated_at=clock_timestamp()
+           where license_id=${sqlText(licenseId)}::uuid and id=${sqlText(committedCustomerId)} returning server_version into v_version;
+          perform private.record_pos_sync_event(${sqlText(licenseId)}::uuid,'customer',${sqlText(committedCustomerId)},'update',null,null,null,
+            jsonb_build_object('customer_id',${sqlText(committedCustomerId)}),v_version);
+        end;
+        $scheduler$;`);
+
+        const deferredPull = await posSyncOrchestrator.pullIncremental('block4_pending_rollback');
+        expect(deferredPull).toMatchObject({ success: true, syncDeferred: true, totalEvents: 0, latestChangeSeq: baseSafeCursor });
+        expect(posSyncOrchestrator.getStatus()).toMatchObject({ deferredPullPending: true, deferredPullScheduled: true });
+        expect((await db.table(STORES.CUSTOMERS).get(committedCustomerId))?.name).not.toBe(schedulerCommittedName);
+
+        await pendingTransaction.rollback();
+        const recovered = await waitUntil(async () => (
+          (await db.table(STORES.CUSTOMERS).get(committedCustomerId))?.name === schedulerCommittedName
+          && posSyncOrchestrator.getStatus().deferredPullPending === false
+        ));
+        expect(recovered).toBe(true);
+        expect(await syncMetaService.getLastChangeSeq(LICENSE_KEY)).toBeGreaterThan(baseSafeCursor);
+        expect(harness.rpc.mock.calls.filter(([name]) => name === 'pos_pull_sync_events').length).toBeGreaterThanOrEqual(2);
+      } finally {
+        pendingTransaction.close();
+        await posSyncOrchestrator.stop({ preserveStatus: true });
+      }
     },
     60_000
   );
