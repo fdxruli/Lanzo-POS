@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import CajaHistoryList from '../CajaHistoryList';
 
 afterEach(cleanup);
@@ -16,6 +16,30 @@ const baseSession = {
 };
 
 describe('CajaHistoryList', () => {
+  it('distinguishes local and Cloud history and navigates past 100 cuts', async () => {
+    const rows = Array.from({ length: 102 }, (_, index) => ({
+      ...baseSession, id: `cut-${index}`, responsable_apertura: `Responsable ${index}`
+    }));
+    const readCashHistory = vi.fn().mockResolvedValue({ success: true, cashSessions: rows });
+    render(<CajaHistoryList historial={rows.slice(0, 50)} isCloudCash readCashHistory={readCashHistory} />);
+    expect(screen.getByText(/vista local de los cortes/i)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Consultar historial Cloud' }));
+    await screen.findByText('Historial Cloud consultado.');
+    for (let index = 0; index < 10; index += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }));
+    }
+    expect(screen.getByText('Página 11 de 11')).toBeVisible();
+    expect(screen.getByText('Responsable 101')).toBeVisible();
+  });
+
+  it('does not offer a Cloud query when read only', () => {
+    const readCashHistory = vi.fn();
+    render(<CajaHistoryList historial={[]} isCloudCash isReadOnly readCashHistory={readCashHistory} />);
+    expect(screen.getByRole('button', { name: 'Cloud no disponible' })).toBeDisabled();
+    expect(screen.getByText('No hay cortes en la vista local.')).toBeVisible();
+    expect(readCashHistory).not.toHaveBeenCalled();
+  });
+
   it('does not present an unverified closure as a zero-difference closure', () => {
     render(<CajaHistoryList historial={[{
       ...baseSession,
