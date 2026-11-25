@@ -22,6 +22,7 @@ import { customerCreditCloudRepository } from '../../customerCredit/customerCred
 import { customerCloudRepository } from '../../customers/customerCloudRepository';
 import { productCloudRepository } from '../../products/productCloudRepository';
 import { salesCloudRepository } from '../../salesCloud/salesCloudRepository';
+import { CLOUD_SNAPSHOT_CONTRACT_RPC } from '../cloudSyncProtocolV2';
 
 const LICENSE_KEY = 'snapshot-repository-dispatch-test';
 const actorHandle = {
@@ -48,7 +49,8 @@ const endpoints = {
 };
 
 const capabilityResponse = {
-  contract_version: 2,
+  contract_version: 1,
+  contract_kind: 'SNAPSHOT_READ_ONLY',
   tenant_id: 'snapshot-repository-tenant',
   server_status: 'SUPPORTED',
   capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'snapshot_keyset_reference_v1'],
@@ -82,7 +84,7 @@ describe('versioned snapshot repository dispatch', () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.rpc.mockImplementation(async (endpoint) => {
-      if (endpoint === 'pos_fin01_sync_contract_v1') return { data: capabilityResponse, error: null };
+      if (endpoint === CLOUD_SNAPSHOT_CONTRACT_RPC) return { data: capabilityResponse, error: null };
       const [family, payload] = endpoints[endpoint] || [];
       if (!family) return { data: null, error: new Error(`Unexpected RPC ${endpoint}`) };
       return {
@@ -126,7 +128,8 @@ describe('versioned snapshot repository dispatch', () => {
       })
     ]);
 
-    const pageCalls = mocks.rpc.mock.calls.filter(([endpoint]) => endpoint !== 'pos_fin01_sync_contract_v1');
+    const pageCalls = mocks.rpc.mock.calls.filter(([endpoint]) => endpoint !== CLOUD_SNAPSHOT_CONTRACT_RPC);
+    expect(mocks.rpc.mock.calls[0][0]).toBe(CLOUD_SNAPSHOT_CONTRACT_RPC);
     expect(pageCalls.map(([endpoint]) => endpoint).sort()).toEqual(Object.keys(endpoints).sort());
     for (const [, args] of pageCalls) {
       expect(args.p_snapshot_reference_change_seq).toBe(0);

@@ -4,7 +4,7 @@ Status: client code prepared in Draft PR #593. This document records the client 
 
 ## Snapshot and delta contract
 
-The client negotiates `snapshot_keyset_reference_v1` before dispatching any new snapshot endpoint. Negotiation must advertise all five families/endpoints. Missing capability keeps the current legacy route; authority errors are propagated and never trigger a less restrictive fallback. Production has not advertised the Block 2 endpoints in the read-only inspection performed for this block.
+The client negotiates `snapshot_keyset_reference_v1` through the read-only `pos_snapshot_sync_contract_v1` contract before dispatching a new snapshot endpoint. That discovery is independent of FIN01 write-pilot admission, advertises support only when all five families/endpoints exist, and does not enable financial writes. An absent discovery RPC on a legacy server keeps the legacy route; an explicit incomplete/unsupported response or authority error does not silently downgrade. Production has not installed the Block 2 endpoints in the read-only inspection performed for this block.
 
 For a supported contract, the first request sends a null reference and null page cursor. The client retains `snapshot_reference_change_seq` from that response, sends the opaque `next_page_cursor` unchanged, and follows `has_more` until `has_more=false` and `snapshot_complete=true`. The catalog uses one traversal for categories, products, and batches. Customer and credit V2 envelopes are normalized by the existing protocol adapter.
 
@@ -15,6 +15,8 @@ For a supported contract, the first request sends a null reference and null page
 `durableSnapshotService` stores a license-scoped marker in the existing sync metadata store. The marker binds stream, protocol version, tenant, stable actor/session/device identity, permission set, and data scope. It records the initial reference, opaque page position, number of pages, and state. A page checkpoint is written only after its full local projection has applied successfully. Retrying a page is idempotent; local apply and page checkpoint failures cannot mark the traversal complete.
 
 The states used are `in_progress`, `snapshot_complete`, `recovery_pending`, and `complete`. Finishing all pages moves the marker to `recovery_pending`; it does not finish the load. The existing module delta handler starts at the lesser of the durable cursor and snapshot reference, keeps the durable cursor monotonic, and follows each response’s exact page boundary for the current traversal. It marks recovery `complete` only after all available pages apply, with no `sync_deferred` work and a durable cursor at or beyond the snapshot reference. Deferred reads continue through the #592 per-entity scheduler.
+
+Concurrent in-process starts for the same license, stream, and actor/scope context share one traversal. A `complete` marker for that same context is a fast path and does not request all pages again. A changed actor, session, permission set, tenant, or data scope produces a different opaque-cursor context; an interrupted old marker remains durable and is never reused as authority for the new context.
 
 ## Consumers
 
@@ -38,4 +40,4 @@ The Block 2 event log must remain available from the retained snapshot reference
 
 ## SQL dependency
 
-The five Block 2 snapshot RPCs are already in `20261124220046_pos_consistent_snapshots_v1.sql`. The additive `20261125001528_pos_snapshot_contract_discovery_v1.sql` updates the existing capability discovery response so the client can safely negotiate and dispatch those endpoints. Both remain migration candidates in Draft; no Production migration was installed.
+The five Block 2 snapshot RPCs are in `20261124220046_pos_consistent_snapshots_v1.sql`. The additive `20261125001528_pos_snapshot_contract_discovery_v1.sql` includes the FIN01 discovery update and adds `pos_snapshot_sync_contract_v1` for read-only capability negotiation independent of FIN01. Customer and credit snapshot envelopes validate their V2 projection contract without entering the FIN01 write pilot. These migrations remain candidates in Draft; no Production migration was installed.

@@ -5,6 +5,7 @@ export const DURABLE_SNAPSHOT_VERSION = 1;
 
 const META_KEY_PREFIX = 'initial_snapshot_v1:';
 const activeSnapshotStates = new Set(['in_progress', 'snapshot_complete']);
+const inFlightSnapshots = new Map();
 
 const stableValue = (value) => JSON.stringify(value ?? null);
 const snapshotCursorKey = (cursor) => stableValue(cursor);
@@ -63,7 +64,26 @@ export const durableSnapshotService = {
       && activeSnapshotStates.has(marker.status));
   },
 
-  async runConsistentSnapshot({
+  async runConsistentSnapshot(options = {}) {
+    const { licenseKey, streamKey, contextId } = options || {};
+    if (!licenseKey || !streamKey || !contextId) {
+      return this._runConsistentSnapshot(options);
+    }
+
+    const runKey = `${licenseKey}:${markerKey(streamKey, contextId)}`;
+    const activeRun = inFlightSnapshots.get(runKey);
+    if (activeRun) return activeRun;
+
+    const run = this._runConsistentSnapshot(options);
+    inFlightSnapshots.set(runKey, run);
+    try {
+      return await run;
+    } finally {
+      if (inFlightSnapshots.get(runKey) === run) inFlightSnapshots.delete(runKey);
+    }
+  },
+
+  async _runConsistentSnapshot({
     licenseKey,
     streamKey,
     contextId,

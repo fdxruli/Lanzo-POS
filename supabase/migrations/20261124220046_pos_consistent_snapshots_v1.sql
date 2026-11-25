@@ -36,6 +36,9 @@ begin
      or to_regprocedure('private.pos_cash_movement_to_jsonb(pos_cash_movements)') is null then
     raise exception 'POS_SNAPSHOT_REQUIRED_PROJECTION_MISSING';
   end if;
+  if to_regprocedure('private.pos_fin01_validate_sync_contract_v2(jsonb)') is null then
+    raise exception 'POS_SNAPSHOT_FIN01_CONTRACT_VALIDATOR_MISSING';
+  end if;
 end;
 $preflight$;
 
@@ -360,7 +363,10 @@ declare
   v_has_more boolean := false;
   v_cursor jsonb;
 begin
-  perform private.pos_fin01_enter_pilot_v2(p_sync_contract, p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
+  -- This is a read-only snapshot. Validate the V2 envelope contract without
+  -- entering the FIN01 financial-write pilot; snapshot reads keep their own
+  -- license, entitlement, actor, permission, and rate-limit checks below.
+  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -456,7 +462,9 @@ declare
   v_has_more boolean := false;
   v_cursor jsonb;
 begin
-  perform private.pos_fin01_enter_pilot_v2(p_sync_contract, p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
+  -- Credit snapshot reads use the V2 projection envelope, but do not perform
+  -- or authorize financial writes through FIN01 pilot admission.
+  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_customer_credit_sync_enabled(v_context);

@@ -136,6 +136,80 @@ describe('snapshot client handler integration with Dexie', () => {
       })
     })).toMatchObject({ status: 'complete', referenceChangeSeq: 37, lastRecoveryChangeSeq: 38 });
     expect(await syncMetaService.getMeta('sales_cloud_base_last_change_seq', 0, { licenseKey: LICENSE_KEY })).toBe(38);
+
+    const pageCallCount = mocks.sales.pullSalesSnapshot.mock.calls.length;
+    await expect(salesCloudSyncHandler.onStart({ licenseDetails: LICENSE_DETAILS, licenseKey: LICENSE_KEY }))
+      .resolves.toMatchObject({ success: true, skipped: true, alreadyComplete: true, referenceChangeSeq: 37 });
+    expect(mocks.sales.pullSalesSnapshot).toHaveBeenCalledTimes(pageCallCount);
+  });
+
+  it('coalesces overlapping snapshot starts for the same durable authority and scope', async () => {
+    let markPageRequested;
+    let releasePage;
+    const pageRequested = new Promise((resolve) => { markPageRequested = resolve; });
+    const pendingPage = new Promise((resolve) => { releasePage = resolve; });
+    const fetchPage = vi.fn(() => {
+      markPageRequested();
+      return pendingPage;
+    });
+    const applyPage = vi.fn(async () => ({ applied: 1, rowCount: 1 }));
+    const options = {
+      licenseKey: LICENSE_KEY,
+      streamKey: 'catalog_concurrency_test',
+      contextId: bindContext('catalog_concurrency_test', { scope: 'catalog' }),
+      fetchPage,
+      applyPage,
+      advanceCursor: false
+    };
+
+    const first = durableSnapshotService.runConsistentSnapshot(options);
+    const overlapping = durableSnapshotService.runConsistentSnapshot(options);
+    await pageRequested;
+    expect(fetchPage).toHaveBeenCalledOnce();
+
+    releasePage(page({ products: [{ id: 'concurrent-page' }] }));
+    const [firstResult, overlappingResult] = await Promise.all([first, overlapping]);
+
+    expect(firstResult).toMatchObject({ success: true, snapshotComplete: true, recoveryPending: true, pages: 1 });
+    expect(overlappingResult).toEqual(firstResult);
+    expect(applyPage).toHaveBeenCalledOnce();
+  });
+
+  it('resumes the durable page after rate limiting without advancing an incomplete reference', async () => {
+    const contextId = bindContext('snapshot_rate_limit_test', { scope: 'customer_directory' });
+    const fetchPage = vi.fn()
+      .mockResolvedValueOnce(page({ customers: [{ id: 'rate-limit-page-one' }] }, {
+        hasMore: true, cursor: PAGE_CURSOR
+      }))
+      .mockResolvedValueOnce({ success: false, code: 'RPC_RATE_LIMITED', retryable: true, retry_after_seconds: 60 });
+    const applyPage = vi.fn(async () => ({ applied: 1, rowCount: 1 }));
+    const options = {
+      licenseKey: LICENSE_KEY,
+      streamKey: 'snapshot_rate_limit_test',
+      contextId,
+      cursorKey: 'snapshot_rate_limit_test_last_seq',
+      fetchPage,
+      applyPage
+    };
+
+    await expect(durableSnapshotService.runConsistentSnapshot(options))
+      .rejects.toMatchObject({ code: 'RPC_RATE_LIMITED', retryable: true, retryAfterSeconds: 60 });
+    expect(await durableSnapshotService.getState(options)).toMatchObject({
+      status: 'in_progress', referenceChangeSeq: 37, pageCursor: PAGE_CURSOR, pages: 1
+    });
+    expect(await syncMetaService.getMeta(options.cursorKey, 0, { licenseKey: LICENSE_KEY })).toBe(0);
+
+    const resumePage = vi.fn(async ({ referenceChangeSeq, pageCursor }) => {
+      expect(referenceChangeSeq).toBe(37);
+      expect(pageCursor).toEqual(PAGE_CURSOR);
+      return page({ customers: [{ id: 'rate-limit-page-two' }] });
+    });
+    const resumed = await durableSnapshotService.runConsistentSnapshot({ ...options, fetchPage: resumePage });
+
+    expect(resumed).toMatchObject({ success: true, snapshotComplete: true, recoveryPending: true, pages: 2 });
+    expect(resumePage).toHaveBeenCalledWith({ referenceChangeSeq: 37, pageCursor: PAGE_CURSOR, firstPage: false });
+    expect(await durableSnapshotService.getState(options)).toMatchObject({ status: 'recovery_pending', pages: 2 });
+    expect(await syncMetaService.getMeta(options.cursorKey, 0, { licenseKey: LICENSE_KEY })).toBe(37);
   });
 
   it('applies cash pages and recovers their delta under the authorized all-scope cursor', async () => {

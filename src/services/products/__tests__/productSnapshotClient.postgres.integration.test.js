@@ -1,5 +1,5 @@
 // Run with LANZO_BLOCK3_PG_DB set to an isolated database containing the
-// Block 1 + Block 2 migrations and synthetic fixture license B2-3738.
+// Block 1–3 migrations and synthetic fixture license B2-3738.
 // This deliberately exercises the real repositories and Dexie against the
 // PostgreSQL snapshot/change RPCs through a small local psql transport.
 // @vitest-environment node
@@ -106,6 +106,11 @@ const runPsql = (query) => execFileSync('docker', [
 const callPostgresRpc = (rpcName, args) => {
   const common = [args.p_license_key, args.p_device_fingerprint, args.p_security_token,
     args.p_staff_session_token].map(sqlText);
+  if (rpcName === 'pos_snapshot_sync_contract_v1') {
+    return runPsql(`select public.${rpcName}(${[
+      ...common, sqlNumber(args.p_requested_contract)
+    ].join(',')})::text`);
+  }
   if (rpcName === 'pos_pull_product_catalog_snapshot_v2') {
     return runPsql(`select public.${rpcName}(${[
       ...common, sqlNumber(args.p_limit), sqlNumber(args.p_snapshot_reference_change_seq), sqlJson(args.p_page_cursor)
