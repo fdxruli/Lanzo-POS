@@ -19,15 +19,19 @@ vi.mock('../../sync/posSyncClient', () => ({
   buildPosSyncAuthContext: mocks.buildPosSyncAuthContext
 }));
 
-vi.mock('../../sync/syncConstants', () => ({
-  isCloudSalesBaseSyncEnabled: vi.fn(() => true),
-  isCloudSalesCancellationEnabled: vi.fn(() => true),
-  isCloudSalesCashierEnabled: vi.fn(() => true),
-  isCloudSalesCreditEnabled: vi.fn(() => true),
-  isCloudSalesInventoryEnabled: vi.fn(() => true),
-  isCloudLayawaysEnabled: vi.fn(() => true),
-  SYNC_LIMITS: { DEFAULT_PULL_LIMIT: 100, MAX_PULL_LIMIT: 500 }
-}));
+vi.mock('../../sync/syncConstants', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    isCloudSalesBaseSyncEnabled: vi.fn(() => true),
+    isCloudSalesCancellationEnabled: vi.fn(() => true),
+    isCloudSalesCashierEnabled: vi.fn(() => true),
+    isCloudSalesCreditEnabled: vi.fn(() => true),
+    isCloudSalesInventoryEnabled: vi.fn(() => true),
+    isCloudLayawaysEnabled: vi.fn(() => true),
+    SYNC_LIMITS: { ...actual.SYNC_LIMITS, DEFAULT_PULL_LIMIT: 100, MAX_PULL_LIMIT: 500 }
+  };
+});
 
 vi.mock('../../cloud', () => ({
   CLOUD_REQUEST_COOLDOWN: { SNAPSHOT: 1, VERY_SHORT: 1 },

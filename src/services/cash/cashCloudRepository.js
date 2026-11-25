@@ -18,6 +18,7 @@ import {
   normalizeCashNetworkError
 } from './cashNetwork';
 import { isCanonicalCashStation, isLocalStationKey } from './cashStation';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -130,6 +131,14 @@ const cachedCashRpc = ({
 });
 
 export const cashCloudRepository = {
+  async negotiateSnapshotProtocol({ licenseKey, actorHandle = null, force = false } = {}) {
+    assertSupabase();
+    const authArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle?.assertCurrent?.();
+    const result = await negotiateCloudSnapshotContract({ client: supabaseClient, authArgs, actorHandle, force });
+    actorHandle?.assertCurrent?.();
+    return result;
+  },
   async getCurrentCashSession({
     licenseKey,
     force = false,
@@ -256,12 +265,35 @@ export const cashCloudRepository = {
     limit = 100,
     offset = 0,
     includeClosed = true,
+    snapshotProtocol = null,
+    snapshotReferenceChangeSeq = null,
+    pageCursor = null,
+    actorHandle = null,
     force = false,
     cacheContext = {},
     allowCache = true
   }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle?.assertCurrent?.();
+    if (snapshotProtocol?.supported) {
+      const response = await callCloudSnapshotRpc({
+        client: supabaseClient,
+        rpcName: 'pos_pull_cash_snapshot_v2',
+        family: 'cash_register',
+        authArgs: baseArgs,
+        params: {
+          p_scope: scope,
+          p_limit: Math.min(normalizeLimit(limit), 500),
+          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+          p_page_cursor: pageCursor
+        },
+        snapshotContract: snapshotProtocol,
+        actorHandle
+      });
+      actorHandle?.assertCurrent?.();
+      return response;
+    }
     const params = {
       p_scope: scope,
       p_limit: Math.min(normalizeLimit(limit), 500),

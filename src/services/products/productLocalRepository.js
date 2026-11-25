@@ -657,7 +657,9 @@ export const productLocalRepository = {
     });
   },
 
-  async applyCloudCatalog(response = {}, { legacyReceipt = null, requireInventoryProjection = false, protectLocalChanges = false, recovery = null } = {}) {
+  async applyCloudCatalog(response = {}, {
+    legacyReceipt = null, requireInventoryProjection = false, protectLocalChanges = false, recovery = null, actorHandle = null
+  } = {}) {
     const applied = { categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
     const collections = [
       ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
@@ -672,11 +674,13 @@ export const productLocalRepository = {
     }
 
     await ensureOpen();
+    actorHandle?.assertCurrent?.();
     try {
       const stores = [STORES.CATEGORIES, STORES.MENU, STORES.PRODUCT_BATCHES, STORES.SALES,
         STORES.INVENTORY_EVENTS, POS_SYNC_STORES.OUTBOX];
       if (recovery || protectLocalChanges) stores.push(STORES.DELETED_MENU, STORES.DELETED_CATEGORIES);
       await db.transaction('rw', stores, async () => {
+        actorHandle?.assertCurrent?.();
         if (recovery) {
           const current = await db.table(recovery.store).get(recovery.record.id);
           const tombstone = await db.table(recovery.store === STORES.MENU
@@ -701,6 +705,7 @@ export const productLocalRepository = {
         }
         for (const [entityType, store, records, mapper] of collections) {
           for (let index = 0; index < records.length; index += 1) {
+            actorHandle?.assertCurrent?.();
             const record = records[index];
             const entityId = record?.id ?? null;
             const parentId = record?.product_id ?? record?.productId ?? null;
@@ -791,6 +796,7 @@ export const productLocalRepository = {
             }
           }
         }
+        actorHandle?.assertCurrent?.();
         if (recovery && (applied.rejected.length || applied.deferredInventory)) {
           throw new Error('PRODUCT_RECOVERY_LOCAL_CONFIRMATION_FAILED');
         }
@@ -806,6 +812,7 @@ export const productLocalRepository = {
         }
         await reconcileActiveTableReservations({ db, STORES });
       });
+      actorHandle?.assertCurrent?.();
     } catch (cause) {
       throw createProductCatalogSyncError(cause?.message, {
         code: typeof cause?.code === 'string' ? cause.code : 'PRODUCT_CATALOG_INDEXEDDB_APPLY_FAILED',

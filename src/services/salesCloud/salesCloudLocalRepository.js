@@ -163,8 +163,9 @@ const cloudCancellationToLocalPatch = (cloudSale = {}, response = {}) => ({
   syncStatus: 'SYNCED'
 });
 
-const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
+const upsertCloudSaleCache = async ({ sale, items = [], payments = [], actorHandle = null }) => {
   if (!sale?.id) return null;
+  actorHandle?.assertCurrent?.();
   const key = `${CLOUD_SALE_CACHE_PREFIX}${sale.id}`;
   const existing = await db.table(STORES.SYNC_CACHE).get(key);
 
@@ -185,7 +186,9 @@ const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
     updatedAt: nowIso()
   };
 
+  actorHandle?.assertCurrent?.();
   await db.table(STORES.SYNC_CACHE).put(row);
+  actorHandle?.assertCurrent?.();
   return row;
 };
 
@@ -435,21 +438,25 @@ export const salesCloudLocalRepository = {
     }
   },
 
-  async applyCloudSalesPayload(response = {}) {
+  async applyCloudSalesPayload(response = {}, { actorHandle = null } = {}) {
     await ensureOpen();
     const sales = Array.isArray(response.sales) ? response.sales : (response.sale ? [response.sale] : []);
     const items = Array.isArray(response.items) ? response.items : [];
     const payments = Array.isArray(response.payments) ? response.payments : [];
-    let cached = 0;
-    let patchedLocal = 0;
+    actorHandle?.assertCurrent?.();
+    return db.transaction('rw', [STORES.SYNC_CACHE, STORES.SALES], async () => {
+      let cached = 0;
+      let patchedLocal = 0;
+      actorHandle?.assertCurrent?.();
 
-    for (const sale of sales) {
+      for (const sale of sales) {
+      actorHandle?.assertCurrent?.();
       const saleItems = items.filter((item) => item.sale_id === sale.id || item.saleId === sale.id);
       const salePayments = normalizeCloudSalePaymentRows(payments.filter((payment) => (
         payment?.sale_id === sale.id || payment?.saleId === sale.id
         || (!(payment?.sale_id || payment?.saleId) && sales.length === 1 && response.sale?.id === sale.id)
       )), { saleId: sale.id });
-      if (await upsertCloudSaleCache({ sale, items: saleItems, payments: salePayments })) cached += 1;
+      if (await upsertCloudSaleCache({ sale, items: saleItems, payments: salePayments, actorHandle })) cached += 1;
 
       const localSaleId = getLocalSaleId(sale);
       if (!localSaleId) continue;
@@ -458,18 +465,25 @@ export const salesCloudLocalRepository = {
       if (!localSale) continue;
 
       if (Number(localSale.cloudServerVersion || 0) > Number(sale.server_version || 0)) continue;
+      if (localSale.sourceMode !== 'cloud_committed'
+        && (['pending', 'failed'].includes(String(localSale.cloudSalesSyncStatus || '').toLowerCase())
+          || ['pending', 'failed'].includes(String(localSale.syncStatus || '').toLowerCase()))) {
+        continue;
+      }
       const saleIsCancelled = isCancelledCloudSale(sale);
 
       // Preserve committed commercial/inventory fields, but refresh the payment
       // projection so a normal Cloud pull repairs older snapshots too.
       if (localSale.sourceMode === 'cloud_committed' && isCloudCommitted(sale) && !saleIsCancelled) {
         if (salePayments.length > 0 || Object.hasOwn(sale, 'current_balance_due')) {
+          actorHandle?.assertCurrent?.();
           await db.table(STORES.SALES).update(localSaleId, {
             ...(Object.hasOwn(sale, 'current_balance_due') ? cloudSaleCreditBalancePatch(sale) : {}),
             cloudServerVersion: Number(sale.server_version || 0),
             ...(salePayments.length > 0 ? { payments: salePayments } : {}),
             cash_session_id: sale.cash_session_id || localSale.cash_session_id || localSale.cashSessionId || null
           });
+          actorHandle?.assertCurrent?.();
           patchedLocal += 1;
         }
         continue;
@@ -480,11 +494,15 @@ export const salesCloudLocalRepository = {
         : cloudSaleToLocalSyncPatch(sale, response);
       if (salePayments.length > 0) patch.payments = salePayments;
 
+      actorHandle?.assertCurrent?.();
       await db.table(STORES.SALES).update(localSaleId, patch);
+      actorHandle?.assertCurrent?.();
       patchedLocal += 1;
-    }
+      }
 
-    return { cached, patchedLocal };
+      actorHandle?.assertCurrent?.();
+      return { cached, patchedLocal };
+    });
   }
 };
 

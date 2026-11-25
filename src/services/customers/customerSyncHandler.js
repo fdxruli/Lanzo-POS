@@ -20,6 +20,7 @@ import { generateIdempotencyKey } from '../sync/idempotency';
 import { getCustomerPhoneValidationError } from '../db/customerPhoneUtils';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
+import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
 import {
   validateCustomerCreditLimitMoney,
   validateDirectoryCreditLimitEdit,
@@ -168,7 +169,7 @@ export const customerSyncHandler = {
     }
   },
 
-  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null, force = false } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
     if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
@@ -180,9 +181,26 @@ export const customerSyncHandler = {
       return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
-    let sinceChangeSeq = await syncMetaService.getMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, 0, { licenseKey });
+    const snapshotContextId = buildSnapshotContextId({
+      licenseKey, streamKey: 'customers', scope: { includeDeleted: true, customerId: null }, actorHandle
+    });
+    if (await durableSnapshotService.isActive({
+      licenseKey, streamKey: 'customers', contextId: snapshotContextId
+    })) {
+      if (!force) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_scheduled' };
+      const resumed = await customerMigrationService.pullFullSnapshot(licenseKey, actorHandle);
+      actorHandle.assertCurrent();
+      if (resumed?.success !== true) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_pending' };
+    }
+
+    let sinceChangeSeq = await durableSnapshotService.getRecoveryStartSeq({
+      licenseKey,
+      streamKey: 'customers',
+      contextId: snapshotContextId,
+      cursorKey: CUSTOMER_LAST_CHANGE_SEQ_KEY,
+      fallback: 0
+    });
     actorHandle.assertCurrent();
-    sinceChangeSeq = Number(sinceChangeSeq) || 0;
 
     let hasMore = true;
     let applied = 0;
@@ -209,6 +227,7 @@ export const customerSyncHandler = {
 
       const customers = Array.isArray(response.customers) ? response.customers : [];
       const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
+      if (appliedCustomers.length !== customers.length) throw new Error('CUSTOMER_LOCAL_APPLY_INCOMPLETE');
       applied += appliedCustomers.length;
 
       const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
@@ -217,8 +236,13 @@ export const customerSyncHandler = {
       // cursor makes a retry skip these already-applied customers.
       if (appliedCustomers.length > 0) notifyCustomersChanged();
       if (latestChangeSeq > pageSinceChangeSeq) {
-        sinceChangeSeq = await syncMetaService.advanceMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
-          ?? latestChangeSeq;
+        const advanced = await syncMetaService.advanceMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
+        if (!Number.isSafeInteger(advanced) || advanced < latestChangeSeq) {
+          throw new Error('POS_SYNC_CURSOR_PERSIST_FAILED');
+        }
+        // Keep the read cursor at the page boundary during a reconciliation;
+        // advanceMeta may return a larger pre-existing durable cursor.
+        sinceChangeSeq = latestChangeSeq;
         actorHandle.assertCurrent();
       }
 
@@ -227,6 +251,17 @@ export const customerSyncHandler = {
         hasMore = false;
       }
     }
+
+    const recoveryComplete = await durableSnapshotService.completeRecovery({
+      licenseKey,
+      streamKey: 'customers',
+      contextId: snapshotContextId,
+      cursorKey: CUSTOMER_LAST_CHANGE_SEQ_KEY,
+      latestChangeSeq: sinceChangeSeq,
+      hasMore,
+      syncDeferred
+    });
+    syncDeferred = syncDeferred || recoveryComplete === false;
 
     return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
   },

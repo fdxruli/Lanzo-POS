@@ -20,6 +20,7 @@ import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { db, STORES } from '../db/dexie';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
 
 const CREDIT_LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
 let registered = false;
@@ -39,7 +40,7 @@ const normalizeChangeSeq = (response, fallback = 0) => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
-const applyCreditPayload = async (response = {}, actorHandle) => {
+const applyCreditPayload = async (response = {}, actorHandle, { requireComplete = false } = {}) => {
   const ledgers = Array.isArray(response.ledger_entries) ? response.ledger_entries : [];
   const customers = Array.isArray(response.customers) ? response.customers : [];
   const movements = Array.isArray(response.cash_movements)
@@ -74,8 +75,56 @@ const applyCreditPayload = async (response = {}, actorHandle) => {
   ] = settled.map(result => result.value);
 
   actorHandle.assertCurrent();
-  return appliedLedgers.length + appliedCustomers.length + appliedMovements.length + appliedSessions.length;
+  const applied = appliedLedgers.length + appliedCustomers.length + appliedMovements.length + appliedSessions.length;
+  const expected = ledgers.length + customers.length + movements.length + sessions.length;
+  if (requireComplete && applied !== expected) throw new Error('CUSTOMER_CREDIT_SNAPSHOT_LOCAL_APPLY_INCOMPLETE');
+  return applied;
   });
+};
+
+const CREDIT_SNAPSHOT_STREAM = 'customer_credit';
+
+const runCreditSnapshot = async ({ licenseKey, actorHandle, snapshotProtocol, force = false }) => {
+  const contextId = buildSnapshotContextId({
+    licenseKey,
+    streamKey: CREDIT_SNAPSHOT_STREAM,
+    scope: { customerId: null, ledgerReconciliation: true },
+    actorHandle
+  });
+  const snapshot = await durableSnapshotService.runConsistentSnapshot({
+    licenseKey,
+    streamKey: CREDIT_SNAPSHOT_STREAM,
+    contextId,
+    actorHandle,
+    cursorKey: CREDIT_LAST_CHANGE_SEQ_KEY,
+    fetchPage: ({ referenceChangeSeq, pageCursor }) => customerCreditCloudRepository.pullCreditSnapshot({
+      licenseKey,
+      limit: Math.min(SYNC_LIMITS.MAX_PULL_LIMIT, 500),
+      customerId: null,
+      includeDeleted: true,
+      snapshotProtocol,
+      snapshotReferenceChangeSeq: referenceChangeSeq,
+      pageCursor,
+      force,
+      actorHandle
+    }),
+    applyPage: async (response) => {
+      if (response.customer_id !== null) {
+        throw new Error('CUSTOMER_CREDIT_SNAPSHOT_SCOPE_MISMATCH');
+      }
+      if (response.ledger_reconciliation_complete !== response.snapshot_complete) {
+        throw new Error('CUSTOMER_CREDIT_SNAPSHOT_RECONCILIATION_INCOMPLETE');
+      }
+      const rows = (response.ledger_entries?.length || 0)
+        + (response.customers?.length || 0)
+        + (response.cash_movements?.length || response.movements?.length || 0)
+        + (response.cash_sessions?.length || 0);
+      const applied = await applyCreditPayload(response, actorHandle, { requireComplete: true });
+      actorHandle.assertCurrent();
+      return { applied, rowCount: rows };
+    }
+  });
+  return { ...snapshot, contextId };
 };
 
 export const customerCreditSyncHandler = {
@@ -99,6 +148,19 @@ export const customerCreditSyncHandler = {
     try {
       const migrationResult = await customerCreditMigrationService.runInitialMigrationIfNeeded({ licenseKey: resolvedLicenseKey, actorHandle });
       actorHandle.assertCurrent();
+      const snapshotProtocol = await customerCreditCloudRepository.negotiateSnapshotProtocol?.({
+        licenseKey: resolvedLicenseKey, actorHandle, force
+      }) || { supported: false, reason: 'snapshot_negotiation_unavailable' };
+      actorHandle.assertCurrent();
+      if (snapshotProtocol.supported) {
+        const snapshot = await runCreditSnapshot({
+          licenseKey: resolvedLicenseKey, actorHandle, snapshotProtocol, force
+        });
+        actorHandle.assertCurrent();
+        if (snapshot.applied > 0) notifyCreditChanged();
+        return { success: true, migrationResult, ...snapshot, consistent: true };
+      }
+
       let offset = 0;
       let latestChangeSeq = null;
       let snapshotCount = 0;
@@ -137,14 +199,16 @@ export const customerCreditSyncHandler = {
         if (snapshotCount > 10000) throw new Error('CLOUD_SYNC_PROTOCOL_SNAPSHOT_PAGE_LIMIT');
       }
 
-      if (latestChangeSeq > 0) {
-        actorHandle.assertCurrent();
-        await syncMetaService.setMeta(CREDIT_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey: resolvedLicenseKey });
-        actorHandle.assertCurrent();
-      }
-
       if (applied > 0) notifyCreditChanged();
-      return { success: true, migrationResult, applied, latestChangeSeq };
+      return {
+        success: true,
+        migrationResult,
+        applied,
+        latestChangeSeq: null,
+        observedChangeSeq: latestChangeSeq,
+        consistent: false,
+        legacyFallback: true
+      };
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[CustomerCredit/Sync] Inicio fallo sin bloquear app:', error);
@@ -152,7 +216,7 @@ export const customerCreditSyncHandler = {
     }
   },
 
-  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null, force = false } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
     if (!isBrowserOnline()) return { applied: 0, skipped: true, reason: 'offline' };
@@ -172,7 +236,31 @@ export const customerCreditSyncHandler = {
       return { applied: 0, skipped: true, reason: 'module_not_applicable' };
     }
 
-    let sinceChangeSeq = Number(await syncMetaService.getMeta(CREDIT_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
+    const snapshotContextId = buildSnapshotContextId({
+      licenseKey,
+      streamKey: CREDIT_SNAPSHOT_STREAM,
+      scope: { customerId: null, ledgerReconciliation: true },
+      actorHandle
+    });
+    if (await durableSnapshotService.isActive({
+      licenseKey, streamKey: CREDIT_SNAPSHOT_STREAM, contextId: snapshotContextId
+    })) {
+      if (!force) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_scheduled' };
+      const snapshotProtocol = await customerCreditCloudRepository.negotiateSnapshotProtocol?.({ licenseKey, actorHandle })
+        || { supported: false, reason: 'snapshot_negotiation_unavailable' };
+      if (!snapshotProtocol.supported) throw new Error('CUSTOMER_CREDIT_SNAPSHOT_CONTRACT_UNAVAILABLE');
+      const resumed = await runCreditSnapshot({ licenseKey, actorHandle, snapshotProtocol, force: true });
+      actorHandle.assertCurrent();
+      if (resumed?.success !== true) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_pending' };
+    }
+
+    let sinceChangeSeq = await durableSnapshotService.getRecoveryStartSeq({
+      licenseKey,
+      streamKey: CREDIT_SNAPSHOT_STREAM,
+      contextId: snapshotContextId,
+      cursorKey: CREDIT_LAST_CHANGE_SEQ_KEY,
+      fallback: 0
+    });
     actorHandle.assertCurrent();
     let hasMore = true;
     let applied = 0;
@@ -202,14 +290,30 @@ export const customerCreditSyncHandler = {
       const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
       if (latestChangeSeq > pageSinceChangeSeq) {
         actorHandle.assertCurrent();
-        sinceChangeSeq = await syncMetaService.advanceMeta(CREDIT_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
-          ?? latestChangeSeq;
+        const advanced = await syncMetaService.advanceMeta(CREDIT_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
+        if (!Number.isSafeInteger(advanced) || advanced < latestChangeSeq) {
+          throw new Error('POS_SYNC_CURSOR_PERSIST_FAILED');
+        }
+        // Preserve the response page boundary when replaying from a lower
+        // snapshot reference; the durable cursor itself remains monotonic.
+        sinceChangeSeq = latestChangeSeq;
         actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore)
         && latestChangeSeq > pageSinceChangeSeq;
     }
+
+    const recoveryComplete = await durableSnapshotService.completeRecovery({
+      licenseKey,
+      streamKey: CREDIT_SNAPSHOT_STREAM,
+      contextId: snapshotContextId,
+      cursorKey: CREDIT_LAST_CHANGE_SEQ_KEY,
+      latestChangeSeq: sinceChangeSeq,
+      hasMore,
+      syncDeferred
+    });
+    syncDeferred = syncDeferred || recoveryComplete === false;
 
     if (applied > 0) notifyCreditChanged();
     return { applied, latestChangeSeq: sinceChangeSeq, syncDeferred };

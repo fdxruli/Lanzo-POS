@@ -44,6 +44,8 @@ import {
   getProductInventoryMutationRequirements
 } from '../auth/productInventoryAuthority';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const nowIso = () => new Date().toISOString();
@@ -1383,8 +1385,15 @@ export const productRepository = {
 
   async pullFullSnapshot(options = {}) {
     const mode = getMode();
+    const licenseKey = options.licenseKey || mode.licenseKey;
+    if (!licenseKey) return { skipped: true, reason: 'missing_license' };
+    const permission = ['products', 'pos', 'inventory'].find(hasCurrentActorPermission);
+    if (!permission) return { skipped: true, reason: 'actor_permission_missing' };
+    const actorHandle = options.actorHandle || actorRuntimeController.capture(permission);
+    actorHandle.assertCurrent(permission);
     return productMigrationService.pullFullSnapshot({
-      licenseKey: options.licenseKey || mode.licenseKey
+      licenseKey,
+      actorHandle
     });
   }
 };

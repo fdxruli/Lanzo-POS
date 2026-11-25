@@ -61,6 +61,7 @@ const runtime = {
   deferredHandlerBlocked: new Set(),
   permissionRefreshEntityTypes: new Set(),
   deferredPullRetryAttempt: 0,
+  deferredPullRetryAfterMs: 0,
   lastPullReason: null,
   lastPullStartedAt: 0,
   lastPullFinishedAt: 0,
@@ -301,7 +302,10 @@ const setDeferredReadPending = async (
   runtime.deferredPullPending = nextPending;
   if (!hasSchedulableDeferredReadWork()) {
     clearDeferredPullTimer();
-    if (!hasDeferredReadWork()) runtime.deferredPullRetryAttempt = 0;
+    if (!hasDeferredReadWork()) {
+      runtime.deferredPullRetryAttempt = 0;
+      runtime.deferredPullRetryAfterMs = 0;
+    }
   }
   return true;
 };
@@ -343,6 +347,10 @@ const persistDeferredHandlerRead = async (
   }
 
   if (!hasSchedulableDeferredReadWork()) clearDeferredPullTimer();
+  if (!hasDeferredReadWork()) {
+    runtime.deferredPullRetryAttempt = 0;
+    runtime.deferredPullRetryAfterMs = 0;
+  }
   return true;
 };
 
@@ -361,10 +369,12 @@ const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
   const { generation, licenseKey } = runtime;
   const capturedActorRevision = actorRevision;
   const retryIndex = Math.min(runtime.deferredPullRetryAttempt, 10);
-  const delayMs = Math.min(
+  const exponentialDelayMs = Math.min(
     POS_SYNC_DEFERRED_PULL_RETRY.MAX_DELAY_MS,
     POS_SYNC_DEFERRED_PULL_RETRY.BASE_DELAY_MS * (2 ** retryIndex)
   );
+  const delayMs = Math.max(exponentialDelayMs, Number(runtime.deferredPullRetryAfterMs) || 0);
+  runtime.deferredPullRetryAfterMs = 0;
   runtime.deferredPullRetryAttempt = Math.min(runtime.deferredPullRetryAttempt + 1, Number.MAX_SAFE_INTEGER);
 
   const wake = () => {
@@ -429,7 +439,7 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
     try {
       if (executionScope && !canSchedule()) return;
       unknownHandler(`start:${entityType}`);
-      await runWithLocalTenantSyncLease(
+      const result = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_start_handler_${entityType}` },
         () => {
@@ -437,6 +447,24 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
           return handler.onStart({ licenseDetails, licenseKey, reason });
         }
       );
+      if (result?.success === false && result.error && isRecoverablePullFailure(result.error)) {
+        const retryAfterSeconds = Number(result.error.retryAfterSeconds
+          ?? result.error.response?.retry_after_seconds
+          ?? result.error.response?.retryAfterSeconds);
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          runtime.deferredPullRetryAfterMs = Math.max(
+            runtime.deferredPullRetryAfterMs,
+            Math.min(retryAfterSeconds * 1000, 15 * 60 * 1000)
+          );
+        }
+        if (await persistDeferredHandlerRead(entityType, {
+          state: 'deferred', handler, licenseKey, generation: runtime.generation, capturedActorRevision: actorRevision
+        })) scheduleDeferredPullRecovery('snapshot_start_deferred');
+      } else if (result?.recoveryPending === true || result?.deltaRequired === true) {
+        if (await persistDeferredHandlerRead(entityType, {
+          state: 'deferred', handler, licenseKey, generation: runtime.generation, capturedActorRevision: actorRevision
+        })) scheduleDeferredPullRecovery(result.recoveryPending ? 'snapshot_delta_pending' : 'module_delta_required');
+      }
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn(`[PosSync] Handler ${entityType} fallo en onStart:`, error);
@@ -527,6 +555,14 @@ const dispatchPulledEvents = async (
 
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
       if (isRecoverablePullFailure(error)) {
+        const retryAfterSeconds = Number(error.retryAfterSeconds ?? error.response?.retry_after_seconds
+          ?? error.response?.retryAfterSeconds);
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          runtime.deferredPullRetryAfterMs = Math.max(
+            runtime.deferredPullRetryAfterMs,
+            Math.min(retryAfterSeconds * 1000, 15 * 60 * 1000)
+          );
+        }
         const persisted = await persistDeferredHandlerRead(entityType, {
           state: 'deferred', handler, licenseKey, generation, capturedActorRevision
         });
@@ -831,6 +867,7 @@ export const posSyncOrchestrator = {
         runtime.deferredHandlerBlocked.clear();
         runtime.permissionRefreshEntityTypes.clear();
         runtime.deferredPullRetryAttempt = 0;
+        runtime.deferredPullRetryAfterMs = 0;
       }
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
@@ -852,7 +889,10 @@ export const posSyncOrchestrator = {
         ...(Array.isArray(persistedDeferredHandlerReads) ? persistedDeferredHandlerReads : [])
       ]);
       runtime.deferredHandlerBlocked.clear();
-      if (!hasDeferredReadWork()) runtime.deferredPullRetryAttempt = 0;
+      if (!hasDeferredReadWork()) {
+        runtime.deferredPullRetryAttempt = 0;
+        runtime.deferredPullRetryAfterMs = 0;
+      }
 
       startOutboxSources();
       attachOnlineListener();
@@ -963,6 +1003,7 @@ export const posSyncOrchestrator = {
     setActivityFlag('pullInProgress', false);
     runtime.pendingPull = false;
     runtime.deferredPullRetryAttempt = 0;
+    runtime.deferredPullRetryAfterMs = 0;
     runtime.deferredHandlerBlocked.clear();
     runtime.permissionRefreshEntityTypes.clear();
     stopOutboxSources();

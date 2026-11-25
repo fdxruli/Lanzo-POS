@@ -28,6 +28,13 @@ const mocks = vi.hoisted(() => ({
   assertProductInventoryMutationCurrent: vi.fn()
 }));
 
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: {
+    capture: vi.fn(() => ({ assertCurrent: vi.fn() })),
+    getState: vi.fn(() => ({ permissions: ['products'] }))
+  }
+}));
+
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: mocks.getState }
 }));
@@ -255,7 +262,9 @@ describe('product sync repeated cutover safety', () => {
       recovery: { recovered: 1 }
     });
 
-    expect(mocks.runMigration).toHaveBeenCalledWith({ licenseKey: 'CUTOVER-HANDLER' });
+    expect(mocks.runMigration).toHaveBeenCalledWith({
+      licenseKey: 'CUTOVER-HANDLER', actorHandle: expect.objectContaining({ assertCurrent: expect.any(Function) })
+    });
     expect(mocks.runRecovery).not.toHaveBeenCalled();
   });
 
@@ -263,7 +272,9 @@ describe('product sync repeated cutover safety', () => {
     'uses the same catalog recovery from the %s start path', async (reason) => {
       await expect(productSyncHandler.onStart({ licenseKey: 'CUTOVER-HANDLER', reason }))
         .resolves.toMatchObject({ success: true });
-      expect(mocks.runMigration).toHaveBeenCalledWith({ licenseKey: 'CUTOVER-HANDLER' });
+      expect(mocks.runMigration).toHaveBeenCalledWith({
+        licenseKey: 'CUTOVER-HANDLER', actorHandle: expect.objectContaining({ assertCurrent: expect.any(Function) })
+      });
     }
   );
 

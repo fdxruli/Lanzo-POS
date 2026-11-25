@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn(), pullCustomerChanges: vi.fn() },
+  cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn(), pullCustomerChanges: vi.fn(), negotiateSnapshotProtocol: vi.fn() },
   creditCloud: { pullCreditChanges: vi.fn(), migrateLocalCredit: vi.fn() },
   orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() },
   actorPermission: { allowed: true, actorType: 'admin' }
@@ -49,6 +49,7 @@ import { customerCreditSyncHandler } from '../../customerCredit/customerCreditSy
 import { customerCreditLocalRepository } from '../../customerCredit/customerCreditLocalRepository';
 import { customerCreditMigrationService } from '../../customerCredit/customerCreditMigrationService';
 import { syncMetaService } from '../../sync/syncMetaService';
+import { durableSnapshotService, buildSnapshotContextId } from '../../sync/durableSnapshotService';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
 import { CUSTOMER_DEBT_SORT_INDEX } from '../../db/customerDebtIndex';
 
@@ -277,6 +278,7 @@ beforeEach(async () => {
   mocks.cloud.migrateLocalCustomers.mockReset();
   mocks.cloud.pullCustomerSnapshot.mockReset();
   mocks.cloud.pullCustomerChanges.mockReset();
+  mocks.cloud.negotiateSnapshotProtocol.mockReset();
   mocks.creditCloud.pullCreditChanges.mockReset();
   mocks.creditCloud.migrateLocalCredit.mockReset();
   mocks.orchestrator.registerEntitySyncHandler.mockClear();
@@ -294,6 +296,68 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('applies V2 keyset pages, retains one reference, then recovers the delta into Dexie', async () => {
+    setCloudMode();
+    const protocol = { supported: true, tenantId: 'tenant-customer-snapshot' };
+    const first = remoteCustomer('snapshot-customer-a', {
+      phone: '5551234561', phone_key: '5551234561', server_version: 1
+    });
+    const second = remoteCustomer('snapshot-customer-b', {
+      phone: '5551234562', phone_key: '5551234562', server_version: 1
+    });
+    const changedSecond = remoteCustomer(second.id, { name: 'Actualizado durante la carga', server_version: 2 });
+    mocks.cloud.negotiateSnapshotProtocol.mockResolvedValue(protocol);
+    mocks.cloud.pullCustomerSnapshot
+      .mockResolvedValueOnce({
+        success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+        snapshot_reference_change_seq: 37, safe_change_seq: 37,
+        customers: [first], has_more: true, snapshot_complete: false,
+        next_page_cursor: { position_rank: 1, position_id: first.id }
+      })
+      .mockResolvedValueOnce({
+        success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+        snapshot_reference_change_seq: 37, safe_change_seq: 38,
+        customers: [second], has_more: false, snapshot_complete: true, next_page_cursor: null
+      });
+    mocks.cloud.pullCustomerChanges.mockResolvedValue({
+      success: true, customers: [changedSecond], latest_change_seq: 38, has_more: false, sync_deferred: false
+    });
+
+    const started = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
+    expect(started).toMatchObject({ success: true, consistent: true, recoveryPending: true,
+      snapshotReferenceChangeSeq: 37 });
+    expect(mocks.cloud.pullCustomerSnapshot.mock.calls.map(([args]) => [
+      args.snapshotReferenceChangeSeq, args.pageCursor
+    ])).toEqual([
+      [null, null],
+      [37, { position_rank: 1, position_id: first.id }]
+    ]);
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(37);
+    expect(await customerRepository.getCustomerById(first.id)).toMatchObject({ name: first.name });
+
+    const actorHandle = actorRuntimeController.capture('customers');
+    const contextId = buildSnapshotContextId({
+      licenseKey: TEST_LICENSE_KEY,
+      streamKey: 'customers',
+      scope: { includeDeleted: true, customerId: null },
+      actorHandle
+    });
+    expect(await durableSnapshotService.getState({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'customers', contextId
+    })).toMatchObject({ status: 'recovery_pending', referenceChangeSeq: 37, pages: 2 });
+
+    await expect(customerSyncHandler.onEvents([{ entity_type: 'customer' }], {
+      licenseKey: TEST_LICENSE_KEY
+    })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 38, syncDeferred: false });
+    expect(mocks.cloud.pullCustomerChanges).toHaveBeenCalledWith(expect.objectContaining({ sinceChangeSeq: 37 }));
+    expect(await customerRepository.getCustomerById(second.id)).toMatchObject({
+      name: changedSecond.name, serverVersion: 2
+    });
+    expect(await durableSnapshotService.getState({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'customers', contextId
+    })).toMatchObject({ status: 'complete', referenceChangeSeq: 37, lastRecoveryChangeSeq: 38 });
+  });
+
   it('keeps the customer cursor pending on a failed batch and retries from that cursor', async () => {
     setCloudMode();
     const original = remoteCustomer('retry-phone');

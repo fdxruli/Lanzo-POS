@@ -29,6 +29,7 @@ import { markCloudPharmacyReceiptRejected, markInventoryEntrySynced } from '../i
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
 import {
   assertProductInventoryMutationCurrent,
   assertProductInventoryOperationActorCurrent,
@@ -149,11 +150,44 @@ const saveStaleConflict = async (operation, response, phase) => {
   });
 };
 
-export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandle = null } = {}) => {
+export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandle = null, force = false } = {}) => {
   const licenseKey = licenseKeyOverride || getRuntimeLicenseKey();
   if (!licenseKey || !isOnline()) return { skipped: true };
 
-  let sinceChangeSeq = Number(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey })) || 0;
+  const snapshotContextId = buildSnapshotContextId({
+    licenseKey,
+    streamKey: 'product_catalog',
+    scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+    actorHandle
+  });
+  if (await durableSnapshotService.isActive({ licenseKey, streamKey: 'product_catalog', contextId: snapshotContextId })) {
+    if (!force) {
+      return {
+        applied: 0,
+        skipped: true,
+        reason: 'snapshot_in_progress',
+        syncDeferred: true,
+        latestChangeSeq: Number(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey })) || 0
+      };
+    }
+    const permission = getProductCatalogReadPermission();
+    if (!permission) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    const resumeHandle = actorHandle || actorRuntimeController.capture(permission);
+    const resumed = await productMigrationService.pullFullSnapshot({ licenseKey, actorHandle: resumeHandle });
+    resumeHandle.assertCurrent();
+    if (resumed?.success !== true) {
+      return { applied: 0, skipped: true, reason: 'snapshot_resume_pending', syncDeferred: true };
+    }
+    actorHandle = resumeHandle;
+  }
+
+  let sinceChangeSeq = await durableSnapshotService.getRecoveryStartSeq({
+    licenseKey,
+    streamKey: 'product_catalog',
+    contextId: snapshotContextId,
+    cursorKey: PRODUCT_CATALOG_LAST_SEQ_KEY,
+    fallback: 0
+  });
   let hasMore = true;
   let applied = 0;
   let syncDeferred = false;
@@ -174,7 +208,10 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
     }
     syncDeferred = syncDeferred || response?.sync_deferred === true || response?.syncDeferred === true;
 
-    const counts = await productLocalRepository.applyCloudCatalog(response, { protectLocalChanges: true });
+    const counts = await productLocalRepository.applyCloudCatalog(response, {
+      protectLocalChanges: true,
+      ...(actorHandle ? { actorHandle } : {})
+    });
     actorHandle?.assertCurrent();
     if (counts.deferredCatalog) {
       throw asError({ code: 'PRODUCT_CATALOG_LOCAL_CHANGES_PENDING' });
@@ -207,8 +244,15 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
 
     const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
     if (latestChangeSeq > pageSinceChangeSeq) {
-      sinceChangeSeq = await syncMetaService.advanceMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey })
-        ?? latestChangeSeq;
+      const advanced = await syncMetaService.advanceMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
+      if (!Number.isSafeInteger(advanced) || advanced < latestChangeSeq) {
+        throw asError({ code: 'POS_SYNC_CURSOR_PERSIST_FAILED' });
+      }
+      // The durable cursor is monotonic, but a historical reconciliation may
+      // be paging from a lower snapshot reference. Keep this pull's cursor at
+      // the exact response position so advanceMeta's larger stored value does
+      // not skip the next page.
+      sinceChangeSeq = latestChangeSeq;
     }
 
     hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
@@ -226,6 +270,16 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
       timestamp: Date.now()
     });
   }
+  const recoveryComplete = await durableSnapshotService.completeRecovery({
+    licenseKey,
+    streamKey: 'product_catalog',
+    contextId: snapshotContextId,
+    cursorKey: PRODUCT_CATALOG_LAST_SEQ_KEY,
+    latestChangeSeq: sinceChangeSeq,
+    hasMore,
+    syncDeferred
+  });
+  syncDeferred = syncDeferred || recoveryComplete === false;
   return { success: true, applied, latestChangeSeq: sinceChangeSeq, syncDeferred };
 };
 
@@ -241,6 +295,7 @@ export const productSyncHandler = {
     }
 
     try {
+      const actorHandle = actorRuntimeController.capture();
       const canMigrateProducts = canMigrateProductCatalog();
 
       if (!canMigrateProducts) {
@@ -249,11 +304,11 @@ export const productSyncHandler = {
           Logger.warn('[Products/Sync] Rescate de catalogo local bloqueado por permisos:', recovery);
           return recovery;
         }
-        const snapshot = await productMigrationService.pullFullSnapshot({ licenseKey });
+        const snapshot = await productMigrationService.pullFullSnapshot({ licenseKey, actorHandle });
         return { ...snapshot, recovery, migrationSkipped: true };
       }
 
-      return await productMigrationService.runInitialMigrationIfNeeded({ licenseKey });
+      return await productMigrationService.runInitialMigrationIfNeeded({ licenseKey, actorHandle });
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       const diagnostic = serializeProductCatalogSyncError(error, {
@@ -279,7 +334,7 @@ export const productSyncHandler = {
     }
 
     const actorHandle = actorRuntimeController.capture(readPermission);
-    return pullCatalogChanges(licenseKey, { actorHandle });
+    return pullCatalogChanges(licenseKey, { actorHandle, force: context.force === true });
   },
 
   async pushOperation(operation = {}, { actorHandle: outboxActor } = {}) {

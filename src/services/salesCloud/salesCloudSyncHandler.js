@@ -16,8 +16,10 @@ import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { salesCloudShadowService } from './salesCloudShadowService';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
 
 const SALES_LAST_CHANGE_SEQ_KEY = 'sales_cloud_base_last_change_seq';
+const SALES_SNAPSHOT_STREAM = 'sales';
 let registered = false;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -51,6 +53,70 @@ const applySalesPayload = async (response = {}, actorHandle = null) => {
   return Number(result.cached || 0) + Number(result.patchedLocal || 0);
 };
 
+const getSalesScope = (actorHandle) => {
+  actorHandle?.assertCurrent?.();
+  const actor = actorRuntimeController.getState();
+  actorHandle?.assertCurrent?.();
+  const permissions = actor.permissions || [];
+  const canSeeAll = actor.actorType === 'admin'
+    || permissions.includes('*') || permissions.includes('reports');
+  return {
+    visibility: canSeeAll ? 'authorized' : 'actor',
+    actorKey: canSeeAll ? null : actorHandle?.actorKey || null,
+    sessionId: canSeeAll ? null : actorHandle?.sessionId || null
+  };
+};
+
+const getSalesCursorKey = (scope, useSnapshotContract) => {
+  if (!useSnapshotContract || scope.visibility === 'authorized') return SALES_LAST_CHANGE_SEQ_KEY;
+  return `${SALES_LAST_CHANGE_SEQ_KEY}:actor:${encodeURIComponent(scope.actorKey || 'unknown')}:${encodeURIComponent(scope.sessionId || 'no-session')}`;
+};
+
+const runSalesSnapshot = async ({ licenseKey, actorHandle, snapshotProtocol, force = false }) => {
+  const scope = getSalesScope(actorHandle);
+  const contextId = buildSnapshotContextId({
+    licenseKey,
+    streamKey: SALES_SNAPSHOT_STREAM,
+    scope: { ...scope, dateFrom: null, dateTo: null },
+    actorHandle
+  });
+  const cursorKey = getSalesCursorKey(scope, true);
+  const snapshot = await durableSnapshotService.runConsistentSnapshot({
+    licenseKey,
+    streamKey: SALES_SNAPSHOT_STREAM,
+    contextId,
+    actorHandle,
+    cursorKey,
+    fetchPage: ({ referenceChangeSeq, pageCursor }) => salesCloudRepository.pullSalesSnapshot({
+      licenseKey,
+      limit: 500,
+      dateFrom: null,
+      dateTo: null,
+      snapshotProtocol,
+      snapshotReferenceChangeSeq: referenceChangeSeq,
+      pageCursor,
+      actorHandle,
+      force
+    }),
+    applyPage: async (response) => {
+      if (response.scope?.date_from !== null || response.scope?.date_to !== null
+        || response.scope?.visibility !== scope.visibility) {
+        throw new Error('SALES_SNAPSHOT_SCOPE_MISMATCH');
+      }
+      const sales = Array.isArray(response.sales) ? response.sales : [];
+      const saleIds = new Set(sales.map((sale) => sale?.id).filter(Boolean));
+      if (saleIds.size !== sales.length
+        || [...(response.items || []), ...(response.payments || [])].some((row) => (
+          !saleIds.has(row?.sale_id || row?.saleId)
+        ))) throw new Error('SALES_SNAPSHOT_PROJECTION_INVALID');
+      const applied = await applySalesPayload(response, actorHandle);
+      actorHandle.assertCurrent();
+      return { applied: Math.max(applied, sales.length), rowCount: sales.length };
+    }
+  });
+  return { ...snapshot, contextId, cursorKey, scope };
+};
+
 export const salesCloudSyncHandler = {
   actorPermission: 'pos',
 
@@ -67,27 +133,46 @@ export const salesCloudSyncHandler = {
     }
 
     try {
+      const actorHandle = actorRuntimeController.capture('pos');
       await salesCloudShadowService.retryPendingShadowSales({ limit: 10 });
+      actorHandle.assertCurrent();
+      const snapshotProtocol = await salesCloudRepository.negotiateSnapshotProtocol?.({
+        licenseKey: resolvedLicenseKey, actorHandle, force
+      }) || { supported: false, reason: 'snapshot_negotiation_unavailable' };
+      actorHandle.assertCurrent();
+
+      if (snapshotProtocol.supported) {
+        const snapshot = await runSalesSnapshot({ licenseKey: resolvedLicenseKey, actorHandle, snapshotProtocol, force });
+        actorHandle.assertCurrent();
+        if (snapshot.applied > 0) notifySalesCloudChanged();
+        return { success: true, ...snapshot, consistent: true };
+      }
 
       const snapshot = await salesCloudRepository.pullSalesSnapshot({
         licenseKey: resolvedLicenseKey,
         limit: 100,
         includeDeleted: false,
-        force
+        force,
+        actorHandle
       });
+      actorHandle.assertCurrent();
 
       if (snapshot?.success === false) {
         throw new Error(snapshot.message || snapshot.code || 'SALES_CLOUD_SNAPSHOT_FAILED');
       }
 
-      const applied = await applySalesPayload(snapshot);
+      const applied = await applySalesPayload(snapshot, actorHandle);
       const latestChangeSeq = normalizeChangeSeq(snapshot, 0);
-      if (latestChangeSeq > 0) {
-        await syncMetaService.setMeta(SALES_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey: resolvedLicenseKey });
-      }
 
       if (applied > 0) notifySalesCloudChanged();
-      return { success: true, applied, latestChangeSeq };
+      return {
+        success: true,
+        applied,
+        latestChangeSeq: null,
+        observedChangeSeq: latestChangeSeq,
+        consistent: false,
+        legacyFallback: true
+      };
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[SalesCloud/Sync] Inicio fallo sin bloquear app:', error);
@@ -95,7 +180,7 @@ export const salesCloudSyncHandler = {
     }
   },
 
-  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null, force = false } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey) return { applied: 0, skipped: true, reason: 'context_invalidated' };
     if (!isOnline()) return { applied: 0, skipped: true, reason: 'offline' };
@@ -110,7 +195,35 @@ export const salesCloudSyncHandler = {
     }
 
     const actorHandle = actorRuntimeController.capture('pos');
-    let sinceChangeSeq = Number(await syncMetaService.getMeta(SALES_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
+    const snapshotProtocol = await salesCloudRepository.negotiateSnapshotProtocol?.({ licenseKey, actorHandle })
+      || { supported: false, reason: 'snapshot_negotiation_unavailable' };
+    actorHandle.assertCurrent();
+    const scope = getSalesScope(actorHandle);
+    const snapshotContextId = buildSnapshotContextId({
+      licenseKey,
+      streamKey: SALES_SNAPSHOT_STREAM,
+      scope: { ...scope, dateFrom: null, dateTo: null },
+      actorHandle
+    });
+    const cursorKey = getSalesCursorKey(scope, snapshotProtocol.supported);
+    if (snapshotProtocol.supported && await durableSnapshotService.isActive({
+      licenseKey, streamKey: SALES_SNAPSHOT_STREAM, contextId: snapshotContextId
+    })) {
+      if (!force) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_scheduled' };
+      const resumed = await runSalesSnapshot({ licenseKey, actorHandle, snapshotProtocol, force: true });
+      actorHandle.assertCurrent();
+      if (resumed?.success !== true) return { applied: 0, syncDeferred: true, reason: 'snapshot_resume_pending' };
+    }
+
+    let sinceChangeSeq = snapshotProtocol.supported
+      ? await durableSnapshotService.getRecoveryStartSeq({
+        licenseKey,
+        streamKey: SALES_SNAPSHOT_STREAM,
+        contextId: snapshotContextId,
+        cursorKey,
+        fallback: 0
+      })
+      : Number(await syncMetaService.getMeta(cursorKey, 0, { licenseKey })) || 0;
     actorHandle.assertCurrent();
     let hasMore = true;
     let applied = 0;
@@ -139,13 +252,31 @@ export const salesCloudSyncHandler = {
       const latestChangeSeq = normalizeChangeSeq(response, pageSinceChangeSeq);
       if (latestChangeSeq > pageSinceChangeSeq) {
         actorHandle.assertCurrent();
-        sinceChangeSeq = await syncMetaService.advanceMeta(SALES_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey })
-          ?? latestChangeSeq;
+        const advanced = await syncMetaService.advanceMeta(cursorKey, latestChangeSeq, { licenseKey });
+        if (!Number.isSafeInteger(advanced) || advanced < latestChangeSeq) {
+          throw new Error('POS_SYNC_CURSOR_PERSIST_FAILED');
+        }
+        // A reconciliation can intentionally read below the stored cursor.
+        // Do not use advanceMeta's monotonic maximum as the next page cursor.
+        sinceChangeSeq = latestChangeSeq;
         actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore)
         && latestChangeSeq > pageSinceChangeSeq;
+    }
+
+    if (snapshotProtocol.supported) {
+      const recoveryComplete = await durableSnapshotService.completeRecovery({
+        licenseKey,
+        streamKey: SALES_SNAPSHOT_STREAM,
+        contextId: snapshotContextId,
+        cursorKey,
+        latestChangeSeq: sinceChangeSeq,
+        hasMore,
+        syncDeferred
+      });
+      syncDeferred = syncDeferred || recoveryComplete === false;
     }
 
     if (applied > 0) notifySalesCloudChanged();

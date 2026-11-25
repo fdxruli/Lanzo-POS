@@ -13,7 +13,11 @@ import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { localAllocationsToCloud } from './customerCreditMapper';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
+import {
+  callCloudSnapshotRpc,
+  callCloudSyncRpc,
+  negotiateCloudSnapshotContract
+} from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -83,6 +87,16 @@ const invalidateAfterCreditSuccess = (licenseKey, response) => {
 };
 
 export const customerCreditCloudRepository = {
+  async negotiateSnapshotProtocol({ licenseKey, actorHandle = actorRuntimeController.capture('customers'), force = false } = {}) {
+    assertSupabase();
+    const authArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle.assertCurrent();
+    const result = await negotiateCloudSnapshotContract({
+      client: supabaseClient, authArgs, actorHandle, force
+    });
+    actorHandle.assertCurrent();
+    return result;
+  },
   invalidateCustomerCreditCaches(licenseKey) {
     invalidateCloudCacheAfterCreditMutation(licenseKey);
   },
@@ -165,7 +179,18 @@ export const customerCreditCloudRepository = {
     return response;
   },
 
-  async pullCreditSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, customerId = null, includeDeleted = false, force = false, actorHandle = actorRuntimeController.capture('customers') }) {
+  async pullCreditSnapshot({
+    licenseKey,
+    limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+    offset = 0,
+    customerId = null,
+    includeDeleted = false,
+    snapshotProtocol = null,
+    snapshotReferenceChangeSeq = null,
+    pageCursor = null,
+    force = false,
+    actorHandle = actorRuntimeController.capture('customers')
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
@@ -175,6 +200,25 @@ export const customerCreditCloudRepository = {
       p_customer_id: customerId,
       p_include_deleted: Boolean(includeDeleted)
     };
+    if (snapshotProtocol?.supported) {
+      const response = await callCloudSnapshotRpc({
+        client: supabaseClient,
+        rpcName: 'pos_pull_customer_credit_snapshot_v3',
+        family: 'customer_credit',
+        authArgs: baseArgs,
+        params: {
+          p_limit: Math.min(normalizeLimit(limit), 500),
+          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+          p_page_cursor: pageCursor,
+          p_customer_id: customerId
+        },
+        snapshotContract: snapshotProtocol,
+        usesV2Envelope: true,
+        actorHandle
+      });
+      actorHandle.assertCurrent();
+      return response;
+    }
     const response = await cachedCreditRpc({
       rpcName: 'pos_pull_customer_credit_snapshot_v2',
       licenseKey,

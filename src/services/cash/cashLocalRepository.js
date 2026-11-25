@@ -153,6 +153,9 @@ const matchesStation = (session, scope = {}) => {
   return false;
 };
 const isOpenSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
+const isProtectedLocalCashRow = (existing) => existing?.cloudCash !== true
+  && [CASH_SYNC_STATUS.LOCAL, CASH_SYNC_STATUS.PENDING, CASH_SYNC_STATUS.CONFLICT]
+    .includes(String(existing?.syncStatus || '').toLowerCase());
 
 const assertLocalSessionOwnership = async ({
   cashSessionId,
@@ -643,13 +646,20 @@ export const cashLocalRepository = {
       return null;
     }
     await ensureOpen();
-    const existing = await db.table(STORES.CAJAS).get(cloudSession.id);
-    actorHandle?.assertCurrent?.();
-    const local = cloudCashSessionToLocal(cloudSession, existing);
-    if (!local) return null;
-    actorHandle?.assertCurrent?.();
-    await db.table(STORES.CAJAS).put(local);
-    return local;
+    return db.transaction('rw', [STORES.CAJAS], async () => {
+      actorHandle?.assertCurrent?.();
+      const existing = await db.table(STORES.CAJAS).get(cloudSession.id);
+      actorHandle?.assertCurrent?.();
+      if (isProtectedLocalCashRow(existing)) return null;
+      if (existing?.cloudCash === true
+        && Number(existing.serverVersion || 0) > Number(cloudSession.server_version || 0)) return existing;
+      const local = cloudCashSessionToLocal(cloudSession, existing);
+      if (!local) return null;
+      actorHandle?.assertCurrent?.();
+      await db.table(STORES.CAJAS).put(local);
+      actorHandle?.assertCurrent?.();
+      return local;
+    });
   },
 
   async applyCloudCashSessions(cloudSessions = [], { actorHandle = null } = {}) {
@@ -669,13 +679,20 @@ export const cashLocalRepository = {
       return null;
     }
     await ensureOpen();
-    const existing = await db.table(STORES.MOVIMIENTOS_CAJA).get(cloudMovement.id);
-    actorHandle?.assertCurrent?.();
-    const local = cloudCashMovementToLocal(cloudMovement, existing);
-    if (!local) return null;
-    actorHandle?.assertCurrent?.();
-    await db.table(STORES.MOVIMIENTOS_CAJA).put(local);
-    return local;
+    return db.transaction('rw', [STORES.MOVIMIENTOS_CAJA], async () => {
+      actorHandle?.assertCurrent?.();
+      const existing = await db.table(STORES.MOVIMIENTOS_CAJA).get(cloudMovement.id);
+      actorHandle?.assertCurrent?.();
+      if (isProtectedLocalCashRow(existing)) return null;
+      if (existing?.cloudCash === true
+        && Number(existing.serverVersion || 0) > Number(cloudMovement.server_version || 0)) return existing;
+      const local = cloudCashMovementToLocal(cloudMovement, existing);
+      if (!local) return null;
+      actorHandle?.assertCurrent?.();
+      await db.table(STORES.MOVIMIENTOS_CAJA).put(local);
+      actorHandle?.assertCurrent?.();
+      return local;
+    });
   },
 
   async applyCloudCashMovements(cloudMovements = [], { actorHandle = null } = {}) {

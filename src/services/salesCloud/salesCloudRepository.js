@@ -20,6 +20,7 @@ import {
   SYNC_LIMITS
 } from '../sync/syncConstants';
 import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -52,20 +53,6 @@ const buildBaseRpcArgs = async (licenseKey) => {
     p_staff_session_token: context.staffSessionToken || null
   };
 };
-
-const buildCloudCashierArgs = ({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }) => ({
-  ...baseArgs,
-  p_sale: sale || {},
-  p_items: Array.isArray(items) ? items : [],
-  p_payments: Array.isArray(payments) ? payments : [],
-  p_cash_session_id: cashSessionId || null,
-  p_idempotency_key: idempotencyKey || null
-});
-
-const buildCloudCreditArgs = ({ baseArgs, sale, items, payments, cashSessionId, customerId, idempotencyKey }) => ({
-  ...buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }),
-  p_customer_id: customerId || sale?.customer_id || sale?.customerId || null
-});
 
 const invalidateAfterSaleSuccess = (licenseKey, response) => {
   if (response?.success !== false) {
@@ -101,6 +88,14 @@ const cachedSalesRpc = ({
 });
 
 export const salesCloudRepository = {
+  async negotiateSnapshotProtocol({ licenseKey, actorHandle = null, force = false } = {}) {
+    assertSupabase();
+    const authArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle?.assertCurrent?.();
+    const result = await negotiateCloudSnapshotContract({ client: supabaseClient, authArgs, actorHandle, force });
+    actorHandle?.assertCurrent?.();
+    return result;
+  },
   isCloudSalesBaseEnabled(licenseDetails = {}) {
     return isCloudSalesBaseSyncEnabled(licenseDetails);
   },
@@ -367,9 +362,41 @@ export const salesCloudRepository = {
     });
   },
 
-  async pullSalesSnapshot({ licenseKey, limit = 500, offset = 0, dateFrom = null, dateTo = null, includeDeleted = false, force = false }) {
+  async pullSalesSnapshot({
+    licenseKey,
+    limit = 500,
+    offset = 0,
+    dateFrom = null,
+    dateTo = null,
+    includeDeleted = false,
+    snapshotProtocol = null,
+    snapshotReferenceChangeSeq = null,
+    pageCursor = null,
+    actorHandle = null,
+    force = false
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle?.assertCurrent?.();
+    if (snapshotProtocol?.supported) {
+      const response = await callCloudSnapshotRpc({
+        client: supabaseClient,
+        rpcName: 'pos_pull_sales_snapshot_v2',
+        family: 'sales',
+        authArgs: baseArgs,
+        params: {
+          p_limit: Math.min(normalizeLimit(limit), 500),
+          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+          p_page_cursor: pageCursor,
+          p_date_from: dateFrom || null,
+          p_date_to: dateTo || null
+        },
+        snapshotContract: snapshotProtocol,
+        actorHandle
+      });
+      actorHandle?.assertCurrent?.();
+      return response;
+    }
     const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),

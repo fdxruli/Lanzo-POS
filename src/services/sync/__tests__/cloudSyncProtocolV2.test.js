@@ -6,6 +6,8 @@ import {
   CLOUD_SYNC_CONTRACT_VERSION,
   CLOUD_FINANCIAL_RESULT_CAPABILITY,
   callCloudSyncRpc,
+  callCloudSnapshotRpc,
+  negotiateCloudSnapshotContract,
   validateCloudSyncV2Envelope
 } from '../cloudSyncProtocolV2';
 
@@ -214,6 +216,85 @@ const envelope = (overrides = {}) => ({
 });
 
 describe('cloud sync protocol v2', () => {
+  const snapshotContract = {
+    contract_version: 2,
+    tenant_id: 'tenant-snapshot',
+    server_status: 'SUPPORTED',
+    capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1',
+      'snapshot_keyset_reference_v1'],
+    endpoint_families: ['product_catalog', 'customer_directory', 'customer_credit', 'sales', 'cash_register'],
+    endpoints: ['pos_pull_product_catalog_snapshot_v2', 'pos_pull_customers_snapshot_v3',
+      'pos_pull_customer_credit_snapshot_v3', 'pos_pull_sales_snapshot_v2', 'pos_pull_cash_snapshot_v2']
+  };
+
+  it('gates snapshot RPC dispatch on one advertised contract and reuses the negotiation for pages', async () => {
+    const authArgs = { p_license_key: 'snapshot-negotiate-license', p_device_fingerprint: 'device-1',
+      p_security_token: 'secret', p_staff_session_token: 'staff-session-1' };
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: snapshotContract, error: null })
+      .mockResolvedValueOnce({ data: { success: true, snapshot_reference_change_seq: 37,
+        safe_change_seq: 38, sync_deferred: false, categories: [], products: [], batches: [],
+        has_more: false, snapshot_complete: true, next_page_cursor: null }, error: null });
+    const client = { rpc };
+    const negotiated = await negotiateCloudSnapshotContract({ client, authArgs });
+    const page = await callCloudSnapshotRpc({
+      client,
+      rpcName: 'pos_pull_product_catalog_snapshot_v2',
+      family: 'product_catalog',
+      authArgs,
+      params: { p_limit: 100, p_snapshot_reference_change_seq: null, p_page_cursor: null },
+      snapshotContract: negotiated
+    });
+
+    expect(negotiated).toMatchObject({ supported: true, tenantId: 'tenant-snapshot' });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      CLOUD_SYNC_CONTRACT_RPC,
+      'pos_pull_product_catalog_snapshot_v2'
+    ]);
+    expect(rpc.mock.calls[1][1]).not.toHaveProperty('p_sync_contract');
+    expect(page).toMatchObject({ snapshot_reference_change_seq: 37, snapshot_complete: true });
+  });
+
+  it('does not dispatch any new snapshot endpoint when the capability is absent', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { ...snapshotContract, capabilities: snapshotContract.capabilities.filter((value) => value !== 'snapshot_keyset_reference_v1'),
+        endpoints: [] }, error: null
+    });
+    const negotiated = await negotiateCloudSnapshotContract({ client: { rpc }, authArgs: {
+      p_license_key: 'snapshot-unsupported-license', p_device_fingerprint: 'device-1',
+      p_security_token: 'secret', p_staff_session_token: null
+    } });
+    expect(negotiated).toMatchObject({ supported: false, reason: 'snapshot_capability_not_advertised' });
+    expect(rpc).toHaveBeenCalledOnce();
+    await expect(callCloudSnapshotRpc({ client: { rpc }, rpcName: 'pos_pull_product_catalog_snapshot_v2',
+      family: 'product_catalog', authArgs: { p_license_key: 'snapshot-unsupported-license' },
+      snapshotContract: negotiated })).rejects.toThrow('CLOUD_SNAPSHOT_CONTRACT_NOT_NEGOTIATED');
+    expect(rpc).toHaveBeenCalledOnce();
+  });
+
+  it('preserves snapshot payload fields through the customer V2 envelope', async () => {
+    const negotiated = {
+      supported: true, tenantId: 'tenant-snapshot',
+      endpointFamilies: ['customer_directory'], endpoints: ['pos_pull_customers_snapshot_v3'],
+      syncContract: { contract_version: 2, capabilities: ['historical_credit_preservation_v1',
+        'customer_projection_safe_apply_v1', 'snapshot_keyset_reference_v1'] }
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: {
+      contract_version: 2, tenant_id: 'tenant-snapshot', endpoint: 'pos_pull_customers_snapshot_v3',
+      family: 'customer_directory', customer_projection_scope: 'CURRENT', customer_projections: [],
+      payload: { success: true, snapshot_reference_change_seq: 37, safe_change_seq: 38,
+        has_more: false, snapshot_complete: true, next_page_cursor: null, customers: [] }
+    }, error: null });
+    const result = await callCloudSnapshotRpc({ client: { rpc }, rpcName: 'pos_pull_customers_snapshot_v3',
+      family: 'customer_directory', authArgs: { p_license_key: 'snapshot-license' },
+      params: { p_snapshot_reference_change_seq: null, p_page_cursor: null },
+      snapshotContract: negotiated, usesV2Envelope: true });
+
+    expect(result).toMatchObject({ snapshot_reference_change_seq: 37, snapshot_complete: true,
+      cloudSyncEnvelope: { tenantId: 'tenant-snapshot', endpoint: 'pos_pull_customers_snapshot_v3' } });
+    expect(rpc.mock.calls[0][1].p_sync_contract).toEqual(negotiated.syncContract);
+  });
+
   it('preserves additive deferred flags from the RPC envelope and payload', () => {
     const context = {
       expectedTenantId: 'tenant-1',

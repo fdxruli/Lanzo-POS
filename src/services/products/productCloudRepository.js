@@ -13,6 +13,7 @@ import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { assertProductInventoryMutationCurrent, captureProductInventoryMutation, hasInitialProductStock } from '../auth/productInventoryAuthority';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
 import { SYNC_LIMITS } from '../sync/syncConstants';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -248,9 +249,33 @@ export const productCloudRepository = {
     limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
     offset = 0,
     includeDeleted = true,
+    snapshotProtocol = null,
+    snapshotReferenceChangeSeq = null,
+    pageCursor = null,
+    actorHandle = null,
     force = false
   }) {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    if (snapshotProtocol?.supported) {
+      const params = {
+        p_limit: Math.min(normalizeLimit(limit), 500),
+        p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+        p_page_cursor: pageCursor
+      };
+      // Snapshot pages carry opaque cursors bound to the current authority
+      // context. Dispatch every page to PostgreSQL so a client cache cannot
+      // replay a projection after actor permissions or the tenant context changes.
+      return callCloudSnapshotRpc({
+        client: supabaseClient,
+        rpcName: 'pos_pull_product_catalog_snapshot_v2',
+        family: 'product_catalog',
+        authArgs: baseArgs,
+        params,
+        snapshotContract: snapshotProtocol,
+        actorHandle
+      });
+    }
+
     const params = {
       p_entity_type: entityType,
       p_limit: normalizeLimit(limit),
@@ -267,6 +292,14 @@ export const productCloudRepository = {
         ...baseArgs,
         ...params
       })
+    });
+  },
+
+  async negotiateSnapshotProtocol({ licenseKey, actorHandle = null } = {}) {
+    return negotiateCloudSnapshotContract({
+      client: supabaseClient,
+      authArgs: await buildBaseRpcArgs(licenseKey),
+      actorHandle
     });
   },
 
