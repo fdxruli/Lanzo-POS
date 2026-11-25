@@ -163,6 +163,26 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(screen.getByText(/según el resumen de la sesión/i)).toBeVisible();
   });
 
+  it('loads more than 100 sessions with the same query and rejects overlap', async () => {
+    const first = Array.from({ length: 100 }, (_, index) => ({ ...staffSession, id: `session-${index}` }));
+    const second = [{ ...staffSession, id: 'session-100' }, { ...staffSession, id: 'session-101' }];
+    const listCashSessionsForAudit = vi.fn()
+      .mockResolvedValueOnce({ success: true, cashSessions: first, source: 'cloud', nextOffset: 100 })
+      .mockResolvedValueOnce({ success: true, cashSessions: second, source: 'cloud', nextOffset: 102 })
+      .mockResolvedValueOnce({ success: true, cashSessions: [second[0]], source: 'cloud', nextOffset: null });
+    render(<CajaStaffAuditPanel listCashSessionsForAudit={listCashSessionsForAudit} />);
+    const more = await screen.findByRole('button', { name: 'Cargar más cajas' });
+    expect(screen.getAllByRole('article')).toHaveLength(100);
+    fireEvent.click(more);
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(102));
+    const [firstCall, secondCall] = listCashSessionsForAudit.mock.calls.map(([query]) => query);
+    expect(secondCall).toEqual({ ...firstCall, offset: 100 });
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más cajas' }));
+    await screen.findByText(/la lista cambió/i);
+    expect(screen.getAllByRole('article')).toHaveLength(102);
+    expect(screen.queryByRole('button', { name: 'Cargar más cajas' })).not.toBeInTheDocument();
+  });
+
   it('preserves the manual refresh and read-only review behavior', async () => {
     const listCashSessionsForAudit = vi.fn().mockResolvedValue({ cashSessions: [staffSession] });
     const onReviewSession = vi.fn();
