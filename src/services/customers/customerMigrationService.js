@@ -8,6 +8,8 @@ import { customerLocalRepository } from './customerLocalRepository';
 import { localCustomerToCloudPayload } from './customerMapper';
 import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
@@ -55,6 +57,57 @@ const validateLocalCustomersForMigration = (customers = []) => {
 };
 
 const pullFullSnapshot = async (licenseKey, actorHandle = actorRuntimeController.capture('customers')) => {
+  const snapshotProtocol = await customerCloudRepository.negotiateSnapshotProtocol?.({ licenseKey, actorHandle })
+    || { supported: false, reason: 'snapshot_negotiation_unavailable' };
+  actorHandle.assertCurrent();
+  requireCloudSnapshotContract(snapshotProtocol);
+  if (snapshotProtocol.supported) {
+    const contextId = buildSnapshotContextId({
+      licenseKey,
+      streamKey: 'customers',
+      scope: { includeDeleted: true, customerId: null },
+      actorHandle
+    });
+    const snapshot = await durableSnapshotService.runConsistentSnapshot({
+      licenseKey,
+      streamKey: 'customers',
+      contextId,
+      actorHandle,
+      cursorKey: 'customers_last_change_seq',
+      fetchPage: ({ referenceChangeSeq, pageCursor }) => customerCloudRepository.pullCustomerSnapshot({
+        licenseKey,
+        limit: Math.min(SYNC_LIMITS.MAX_PULL_LIMIT, 500),
+        includeDeleted: true,
+        snapshotProtocol,
+        snapshotReferenceChangeSeq: referenceChangeSeq,
+        pageCursor,
+        force: true,
+        actorHandle
+      }),
+      applyPage: async (response) => {
+        const customers = Array.isArray(response.customers) ? response.customers : [];
+        const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
+        actorHandle.assertCurrent();
+        if (appliedCustomers.length !== customers.length) {
+          throw new Error('CUSTOMER_SNAPSHOT_LOCAL_APPLY_INCOMPLETE');
+        }
+        // Protected local edits and newer versions are intentionally retained
+        // by the repository; valid rows are still covered by that local state.
+        return { applied: customers.length, rowCount: customers.length };
+      }
+    });
+    actorHandle.assertCurrent();
+    if (!snapshot.success) throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
+    if (!await syncMetaService.setMeta(LAST_SNAPSHOT_AT_KEY, nowIso(), { licenseKey })) {
+      throw new Error('CUSTOMER_SNAPSHOT_CHECKPOINT_FAILED');
+    }
+    return {
+      ...snapshot,
+      snapshotReferenceChangeSeq: snapshot.referenceChangeSeq,
+      consistent: true
+    };
+  }
+
   let offset = 0;
   let hasMore = true;
   let applied = 0;
@@ -74,7 +127,9 @@ const pullFullSnapshot = async (licenseKey, actorHandle = actorRuntimeController
     }
 
     const customers = Array.isArray(response.customers) ? response.customers : [];
-    await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
+    const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
+    actorHandle.assertCurrent();
+    if (appliedCustomers.length !== customers.length) throw new Error('CUSTOMER_SNAPSHOT_LOCAL_APPLY_INCOMPLETE');
 
     applied += customers.length;
     hasMore = Boolean(response.has_more || response.hasMore);
@@ -87,9 +142,11 @@ const pullFullSnapshot = async (licenseKey, actorHandle = actorRuntimeController
   }
 
   actorHandle.assertCurrent();
-  await syncMetaService.setMeta(LAST_SNAPSHOT_AT_KEY, nowIso(), { licenseKey });
+  if (!await syncMetaService.setMeta(LAST_SNAPSHOT_AT_KEY, nowIso(), { licenseKey })) {
+    throw new Error('CUSTOMER_SNAPSHOT_CHECKPOINT_FAILED');
+  }
   actorHandle.assertCurrent();
-  return applied;
+  return { success: true, applied, consistent: false, legacyFallback: true };
 };
 
 export const customerMigrationService = {
@@ -113,7 +170,9 @@ export const customerMigrationService = {
       }
     }
     if (blockedCustomerIds.length > 0) {
-      await syncMetaService.setMeta(MIGRATED_KEY, false, { licenseKey });
+      if (!await syncMetaService.setMeta(MIGRATED_KEY, false, { licenseKey })) {
+        throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+      }
       return {
         success: false, blocked: true, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED', blockedCustomerIds
       };
@@ -122,6 +181,27 @@ export const customerMigrationService = {
     const alreadyMigrated = await syncMetaService.getMeta(MIGRATED_KEY, false, { licenseKey });
     actorHandle.assertCurrent();
     if (alreadyMigrated) {
+      const snapshotProtocol = await customerCloudRepository.negotiateSnapshotProtocol?.({ licenseKey, actorHandle })
+        || { supported: false };
+      actorHandle.assertCurrent();
+      if (snapshotProtocol.supported) {
+        const contextId = buildSnapshotContextId({
+          licenseKey,
+          streamKey: 'customers',
+          scope: { includeDeleted: true, customerId: null },
+          actorHandle
+        });
+        const marker = await durableSnapshotService.getState({
+          licenseKey, streamKey: 'customers', contextId
+        });
+        actorHandle.assertCurrent();
+        if (marker?.status !== 'complete' || marker.snapshotContractVersion !== 1) {
+          const snapshot = await pullFullSnapshot(licenseKey, actorHandle);
+          actorHandle.assertCurrent();
+          if (snapshot?.success !== true) return { success: false, snapshot, alreadyMigrated: true };
+          return { success: true, skipped: false, reconciled: true, ...snapshot };
+        }
+      }
       return { skipped: true, reason: 'already_migrated' };
     }
 
@@ -154,13 +234,18 @@ export const customerMigrationService = {
     }
 
     if (localCustomers.length === 0) {
-      await pullFullSnapshot(licenseKey, actorHandle);
+      const snapshot = await pullFullSnapshot(licenseKey, actorHandle);
       actorHandle.assertCurrent();
-      await syncMetaService.setMeta(MIGRATED_KEY, true, { licenseKey });
+      if (snapshot?.success !== true) return snapshot;
+      if (!await syncMetaService.setMeta(MIGRATED_KEY, true, { licenseKey })) {
+        throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+      }
       actorHandle.assertCurrent();
-      await syncMetaService.setMeta(MIGRATED_AT_KEY, nowIso(), { licenseKey });
+      if (!await syncMetaService.setMeta(MIGRATED_AT_KEY, nowIso(), { licenseKey })) {
+        throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+      }
       actorHandle.assertCurrent();
-      return { success: true, migrated: 0 };
+      return { ...snapshot, success: true, migrated: 0 };
     }
 
     const batchId = `customers-${licenseKey}-${Date.now()}`;
@@ -221,18 +306,25 @@ export const customerMigrationService = {
       migrated += cloudCustomers.length;
     }
 
-    const snapshotCount = await pullFullSnapshot(licenseKey, actorHandle);
+    const snapshot = await pullFullSnapshot(licenseKey, actorHandle);
+    actorHandle.assertCurrent();
+    if (snapshot?.success !== true) return snapshot;
+
+    if (!await syncMetaService.setMeta(MIGRATED_KEY, true, { licenseKey })) {
+      throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+    }
+    actorHandle.assertCurrent();
+    if (!await syncMetaService.setMeta(MIGRATED_AT_KEY, nowIso(), { licenseKey })) {
+      throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+    }
+    actorHandle.assertCurrent();
+    if (!await syncMetaService.setMeta(MIGRATION_WARNING_KEY, null, { licenseKey })) {
+      throw new Error('CUSTOMER_MIGRATION_CHECKPOINT_FAILED');
+    }
     actorHandle.assertCurrent();
 
-    await syncMetaService.setMeta(MIGRATED_KEY, true, { licenseKey });
-    actorHandle.assertCurrent();
-    await syncMetaService.setMeta(MIGRATED_AT_KEY, nowIso(), { licenseKey });
-    actorHandle.assertCurrent();
-    await syncMetaService.setMeta(MIGRATION_WARNING_KEY, null, { licenseKey });
-    actorHandle.assertCurrent();
-
-    Logger.log(`[Customers/Migration] Migracion inicial completada. Migrados=${migrated}, snapshot=${snapshotCount}`);
-    return { success: true, migrated, snapshotCount };
+    Logger.log(`[Customers/Migration] Migracion inicial completada. Migrados=${migrated}, snapshot=${snapshot.applied || 0}`);
+    return { ...snapshot, success: true, migrated, snapshotCount: snapshot.pages || 0 };
   },
 
   pullFullSnapshot

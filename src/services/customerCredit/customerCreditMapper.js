@@ -53,7 +53,10 @@ export const cloudLedgerToLocal = (ledger = {}, existing = null) => {
     deviceId: pick(ledger, 'actor_device_id', 'deviceId'),
     idempotencyKey: pick(ledger, 'idempotency_key', 'idempotencyKey'),
     syncStatus: CUSTOMER_CREDIT_SYNC_STATUS.SYNCED,
-    serverVersion: toNumber(pick(ledger, 'server_version', 'serverVersion', existing?.serverVersion), 1),
+    serverVersion: Math.max(
+      toNumber(existing?.serverVersion, 0),
+      toNumber(pick(ledger, 'server_version', 'serverVersion'), 1)
+    ),
     cloudUpdatedAt: createdAt,
     lastSyncedAt: syncedAt,
     metadata: ledger.metadata || {},

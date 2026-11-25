@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), getMeta: vi.fn(), setMeta: vi.fn(),
+  recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), negotiateSnapshotProtocol: vi.fn(),
+  getMeta: vi.fn(), setMeta: vi.fn(),
   tenantLease: vi.fn(), readInventory: vi.fn(), saveConflict: vi.fn()
 }));
 
@@ -46,7 +47,9 @@ vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
 } }));
 vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: { saveConflict: mocks.saveConflict } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
-  recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract, pullCatalogSnapshot: mocks.snapshot, upsertCategory: mocks.category
+  recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract,
+  negotiateSnapshotProtocol: mocks.negotiateSnapshotProtocol, pullCatalogSnapshot: mocks.snapshot,
+  upsertCategory: mocks.category
 } }));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
@@ -89,6 +92,8 @@ describe('atomic catalog recovery and local confirmation', () => {
     mocks.readInventory.mockResolvedValue([]);
     mocks.contract.mockResolvedValue({ success: true, contract_version: 1 });
     mocks.getMeta.mockResolvedValue(true);
+    mocks.setMeta.mockResolvedValue(true);
+    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: false, reason: 'legacy_fixture' });
     mocks.snapshot.mockResolvedValue({ success: true, categories: [], products: [], batches: [] });
     mocks.recover.mockImplementation(async (args) => asReceipt(args));
   });

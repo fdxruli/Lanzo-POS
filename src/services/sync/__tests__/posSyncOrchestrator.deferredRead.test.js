@@ -156,6 +156,36 @@ afterEach(async () => {
 });
 
 describe('POS incremental recovery from a deferred safe frontier', () => {
+  it('honors retry_after_seconds after a snapshot start is rate limited', async () => {
+    replyWith({ latest_change_seq: 0, server_latest_change_seq: 0 });
+    const onStart = vi.fn().mockResolvedValue({
+      success: false,
+      error: Object.assign(new Error('rate limited'), {
+        code: 'RPC_RATE_LIMITED', retryable: true, retryAfterSeconds: 60
+      })
+    });
+    const onEvents = vi.fn().mockResolvedValue({ applied: 1 });
+    orchestrator.registerEntitySyncHandler('customer', { onStart, onEvents });
+
+    await start();
+
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(onEvents).not.toHaveBeenCalled();
+    expect(orchestrator.getStatus().deferredPullScheduled).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(59_999);
+    await flush();
+    expect(onEvents).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+
+    expect(onEvents).toHaveBeenCalledOnce();
+    expect(onEvents).toHaveBeenCalledWith([], {
+      licenseKey: 'TENANT-A', force: true, reason: 'deferred_handler_retry'
+    });
+    expect(orchestrator.getStatus().deferredPullScheduled).toBe(false);
+  });
+
   it('keeps cursor 175 and retrieves sequence 177 automatically without another Broadcast', async () => {
     mocks.cursor = 175;
     replyWith({ latest_change_seq: 175, server_latest_change_seq: 177, has_more: true, sync_deferred: true });

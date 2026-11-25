@@ -6,25 +6,37 @@ import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../src/test
 import { customerLocalRepository } from '../../../src/services/customers/customerLocalRepository';
 import { customerCreditLocalRepository } from '../../../src/services/customerCredit/customerCreditLocalRepository';
 import { cashLocalRepository } from '../../../src/services/cash/cashLocalRepository';
+import { actorRuntimeController } from '../../../src/services/auth/actorRuntimeController';
+import { localTenantAccessController } from '../../../src/services/tenant/localTenantPolicy';
+import { getActiveTenantRuntime } from '../../../src/services/db/tenantRuntimeRouter';
 import { createSyncExecutionScope } from '../../../src/services/sync/syncExecutionScope';
 import * as supabase from '../../../src/services/supabase';
 
 const m = vi.hoisted(() => ({ snapshot: vi.fn(), changes: vi.fn(), register: vi.fn(),
+  creditProtocol: vi.fn(), salesProtocol: vi.fn(), customerProtocol: vi.fn(),
   salesSnapshot: vi.fn(), shadow: vi.fn(), customerSnapshot: vi.fn(), customerMigration: vi.fn()
 }));
 vi.mock('../../../src/services/sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: { registerEntitySyncHandler: m.register } }));
 vi.mock('../../../src/services/customerCredit/customerCreditCloudRepository', () => ({
-  customerCreditCloudRepository: { pullCreditSnapshot: m.snapshot, pullCreditChanges: m.changes }
+  customerCreditCloudRepository: {
+    negotiateSnapshotProtocol: m.creditProtocol,
+    pullCreditSnapshot: m.snapshot,
+    pullCreditChanges: m.changes
+  }
 }));
 vi.mock('../../../src/services/sync/actorPermission', () => ({ hasCurrentActorPermission: () => true }));
 vi.mock('../../../src/store/useAppStore', () => ({ useAppStore: { getState: () => ({ licenseDetails: {
   license_key: 'synthetic-T', features: { cloud_pos_sync: true, cloud_sales_sync_base: true }
 } }) } }));
 vi.mock('../../../src/services/salesCloud/salesCloudRepository', () => ({ salesCloudRepository: {
-  pullSalesSnapshot: m.salesSnapshot, upsertSaleShadow: m.shadow
+  negotiateSnapshotProtocol: m.salesProtocol,
+  pullSalesSnapshot: m.salesSnapshot,
+  upsertSaleShadow: m.shadow
 } }));
 vi.mock('../../../src/services/customers/customerCloudRepository', () => ({ customerCloudRepository: {
-  pullCustomerSnapshot: m.customerSnapshot, migrateLocalCustomers: m.customerMigration
+  negotiateSnapshotProtocol: m.customerProtocol,
+  pullCustomerSnapshot: m.customerSnapshot,
+  migrateLocalCustomers: m.customerMigration
 } }));
 import { customerCreditSyncHandler } from '../../../src/services/customerCredit/customerCreditSyncHandler';
 import { customerCreditMigrationService } from '../../../src/services/customerCredit/customerCreditMigrationService';
@@ -36,18 +48,60 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
-const payload = () => ({
-  success: true, customers: [{ id: 'synthetic-customer', name: 'Synthetic customer', current_debt: 0, server_version: 1 }],
-  ledger_entries: [], cash_movements: [], cash_sessions: [], latest_change_seq: 1
+const SNAPSHOT_PROTOCOL = { supported: true, tenantId: 'synthetic-snapshot-tenant' };
+const snapshotPage = (data = {}) => ({
+  success: true,
+  snapshot_contract: 'keyset_reference_v1',
+  snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 37,
+  safe_change_seq: 37,
+  sync_deferred: false,
+  has_more: false,
+  snapshot_complete: true,
+  next_page_cursor: null,
+  ...data
 });
+const creditPayload = () => snapshotPage({
+  customers: [{ id: 'synthetic-customer', name: 'Synthetic customer', current_debt: 0, server_version: 1 }],
+  ledger_entries: [], cash_movements: [], cash_sessions: [], latest_change_seq: 37,
+  customer_id: null, ledger_reconciliation_complete: true
+});
+const testTenantIdentity = {
+  aliases: ['license-key-sha256:test-tenant-runtime-a'],
+  primary: 'license-key-sha256:test-tenant-runtime-a',
+  authority: 'license_key_sha256'
+};
 beforeEach(async () => {
   await openTestTenantRuntime();
-  m.snapshot.mockResolvedValue(payload()); m.changes.mockResolvedValue(payload());
-  m.salesSnapshot.mockResolvedValue({ success: true, sales: [] });
-  m.customerSnapshot.mockResolvedValue({ success: true, customers: [], has_more: false });
+  localTenantAccessController.enable('sync_handler_test_setup');
+  localTenantAccessController.grant(testTenantIdentity, 'sync_handler_test_setup');
+  actorRuntimeController.lock('test_setup');
+  actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+  const tenantRuntime = getActiveTenantRuntime();
+  if (!tenantRuntime) throw new Error('TEST_TENANT_RUNTIME_REQUIRED');
+  actorRuntimeController.grant({
+    actorType: 'staff', actorId: 'synthetic-staff', sessionId: 'synthetic-session',
+    deviceRef: 'synthetic-device', permissions: ['customers', 'pos'],
+    tenantOpaqueId: tenantRuntime.opaqueId
+  });
+  m.creditProtocol.mockResolvedValue(SNAPSHOT_PROTOCOL);
+  m.salesProtocol.mockResolvedValue(SNAPSHOT_PROTOCOL);
+  m.customerProtocol.mockResolvedValue(SNAPSHOT_PROTOCOL);
+  m.snapshot.mockResolvedValue(creditPayload()); m.changes.mockResolvedValue(creditPayload());
+  m.salesSnapshot.mockResolvedValue(snapshotPage({
+    sales: [], items: [], payments: [],
+    scope: { date_from: null, date_to: null, visibility: 'actor' }
+  }));
+  m.customerSnapshot.mockResolvedValue(snapshotPage({ customers: [] }));
   vi.spyOn(supabase, 'getStableDeviceId').mockResolvedValue('synthetic-device');
 });
-afterEach(async () => { vi.restoreAllMocks(); await closeTestTenantRuntime(); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  actorRuntimeController.lock('test_teardown');
+  localTenantAccessController.lock('test_teardown');
+  await closeTestTenantRuntime();
+  localTenantAccessController.reset();
+});
 
 it.each(['events', 'snapshot'])('real credit %s waits for delayed Dexie sibling even when another write rejects', async mode => {
   const gate = deferred(), started = deferred(), failure = new Error('synthetic-ledger-write-failure');
@@ -73,7 +127,14 @@ it.each(['events', 'snapshot'])('real credit %s waits for delayed Dexie sibling 
   gate.resolve(); const final = await outcome;
   expect(await db.table(STORES.CUSTOMERS).get('synthetic-customer')).toMatchObject({ name: 'Synthetic customer' });
   if (mode === 'events') expect(final.error).toBe(failure);
-  else { expect(final.value).toMatchObject({ success: false, error: failure }); expect(migration).toHaveBeenCalledTimes(1); }
+  else {
+    expect(final.value).toMatchObject({ success: false, error: failure });
+    expect(migration).toHaveBeenCalledTimes(1);
+    expect(m.creditProtocol).toHaveBeenCalledTimes(1);
+    expect(m.snapshot).toHaveBeenCalledWith(expect.objectContaining({
+      snapshotProtocol: SNAPSHOT_PROTOCOL, snapshotReferenceChangeSeq: null, pageCursor: null
+    }));
+  }
   expect((await scope.drain()).pending).toBe(0);
 });
 
@@ -117,12 +178,18 @@ it('real sales snapshot awaits shadow RPC and actual local writes before snapsho
   const result = scope.run('real-sales-snapshot', () => salesCloudSyncHandler.onStart({
     licenseKey: 'synthetic-T', licenseDetails: { features: { cloud_pos_sync: true, cloud_sales_sync_base: true } }
   }));
-  await started.promise; expect(m.salesSnapshot).not.toHaveBeenCalled(); scope.quiesce();
+  await started.promise;
+  expect(m.salesProtocol).not.toHaveBeenCalled();
+  expect(m.salesSnapshot).not.toHaveBeenCalled();
+  scope.quiesce();
   expect(scope.getSnapshot().pending).toBe(1);
-  // This proves awaited raw shadow work, not a complete context/DOM contract:
-  // the legacy handler may continue into the snapshot after scope quiesce.
+  // Snapshot negotiation and pull must both wait for the pending shadow write.
   gate.resolve({ success: true }); await result; await scope.drain();
   expect(m.shadow).toHaveBeenCalledTimes(1); expect(m.salesSnapshot).toHaveBeenCalledTimes(1);
+  expect(m.salesProtocol).toHaveBeenCalledTimes(1);
+  expect(m.salesSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+    snapshotProtocol: SNAPSHOT_PROTOCOL, snapshotReferenceChangeSeq: null, pageCursor: null
+  }));
   expect(await db.table(STORES.SALES).get('synthetic-sale')).toMatchObject({ cloudSalesSyncStatus: 'synced' });
 });
 
@@ -135,6 +202,11 @@ it('real customer onStart retains initial migration and snapshot, including dura
   gate.resolve({ success: true, results: [{ success: true, customer: { id: 'synthetic-migrate', name: 'Synthetic', phone: '5551234567', server_version: 1 } }] });
   expect(await result).toMatchObject({ success: true, migrated: 1 });
   expect(m.customerMigration).toHaveBeenCalledTimes(1); expect(m.customerSnapshot).toHaveBeenCalledTimes(1);
+  expect(m.customerProtocol).toHaveBeenCalledTimes(1);
+  expect(m.customerSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+    snapshotProtocol: SNAPSHOT_PROTOCOL, snapshotReferenceChangeSeq: null, pageCursor: null,
+    includeDeleted: true
+  }));
   expect(await db.table('sync_meta').get('synthetic-T:customers_cloud_migrated')).toMatchObject({ value: true });
 });
 

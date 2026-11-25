@@ -12,7 +12,11 @@ import {
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
+import {
+  callCloudSnapshotRpc,
+  callCloudSyncRpc,
+  negotiateCloudSnapshotContract
+} from '../sync/cloudSyncProtocolV2';
 
 const assertSupabase = () => {
   if (!supabaseClient) {
@@ -66,6 +70,16 @@ const invalidateAfterCustomerSuccess = (licenseKey, response) => {
 };
 
 export const customerCloudRepository = {
+  async negotiateSnapshotProtocol({ licenseKey, actorHandle = actorRuntimeController.capture('customers'), force = false } = {}) {
+    assertSupabase();
+    const authArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle.assertCurrent();
+    const result = await negotiateCloudSnapshotContract({
+      client: supabaseClient, authArgs, actorHandle, force
+    });
+    actorHandle.assertCurrent();
+    return result;
+  },
   // IMPORTANTE: las mutaciones/migraciones de clientes son críticas y NO deben pasar por CloudRequestManager.
   async upsertCustomer({ licenseKey, customer, expectedVersion = null, idempotencyKey, actorHandle = actorRuntimeController.capture('customers') }) {
     assertSupabase();
@@ -113,7 +127,17 @@ export const customerCloudRepository = {
     return invalidateAfterCustomerSuccess(licenseKey, response);
   },
 
-  async pullCustomerSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, includeDeleted = false, force = false, actorHandle = actorRuntimeController.capture('customers') }) {
+  async pullCustomerSnapshot({
+    licenseKey,
+    limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+    offset = 0,
+    includeDeleted = false,
+    snapshotProtocol = null,
+    snapshotReferenceChangeSeq = null,
+    pageCursor = null,
+    force = false,
+    actorHandle = actorRuntimeController.capture('customers')
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
@@ -122,6 +146,25 @@ export const customerCloudRepository = {
       p_offset: Math.max(Number(offset) || 0, 0),
       p_include_deleted: Boolean(includeDeleted)
     };
+
+    if (snapshotProtocol?.supported) {
+      const response = await callCloudSnapshotRpc({
+        client: supabaseClient,
+        rpcName: 'pos_pull_customers_snapshot_v3',
+        family: 'customer_directory',
+        authArgs: baseArgs,
+        params: {
+          p_limit: normalizeLimit(limit),
+          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+          p_page_cursor: pageCursor
+        },
+        snapshotContract: snapshotProtocol,
+        usesV2Envelope: true,
+        actorHandle
+      });
+      actorHandle.assertCurrent();
+      return response;
+    }
 
     const response = await cachedCustomerRpc({
       rpcName: 'pos_pull_customers_snapshot_v2',

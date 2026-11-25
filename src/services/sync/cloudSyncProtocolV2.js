@@ -2,11 +2,24 @@ import { syncOutboxService } from './syncOutboxService';
 
 export const CLOUD_SYNC_CONTRACT_VERSION = 2;
 export const CLOUD_SYNC_CONTRACT_RPC = 'pos_fin01_sync_contract_v1';
+export const CLOUD_SNAPSHOT_CONTRACT_VERSION = 1;
+export const CLOUD_SNAPSHOT_CONTRACT_RPC = 'pos_snapshot_sync_contract_v1';
 export const CLOUD_FINANCIAL_RESULT_CAPABILITY = 'financial_operation_result_v1';
+export const CLOUD_SNAPSHOT_KEYSET_CAPABILITY = 'snapshot_keyset_reference_v1';
 export const CLOUD_SYNC_CAPABILITIES = Object.freeze([
   'historical_credit_preservation_v1',
   'customer_projection_safe_apply_v1'
 ]);
+
+const SNAPSHOT_ENDPOINTS = Object.freeze({
+  pos_pull_product_catalog_snapshot_v2: 'product_catalog',
+  pos_pull_customers_snapshot_v3: 'customer_directory',
+  pos_pull_customer_credit_snapshot_v3: 'customer_credit',
+  pos_pull_sales_snapshot_v2: 'sales',
+  pos_pull_cash_snapshot_v2: 'cash_register'
+});
+const SNAPSHOT_CAPABILITY_TTL_MS = 60_000;
+const snapshotCapabilityCache = new Map();
 
 const PROJECTION_STATES = new Set([
   'KNOWN_ZERO',
@@ -636,6 +649,154 @@ const callNegotiatedRpc = async ({
 
 export const isCloudClientUpdateRequired = (error) => error?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED'
   || /\bCLOUD_CLIENT_UPDATE_REQUIRED\b/.test(String(error?.message || ''));
+
+const snapshotCapabilityCacheKey = (authArgs) => JSON.stringify([
+  authArgs.p_license_key,
+  authArgs.p_device_fingerprint,
+  authArgs.p_staff_session_token || null
+]);
+
+const unsupportedSnapshotContract = (reason, tenantId = null) => ({
+  supported: false,
+  reason,
+  tenantId,
+  contractVersion: 1
+});
+
+export const requireCloudSnapshotContract = (snapshotContract) => {
+  if (snapshotContract?.supported === true) return snapshotContract;
+  const error = new Error('CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE');
+  error.code = 'CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE';
+  error.retryable = false;
+  error.snapshotContractReason = snapshotContract?.reason || 'snapshot_negotiation_unavailable';
+  throw error;
+};
+
+/**
+ * Negotiate the additive keyset snapshot family once for a tenant/device
+ * context. The result is only a capability hint; each page RPC still
+ * authenticates and authorizes its own request.
+ */
+export const negotiateCloudSnapshotContract = async ({
+  client,
+  authArgs,
+  actorHandle = null,
+  force = false
+} = {}) => {
+  if (!client?.rpc || !isRecord(authArgs) || !hasText(authArgs.p_license_key)
+    || !hasText(authArgs.p_device_fingerprint) || !hasText(authArgs.p_security_token)) {
+    throw new Error('CLOUD_SYNC_PROTOCOL_CLIENT_INVALID');
+  }
+
+  const cacheKey = snapshotCapabilityCacheKey(authArgs);
+  const cached = snapshotCapabilityCache.get(cacheKey);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
+
+  actorHandle?.assertCurrent?.();
+  const requestedCapabilities = [...CLOUD_SYNC_CAPABILITIES, CLOUD_SNAPSHOT_KEYSET_CAPABILITY];
+  const { data, error } = await client.rpc(CLOUD_SNAPSHOT_CONTRACT_RPC, {
+    ...authArgs,
+    p_requested_contract: CLOUD_SNAPSHOT_CONTRACT_VERSION
+  });
+  actorHandle?.assertCurrent?.();
+
+  let result;
+  if (error) {
+    if (isUnavailableRpcError(error, CLOUD_SNAPSHOT_CONTRACT_RPC)) {
+      result = unsupportedSnapshotContract('contract_discovery_unavailable');
+    } else if (isCloudClientUpdateRequired(error)) {
+      reportUpdateRequired('snapshot');
+      throw makeUpdateRequiredError('snapshot', error);
+    } else {
+      throw error;
+    }
+  } else {
+    const contract = parseJson(data, 'CLOUD_SYNC_PROTOCOL_INVALID_DISCOVERY');
+    if (!isRecord(contract)) throw makeUpdateRequiredError('snapshot');
+    if (contract.contract_version !== CLOUD_SNAPSHOT_CONTRACT_VERSION
+      || contract.contract_kind !== 'SNAPSHOT_READ_ONLY'
+      || !hasText(contract.tenant_id)) {
+      throw makeUpdateRequiredError('snapshot');
+    } else if (contract.server_status !== 'SUPPORTED') {
+      throw makeUpdateRequiredError('snapshot');
+    } else {
+      const endpoints = Array.isArray(contract.endpoints) ? contract.endpoints : [];
+      const families = Array.isArray(contract.endpoint_families) ? contract.endpoint_families : [];
+      const hasAllEndpoints = Object.entries(SNAPSHOT_ENDPOINTS).every(([endpoint, family]) => (
+        endpoints.includes(endpoint) && families.includes(family)
+      ));
+      const capabilities = Array.isArray(contract.capabilities) ? contract.capabilities : [];
+      if (requestedCapabilities.some((capability) => !capabilities.includes(capability)) || !hasAllEndpoints) {
+        reportUpdateRequired('snapshot');
+        throw makeUpdateRequiredError('snapshot');
+      }
+      result = {
+        supported: true,
+        reason: null,
+        tenantId: contract.tenant_id,
+        contractVersion: CLOUD_SNAPSHOT_CONTRACT_VERSION,
+        endpoints: [...endpoints],
+        endpointFamilies: [...families],
+        syncContract: {
+          contract_version: CLOUD_SYNC_CONTRACT_VERSION,
+          capabilities: requestedCapabilities
+        }
+      };
+    }
+  }
+
+  if (snapshotCapabilityCache.size > 100) snapshotCapabilityCache.clear();
+  snapshotCapabilityCache.set(cacheKey, { value: result, expiresAt: Date.now() + SNAPSHOT_CAPABILITY_TTL_MS });
+  return result;
+};
+
+/** Dispatch a page only after the endpoint and snapshot capability were advertised. */
+export const callCloudSnapshotRpc = async ({
+  client,
+  rpcName,
+  family,
+  authArgs,
+  params = {},
+  snapshotContract,
+  usesV2Envelope = false,
+  actorHandle = null
+} = {}) => {
+  if (!client?.rpc || !isRecord(authArgs) || !snapshotContract?.supported
+    || !snapshotContract.endpoints?.includes(rpcName)
+    || !snapshotContract.endpointFamilies?.includes(family)) {
+    throw new Error('CLOUD_SNAPSHOT_CONTRACT_NOT_NEGOTIATED');
+  }
+  actorHandle?.assertCurrent?.();
+  const rpcArgs = {
+    ...params,
+    ...authArgs,
+    ...(usesV2Envelope ? { p_sync_contract: snapshotContract.syncContract } : {})
+  };
+  const { data, error } = await client.rpc(rpcName, rpcArgs);
+  actorHandle?.assertCurrent?.();
+  if (error) {
+    if (isUnavailableRpcError(error, rpcName) || isCloudClientUpdateRequired(error)) {
+      reportUpdateRequired(family);
+      throw makeUpdateRequiredError(family, error);
+    }
+    throw error;
+  }
+
+  const rawPayload = parseJson(data, 'CLOUD_SYNC_PROTOCOL_INVALID_JSON');
+  if (!usesV2Envelope) {
+    if (!isRecord(rawPayload)) throw new Error('CLOUD_SNAPSHOT_RESPONSE_INVALID');
+    actorHandle?.assertCurrent?.();
+    return rawPayload;
+  }
+
+  const validated = validateCloudSyncV2Envelope(rawPayload, {
+    expectedTenantId: snapshotContract.tenantId,
+    expectedEndpoint: rpcName,
+    expectedFamily: family
+  });
+  actorHandle?.assertCurrent?.();
+  return validated;
+};
 
 // Explicit counterparts preserve the deployed v1 signatures (most have no suffix).
 const LEGACY_RPC_NAMES = Object.freeze({

@@ -26,6 +26,7 @@ import { db, STORES } from '../../db/dexie';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { useAppStore } from '../../../store/useAppStore';
 import { syncMetaService } from '../../sync/syncMetaService';
+import { buildSnapshotContextId, durableSnapshotService } from '../../sync/durableSnapshotService';
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 import { PRODUCT_CATALOG_LAST_SEQ_KEY } from '../productConstants';
 import { productLocalRepository } from '../productLocalRepository';
@@ -210,6 +211,97 @@ describe('product sync read cursor safety', () => {
     expect(mocks.cloud.pullCatalogChanges.mock.calls.map(([request]) => request.sinceChangeSeq)).toEqual([40, 40]);
     expect(await db.table(STORES.MENU).count()).toBe(2);
     expect(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey: TEST_LICENSE_KEY })).toBe(42);
+  });
+
+  it('replays every delta page from the snapshot reference while retaining a higher legacy cursor', async () => {
+    grantProductActor('product-reconcile-session');
+    await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 100, { licenseKey: TEST_LICENSE_KEY });
+    const actorHandle = actorRuntimeController.capture('products');
+    const contextId = buildSnapshotContextId({
+      licenseKey: TEST_LICENSE_KEY,
+      streamKey: 'product_catalog',
+      scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+      actorHandle
+    });
+    await durableSnapshotService.runConsistentSnapshot({
+      licenseKey: TEST_LICENSE_KEY,
+      streamKey: 'product_catalog',
+      contextId,
+      actorHandle,
+      cursorKey: PRODUCT_CATALOG_LAST_SEQ_KEY,
+      fetchPage: async () => ({
+        success: true,
+        snapshot_contract: 'keyset_reference_v1',
+        snapshot_contract_version: 1,
+        snapshot_reference_change_seq: 50,
+        has_more: false,
+        snapshot_complete: true,
+        next_page_cursor: null
+      }),
+      applyPage: async () => ({ applied: 0, rowCount: 0 })
+    });
+
+    mocks.cloud.pullCatalogChanges
+      .mockResolvedValueOnce({ success: true, products: [cloudProduct('replay-60', 'Secuencia 60')],
+        categories: [], batches: [], latest_change_seq: 60, has_more: true })
+      .mockResolvedValueOnce({ success: true, products: [cloudProduct('replay-70', 'Secuencia 70')],
+        categories: [], batches: [], latest_change_seq: 70, has_more: true })
+      .mockResolvedValueOnce({ success: true, products: [cloudProduct('replay-80', 'Secuencia 80')],
+        categories: [], batches: [], latest_change_seq: 80, has_more: false });
+
+    await expect(productSyncHandler.onEvents([], { licenseKey: TEST_LICENSE_KEY, force: true }))
+      .resolves.toMatchObject({ latestChangeSeq: 80, syncDeferred: false });
+
+    expect(mocks.cloud.pullCatalogChanges.mock.calls.map(([request]) => request.sinceChangeSeq))
+      .toEqual([50, 60, 70]);
+    expect(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey: TEST_LICENSE_KEY })).toBe(100);
+    expect(await db.table(STORES.MENU).bulkGet(['replay-60', 'replay-70', 'replay-80']))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'replay-60' }),
+        expect.objectContaining({ id: 'replay-70' }),
+        expect.objectContaining({ id: 'replay-80' })
+      ]));
+    expect((await durableSnapshotService.getState({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'product_catalog', contextId
+    })).status).toBe('complete');
+  });
+
+  it('does not report snapshot completion when durable cursor persistence does not return a stored cursor', async () => {
+    grantProductActor('product-snapshot-persist-session');
+    await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 100, { licenseKey: TEST_LICENSE_KEY });
+    const actorHandle = actorRuntimeController.capture('products');
+    const contextId = buildSnapshotContextId({
+      licenseKey: TEST_LICENSE_KEY,
+      streamKey: 'product_catalog',
+      scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+      actorHandle
+    });
+    const failCursorWrite = vi.spyOn(syncMetaService, 'advanceMeta').mockResolvedValueOnce(false);
+    const fetchPage = async () => ({
+      success: true,
+      snapshot_contract: 'keyset_reference_v1',
+      snapshot_contract_version: 1,
+      snapshot_reference_change_seq: 0,
+      has_more: false,
+      snapshot_complete: true,
+      next_page_cursor: null
+    });
+    const applyPage = async () => ({ applied: 0, rowCount: 0 });
+
+    await expect(durableSnapshotService.runConsistentSnapshot({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'product_catalog', contextId, actorHandle,
+      cursorKey: PRODUCT_CATALOG_LAST_SEQ_KEY, fetchPage, applyPage
+    })).rejects.toThrow('POS_SYNC_SNAPSHOT_CURSOR_PERSIST_FAILED');
+    expect((await durableSnapshotService.getState({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'product_catalog', contextId
+    })).status).toBe('snapshot_complete');
+
+    failCursorWrite.mockRestore();
+    await expect(durableSnapshotService.runConsistentSnapshot({
+      licenseKey: TEST_LICENSE_KEY, streamKey: 'product_catalog', contextId, actorHandle,
+      cursorKey: PRODUCT_CATALOG_LAST_SEQ_KEY, fetchPage, applyPage
+    })).resolves.toMatchObject({ snapshotComplete: true, recoveryPending: true, referenceChangeSeq: 0 });
+    expect(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, null, { licenseKey: TEST_LICENSE_KEY })).toBe(100);
   });
 
   it('leaves the cursor unchanged when a downloaded page cannot be applied', async () => {
