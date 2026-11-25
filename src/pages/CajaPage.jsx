@@ -1,10 +1,11 @@
 import { registerAdminUpdateBlocker } from '../pwa/adminUpdateSafety';
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/CajaPage.jsx
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertTriangle, Clock3, LockKeyhole } from 'lucide-react';
 import { useCaja } from '../hooks/useCaja';
+import { actorRuntimeController } from '../services/auth/actorRuntimeController';
 import { useModal } from '../hooks/useModal';
 import { useRecentActivity } from '../hooks/useRecentActivity';
 import AuditModal from '../components/common/AuditModal';
@@ -233,6 +234,7 @@ export default function CajaPage() {
     cashActor,
     adminCashSessions,
     legacyAdminCashSessions,
+    readCashHistory,
     listCashSessionsForAudit,
     getCashSessionDetailForAudit,
     cerrarCajaAdministrativamente,
@@ -254,6 +256,10 @@ export default function CajaPage() {
   // ============================================================
   // ESTADO GLOBAL (useAppStore)
   // ============================================================
+  const cashHistoryGeneration = useSyncExternalStore(
+    actorRuntimeController.subscribe,
+    () => actorRuntimeController.getState().generation
+  );
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const businessTimezone = useAppStore((state) => state.companyProfile?.timezone || null);
   const setBackupLoading = useAppStore((state) => state.setBackupLoading);
@@ -889,7 +895,7 @@ export default function CajaPage() {
               <p>La caja permanece protegida. Conéctate o completa la recuperación administrativa antes de realizar operaciones de efectivo.</p>
             </div>
           )}
-          <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
+          <CajaHistoryList key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`} historial={historialCajas} isCloudCash={isCloudCash} isReadOnly={isCloudCashReadOnly} readCashHistory={readCashHistory} businessTimezone={businessTimezone} />
           <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
           {showBusinessCashSummary && (
             <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} attentionSessionId={attentionSessionId} businessTimezone={businessTimezone} />
@@ -936,7 +942,7 @@ export default function CajaPage() {
           isCloudCash={isCloudCash}
           isReadOnly={isCloudCashReadOnly}
         />
-        <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
+        <CajaHistoryList key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`} historial={historialCajas} isCloudCash={isCloudCash} isReadOnly={isCloudCashReadOnly} readCashHistory={readCashHistory} businessTimezone={businessTimezone} />
         <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
         {showBusinessCashSummary && (
           <CajaBusinessCashSummary
@@ -1075,7 +1081,7 @@ export default function CajaPage() {
           className="caja-section-panel caja-section-panel--list"
         >
           {visibleVisitedSections.has('historial') && (
-            <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} businessTimezone={businessTimezone} />
+            <CajaHistoryList key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`} historial={historialCajas} isCloudCash={isCloudCash} isReadOnly={isCloudCashReadOnly} readCashHistory={readCashHistory} businessTimezone={businessTimezone} />
           )}
         </div>
 
