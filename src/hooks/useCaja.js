@@ -1086,6 +1086,8 @@ export function useCaja({ executionScope = null } = {}) {
     return totalTeorico.gt(CAJA_CONFIG.MAX_CASH_THRESHOLD);
   }, [cajaActual, calcularTotalTeorico]);
 
+  const readCashHistory = useCallback(() => cashRepository.readCashHistory(), []);
+
   const listCashSessionsForAudit = useCallback((filters = {}) => cashRepository.listCashSessionsForAudit(filters), []);
 
   const getCashSessionDetailForAudit = useCallback((cashSessionId, options = {}) => (
@@ -1170,6 +1172,7 @@ export function useCaja({ executionScope = null } = {}) {
     exportarReporteCajaCSV,
     descargarReporteCaja,
     verificarExcesoLiquidez,
+    readCashHistory,
     listCashSessionsForAudit,
     getCashSessionDetailForAudit,
     cerrarCajaAdministrativamente,
