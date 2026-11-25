@@ -4,10 +4,12 @@ import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventory
 import { syncConflictService } from '../sync/syncConflictService';
 import { syncMetaService } from '../sync/syncMetaService';
 import { syncOutboxService } from '../sync/syncOutboxService';
-import { OUTBOX_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
+import { OUTBOX_STATUS, SYNC_ENTITY_TYPES } from '../sync/syncConstants';
 import { isLocalTenantAccessError, runWithLocalTenantSyncLease } from '../tenant/localTenantGuard';
 import { batchToCloudPayload, categoryToCloudPayload, productToCloudPayload } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
+import { readProductCatalog } from './productCatalogReader';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { productLocalRepository } from './productLocalRepository';
 import { validateLocalCatalogForMigration } from './productMigrationValidation';
 import {
@@ -90,25 +92,15 @@ const checkGroupConfirmation = ({ response, product, batches, productPayload, id
   )) throw errorWithCode('PRODUCT_RECOVERY_EXISTING_DATA_DIFFERS');
 };
 
-const readCloudCategories = async (licenseKey) => {
-  const categories = new Map();
-  let offset = 0;
-  while (true) {
-    const response = await productCloudRepository.pullCatalogSnapshot({
-      licenseKey, entityType: 'category', includeDeleted: true, force: true,
-      offset, limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
-    });
-    if (response?.success !== true || !Array.isArray(response.categories)) {
-      throw errorWithCode('PRODUCT_RECOVERY_CATEGORY_READ_FAILED');
-    }
-    for (const row of response.categories) categories.set(row.id, row);
-    if (!response.has_more && !response.hasMore) return categories;
-    if (!response.categories.length) throw errorWithCode('PRODUCT_RECOVERY_CATEGORY_READ_FAILED');
-    offset += response.categories.length;
-  }
+const readCloudCategories = async (licenseKey, actorHandle) => {
+  const { categories } = await readProductCatalog({
+    cloudRepository: productCloudRepository, licenseKey, actorHandle, categoriesOnly: true
+  });
+  return new Map(categories.map((row) => [row.id, row]));
 };
 
-const reconcileCategory = async ({ licenseKey, category, cloud, outbox }) => {
+const reconcileCategory = async ({ licenseKey, category, cloud, outbox, actorHandle }) => {
+  actorHandle.assertCurrent('products');
   if (outbox || category.pendingOperationId) throw errorWithCode('PRODUCT_RECOVERY_OUTBOX_PENDING');
   if (hasExplicitTenantMismatch(category, licenseKey) || await productLocalRepository.getDeletedCategoryById(category.id)) {
     throw errorWithCode('PRODUCT_RECOVERY_CATEGORY_IDENTITY_UNVERIFIED');
@@ -122,7 +114,7 @@ const reconcileCategory = async ({ licenseKey, category, cloud, outbox }) => {
     }
     const response = await productCloudRepository.upsertCategory({
       licenseKey, category: payload, expectedVersion: versionOf(category),
-      idempotencyKey: idempotencyKeyFor(licenseKey, payload, [])
+      idempotencyKey: idempotencyKeyFor(licenseKey, payload, []), actorHandle
     });
     if (response?.success !== true) throw errorWithCode(response?.code || 'PRODUCT_RECOVERY_CATEGORY_FAILED');
     confirmed = response.category;
@@ -131,6 +123,7 @@ const reconcileCategory = async ({ licenseKey, category, cloud, outbox }) => {
     || !checkCompleteCategoryPayload(category, confirmed)) {
     throw errorWithCode('PRODUCT_RECOVERY_CATEGORY_CONFIRMATION_INVALID');
   }
+  actorHandle.assertCurrent('products');
   await productLocalRepository.applyCloudCatalog({ category: confirmed }, {
     recovery: { store: STORES.CATEGORIES, record: category }
   });
@@ -280,18 +273,20 @@ export const productLocalCatalogRecovery = {
     const validationIssues = validateLocalCatalogForMigration(localCatalog);
     const blockedCategories = new Set();
     let cloudCategories;
+    let categoryActor;
     for (const category of catalog.categories) {
       const confirmed = await run(SYNC_ENTITY_TYPES.CATEGORY, category.id, async () => {
         const invalid = validationIssues.find((issue) =>
           (issue.type.startsWith('CATEGORY_') || issue.type === 'DUPLICATE_CATEGORY_NAME') && relatedTo(issue, category.id)
         );
         if (invalid) throw errorWithCode(invalid.type);
-        cloudCategories ??= readCloudCategories(licenseKey);
+        categoryActor ??= actorRuntimeController.capture('products');
+        cloudCategories ??= readCloudCategories(licenseKey, categoryActor);
         const operations = await syncOutboxService.listOperationsForEntity({
           licenseKey, entityType: SYNC_ENTITY_TYPES.CATEGORY, entityId: category.id
         });
         await reconcileCategory({
-          licenseKey, category, cloud: (await cloudCategories).get(category.id),
+          licenseKey, category, cloud: (await cloudCategories).get(category.id), actorHandle: categoryActor,
           outbox: operations.some((row) => row.status !== OUTBOX_STATUS.SYNCED)
         });
       });

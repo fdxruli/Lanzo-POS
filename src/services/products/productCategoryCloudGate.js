@@ -1,10 +1,10 @@
 import { productCloudRepository } from './productCloudRepository';
+import { readProductCatalog } from './productCatalogReader';
 import { productLocalRepository } from './productLocalRepository';
 import { syncOutboxService } from '../sync/syncOutboxService';
 import {
   OUTBOX_STATUS,
   SYNC_ENTITY_TYPES,
-  SYNC_LIMITS,
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
 import { assertProductInventoryOperationActorCurrent } from '../auth/productInventoryAuthority';
@@ -20,68 +20,18 @@ const categoryIsActive = (category = {}) => (
 
 const categoryIdOf = (category = {}) => category.id || null;
 
-const findCloudCategory = async (licenseKey, categoryId) => {
-  let offset = 0;
-
-  while (true) {
-    const response = await productCloudRepository.pullCatalogSnapshot({
-      licenseKey,
-      entityType: 'categories',
-      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
-      offset,
-      includeDeleted: true,
-      force: true
-    });
-
-    if (response?.success !== true || !Array.isArray(response.categories)) {
-      const error = new Error(response?.message || 'No se pudo confirmar la categoría en el negocio actual.');
-      error.code = response?.code || 'PRODUCT_CATEGORY_CONFIRMATION_FAILED';
-      throw error;
-    }
-
-    const match = response.categories.find((category) => categoryIdOf(category) === categoryId);
-    if (match) return match;
-
-    if (response.has_more !== true && response.hasMore !== true) return null;
-    if (response.categories.length === 0) {
-      const error = new Error('La lista de categorías de Cloud quedó incompleta.');
-      error.code = 'PRODUCT_CATEGORY_CATALOG_INCOMPLETE';
-      throw error;
-    }
-    offset += response.categories.length;
-  }
+const listCloudCategories = async (licenseKey, actorHandle, assertContextCurrent) => {
+  const { categories } = await readProductCatalog({
+    cloudRepository: productCloudRepository, licenseKey, actorHandle,
+    assertContextCurrent, categoriesOnly: true
+  });
+  return categories;
 };
 
-const listCloudCategories = async (licenseKey) => {
-  const categories = [];
-  let offset = 0;
-
-  while (true) {
-    const response = await productCloudRepository.pullCatalogSnapshot({
-      licenseKey,
-      entityType: 'categories',
-      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
-      offset,
-      includeDeleted: true,
-      force: true
-    });
-
-    if (response?.success !== true || !Array.isArray(response.categories)) {
-      const error = new Error(response?.message || 'No se pudo consultar el catálogo completo de categorías de este negocio.');
-      error.code = response?.code || 'PRODUCT_CATEGORY_CONFIRMATION_FAILED';
-      throw error;
-    }
-
-    categories.push(...response.categories);
-    if (response.has_more !== true && response.hasMore !== true) return categories;
-    if (response.categories.length === 0) {
-      const error = new Error('La lista de categorías de Cloud quedó incompleta.');
-      error.code = 'PRODUCT_CATEGORY_CATALOG_INCOMPLETE';
-      throw error;
-    }
-    offset += response.categories.length;
-  }
-};
+const findCloudCategory = async (licenseKey, categoryId, actorHandle, assertContextCurrent) => (
+  (await listCloudCategories(licenseKey, actorHandle, assertContextCurrent))
+    .find((category) => categoryIdOf(category) === categoryId) || null
+);
 
 const categoryConfirmationFailure = (message, code = 'PRODUCT_CATEGORY_NOT_AVAILABLE') => {
   const error = new Error(message);
@@ -122,8 +72,8 @@ const assertLocalCategoryHasNoContradictoryTenant = (category, licenseKey) => {
   }
 };
 
-const inspectRecoveryCloudCatalog = async ({ licenseKey, categoryId, categoryName }) => {
-  const categories = await listCloudCategories(licenseKey);
+const inspectRecoveryCloudCatalog = async ({ licenseKey, categoryId, categoryName, actorHandle, assertContextCurrent }) => {
+  const categories = await listCloudCategories(licenseKey, actorHandle, assertContextCurrent);
   const localNameKey = normalizeNameKey(categoryName);
   const duplicate = categories.find((category) => (
     categoryIdOf(category) !== categoryId && categoryNameKey(category) === localNameKey
@@ -325,7 +275,7 @@ export const recoverLocalCategoryInCloud = async ({
   const existingCloudCategory = await inspectRecoveryCloudCatalog({
     licenseKey,
     categoryId,
-    categoryName: localCategory.name
+    categoryName: localCategory.name, actorHandle, assertContextCurrent
   });
   if (existingCloudCategory) {
     return applyConfirmedRecoveryCategory(existingCloudCategory, assertContextCurrent);
@@ -354,7 +304,7 @@ export const recoverLocalCategoryInCloud = async ({
     const confirmedAfterTimeout = await inspectRecoveryCloudCatalog({
       licenseKey,
       categoryId,
-      categoryName: localCategory.name
+      categoryName: localCategory.name, actorHandle, assertContextCurrent
     });
     if (confirmedAfterTimeout) {
       return applyConfirmedRecoveryCategory(confirmedAfterTimeout, assertContextCurrent);
@@ -377,7 +327,7 @@ export const recoverLocalCategoryInCloud = async ({
       const confirmedAfterRetryTimeout = await inspectRecoveryCloudCatalog({
         licenseKey,
         categoryId,
-        categoryName: localCategory.name
+        categoryName: localCategory.name, actorHandle, assertContextCurrent
       });
       if (confirmedAfterRetryTimeout) {
         return applyConfirmedRecoveryCategory(confirmedAfterRetryTimeout, assertContextCurrent);
@@ -410,7 +360,8 @@ export const ensureCloudProductCategory = async ({
 } = {}) => {
   if (!categoryId) return { success: true, category: null };
 
-  const cloudCategory = await findCloudCategory(licenseKey, categoryId);
+  await requireCurrentCategoryContext(assertContextCurrent);
+  const cloudCategory = await findCloudCategory(licenseKey, categoryId, actorHandle, assertContextCurrent);
   if (cloudCategory) {
     if (!categoryIsActive(cloudCategory)) {
       throw categoryConfirmationFailure('La categoría seleccionada está inactiva en este negocio. Actualiza el producto e inténtalo de nuevo.');

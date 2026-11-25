@@ -6,7 +6,6 @@ import { syncOutboxService } from '../sync/syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudProductsSyncEnabled,
-  SYNC_LIMITS,
   SYNC_ENTITY_TYPES,
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
@@ -17,6 +16,7 @@ import {
   normalizeSkuKey
 } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
+import { readProductCatalog } from './productCatalogReader';
 import { productLocalRepository } from './productLocalRepository';
 import {
   ensureCloudProductCategory,
@@ -59,35 +59,13 @@ const isApparelVariantBatch = (product, batch, businessTypes) => (
   isApparelProduct(product, businessTypes) && hasApparelVariantAttributes(batch)
 );
 
-const loadCloudSkuRecords = async (licenseKey) => {
-  const records = [];
-  const pageSize = SYNC_LIMITS.MAX_PULL_LIMIT;
-
-  for (const entityType of ['products', 'batches']) {
-    let offset = 0;
-    while (true) {
-      const response = await productCloudRepository.pullCatalogSnapshot({
-        licenseKey,
-        entityType,
-        limit: pageSize,
-        offset,
-        includeDeleted: false,
-        force: true
-      });
-      if (!response || response.success === false) {
-        throw new Error(response?.message || 'APPAREL_SKU_CATALOG_READ_FAILED');
-      }
-
-      const page = entityType === 'products' ? response.products : response.batches;
-      if (!Array.isArray(page)) throw new Error('APPAREL_SKU_CATALOG_READ_INVALID');
-      records.push(...page.map((record) => ({ ...record, skuEntityType: entityType })));
-
-      if (response.has_more !== true && response.hasMore !== true) break;
-      if (page.length === 0) throw new Error('APPAREL_SKU_CATALOG_READ_INCOMPLETE');
-      offset += page.length;
-    }
-  }
-  return records;
+const loadCloudSkuRecords = async (licenseKey, actorHandle) => {
+  const { products, batches } = await readProductCatalog({
+    cloudRepository: productCloudRepository, licenseKey, actorHandle
+  });
+  return Object.entries({ products, batches }).flatMap(([skuEntityType, rows]) => rows
+    .filter((row) => !row.deleted_at && !row.deletedAt)
+    .map((row) => ({ ...row, skuEntityType })));
 };
 
 const remoteSkuConflicts = (sku, records, excludedBatchId = null) => {
@@ -122,7 +100,7 @@ const apparelSkuError = (code, sku = '') => ({
     : 'No se pudo comprobar que el SKU sea único. No se guardó la variante. Inténtalo de nuevo.')
 });
 
-const prepareApparelVariantSkus = async (prepared, mode) => {
+const prepareApparelVariantSkus = async (prepared, mode, actorHandle) => {
   if (!isApparelProduct(prepared.product, mode.businessTypes)) return { success: true };
 
   const changes = [];
@@ -158,7 +136,7 @@ const prepareApparelVariantSkus = async (prepared, mode) => {
   let cloudRecords = null;
   if (mode.cloudEnabled && isOnline()) {
     try {
-      cloudRecords = await loadCloudSkuRecords(mode.licenseKey);
+      cloudRecords = await loadCloudSkuRecords(mode.licenseKey, actorHandle);
     } catch (error) {
       Logger.warn('[Products] No se pudo comprobar el catálogo Cloud para SKU Apparel:', error);
       return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
@@ -699,8 +677,6 @@ export const productRepository = {
   async saveProduct(productData, { existingProduct = null, ...options } = {}) {
     const prepared = await productLocalRepository.prepareProduct(productData, existingProduct);
     const mode = getMode();
-    const skuValidation = await prepareApparelVariantSkus(prepared, mode);
-    if (!skuValidation.success) return skuValidation;
     const pharmacy = getPharmacyClassification(prepared.product);
     if (!prepared.editing && pharmacy.recorded && pharmacy.kind === 'medicine' && (
       Number(prepared.product.stock || 0) > 0 ||
@@ -746,6 +722,10 @@ export const productRepository = {
           : `${classification.message} El producto no se guardó.`
       };
     }
+
+    const skuValidation = await prepareApparelVariantSkus(prepared, mode, actorHandle);
+    if (!skuValidation.success) return skuValidation;
+    assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
 
     if (!mode.cloudEnabled) {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
@@ -1152,13 +1132,14 @@ export const productRepository = {
       }
     }
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ inventory: true });
     const skuKey = normalizeSkuKey(batchData.sku);
     const skuChanged = skuKey !== normalizeSkuKey(currentBatch?.skuKey || currentBatch?.sku_key || currentBatch?.sku);
     if (isApparelVariantBatch(parent, currentBatch || batchData, mode.businessTypes) && skuKey && skuChanged && !apparelSkuAlreadyChecked) {
       let cloudRecords = null;
       if (mode.cloudEnabled && isOnline()) {
         try {
-          cloudRecords = await loadCloudSkuRecords(mode.licenseKey);
+          cloudRecords = await loadCloudSkuRecords(mode.licenseKey, actorHandle);
         } catch (error) {
           Logger.warn('[Products] No se pudo comprobar el catálogo Cloud para SKU Apparel:', error);
           return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
@@ -1174,7 +1155,7 @@ export const productRepository = {
         return apparelSkuError('APPAREL_SKU_CHECK_FAILED');
       }
     }
-    const actorHandle = captureProductInventoryMutation({ inventory: true });
+    assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
 
     if (!mode.cloudEnabled) {
       assertProductInventoryMutationCurrent(actorHandle, { inventory: true });

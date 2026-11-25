@@ -6,7 +6,7 @@ import {
 } from '../auth/productInventoryAuthority';
 import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventoryEntryService';
 import { syncOutboxService } from '../sync/syncOutboxService';
-import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, OUTBOX_STATUS, CONFLICT_STATUS, SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
+import { getLicenseKeyFromDetails, isCloudProductsSyncEnabled, OUTBOX_STATUS, CONFLICT_STATUS, SYNC_ENTITY_TYPES } from '../sync/syncConstants';
 import { runWithLocalTenantSyncLease, assertLocalTenantAccess } from '../tenant/localTenantGuard';
 import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
@@ -14,6 +14,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { getEcommercePortal, listPublishedProducts } from '../ecommerce/ecommerceAdminService';
 import { syncConflictService } from '../sync/syncConflictService';
 import { productCloudRepository } from './productCloudRepository';
+import { readProductCatalog } from './productCatalogReader';
 import { productLocalRepository } from './productLocalRepository';
 import {
   productToCloudPayload,
@@ -573,98 +574,17 @@ export const assessIndividualProductRecovery = ({
   };
 };
 
-const readCloudRows = async (cloudRepository, licenseKey, entityType) => {
-  const records = [];
-  let offset = 0;
-  let snapshotTotal = null;
-  let snapshotChangeSeq = null;
-  while (true) {
-    const requestedLimit = SYNC_LIMITS.MAX_PULL_LIMIT;
-    const response = await cloudRepository.pullCatalogSnapshot({
-      licenseKey,
-      entityType,
-      offset,
-      limit: requestedLimit,
-      includeDeleted: true,
-      force: true
-    });
-    if (response?.success !== true) {
-      throw Object.assign(new Error(response?.message || 'No se pudo verificar el catálogo Cloud.'), {
-        code: response?.code || 'PRODUCT_RECOVERY_CLOUD_READ_FAILED'
-      });
+const readCloudCatalogSnapshot = async (deps, licenseKey, categoriesOnly = false) => {
+  const actor = assertInspectionActor(deps);
+  const actorHandle = deps.actorController.capture('products');
+  const { products, batches, categories, snapshotReferenceChangeSeq } = await readProductCatalog({
+    cloudRepository: deps.cloudRepository, licenseKey, actorHandle, categoriesOnly,
+    assertContextCurrent: () => {
+      assertRecoveryTenant(deps, licenseKey);
+      assertInspectionActor(deps, actor.sessionId);
     }
-    const collection = entityType === 'product'
-      ? response.products
-      : entityType === 'product_batch' ? response.batches : response.categories;
-    if (!Array.isArray(collection)) {
-      throw Object.assign(new Error('La respuesta del catálogo Cloud no contiene una colección válida.'), {
-        code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INVALID'
-      });
-    }
-    const responseOffset = Number(response.offset);
-    const responseLimit = Number(response.limit);
-    const total = Number(response.total);
-    const changeSeq = Number(response.latest_change_seq);
-    if ([response.offset, response.limit, response.total, response.latest_change_seq]
-      .some((value) => value === null || value === undefined)
-      || !Number.isInteger(responseOffset)
-      || responseOffset !== offset
-      || response.entity_type !== entityType
-      || !Number.isInteger(responseLimit)
-      || responseLimit !== requestedLimit
-      || !Number.isInteger(total)
-      || total < 0
-      || !Number.isSafeInteger(changeSeq)
-      || changeSeq < 0
-      || typeof response.has_more !== 'boolean') {
-      throw Object.assign(new Error('La respuesta Cloud no confirma el total ni la página completa del catálogo.'), {
-        code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INCOMPLETE'
-      });
-    }
-    if (snapshotTotal === null) {
-      snapshotTotal = total;
-      snapshotChangeSeq = changeSeq;
-    } else if (snapshotTotal !== total || snapshotChangeSeq !== changeSeq) {
-      throw Object.assign(new Error('El catálogo Cloud cambió durante la paginación.'), {
-        code: 'PRODUCT_RECOVERY_CLOUD_SNAPSHOT_CHANGED'
-      });
-    }
-    const expectedPageSize = Math.min(responseLimit, Math.max(0, total - offset));
-    const expectedHasMore = offset + responseLimit < total;
-    if (collection.length !== expectedPageSize || response.has_more !== expectedHasMore) {
-      throw Object.assign(new Error('La página recibida no coincide con el total informado por Cloud.'), {
-        code: 'PRODUCT_RECOVERY_CLOUD_RESPONSE_INCOMPLETE'
-      });
-    }
-    records.push(...collection);
-    if (!response.has_more) {
-      records.snapshotMeta = { total: snapshotTotal, latestChangeSeq: snapshotChangeSeq };
-      return records;
-    }
-    if (collection.length === 0) throw Object.assign(new Error('La paginación del catálogo Cloud no avanzó.'), {
-      code: 'PRODUCT_RECOVERY_CLOUD_PAGINATION_STALLED'
-    });
-    offset += collection.length;
-  }
-};
-
-const readCloudCatalogSnapshot = async (deps, licenseKey) => {
-  const [cloudProducts, cloudBatches, cloudCategories] = await Promise.all([
-    readCloudRows(deps.cloudRepository, licenseKey, 'product'),
-    readCloudRows(deps.cloudRepository, licenseKey, 'product_batch'),
-    readCloudRows(deps.cloudRepository, licenseKey, 'category')
-  ]);
-  const changeSeqs = new Set([
-    cloudProducts.snapshotMeta?.latestChangeSeq,
-    cloudBatches.snapshotMeta?.latestChangeSeq,
-    cloudCategories.snapshotMeta?.latestChangeSeq
-  ]);
-  if (changeSeqs.size !== 1) {
-    throw Object.assign(new Error('Las tres lecturas Cloud no corresponden a la misma revisión del catálogo.'), {
-      code: 'PRODUCT_RECOVERY_CLOUD_SNAPSHOT_CHANGED'
-    });
-  }
-  return { cloudProducts, cloudBatches, cloudCategories };
+  });
+  return { cloudProducts: products, cloudBatches: batches, cloudCategories: categories, snapshotReferenceChangeSeq };
 };
 
 const getCurrentState = (deps) => deps.getAppState();
@@ -1031,7 +951,7 @@ const ensureRecoveryCategory = async ({ deps, licenseKey, local, cloud, actorHan
   assertInspectionActor(deps, actorSessionId);
   let categories;
   try {
-    categories = await readCloudRows(deps.cloudRepository, licenseKey, 'category');
+    ({ cloudCategories: categories } = await readCloudCatalogSnapshot(deps, licenseKey, true));
   } catch (error) {
     throw Object.assign(new Error('No se pudo confirmar si la escritura de categoría llegó a Cloud. Conserva el estado local y no repitas la escritura todavía.'), {
       code: 'PRODUCT_RECOVERY_CATEGORY_OUTCOME_UNKNOWN',
@@ -1447,15 +1367,11 @@ export const createProductIndividualRecoveryService = (overrides = {}) => {
                 inspect(state);
                 return state;
               });
-              const [products, batches] = await Promise.all([
-                readCloudRows(deps.cloudRepository, licenseKey, 'product'),
-                readCloudRows(deps.cloudRepository, licenseKey, 'product_batch')
-              ]);
-              const cloudRevision = products.snapshotMeta.latestChangeSeq;
+              const { cloudProducts: products, cloudBatches: batches, snapshotReferenceChangeSeq: cloudRevision } =
+                await readCloudCatalogSnapshot(deps, licenseKey);
               const batchIds = new Set(before.localBatches.map(({ id }) => id));
               if (new Set(products.map(cloudProductId)).size !== products.length
                 || new Set(batches.map(cloudBatchId)).size !== batches.length
-                || cloudRevision !== batches.snapshotMeta.latestChangeSeq
                 || products.some((row) => !cloudProductId(row) || cloudProductId(row) === productId)
                 || batches.some((row) => !cloudBatchId(row) || !cloudBatchParentId(row)
                   || cloudBatchParentId(row) === productId || batchIds.has(cloudBatchId(row)))) {
