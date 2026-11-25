@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_package:
-        description: canonical preserves the normal guard; restaurant_backend_v1 uses the reviewed private historical overlay.
+        description: canonical preserves the normal guard; restaurant_backend_v1 and pos_sync_593 use their reviewed private historical overlays.
         type: choice
-        options: [canonical, restaurant_backend_v1]
+        options: [canonical, restaurant_backend_v1, pos_sync_593]
         default: canonical
         required: true
       mode:
@@ -88,10 +88,13 @@ jobs:
             restaurant_backend_v1)
               release_root="$(mktemp -d "${RUNNER_TEMP}/pr352-backend.XXXXXX")"
               ;;
+            pos_sync_593)
+              release_root="$(mktemp -d "${RUNNER_TEMP}/pos-sync-593.XXXXXX")"
+              ;;
             *) exit 1 ;;
           esac
           echo "RELEASE_ROOT=${release_root}" >> "${GITHUB_ENV}"
-          if [ "${RELEASE_PACKAGE}" = restaurant_backend_v1 ]; then
+          if [ "${RELEASE_PACKAGE}" != canonical ]; then
             mkdir -p "${release_root}/supabase/migrations"
             cp supabase/config.toml "${release_root}/supabase/config.toml"
           fi
@@ -102,6 +105,12 @@ jobs:
             supabase migration fetch --linked > "${release_root}/fetch.private.log" 2>&1
             node "${GITHUB_WORKSPACE}/scripts/supabase/pr352-prepare-production-ledger-overlay.mjs" prepare \
               "${GITHUB_WORKSPACE}/docs/fixtures/restaurant-backend-release.json" \
+              "${release_root}/supabase/migrations" "${GITHUB_WORKSPACE}/supabase/migrations" \
+              "${release_root}/snapshot.private.json" "${EXPECTED_VERSIONS}"
+          elif [ "${RELEASE_PACKAGE}" = pos_sync_593 ]; then
+            node --test "${GITHUB_WORKSPACE}/scripts/supabase/pos-sync-593-overlay.test.mjs"
+            supabase migration fetch --linked > "${release_root}/fetch.private.log" 2>&1
+            node "${GITHUB_WORKSPACE}/scripts/supabase/pos-sync-593-overlay.mjs" prepare \
               "${release_root}/supabase/migrations" "${GITHUB_WORKSPACE}/supabase/migrations" \
               "${release_root}/snapshot.private.json" "${EXPECTED_VERSIONS}"
           fi
@@ -139,6 +148,10 @@ jobs:
             node scripts/supabase/pr352-prepare-production-ledger-overlay.mjs verify \
               docs/fixtures/restaurant-backend-release.json "${RELEASE_ROOT}/supabase/migrations" \
               "${GITHUB_WORKSPACE}/supabase/migrations" "${RELEASE_ROOT}/snapshot.private.json"
+          elif [ "${RELEASE_PACKAGE}" = pos_sync_593 ]; then
+            node scripts/supabase/pos-sync-593-overlay.mjs verify \
+              "${RELEASE_ROOT}/supabase/migrations" "${GITHUB_WORKSPACE}/supabase/migrations" \
+              "${RELEASE_ROOT}/snapshot.private.json" "${EXPECTED_VERSIONS}"
           fi
           cd "${RELEASE_ROOT}"
           test "$(cat supabase/.temp/project-ref)" = "${SUPABASE_PROJECT_REF}"
@@ -168,7 +181,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${RELEASE_ROOT:-}" == "${RUNNER_TEMP}/pr352-backend."* ]]; then
+          if [[ "${RELEASE_ROOT:-}" == "${RUNNER_TEMP}/pr352-backend."* || "${RELEASE_ROOT:-}" == "${RUNNER_TEMP}/pos-sync-593."* ]]; then
             test ! -L "${RELEASE_ROOT}"
             rm -rf -- "${RELEASE_ROOT}"
           fi
