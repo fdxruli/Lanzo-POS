@@ -64,7 +64,7 @@ La búsqueda focal en migraciones y servicios no encontró una compuerta existen
 
 - **Código preparado:** cambios focales cliente/SQL y esta evidencia quedan en el mismo PR Draft.
 - **QA SQL:** PostgreSQL local 17.6; B1–B3 candidatas, permisos y convergencia previa de catálogo; no Production.
-- **QA automatizado:** 12 archivos focales / 154 Vitest pasaron; ESLint focal terminó sin errores. `npm run build` terminó y corrió ambas auditorías postbuild: 26 assets de inicio, 0 assets core Local, y 5 recursos de bot con 24 dependencias estáticas. Vite/PWA informó advertencias de anotaciones/importaciones y patrones glob sin coincidencias; las auditorías terminaron correctamente.
+- **QA automatizado:** 14 archivos focales / 166 Vitest pasaron, incluyendo los dos archivos señalados por la comparación global previa; ESLint focal terminó sin errores. `npm run build` terminó y corrió ambas auditorías postbuild: 26 assets de inicio, 0 assets core Local, y 5 recursos de bot con 24 dependencias estáticas. Vite/PWA informó advertencias de anotaciones/importaciones y patrones glob sin coincidencias; las auditorías terminaron correctamente.
 - **QA integrado:** catálogo, clientes, crédito, ventas y caja, PostgreSQL local a servicios/repositorios/Dexie con los límites señalados arriba.
 - **QA manual:** no ejecutado; QA físico entre terminales queda reservado al cierre del roadmap.
 - **Production:** inspección read-only; sin instalación ni activaciones.

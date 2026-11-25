@@ -22,7 +22,13 @@ vi.mock('../cloud', () => ({
   invalidateCloudCacheAfterCashMutation: (...args) => fixtures.invalidateCashCache(...args)
 }));
 vi.mock('../sync/posSyncClient', () => ({ buildPosSyncAuthContext: fixtures.auth }));
-vi.mock('../sync/syncConstants', () => ({ SYNC_LIMITS: { DEFAULT_PULL_LIMIT: 100, MAX_PULL_LIMIT: 500 } }));
+vi.mock('../sync/syncConstants', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    SYNC_LIMITS: { ...actual.SYNC_LIMITS, DEFAULT_PULL_LIMIT: 100, MAX_PULL_LIMIT: 500 }
+  };
+});
 
 import { cashCloudRepository } from './cashCloudRepository';
 

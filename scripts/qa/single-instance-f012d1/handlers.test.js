@@ -6,6 +6,9 @@ import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../src/test
 import { customerLocalRepository } from '../../../src/services/customers/customerLocalRepository';
 import { customerCreditLocalRepository } from '../../../src/services/customerCredit/customerCreditLocalRepository';
 import { cashLocalRepository } from '../../../src/services/cash/cashLocalRepository';
+import { actorRuntimeController } from '../../../src/services/auth/actorRuntimeController';
+import { localTenantAccessController } from '../../../src/services/tenant/localTenantPolicy';
+import { getActiveTenantRuntime } from '../../../src/services/db/tenantRuntimeRouter';
 import { createSyncExecutionScope } from '../../../src/services/sync/syncExecutionScope';
 import * as supabase from '../../../src/services/supabase';
 
@@ -40,14 +43,36 @@ const payload = () => ({
   success: true, customers: [{ id: 'synthetic-customer', name: 'Synthetic customer', current_debt: 0, server_version: 1 }],
   ledger_entries: [], cash_movements: [], cash_sessions: [], latest_change_seq: 1
 });
+const testTenantIdentity = {
+  aliases: ['license-key-sha256:test-tenant-runtime-a'],
+  primary: 'license-key-sha256:test-tenant-runtime-a',
+  authority: 'license_key_sha256'
+};
 beforeEach(async () => {
   await openTestTenantRuntime();
+  localTenantAccessController.enable('sync_handler_test_setup');
+  localTenantAccessController.grant(testTenantIdentity, 'sync_handler_test_setup');
+  actorRuntimeController.lock('test_setup');
+  actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+  const tenantRuntime = getActiveTenantRuntime();
+  if (!tenantRuntime) throw new Error('TEST_TENANT_RUNTIME_REQUIRED');
+  actorRuntimeController.grant({
+    actorType: 'staff', actorId: 'synthetic-staff', sessionId: 'synthetic-session',
+    deviceRef: 'synthetic-device', permissions: ['customers', 'pos'],
+    tenantOpaqueId: tenantRuntime.opaqueId
+  });
   m.snapshot.mockResolvedValue(payload()); m.changes.mockResolvedValue(payload());
   m.salesSnapshot.mockResolvedValue({ success: true, sales: [] });
   m.customerSnapshot.mockResolvedValue({ success: true, customers: [], has_more: false });
   vi.spyOn(supabase, 'getStableDeviceId').mockResolvedValue('synthetic-device');
 });
-afterEach(async () => { vi.restoreAllMocks(); await closeTestTenantRuntime(); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  actorRuntimeController.lock('test_teardown');
+  localTenantAccessController.lock('test_teardown');
+  await closeTestTenantRuntime();
+  localTenantAccessController.reset();
+});
 
 it.each(['events', 'snapshot'])('real credit %s waits for delayed Dexie sibling even when another write rejects', async mode => {
   const gate = deferred(), started = deferred(), failure = new Error('synthetic-ledger-write-failure');
