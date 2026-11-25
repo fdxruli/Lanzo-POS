@@ -143,6 +143,8 @@ const CajaStaffAuditPanel = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [auditPage, setAuditPage] = useState(null);
+  const filterKey = JSON.stringify([status, staffFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     if (adminCashSessions.length > 0 && sessions.length === 0) {
@@ -164,29 +166,49 @@ const CajaStaffAuditPanel = ({
     [sessions, status, staffFilter, dateFrom, dateTo]
   );
 
-  const refreshAudit = async () => {
-    if (!listCashSessionsForAudit) return;
+  const refreshAudit = async (append = false) => {
+    if (!listCashSessionsForAudit || isRefreshing) return;
+    if (append && (auditPage?.nextOffset == null || auditPage.filterKey !== filterKey || isReadOnly)) return;
     setIsRefreshing(true);
     setMessage('');
+    if (!append) setAuditPage(null);
 
     try {
       const selectedStaff = staffOptions.find((option) => option.value === staffFilter);
+      const upperBound = append ? auditPage.upperBound : dateTo || new Date().toISOString();
       const response = await listCashSessionsForAudit({
         status: status === 'all' ? null : status,
         staffUserId: selectedStaff?.staffUserId || null,
         dateFrom: dateFrom || null,
-        dateTo: dateTo || null,
-        limit: 100
+        dateTo: upperBound,
+        limit: 100,
+        offset: append ? auditPage.nextOffset : 0,
+        force: true,
+        allowCache: false
       });
 
       if (response?.success === false) {
         setMessage(response.message || 'No se pudo cargar la auditoria de staff.');
         return;
       }
+      const rows = response?.cashSessions || [];
+      const localOnly = response?.source === 'local' || response?.readOnly || isReadOnly;
+      if (append && (localOnly || rows.some((row) => sessions.some((previous) => previous.id === row.id)))) {
+        setAuditPage(null);
+        setMessage(localOnly
+          ? 'Cloud no disponible. Actualiza para consultar el historial local.'
+          : 'La lista cambió durante la consulta. Actualiza para volver a empezar sin duplicados.');
+        return;
+      }
 
-      setSessions(response?.cashSessions || []);
+      setSessions(append ? [...sessions, ...rows] : rows);
+      setAuditPage({
+        filterKey,
+        upperBound,
+        nextOffset: localOnly ? null : response?.nextOffset ?? null
+      });
       setLastUpdated(new Date());
-      setMessage(response?.readOnly || isReadOnly
+      setMessage(localOnly
         ? 'Mostrando ultimo estado cacheado. La caja cloud esta en solo consulta.'
         : '');
     } catch (error) {
@@ -258,7 +280,7 @@ const CajaStaffAuditPanel = ({
           <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="search-input" aria-label="Fecha hasta" />
         </label>
 
-        <button type="button" className="btn-clear-filters staff-audit-refresh" onClick={refreshAudit} disabled={isRefreshing}>
+        <button type="button" className="btn-clear-filters staff-audit-refresh" onClick={() => refreshAudit()} disabled={isRefreshing}>
           <RefreshCw size={16} aria-hidden="true" />
           {isRefreshing ? 'Actualizando' : 'Actualizar'}
         </button>
@@ -350,6 +372,11 @@ const CajaStaffAuditPanel = ({
         )}
       </div>
 
+      {auditPage?.nextOffset != null && auditPage.filterKey === filterKey && !isReadOnly && (
+        <button type="button" className="ui-button ui-button--secondary ui-button--sm" onClick={() => refreshAudit(true)} disabled={isRefreshing}>
+          {isRefreshing ? 'Cargando…' : 'Cargar más cajas'}
+        </button>
+      )}
       <p className="staff-audit-meta">Selecciona Revisar para cargar movimientos y eventos de auditoria de una sola caja.</p>
     </section>
   );
