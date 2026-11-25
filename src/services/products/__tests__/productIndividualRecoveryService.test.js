@@ -399,21 +399,14 @@ const makeServiceHarness = ({
   };
 
   const cloudRepository = {
-    pullCatalogSnapshot: vi.fn(async ({ entityType, offset, limit }) => {
+    negotiateSnapshotProtocol: async () => ({ supported: true }),
+    pullCatalogSnapshot: vi.fn(async ({ limit }) => {
       if (cloudReadFailure) throw new Error('Cloud read timed out');
-      const collection = entityType === 'product' ? cloudProducts
-        : entityType === 'product_batch' ? cloudBatches : cloudCategories;
       return {
-        success: true,
-        entity_type: entityType,
-        products: entityType === 'product' ? collection.slice(offset, offset + limit) : undefined,
-        batches: entityType === 'product_batch' ? collection.slice(offset, offset + limit) : undefined,
-        categories: entityType === 'category' ? collection.slice(offset, offset + limit) : undefined,
-        limit,
-        offset,
-        total: collection.length,
-        has_more: offset + limit < collection.length,
-        latest_change_seq: cloudChangeSeq
+        success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+        categories: [...cloudCategories], products: [...cloudProducts], batches: [...cloudBatches],
+        limit, has_more: false, snapshot_complete: true, next_page_cursor: null,
+        snapshot_reference_change_seq: cloudChangeSeq, safe_change_seq: cloudChangeSeq, sync_deferred: false
       };
     }),
     upsertCategory: vi.fn(async (args) => {
@@ -481,7 +474,10 @@ const makeServiceHarness = ({
 
   const service = createProductIndividualRecoveryService({
     getAppState: () => ({ licenseDetails: { ...licenseDetailsOverrides, license_key: currentLicenseKey } }),
-    actorController: { getState: () => currentActor },
+    actorController: {
+      getState: () => currentActor,
+      capture: () => ({ assertCurrent() {} })
+    },
     localRepository,
     cloudRepository,
     outboxService,
@@ -558,7 +554,7 @@ describe('individual product recovery execution', () => {
     expect(report.portal).toMatchObject({ exists: false, verified: true });
     expect(report.publication).toBeNull();
     expect(harness.listPublishedProducts).not.toHaveBeenCalled();
-    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(3);
+    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('does not treat a portal authorization error as a confirmed missing portal', async () => {
@@ -568,7 +564,7 @@ describe('individual product recovery execution', () => {
 
     expect(report.canRecover).toBe(false);
     expect(report.issues.map((issue) => issue.code)).toContain('ECOMMERCE_STAFF_PERMISSION_DENIED');
-    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(3);
+    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(1);
     expect(harness.listPublishedProducts).not.toHaveBeenCalled();
   });
 
@@ -594,7 +590,7 @@ describe('individual product recovery execution', () => {
     expect(report.cloud.product).toBe('missing');
     expect(report.portal).toMatchObject({ exists: true, verified: true });
     expect(report.issues.map((issue) => issue.code)).toContain('PRODUCT_RECOVERY_PUBLICATION_RESPONSE_INCOMPLETE');
-    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(3);
+    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it('holds an incomplete Cloud pagination response instead of treating it as an empty catalog', async () => {
@@ -602,7 +598,7 @@ describe('individual product recovery execution', () => {
     const originalPull = harness.cloudRepository.pullCatalogSnapshot.getMockImplementation();
     harness.cloudRepository.pullCatalogSnapshot.mockImplementation(async (args) => {
       const response = await originalPull(args);
-      return args.entityType === 'product' ? { ...response, total: undefined } : response;
+      return { ...response, snapshot_complete: undefined };
     });
 
     const report = await harness.service.inspectProduct({ productId: 'local-product-1' });
@@ -1044,8 +1040,7 @@ describe('individual product recovery execution', () => {
       success: false, blocked: true, uncertain: true, cloudOutcome: 'partial',
       code: 'PRODUCT_RECOVERY_PARTIAL_CLOUD_WRITE'
     });
-    expect(harness.cloudRepository.pullCatalogSnapshot.mock.calls.map(([args]) => args.entityType))
-      .toEqual(['product', 'product_batch', 'category', 'product', 'product_batch', 'category', 'product', 'product_batch', 'category']);
+    expect(harness.cloudRepository.pullCatalogSnapshot).toHaveBeenCalledTimes(3);
     expect(harness.localRepository.applyCloudCatalog).not.toHaveBeenCalled();
   });
 

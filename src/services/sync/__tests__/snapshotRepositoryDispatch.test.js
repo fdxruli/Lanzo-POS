@@ -99,6 +99,20 @@ describe('versioned snapshot repository dispatch', () => {
 
   afterEach(() => vi.clearAllMocks());
 
+  it('negotiates the V2 contract for direct product consumers without legacy dispatch', async () => {
+    await productCloudRepository.pullCatalogSnapshot({ licenseKey: LICENSE_KEY + '-products-direct', actorHandle });
+    expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([
+      CLOUD_SNAPSHOT_CONTRACT_RPC, 'pos_pull_product_catalog_snapshot_v2'
+    ]);
+  });
+
+  it('rejects an unsupported product contract without calling a legacy RPC', async () => {
+    await expect(productCloudRepository.pullCatalogSnapshot({
+      licenseKey: LICENSE_KEY + '-products-unsupported', actorHandle, snapshotProtocol: { supported: false }
+    })).rejects.toThrow('CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it('negotiates the V2 contract for direct cash consumers', async () => {
     await cashCloudRepository.pullCashSnapshot({ licenseKey: LICENSE_KEY + '-direct', scope: 'all', actorHandle });
     expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([
