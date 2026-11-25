@@ -903,6 +903,7 @@ export default function CajaPage() {
           <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
           {showAdminAuditPanel && (
             <CajaStaffAuditPanel
+              key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`}
                 businessTimezone={businessTimezone}
               adminCashSessions={adminCashSessions}
               listCashSessionsForAudit={listCashSessionsForAudit}
@@ -957,6 +958,7 @@ export default function CajaPage() {
         <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
         {showAdminAuditPanel && (
           <CajaStaffAuditPanel
+              key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`}
             businessTimezone={businessTimezone}
             adminCashSessions={adminCashSessions}
             listCashSessionsForAudit={listCashSessionsForAudit}
@@ -1114,6 +1116,7 @@ export default function CajaPage() {
                     <summary>Auditoría de cajas</summary>
                     {hasOpenedStaffAudit && (
                       <CajaStaffAuditPanel
+              key={`${cashHistoryGeneration}:${isCloudCashReadOnly}`}
                         businessTimezone={businessTimezone}
                         adminCashSessions={adminCashSessions}
                         listCashSessionsForAudit={listCashSessionsForAudit}
