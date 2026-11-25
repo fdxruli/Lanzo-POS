@@ -99,6 +99,21 @@ describe('versioned snapshot repository dispatch', () => {
 
   afterEach(() => vi.clearAllMocks());
 
+  it('negotiates the V2 contract for direct cash consumers', async () => {
+    await cashCloudRepository.pullCashSnapshot({ licenseKey: LICENSE_KEY + '-direct', scope: 'all', actorHandle });
+    expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([
+      CLOUD_SNAPSHOT_CONTRACT_RPC, 'pos_pull_cash_snapshot_v2'
+    ]);
+  });
+
+  it('fails closed when the snapshot contract is unavailable', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202' } });
+    await expect(cashCloudRepository.pullCashSnapshot({
+      licenseKey: LICENSE_KEY + '-unsupported', actorHandle
+    })).rejects.toThrow('CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE');
+    expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([CLOUD_SNAPSHOT_CONTRACT_RPC]);
+  });
+
   it('routes all five modules through advertised endpoints and forwards a zero reference and opaque cursor', async () => {
     const protocol = await productCloudRepository.negotiateSnapshotProtocol({
       licenseKey: LICENSE_KEY, actorHandle
