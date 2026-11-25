@@ -8,6 +8,11 @@ on:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
       - 'src/services/products/productRepository.js'
+      - 'src/services/products/productCatalogReader.js'
+      - 'src/services/products/productCloudRepository.js'
+      - 'src/services/products/productCategoryCloudGate.js'
+      - 'src/services/products/productIndividualRecoveryService.js'
+      - 'src/services/products/__tests__/productCatalogReader.test.js'
       - 'src/services/products/__tests__/productRepository.freeLocalAuthority.test.js'
       - 'src/services/products/__tests__/productSyncHandler.cutover.test.js'
       - 'src/services/products/productLocalCatalogRecovery.js'
@@ -61,6 +66,17 @@ jobs:
           src/services/inventory/__tests__/inventoryEntryService.test.js
           src/services/inventory/__tests__/inventoryEntryService.freeLocalAuthority.test.js
           src/store/slices/license/licenseSessionTransitions.test.js
+          --maxWorkers=4
+
+      - name: Product catalog keyset read and recovery regression
+        run: >-
+          npx vitest run
+          src/services/products/__tests__/productCatalogReader.test.js
+          src/services/products/__tests__/productCategoryCloudGate.test.js
+          src/services/products/__tests__/productRepository.events.test.js
+          src/services/products/__tests__/productIndividualRecoveryService.test.js
+          src/services/products/__tests__/productBatchArchive.indexeddb.test.js
+          src/services/sync/__tests__/snapshotRepositoryDispatch.test.js
           --maxWorkers=4
 
       - name: Catalog recovery and lost-response integration on isolated PostgreSQL

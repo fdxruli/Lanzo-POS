@@ -360,7 +360,7 @@ export const ensureCloudProductCategory = async ({
 } = {}) => {
   if (!categoryId) return { success: true, category: null };
 
-  await requireCurrentCategoryContext(assertContextCurrent);
+  if (assertContextCurrent) await requireCurrentCategoryContext(assertContextCurrent);
   const cloudCategory = await findCloudCategory(licenseKey, categoryId, actorHandle, assertContextCurrent);
   if (cloudCategory) {
     if (!categoryIsActive(cloudCategory)) {
