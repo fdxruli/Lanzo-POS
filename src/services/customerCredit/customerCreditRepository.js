@@ -8,7 +8,7 @@ import {
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerLocalRepository } from '../customers/customerLocalRepository';
-import { assertCustomerReadContext, validateCustomerSnapshotPage } from '../customers/customerSnapshotReader';
+import { assertCustomerReadContext, validateCustomerSnapshotPage } from '../customers/customerSnapshotPage';
 import { cashLocalRepository } from '../cash/cashLocalRepository';
 import { getCashMode } from '../cash/cashActor';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';

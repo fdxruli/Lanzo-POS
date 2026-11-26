@@ -120,6 +120,14 @@ jobs:
           src/services/products/__tests__/productRepository.freeLocalAuthority.test.js
           src/services/products/__tests__/productSyncHandler.cutover.test.js
           src/store/slices/license/licenseSessionTransitions.test.js
+          src/services/customers/customerCloudRepository.js
+          src/services/customers/customerSnapshotPage.js
+          src/services/customers/customerSnapshotReader.js
+          src/services/customers/customerRepository.js
+          src/services/customers/customerSyncHandler.js
+          src/services/customerCredit/customerCreditCloudRepository.js
+          src/services/customerCredit/customerCreditRepository.js
+          src/services/customerCredit/historicalCreditDirectory.js
 
       - name: Production build
         run: npm run build

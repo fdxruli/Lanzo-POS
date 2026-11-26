@@ -168,7 +168,11 @@ describe('FIN-01 directory bridge: real tenant Dexie, simulated Cloud', () => {
     await expect(migration.prepareDirectory({ licenseKey, reviewedHash: missing.hash })).rejects.toThrow('timeout');
     const retryReview = await migration.preview({ licenseKey });
     await migration.prepareDirectory({ licenseKey, reviewedHash: retryReview.hash });
-    expect(boundary.upsert.mock.calls[0][0]).toEqual(boundary.upsert.mock.calls[1][0]);
+    const [{ actorHandle: firstActor, ...firstRequest }, { actorHandle: retryActor, ...retryRequest }] =
+      boundary.upsert.mock.calls.map(([request]) => request);
+    expect(firstRequest).toEqual(retryRequest);
+    expect(firstActor.assertCurrent).toBeTypeOf('function');
+    expect(retryActor.assertCurrent).toBeTypeOf('function');
     expect(boundary.directory.size).toBe(1);
     expect(boundary.receipts.size).toBe(0);
   });
