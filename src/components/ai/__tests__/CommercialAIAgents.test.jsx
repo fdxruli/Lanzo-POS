@@ -764,6 +764,48 @@ describe('commercial AI center', () => {
     expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
   });
 
+  it.each([
+    [{ status: 'available', explanation: 'Interpretación parcial de los costos registrados.', recommendations: [] }, 'Interpretación parcial de los costos registrados.'],
+    [{ status: 'available', recommendations: [{ title: 'Revisar costos', explanation: 'Validar el registro.', priority: 'medium' }] }, 'Recomendaciones de Lía']
+  ])('renders useful partial narratives after a consumed analysis: %#', async (aiNarrative, heading) => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', intent: 'product_risk',
+        executiveSummary: 'Sin productos en riesgo.', explanation: 'Cálculo determinístico.',
+        confidence: 'medium', source: 'cloud', coverage: { validSales: 1 },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: [],
+        aiNarrative
+      },
+      providerCalled: true, quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Qué productos están afectando mi rentabilidad?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
+    expect(screen.queryByText(/El uso de IA quedó registrado/)).not.toBeInTheDocument();
+    if (aiNarrative.recommendations.length) expect(screen.getByText('Revisar costos')).toBeInTheDocument();
+  });
+
+  it('warns when a consumed legacy narrative claims availability but is empty', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', executiveSummary: 'Sin productos en riesgo.', explanation: 'Cálculo determinístico.',
+        confidence: 'medium', source: 'cloud', coverage: { validSales: 1 },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: [],
+        aiNarrative: { status: 'available', directAnswer: ' ', executiveSummary: '', explanation: '', recommendations: [] }
+      },
+      providerCalled: true, quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Qué productos están afectando mi rentabilidad?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(await screen.findByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
+    expect(screen.queryByText('Respuesta de Lía')).not.toBeInTheDocument();
+  });
+
   it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {
     let resolveRun;
     runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
