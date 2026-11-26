@@ -1223,10 +1223,7 @@ const getRecommendationReviewTarget = (recommendation, references = []) => {
       {
         kind: 'product',
         label: needsCostReview ? 'Revisar costo' : hasProfitabilityRisk ? 'Revisar rentabilidad' : 'Revisar producto'
-      },
-      ...(needsCostReview && reference.costSource === 'inventory_receipt'
-        ? [{ kind: 'batches', label: 'Consultar lotes', costReview: true }]
-        : [])
+      }
     ]
   };
 };
@@ -1813,14 +1810,18 @@ export default function CommercialAIAgentsPage() {
     if (!tenantOpaqueId || !actorKey || !sessionId || !licenseKey) return null;
     return JSON.stringify([tenantOpaqueId, actorKey, sessionId, licenseKey]);
   }, [tenantOpaqueId, actorKey, sessionId, licenseKey]);
+  const navigationContextToken = useMemo(() => {
+    if (!tenantOpaqueId || !actorKey || !sessionId) return null;
+    return JSON.stringify([tenantOpaqueId, actorKey, sessionId]);
+  }, [tenantOpaqueId, actorKey, sessionId]);
   const resumeCandidate = location.state?.liaResumeSnapshot;
   const resumeContextMismatch = Boolean(resumeCandidate?.contextToken
-    && resumeCandidate.contextToken !== historyContextToken);
-  const resolvedResumeSnapshot = isValidLiaResumeSnapshot(resumeCandidate, historyContextToken)
+    && resumeCandidate.contextToken !== navigationContextToken);
+  const resolvedResumeSnapshot = isValidLiaResumeSnapshot(resumeCandidate, navigationContextToken)
     ? resumeCandidate
     : null;
   const resumeSnapshotRef = useRef(resolvedResumeSnapshot);
-  if (resumeSnapshotRef.current?.contextToken !== historyContextToken) {
+  if (resumeSnapshotRef.current?.contextToken !== navigationContextToken) {
     resumeSnapshotRef.current = resolvedResumeSnapshot;
   }
   const resumeSnapshot = resumeSnapshotRef.current;
@@ -2001,7 +2002,7 @@ export default function CommercialAIAgentsPage() {
 
     void loadHistory();
     return () => { active = false; };
-  }, [historyContext, historyContextToken, resumeContextMismatch, resumeSnapshot]);
+  }, [historyContext, historyContextToken, navigationContextToken, resumeContextMismatch, resumeSnapshot]);
 
   const period = useMemo(
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
@@ -2446,7 +2447,7 @@ export default function CommercialAIAgentsPage() {
   const canReviewInventory = actorAccess.canAccessPermission('inventory');
   const handleReviewRecommendation = useCallback((recommendation, resultForReview, target) => {
     void recommendation;
-    if (!target || !historyContextToken || !resultForReview?.response) return;
+    if (!target || !navigationContextToken || !resultForReview?.response) return;
     if (target.kind === 'batches' && !actorAccess.canAccessPermission('inventory')) return;
     if (target.kind !== 'batches' && !canReviewProduct) return;
 
@@ -2456,13 +2457,13 @@ export default function CommercialAIAgentsPage() {
       ? {
         version: 1,
         kind: 'history',
-        contextToken: historyContextToken,
+        contextToken: navigationContextToken,
         historyEntryId: resultForReview.historyEntryId
       }
       : {
         version: 1,
         kind: 'analysis',
-        contextToken: historyContextToken,
+        contextToken: navigationContextToken,
         question,
         periodDays,
         compare,
@@ -2474,7 +2475,7 @@ export default function CommercialAIAgentsPage() {
       };
     const navigationState = {
       liaProductReview: {
-        contextToken: historyContextToken,
+        contextToken: navigationContextToken,
         recordReference: action.recordReference,
         productName: target.productName,
         costReview: target.costReview === true,
@@ -2493,7 +2494,7 @@ export default function CommercialAIAgentsPage() {
     compare,
     competitiveEvidence,
     downloadContext,
-    historyContextToken,
+    navigationContextToken,
     navigate,
     periodDays,
     question,

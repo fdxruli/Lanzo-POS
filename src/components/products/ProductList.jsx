@@ -104,6 +104,17 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       : `${CATEGORY_OPTION_PREFIX}${categoryFilter}`);
 
   useEffect(() => {
+    if (reviewOnly) {
+      searchRequestId.current += 1;
+      if (searchTimeout.current !== null) {
+        window.clearTimeout(searchTimeout.current);
+        searchTimeout.current = null;
+      }
+      setSearchResults([]);
+      setIsSearching(false);
+      setHasSearchError(false);
+      return undefined;
+    }
     if (catalogBlocked) return;
     let isActive = true;
     const requestId = ++searchRequestId.current;
@@ -184,7 +195,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         if (searchTimeout.current === timeoutId) searchTimeout.current = null;
       }
     };
-  }, [appliedSearchTerm, catalogBlocked, categoryFilter, reconnect, searchExecution, statusFilter]);
+  }, [appliedSearchTerm, catalogBlocked, categoryFilter, reconnect, reviewOnly, searchExecution, statusFilter]);
 
   const isSearchMode = appliedSearchTerm.length > 0;
   const isSearchEditPending = isSearchMode && normalizedSearchTerm !== appliedSearchTerm;
@@ -192,6 +203,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const showSearchError = !catalogBlocked && searchConnection === reconnect && isSearchMode && hasSearchError;
   const isInitialCatalogLoading = !isSearchMode && (isLoading || isGlobalLoading) && products.length === 0;
   const displayProducts = useMemo(() => {
+    if (reviewOnly) return products;
     if (catalogBlocked) return [];
     if (!isSearchMode) return products;
     if (searchConnection !== reconnect) return [];
@@ -200,7 +212,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       productType: 'sellable',
       categoryId: categoryFilter
     }));
-  }, [catalogBlocked, categoryFilter, isSearchMode, products, reconnect, searchConnection, searchResults, statusFilter]);
+  }, [catalogBlocked, categoryFilter, isSearchMode, products, reconnect, reviewOnly, searchConnection, searchResults, statusFilter]);
   const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
 
   useEffect(() => {
@@ -273,7 +285,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
           <span className="product-count">{displayProducts.length} items mostrados</span>
         </div>
 
-        <div className="product-list-actions">
+        {!reviewOnly && <div className="product-list-actions">
           <form
             className="product-search-form"
             role="search"
@@ -361,23 +373,23 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                 Actualizar Precios
             </button>
           )}
-        </div>
+        </div>}
       </div>
 
-      {isSearchEditPending && (
+      {!reviewOnly && isSearchEditPending && (
         <p className="product-search-edit-note">
           Consulta aplicada: «{appliedSearchTerm}». Pulsa Buscar para aplicar el texto editado.
         </p>
       )}
 
-      {isSearchPending && (
+      {!reviewOnly && isSearchPending && (
         <div className="product-search-feedback" role="status" aria-live="polite">
           <span className="ui-spinner ui-spinner--sm product-search-spinner" aria-hidden="true" />
           <span>Buscando productos...</span>
         </div>
       )}
 
-      {showSearchError && (
+      {!reviewOnly && showSearchError && (
         <div className="product-search-error" role="alert">
           <span>No se pudieron buscar los productos. Intenta nuevamente.</span>
           <button
@@ -390,9 +402,9 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {catalogUnavailable ? (
+      {!reviewOnly && catalogUnavailable ? (
         <p role="status">El catálogo local no está disponible.</p>
-      ) : catalogLoading || isInitialCatalogLoading ? (
+      ) : (!reviewOnly && catalogLoading) || isInitialCatalogLoading ? (
         <div className="ui-loading-state loader-container" role="status">
           <div className="ui-spinner spinner" aria-hidden="true" />
           <p>Cargando inventario...</p>
@@ -642,7 +654,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {!catalogBlocked && !isSearchMode && hasMore && (
+      {!reviewOnly && !catalogBlocked && !isSearchMode && hasMore && (
         <div className="pagination-container">
           <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading}>
             {isGlobalLoading ? 'Cargando...' : 'Cargar más productos'}

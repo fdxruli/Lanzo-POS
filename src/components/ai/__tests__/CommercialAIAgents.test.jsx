@@ -142,6 +142,7 @@ function ReviewReturnPage() {
   return (
     <section>
       <output data-testid="review-record-id">{review?.recordReference?.id || ''}</output>
+      <output data-testid="review-navigation-state">{JSON.stringify(location.state || {})}</output>
       <button
         type="button"
         onClick={() => navigate('/agentes-ia', {
@@ -352,7 +353,7 @@ describe('commercial AI center', () => {
         productName: 'Producto A',
         productId: 'product-123',
         costStatus: 'estimated',
-        costSource: 'sale_item_snapshot',
+        costSource: 'inventory_receipt',
         riskType: null
       }],
       usageStatus: { used: 3, limit: 15, remaining: 12 },
@@ -372,10 +373,16 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await screen.findByRole('heading', { name: 'Sí, la utilidad bruta del periodo fue positiva.' });
     await waitFor(() => expect(runtime.historyStorage.size).toBe(1));
+    expect(screen.queryByRole('button', { name: 'Consultar lotes' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Revisar costo' }));
 
     expect(screen.getByTestId('current-path')).toHaveTextContent('/productos?tab=list');
     expect(screen.getByTestId('review-record-id')).toHaveTextContent('product-123');
+    const reviewNavigationState = JSON.parse(screen.getByTestId('review-navigation-state').textContent);
+    const expectedNavigationContext = JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
+    expect(reviewNavigationState.liaProductReview.contextToken).toBe(expectedNavigationContext);
+    expect(reviewNavigationState.liaProductReview.resumeSnapshot.contextToken).toBe(expectedNavigationContext);
+    expect(JSON.stringify(reviewNavigationState)).not.toContain('license-a');
     fireEvent.click(screen.getByRole('button', { name: 'Volver al análisis' }));
 
     await screen.findByRole('heading', { name: 'Sí, la utilidad bruta del periodo fue positiva.' });
@@ -396,6 +403,38 @@ describe('commercial AI center', () => {
     expect(within(resumedHistory).getByRole('button', { name: 'Revisar costo' })).toBeInTheDocument();
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
     expect(runtime.historyStorage.size).toBe(1);
+  });
+
+  it.each([
+    ['business', () => bindTestActor({ tenant: { ...boundAdmin.tenant, opaqueId: 'tenant-b' } })],
+    ['actor', () => bindTestActor({ actorId: 'admin-b' })],
+    ['session', () => bindTestActor({ sessionId: 'session-b' })]
+  ])('does not restore a saved analysis after the %s context changes', async (_context, changeContext) => {
+    const contextToken = JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
+    const snapshot = {
+      version: 1,
+      kind: 'analysis',
+      contextToken,
+      question: '¿Mi negocio es rentable?',
+      periodDays: 30,
+      result: completedAgentResult('Resultado del contexto anterior')
+    };
+    runtime.actorSnapshot = changeContext();
+
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/agentes-ia',
+        state: { liaResumeSnapshot: snapshot }
+      }]}>
+        <CommercialAIAgentsRoute>
+          <CommercialAIAgentsPage />
+        </CommercialAIAgentsRoute>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/El negocio o la sesión cambió/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Resultado del contexto anterior' })).not.toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
   it('keeps the history count current and requires cancellation or confirmation before deleting', async () => {

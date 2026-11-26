@@ -171,7 +171,7 @@ const setReviewActor = (permissions = ['products', 'inventory'], overrides = {})
     runtimeSnapshot,
     canAccessPermission: (permission) => permissions.includes(permission)
   };
-  return JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a', 'license-a']);
+  return JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
 };
 
 const reviewLocation = ({ contextToken, recordReference = { kind: 'product', id: 'product-real-1' }, productName = 'Producto real' } = {}) => ({
@@ -249,7 +249,25 @@ describe('ProductsPage category save flow', () => {
     expect(shared.repository.getProductById).toHaveBeenCalledWith('product-real-1');
   });
 
-  it('does not look up an invalid reference, a changed tenant, or a product without current permission', async () => {
+  it('does not show catalog products while the Lía product reference is pending', async () => {
+    const contextToken = setReviewActor();
+    const pendingProduct = createDeferred();
+    shared.catalog.menu = [{ id: 'catalog-fallback', name: 'Producto que no corresponde' }];
+    shared.repository.getProductById.mockReturnValueOnce(pendingProduct.promise);
+
+    renderPage(reviewLocation({ contextToken }));
+
+    expect(await screen.findByText(/Abriendo el registro del negocio/)).toBeInTheDocument();
+    expect(screen.queryByTestId('listed-product')).not.toBeInTheDocument();
+
+    await act(async () => pendingProduct.resolve({
+      id: 'product-real-1', name: 'Producto real', cost: 42, isActive: true
+    }));
+    expect(await screen.findByTestId('listed-product')).toHaveTextContent('Producto real');
+    expect(screen.queryByText('Producto que no corresponde')).not.toBeInTheDocument();
+  });
+
+  it('does not look up invalid references or disclose a product after business, actor, or session changes', async () => {
     const contextToken = setReviewActor();
     const invalidId = reviewLocation({ contextToken, recordReference: { kind: 'product', id: 'bad\nreference' } });
     renderPage(invalidId);
@@ -257,12 +275,19 @@ describe('ProductsPage category save flow', () => {
     expect(shared.repository.getProductById).not.toHaveBeenCalled();
     cleanup();
 
-    setReviewActor(['products', 'inventory']);
-    const tenantChanged = reviewLocation({ contextToken: JSON.stringify(['tenant-old', 'admin:admin-a', 'session-a', 'license-a']) });
-    renderPage(tenantChanged);
-    expect(await screen.findByText(/negocio o la sesión cambió/i)).toBeInTheDocument();
-    expect(shared.repository.getProductById).not.toHaveBeenCalled();
-    cleanup();
+    const changedContexts = [
+      { tenant: { opaqueId: 'tenant-b' } },
+      { actorKey: 'admin:admin-b' },
+      { sessionId: 'session-b' }
+    ];
+    for (const changedContext of changedContexts) {
+      setReviewActor(['products', 'inventory'], changedContext);
+      renderPage(reviewLocation({ contextToken }));
+      expect(await screen.findByText(/negocio o la sesión cambió/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('listed-product')).not.toBeInTheDocument();
+      expect(shared.repository.getProductById).not.toHaveBeenCalled();
+      cleanup();
+    }
 
     const sameContext = setReviewActor([]);
     renderPage(reviewLocation({ contextToken: sameContext }));

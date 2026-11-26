@@ -16,10 +16,10 @@ describe('approved response and Free boundaries', () => {
   it('preserves every report component and the historical adapter byte for byte', () => {
     const page = source('CommercialAIAgentsPage.jsx');
     const protectedReport = page.slice(page.indexOf('function Metric('), page.indexOf('function HistoryPanel('));
-    // LIA-02 (#597) and Etapa 1: verified additions are limited to contextual
-    // recommendation review actions and their history callback wiring. The
-    // deterministic report calculations and evidence selectors are unchanged.
-    expect(hash(protectedReport)).toBe('ef589584936f144a11d31a6e988a337769322269dc76f4655d9d900462c5996b');
+    // Etapa 1.1 intentionally removes the writable-batch review action and
+    // serializes only opaque business/actor/session context for navigation.
+    // Deterministic report calculations and evidence selectors are unchanged.
+    expect(hash(protectedReport)).toBe('9e0b2bec33e27874f94adc0115ae0083bc3803efcd1bc8973410bbed62ff2d40');
   });
 
   it('preserves the entire original stylesheet including tables, metrics and report breakpoints', () => {

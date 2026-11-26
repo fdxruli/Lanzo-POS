@@ -476,6 +476,36 @@ describe('ProductList inventory entry availability', () => {
 });
 
 describe('ProductList contextual review from Lía', () => {
+  it('keeps the selected product when prior search state exists and hides catalog controls', async () => {
+    mocks.catalogState.hasMore = true;
+    mocks.searchProductsInDB.mockResolvedValueOnce([{
+      id: 'search-result', name: 'Resultado de otra búsqueda', price: 10, cost: 5, stock: 1, isActive: true
+    }]);
+    const { rerender } = render(<ProductList
+      products={[{ id: 'catalog-product', name: 'Producto del catálogo', price: 10, cost: 5, stock: 1, isActive: true }]}
+      categories={[{ id: 'drinks', name: 'Bebidas' }]}
+      isLoading={false}
+    />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar productos' }), { target: { value: 'otra búsqueda' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(await screen.findByText('Resultado de otra búsqueda')).toBeInTheDocument();
+
+    rerender(<ProductList
+      products={[{ id: 'focused-product', name: 'Producto enfocado', price: 10, cost: 5, stock: 1, isActive: true }]}
+      categories={[{ id: 'drinks', name: 'Bebidas' }]}
+      isLoading={false}
+      reviewOnly
+    />);
+
+    expect(screen.getByText('Producto enfocado')).toBeInTheDocument();
+    expect(screen.queryByText('Resultado de otra búsqueda')).not.toBeInTheDocument();
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+    expect(mocks.catalogState.setFilters).not.toHaveBeenCalled();
+  });
+
   it('shows the current catalog cost and keeps the focused product in read-only mode', () => {
     render(<ProductList
       products={[{
