@@ -331,6 +331,26 @@ afterEach(async () => {
 });
 
 describe('real incremental handlers propagate deferred reads to the central recovery timer', () => {
+  it('inventory movement dispatch: an isolated notification wakes catalog and sales delta readers', async () => {
+    mocks.catalogResponses.push({
+      success: true, products: [{ id: 'product-movement', stock: 7, server_version: 2 }],
+      batches: [{ id: 'batch-movement', product_id: 'product-movement', stock: 7, server_version: 2 }],
+      latest_change_seq: 177
+    });
+    mocks.salesResponses.push({ success: true, sales: [{ id: 'sale-movement' }], latest_change_seq: 177 });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({
+      events: [{ entity_type: 'inventory_movement', entity_id: 'movement-177', change_seq: 177,
+        metadata: { product_id: 'product-movement', batch_id: 'batch-movement', sale_id: 'sale-movement' } }],
+      latestChangeSeq: 177, serverLatestChangeSeq: 177
+    }));
+    await start();
+    await orchestrator.pullIncremental('isolated_inventory_notification');
+    expect(mocks.salesApplied).toHaveLength(1);
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.catalogApplied[0].products[0].stock).toBe(7);
+    expect(mocks.generalCursor).toBe(177);
+  });
+
   it('recovers a deferred customer RPC automatically with the real customer handler and no Broadcast', async () => {
     mocks.customerResponses.push(customerEnvelope({ seq: 175, deferred: true }));
     mocks.customerResponses.push(customerEnvelope({ seq: 177, customers: [customerRecord('customer-177')] }));
