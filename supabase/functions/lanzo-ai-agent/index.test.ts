@@ -1489,6 +1489,31 @@ Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valo
   assertEquals(validResponse.status, 200);
   assertEquals(validClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
 
+  // FAR-001: the financial report can derive estimated COGS from a receipt.
+  const receiptClient = analysisClient();
+  const receiptResponse = await makeHandler(receiptClient, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequestWithProduct({
+    ...product,
+    name: 'Producto con costo de recepción',
+    quantity: 2,
+    netSales: 110,
+    unitCost: 30,
+    profit: 50,
+    margin: 50 / 110,
+    averagePrice: 55,
+    costStatus: 'estimated',
+    costSource: 'inventory_receipt'
+  })));
+  assertEquals(receiptResponse.status, 200);
+  const receiptBody = await json(receiptResponse);
+  assertEquals(receiptBody.providerCalled, true);
+  assertEquals(receiptBody.quotaOutcome, 'consumed');
+  assertEquals(receiptClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+
   const legacyClient = analysisClient();
   const legacyResponse = await makeHandler(legacyClient, {
     fetchImpl: async () => {
@@ -1503,6 +1528,8 @@ Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valo
     { ...product, unexpected: true },
     { ...product, costStatus: 'unknown' },
     { ...product, costSource: 'internal' },
+    { ...product, costSource: 'lot_at_sale' },
+    { ...product, costSource: 'catalog_at_sale' },
     { ...product, costStatus: 'd'.repeat(49) },
     { ...product, costSource: 'm'.repeat(65) },
     { ...product, costStatus: ['definitive'] },
@@ -1525,7 +1552,7 @@ Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valo
     assertEquals(client.calls.length, 0);
   }
 
-  assertEquals(providerCalls, 2);
+  assertEquals(providerCalls, 3);
 });
 
 Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva cálculos determinísticos', async () => {

@@ -202,7 +202,7 @@ const COMMERCIAL_PRODUCT_KEYS = new Set([
   'costStatus', 'costSource', 'riskType', 'riskReason'
 ]);
 const COMMERCIAL_PRODUCT_COST_STATUS = new Set(['definitive', 'estimated', 'incomplete']);
-const COMMERCIAL_PRODUCT_COST_SOURCE = new Set(['inventory_movement', 'sale_item_snapshot', 'missing']);
+const COMMERCIAL_PRODUCT_COST_SOURCE = new Set(['inventory_movement', 'sale_item_snapshot', 'inventory_receipt', 'missing']);
 const MAX_PRODUCT_COST_STATUS_LENGTH = 48;
 const MAX_PRODUCT_COST_SOURCE_LENGTH = 64;
 const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
