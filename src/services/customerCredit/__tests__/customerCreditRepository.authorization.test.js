@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   pullIncremental: vi.fn(() => Promise.resolve()),
   getCashMode: vi.fn(() => ({ online: true })),
   applyCloudLedger: vi.fn(),
+  pullCreditSnapshot: vi.fn(),
   createOrGetCustomerPaymentIntent: vi.fn(),
   executeCustomerPaymentIntent: vi.fn(),
   getPendingCustomerPaymentIntent: vi.fn(),
@@ -73,7 +74,7 @@ vi.mock('../../cash/cashLocalRepository', () => ({
 }));
 vi.mock('../../cash/cashActor', () => ({ getCashMode: mocks.getCashMode }));
 vi.mock('../customerCreditCloudRepository', () => ({
-  customerCreditCloudRepository: { getCustomerCreditSummary: vi.fn() }
+  customerCreditCloudRepository: { getCustomerCreditSummary: vi.fn(), pullCreditSnapshot: mocks.pullCreditSnapshot }
 }));
 vi.mock('../customerCreditLocalRepository', () => ({
   customerCreditLocalRepository: {
@@ -125,6 +126,23 @@ describe('customer payment service authorization', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('reads scoped V3 credit as Staff without payment permission and never projects the ledger', async () => {
+    mocks.runtimeState.permissions = ['customers'];
+    mocks.pullCreditSnapshot.mockResolvedValue({
+      success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+      snapshot_reference_change_seq: 4, safe_change_seq: 4, sync_deferred: false, limit: 500,
+      customer_id: 'customer-1', customers: [{ id: 'customer-1' }],
+      ledger_entries: [{ id: 'ledger-1', customer_id: 'customer-1' }],
+      snapshot_complete: true, has_more: false, next_page_cursor: null, ledger_reconciliation_complete: true
+    });
+    await expect(customerCreditRepository.pullCreditSnapshot({ customerId: 'customer-1' })).resolves.toMatchObject({
+      customer_id: 'customer-1', snapshot_complete: true
+    });
+    expect(mocks.applyCloudLedger).not.toHaveBeenCalled();
+    expect(mocks.executeCustomerPaymentIntent).not.toHaveBeenCalled();
+    expect(mocks.pullCreditSnapshot).toHaveBeenCalledWith(expect.objectContaining({ licenseKey: 'LIC-1', customerId: 'customer-1' }));
+  });
 
   it('denies Staff without the independent permission before calling a payment repository', async () => {
     mocks.runtimeState = { actorType: 'staff', permissions: ['customers'] };

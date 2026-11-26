@@ -33,10 +33,8 @@ const routes = [
   [customerCloudRepository, 'upsertCustomer', 'pos_upsert_customer', 'customer_directory'],
   [customerCloudRepository, 'deleteCustomer', 'pos_delete_customer', 'customer_directory'],
   [customerCloudRepository, 'migrateLocalCustomers', 'pos_migrate_local_customers', 'customer_directory'],
-  [customerCloudRepository, 'pullCustomerSnapshot', 'pos_pull_customers_snapshot', 'customer_directory'],
   [customerCloudRepository, 'pullCustomerChanges', 'pos_pull_customer_changes', 'customer_directory'],
   [customerCreditCloudRepository, 'getCustomerCreditSummary', 'pos_get_customer_credit_summary', 'customer_credit'],
-  [customerCreditCloudRepository, 'pullCreditSnapshot', 'pos_pull_customer_credit_snapshot', 'customer_credit'],
   [customerCreditCloudRepository, 'pullCreditChanges', 'pos_pull_customer_credit_changes', 'customer_credit'],
   [customerCreditCloudRepository, 'recordCustomerPayment', 'pos_record_customer_payment', 'customer_credit']
 ];

@@ -7,6 +7,8 @@ on:
     paths:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'src/services/customers/**'
+      - 'src/services/customerCredit/**'
       - 'src/services/products/productRepository.js'
       - 'src/services/products/productCatalogReader.js'
       - 'src/services/products/productCloudRepository.js'
@@ -77,6 +79,16 @@ jobs:
           src/services/products/__tests__/productIndividualRecoveryService.test.js
           src/services/products/__tests__/productBatchArchive.indexeddb.test.js
           src/services/sync/__tests__/snapshotRepositoryDispatch.test.js
+          --maxWorkers=4
+
+      - name: Customer directory V3 and historical credit read regression
+        run: >-
+          npx vitest run
+          src/services/customers/__tests__
+          src/services/customerCredit/__tests__
+          src/services/sync/__tests__/cloudSyncCompatibility.test.js
+          src/services/sync/__tests__/snapshotRepositoryDispatch.test.js
+          src/services/sync/__tests__/snapshotClientHandlers.integration.test.jsx
           --maxWorkers=4
 
       - name: Catalog recovery and lost-response integration on isolated PostgreSQL

@@ -296,6 +296,48 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('recovers an omitted version-conflict projection using a complete V3 identity read, without recreating a customer', async () => {
+    setCloudMode();
+    const id = 'v3-conflict-read';
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(id, { name: 'Base', server_version: 5 }));
+    const existing = await customerRepository.getCustomerById(id);
+    const current = remoteCustomer(id, { name: 'Base', address: 'Cloud', server_version: 6 });
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' })
+      .mockResolvedValueOnce({ success: true, customer: { ...current, name: 'Edited', server_version: 7 } });
+    mocks.cloud.negotiateSnapshotProtocol.mockResolvedValue({ supported: true });
+    mocks.cloud.pullCustomerSnapshot.mockResolvedValue({
+      success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+      snapshot_reference_change_seq: 9, safe_change_seq: 9, sync_deferred: false, limit: 500,
+      customers: [current], has_more: false, snapshot_complete: true, next_page_cursor: null
+    });
+    const result = await customerRepository.saveCustomer({ ...existing, name: 'Edited' }, { existingCustomer: existing });
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.cloud.upsertCustomer.mock.calls.map(([args]) => [args.customer.id, args.expectedVersion]))
+      .toEqual([[id, 5], [id, 6]]);
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+  });
+
+  it('does not queue or recreate an identity after an incomplete V3 conflict read', async () => {
+    setCloudMode();
+    const id = 'v3-conflict-incomplete';
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(id, { name: 'Base', server_version: 5 }));
+    const existing = await customerRepository.getCustomerById(id);
+    const outbox = await db.table(POS_SYNC_STORES.OUTBOX).toArray();
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' });
+    mocks.cloud.negotiateSnapshotProtocol.mockResolvedValue({ supported: true });
+    mocks.cloud.pullCustomerSnapshot.mockResolvedValue({
+      success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+      snapshot_reference_change_seq: 9, safe_change_seq: 9, sync_deferred: true, limit: 500,
+      customers: [], has_more: false, snapshot_complete: true, next_page_cursor: null
+    });
+    const result = await customerRepository.saveCustomer({ ...existing, name: 'Edited' }, { existingCustomer: existing });
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_VERSION_UNAVAILABLE' });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledOnce();
+    expect(await customerRepository.getCustomerById(id)).toEqual(existing);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).toArray()).toEqual(outbox);
+  });
+
   it('applies V2 keyset pages, retains one reference, then recovers the delta into Dexie', async () => {
     setCloudMode();
     const protocol = { supported: true, tenantId: 'tenant-customer-snapshot' };
