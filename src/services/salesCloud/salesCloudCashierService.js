@@ -17,6 +17,7 @@ import {
 } from '../sync/syncConstants';
 import { pullCatalogChanges } from '../products/productSyncHandler';
 import { salesCloudRepository } from './salesCloudRepository';
+import { validateSaleRecoveryPage, validateRecoveredSale } from './salesCloudRecoveryRead';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
@@ -522,7 +523,9 @@ const buildRecoveryDateFrom = (startedAt) => {
   return safeDate.toISOString();
 };
 
-const saveRecoveredCloudSale = async ({ localSaleId, idempotencyKey, payload, cloudSale }) => {
+const saveRecoveredCloudSale = async ({ localSaleId, idempotencyKey, payload, cloudSale, actorHandle }) => {
+  actorHandle?.assertCurrent('pos');
+  validateRecoveredSale({ payload, cloudSale, localSaleId, idempotencyKey });
   const normalized = normalizeCloudSalesPayload(payload);
   const cloudSaleId = cloudSale.id;
   const items = normalized.items.filter((item) => (
@@ -544,14 +547,16 @@ const saveRecoveredCloudSale = async ({ localSaleId, idempotencyKey, payload, cl
       sourceMode: 'cloud_committed',
       metadata
     },
+    actorHandle,
+    recoveryRead: true,
     response: {
-      ...payload,
       sale: { ...cloudSale, local_sale_id: localSaleId, metadata },
       items,
       payments
     }
   });
 
+  actorHandle?.assertCurrent('pos');
   if (!localSale) {
     const error = new Error('CLOUD_SALE_LOCAL_RECOVERY_FAILED');
     error.code = 'CLOUD_SALE_LOCAL_RECOVERY_FAILED';
@@ -560,75 +565,74 @@ const saveRecoveredCloudSale = async ({ localSaleId, idempotencyKey, payload, cl
   return localSale;
 };
 
+const pendingVerification = (message) => ({ success: false, code: CLOUD_SALE_VERIFICATION_PENDING, message });
+
 const findAndRecoverCloudSale = async ({ localSaleId, idempotencyKey, startedAt, licenseKey }) => {
-  let directPayload = null;
-  try {
-    directPayload = await salesCloudRepository.getSale({
-      licenseKey,
-      saleId: localSaleId,
-      force: true
-    });
-    const direct = normalizeCloudSalesPayload(directPayload);
-    const directSale = direct.sales.find((sale) => (
-      matchesCommittedCloudSale(sale, { localSaleId, idempotencyKey })
-    ));
-    if (directSale) {
-      const localSale = await saveRecoveredCloudSale({
-        localSaleId,
-        idempotencyKey,
-        payload: directPayload,
-        cloudSale: directSale
-      });
-      return { success: true, exists: true, saleId: localSale.id, cloudSaleId: directSale.id, localSale };
+  const handle = actorRuntimeController.capture('pos');
+  const assertCurrent = () => {
+    handle.assertCurrent('pos');
+    if (getLicenseKeyFromDetails(useAppStore.getState().licenseDetails) !== licenseKey) {
+      throw new Error('CLOUD_SALE_VERIFICATION_CONTEXT_CHANGED');
     }
+  };
+  const recover = async (payload, cloudSale) => {
+    assertCurrent();
+    const localSale = await saveRecoveredCloudSale({ localSaleId, idempotencyKey, payload, cloudSale, actorHandle: handle });
+    assertCurrent();
+    return { success: true, exists: true, saleId: localSale.id, cloudSaleId: cloudSale.id, localSale };
+  };
+  assertCurrent();
+  let directPayload;
+  try {
+    directPayload = await salesCloudRepository.getSale({ licenseKey, saleId: localSaleId, force: true, actorHandle: handle });
   } catch (error) {
+    assertCurrent();
     Logger.warn('[SalesCloud/Cashier] Consulta directa de recuperación no concluyente:', error);
   }
-
-  const dateFrom = buildRecoveryDateFrom(startedAt);
-  let offset = 0;
-
-  for (let page = 0; page < CLOUD_RECOVERY_MAX_PAGES; page += 1) {
-    const payload = await salesCloudRepository.pullSalesSnapshot({
-      licenseKey,
-      limit: CLOUD_RECOVERY_PAGE_LIMIT,
-      offset,
-      dateFrom,
-      dateTo: null,
-      includeDeleted: true,
-      force: true
-    });
-    if (payload?.success === false) {
-      const error = new Error(payload.message || payload.code || 'CLOUD_SALE_VERIFICATION_FAILED');
-      error.code = payload.code || 'CLOUD_SALE_VERIFICATION_FAILED';
-      throw error;
-    }
-
-    const normalized = normalizeCloudSalesPayload(payload);
-    const cloudSale = normalized.sales.find((sale) => (
-      matchesCommittedCloudSale(sale, { localSaleId, idempotencyKey })
-    ));
-    if (cloudSale) {
-      const localSale = await saveRecoveredCloudSale({
-        localSaleId,
-        idempotencyKey,
-        payload,
-        cloudSale
-      });
-      return { success: true, exists: true, saleId: localSale.id, cloudSaleId: cloudSale.id, localSale };
-    }
-
-    if (normalized.sales.length < CLOUD_RECOVERY_PAGE_LIMIT) {
-      return { success: true, exists: false };
-    }
-    offset += CLOUD_RECOVERY_PAGE_LIMIT;
+  assertCurrent();
+  const directSale = directPayload?.success === true && directPayload.sale;
+  if (directSale && matchesCommittedCloudSale(directSale, { localSaleId, idempotencyKey })) {
+    return recover(directPayload, directSale);
   }
-
-  return {
-    success: false,
-    code: CLOUD_SALE_VERIFICATION_PENDING,
-    message: 'La consulta cloud no pudo completarse dentro del límite seguro de paginación.'
-  };
+  const dateFrom = buildRecoveryDateFrom(startedAt);
+  const protocol = await salesCloudRepository.negotiateSnapshotProtocol({ licenseKey, actorHandle: handle });
+  assertCurrent();
+  let reference = null;
+  let cursor = null;
+  let visibility = null;
+  const seen = new Set();
+  const cursors = new Set();
+  for (let page = 0; page < CLOUD_RECOVERY_MAX_PAGES; page += 1) {
+    assertCurrent();
+    const payload = await salesCloudRepository.pullSalesSnapshot({
+      licenseKey, limit: CLOUD_RECOVERY_PAGE_LIMIT, dateFrom, dateTo: null,
+      snapshotProtocol: protocol, snapshotReferenceChangeSeq: reference, pageCursor: cursor,
+      actorHandle: handle
+    });
+    assertCurrent();
+    const next = validateSaleRecoveryPage(payload, { limit: CLOUD_RECOVERY_PAGE_LIMIT, dateFrom, reference, cursor, visibility });
+    for (const sale of payload.sales) {
+      if (seen.has(sale.id)) throw new Error('CLOUD_SALE_SNAPSHOT_DUPLICATE');
+      seen.add(sale.id);
+    }
+    if (next.cursor) {
+      const key = JSON.stringify(next.cursor);
+      if (cursors.has(key)) throw new Error('CLOUD_SALE_SNAPSHOT_CURSOR_INVALID');
+      cursors.add(key);
+    }
+    const matches = payload.sales.filter(sale => matchesCommittedCloudSale(sale, { localSaleId, idempotencyKey }));
+    if (matches.length > 1) throw new Error('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
+    if (matches.length === 1) return recover(payload, matches[0]);
+    if (next.complete) {
+      // The search is time/actor scoped; a negative result cannot release a
+      // reservation or authorize another financial operation.
+      return pendingVerification('No se encontró la venta dentro del alcance consultado. La reserva se conserva hasta confirmar el intento original.');
+    }
+    reference = next.reference;
+    cursor = next.cursor;
+    visibility = next.visibility;
+  }
+  return pendingVerification('La consulta cloud no pudo completarse dentro del límite seguro de paginación.');
 };
 
 export const salesCloudCashierService = {

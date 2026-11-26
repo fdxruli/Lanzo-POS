@@ -1908,14 +1908,24 @@ export const cashRepository = {
     }
     const actorHandle = actorRuntimeController.capture('cash_register');
     const scope = actorHandle.actorType === 'staff' ? 'mine' : 'all';
+    const assertCurrent = () => {
+      actorHandle.assertCurrent('cash_register');
+      const current = getCashMode();
+      if (current.licenseKey !== mode.licenseKey || current.actor.actorKey !== mode.actor.actorKey) {
+        throw new Error('CASH_HISTORY_CONTEXT_CHANGED');
+      }
+    };
+    assertCurrent();
     const snapshotProtocol = await cashCloudRepository.negotiateSnapshotProtocol({
       licenseKey: mode.licenseKey, actorHandle
     });
-    actorHandle.assertCurrent();
+    assertCurrent();
     const result = await readCashSessionHistory({
       scope,
       actorHandle,
-      fetchPage: ({ referenceChangeSeq, pageCursor }) => cashCloudRepository.pullCashSnapshot({
+      fetchPage: async ({ referenceChangeSeq, pageCursor }) => {
+        assertCurrent();
+        const response = await cashCloudRepository.pullCashSnapshot({
         licenseKey: mode.licenseKey,
         scope,
         limit: 500,
@@ -1923,13 +1933,16 @@ export const cashRepository = {
         snapshotReferenceChangeSeq: referenceChangeSeq,
         pageCursor,
         actorHandle
-      })
+        });
+        assertCurrent();
+        return response;
+      }
     });
     const valid = result.sessions.filter(isCompleteCloudCashSession);
     const cashSessions = valid.filter((session) => !session.deleted_at && isClosedCashSession(session))
       .map((session) => ({ ...session, ...cloudCashSessionToLocal(session) }))
       .sort((a, b) => String(b.fecha_apertura).localeCompare(String(a.fecha_apertura)) || String(a.id).localeCompare(String(b.id)));
-    actorHandle.assertCurrent();
+    assertCurrent();
     return {
       success: true,
       cashSessions,

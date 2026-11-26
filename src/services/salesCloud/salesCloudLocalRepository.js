@@ -299,9 +299,10 @@ export const salesCloudLocalRepository = {
     return { ...existing, ...patch };
   },
 
-  async saveCloudCommittedSaleSnapshot({ localSale = {}, response = {} } = {}) {
+  async saveCloudCommittedSaleSnapshot({ localSale = {}, response = {}, actorHandle = null, recoveryRead = false } = {}) {
     await ensureOpen();
 
+    actorHandle?.assertCurrent();
     const cloudSale = response.sale || {};
     const saleId = localSale.id || cloudSale.local_sale_id || cloudSale.id;
 
@@ -317,15 +318,19 @@ export const salesCloudLocalRepository = {
       'rw',
       [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)],
       async () => {
+        actorHandle?.assertCurrent();
         const existing = await db.table(STORES.SALES).get(saleId);
+        actorHandle?.assertCurrent();
+        if (recoveryRead && existing?.cloudSaleId && existing.cloudSaleId !== cloudSale.id) throw new Error('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
         if (existing?.sourceMode === 'cloud_committed'
             && Number(existing.cloudServerVersion || 0) > Number(cloudSale.server_version || 0)) {
           localSnapshot = existing;
           return;
         }
         localSnapshot = buildLocalCloudCommittedSale({
-          localSale: { ...existing, ...localSale }, cloudSale, items, response
+          localSale: { ...existing, ...localSale, ...(recoveryRead ? { items } : {}) }, cloudSale, items, response
         });
+        actorHandle?.assertCurrent();
         await db.table(STORES.SALES).put(localSnapshot);
 
         const existingLog = await db.table(STORES.TRANSACTION_LOG)
@@ -339,6 +344,7 @@ export const salesCloudLocalRepository = {
           ))
           .first();
 
+        actorHandle?.assertCurrent();
         await db.table(STORES.TRANSACTION_LOG).put({
           id: existingLog?.id || deterministicLogId,
           type: 'CLOUD_SALE',
@@ -354,9 +360,11 @@ export const salesCloudLocalRepository = {
           creditLedgerChargeId: localSnapshot.creditLedgerChargeId || null,
           creditLedgerPaymentId: localSnapshot.creditLedgerPaymentId || null
         });
+        actorHandle?.assertCurrent();
       }
     );
 
+    actorHandle?.assertCurrent();
     return localSnapshot;
   },
 

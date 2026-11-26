@@ -20,7 +20,8 @@ import {
   SYNC_LIMITS
 } from '../sync/syncConstants';
 import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
-import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract, requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -322,10 +323,18 @@ export const salesCloudRepository = {
     return parseRpcPayload(data);
   },
 
-  async getSale({ licenseKey, saleId, force = false }) {
+  async getSale({ licenseKey, saleId, force = false, actorHandle = null }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = { p_sale_id: saleId };
+    if (actorHandle) {
+      // Recovery must not reuse a cached projection from another actor/generation.
+      actorHandle.assertCurrent('pos');
+      const { data, error } = await supabaseClient.rpc('pos_get_sale', { ...baseArgs, ...params });
+      actorHandle.assertCurrent('pos');
+      if (error) throw error;
+      return parseRpcPayload(data);
+    }
     return cachedSalesRpc({
       rpcName: 'pos_get_sale',
       licenseKey,
@@ -363,62 +372,31 @@ export const salesCloudRepository = {
   },
 
   async pullSalesSnapshot({
-    licenseKey,
-    limit = 500,
-    offset = 0,
-    dateFrom = null,
-    dateTo = null,
-    includeDeleted = false,
-    snapshotProtocol = null,
-    snapshotReferenceChangeSeq = null,
-    pageCursor = null,
-    actorHandle = null,
-    force = false
+    licenseKey, limit = 500, dateFrom = null, dateTo = null,
+    snapshotProtocol = null, snapshotReferenceChangeSeq = null, pageCursor = null,
+    actorHandle = null, force = false
   }) {
     assertSupabase();
+    const handle = actorHandle || actorRuntimeController.capture('pos');
+    handle.assertCurrent('pos');
+    const protocol = requireCloudSnapshotContract(snapshotProtocol
+      || await this.negotiateSnapshotProtocol({ licenseKey, actorHandle: handle, force }));
+    handle.assertCurrent('pos');
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    actorHandle?.assertCurrent?.();
-    if (snapshotProtocol?.supported) {
-      const response = await callCloudSnapshotRpc({
-        client: supabaseClient,
-        rpcName: 'pos_pull_sales_snapshot_v2',
-        family: 'sales',
-        authArgs: baseArgs,
-        params: {
-          p_limit: Math.min(normalizeLimit(limit), 500),
-          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
-          p_page_cursor: pageCursor,
-          p_date_from: dateFrom || null,
-          p_date_to: dateTo || null
-        },
-        snapshotContract: snapshotProtocol,
-        actorHandle
-      });
-      actorHandle?.assertCurrent?.();
-      return response;
-    }
-    const params = {
-      p_limit: normalizeLimit(limit),
-      p_offset: Math.max(Number(offset) || 0, 0),
-      p_date_from: dateFrom || null,
-      p_date_to: dateTo || null,
-      p_include_deleted: Boolean(includeDeleted)
-    };
-    return cachedSalesRpc({
-      rpcName: 'pos_pull_sales_snapshot',
-      licenseKey,
-      baseArgs,
-      params,
-      force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_pull_sales_snapshot', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+    handle.assertCurrent('pos');
+    const response = await callCloudSnapshotRpc({
+      client: supabaseClient, rpcName: 'pos_pull_sales_snapshot_v2', family: 'sales',
+      authArgs: baseArgs,
+      params: {
+        p_limit: Math.min(normalizeLimit(limit), 500),
+        p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+        p_page_cursor: pageCursor,
+        p_date_from: dateFrom || null, p_date_to: dateTo || null
+      },
+      snapshotContract: protocol, actorHandle: handle
     });
+    handle.assertCurrent('pos');
+    return response;
   },
 
   async pullSalesChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
