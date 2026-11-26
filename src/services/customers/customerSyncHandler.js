@@ -13,6 +13,7 @@ import {
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
 import { customerCloudRepository } from './customerCloudRepository';
+import { assertCustomerReadContext, readCloudCustomerById } from './customerSnapshotReader';
 import { customerLocalRepository } from './customerLocalRepository';
 import { customerMigrationService } from './customerMigrationService';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
@@ -89,32 +90,14 @@ const savePushConflict = async ({ operation, response, baseline = null, proposed
   }
 };
 
-const pullCurrentCustomer = async (licenseKey, customerId) => {
-  let offset = 0;
-  for (let page = 0; page < 100; page += 1) {
-    const response = await customerCloudRepository.pullCustomerSnapshot({
-      licenseKey,
-      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
-      offset,
-      includeDeleted: true,
-      force: true
-    });
-    if (response?.success === false) throw new Error(response.message || response.code || 'CUSTOMER_SNAPSHOT_FAILED');
-    const rows = Array.isArray(response?.customers) ? response.customers : [];
-    const found = rows.find((item) => String(item?.id) === String(customerId));
-    if (found) return cloudCustomerToLocal(found);
-    if (!(response?.has_more ?? response?.hasMore) || rows.length === 0) return null;
-    const nextOffset = Number(response?.next_offset ?? response?.nextOffset);
-    offset = Number.isSafeInteger(nextOffset) && nextOffset > offset ? nextOffset : offset + rows.length;
-  }
-  throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
+const getConflictCustomer = async ({ response, licenseKey, customerId, actorHandle }) => {
+  assertCustomerReadContext(licenseKey, actorHandle);
+  if (response?.customer?.id === customerId) return cloudCustomerToLocal(response.customer);
+  if (response?.customer?.id) throw new Error('CUSTOMER_SNAPSHOT_IDENTITY_MISMATCH');
+  const found = await readCloudCustomerById({ licenseKey, customerId, actorHandle });
+  assertCustomerReadContext(licenseKey, actorHandle);
+  return found ? cloudCustomerToLocal(found) : null;
 };
-
-const getConflictCustomer = async ({ response, licenseKey, customerId }) => (
-  response?.customer?.id
-    ? cloudCustomerToLocal(response.customer)
-    : pullCurrentCustomer(licenseKey, customerId)
-);
 
 const directoryPayloadToCustomer = (payload = {}, expectedVersion = null) => ({
   id: payload.id,
@@ -349,7 +332,7 @@ export const customerSyncHandler = {
             ? directoryPayloadToCustomer(baselinePayload, expectedVersion)
             : null;
           const local = directoryPayloadToCustomer(localPayload, expectedVersion);
-          const current = await getConflictCustomer({ response, licenseKey, customerId: currentOperation.entityId });
+          const current = await getConflictCustomer({ response, licenseKey, customerId: currentOperation.entityId, actorHandle });
 
           if (current?.deletedAt || current?.deletedTimestamp) {
             const deleted = { ...response, code: 'CUSTOMER_DELETED', customer: current };
@@ -376,6 +359,7 @@ export const customerSyncHandler = {
                   entityId: currentOperation.entityId,
                   prefix: 'customer-outbox-rebase'
                 });
+                assertCustomerReadContext(licenseKey, actorHandle);
                 const rebased = await syncOutboxService.rebaseProcessingCustomerOperation(currentOperation.id, {
                   licenseKey,
                   expectedIdempotencyKey: idempotencyKey,
@@ -396,7 +380,7 @@ export const customerSyncHandler = {
                 });
 
                 if (response?.success === false && response.code === 'VERSION_CONFLICT') {
-                  const newest = await getConflictCustomer({ response, licenseKey, customerId: currentOperation.entityId });
+                  const newest = await getConflictCustomer({ response, licenseKey, customerId: currentOperation.entityId, actorHandle });
                   const retryConflicts = newest
                     ? reconcileCustomerDirectoryEdit({ baseline: current, local: validation.customer, cloud: newest }).conflicts
                     : [];

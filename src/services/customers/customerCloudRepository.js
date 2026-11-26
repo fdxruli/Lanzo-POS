@@ -1,21 +1,13 @@
 import { supabaseClient } from '../supabase';
-import {
-  CLOUD_REQUEST_COOLDOWN,
-  CLOUD_REQUEST_TAGS,
-  CLOUD_REQUEST_TTL,
-  buildBaseRpcContextFromArgs,
-  buildRpcRequestKey,
-  cloudRequestManager,
-  cloudRequestTags,
-  invalidateCloudCacheAfterCustomerMutation
-} from '../cloud';
+import { invalidateCloudCacheAfterCustomerMutation } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   callCloudSnapshotRpc,
   callCloudSyncRpc,
-  negotiateCloudSnapshotContract
+  negotiateCloudSnapshotContract,
+  requireCloudSnapshotContract
 } from '../sync/cloudSyncProtocolV2';
 
 const assertSupabase = () => {
@@ -43,24 +35,6 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   Math.max(Number(limit) || SYNC_LIMITS.DEFAULT_PULL_LIMIT, 1),
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
-
-const cachedCustomerRpc = ({ rpcName, licenseKey, baseArgs, params = {}, cacheScope = null, force = false, fn }) => cloudRequestManager.request({
-  rpcName,
-  key: buildRpcRequestKey(rpcName, {
-    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
-    params,
-    cacheScope
-  }),
-  ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
-  cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
-  force,
-  tags: [
-    CLOUD_REQUEST_TAGS.CUSTOMERS,
-    cloudRequestTags.license(licenseKey),
-    cloudRequestTags.rpc(rpcName)
-  ],
-  fn
-});
 
 const invalidateAfterCustomerSuccess = (licenseKey, response) => {
   if (response?.success !== false) {
@@ -130,8 +104,6 @@ export const customerCloudRepository = {
   async pullCustomerSnapshot({
     licenseKey,
     limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-    offset = 0,
-    includeDeleted = false,
     snapshotProtocol = null,
     snapshotReferenceChangeSeq = null,
     pageCursor = null,
@@ -139,56 +111,27 @@ export const customerCloudRepository = {
     actorHandle = actorRuntimeController.capture('customers')
   }) {
     assertSupabase();
+    actorHandle.assertCurrent('customers');
+    const protocol = requireCloudSnapshotContract(snapshotProtocol
+      || await this.negotiateSnapshotProtocol({ licenseKey, actorHandle, force }));
+    actorHandle.assertCurrent('customers');
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    actorHandle.assertCurrent();
-    const params = {
-      p_limit: normalizeLimit(limit),
-      p_offset: Math.max(Number(offset) || 0, 0),
-      p_include_deleted: Boolean(includeDeleted)
-    };
-
-    if (snapshotProtocol?.supported) {
-      const response = await callCloudSnapshotRpc({
-        client: supabaseClient,
-        rpcName: 'pos_pull_customers_snapshot_v3',
-        family: 'customer_directory',
-        authArgs: baseArgs,
-        params: {
-          p_limit: normalizeLimit(limit),
-          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
-          p_page_cursor: pageCursor
-        },
-        snapshotContract: snapshotProtocol,
-        usesV2Envelope: true,
-        actorHandle
-      });
-      actorHandle.assertCurrent();
-      return response;
-    }
-
-    const response = await cachedCustomerRpc({
-      rpcName: 'pos_pull_customers_snapshot_v2',
-      licenseKey,
-      baseArgs,
-      params,
-      cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
-      force,
-      fn: async () => {
-        const response = await callCloudSyncRpc({
-          client: supabaseClient,
-          rpcName: 'pos_pull_customers_snapshot_v2',
-          authArgs: baseArgs,
-          params,
-          family: 'customer_directory',
-          requireCursor: true,
-          expectedOffset: params.p_offset,
-          actorHandle
-        });
-        actorHandle.assertCurrent();
-        return response;
-      }
+    actorHandle.assertCurrent('customers');
+    const response = await callCloudSnapshotRpc({
+      client: supabaseClient,
+      rpcName: 'pos_pull_customers_snapshot_v3',
+      family: 'customer_directory',
+      authArgs: baseArgs,
+      params: {
+        p_limit: Math.min(normalizeLimit(limit), 500),
+        p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+        p_page_cursor: pageCursor
+      },
+      snapshotContract: protocol,
+      usesV2Envelope: true,
+      actorHandle
     });
-    actorHandle.assertCurrent();
+    actorHandle.assertCurrent('customers');
     return response;
   },
 

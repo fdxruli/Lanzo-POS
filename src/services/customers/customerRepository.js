@@ -8,12 +8,13 @@ import { syncOutboxService } from '../sync/syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
-  SYNC_LIMITS,
   SYNC_ENTITY_TYPES,
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerCloudRepository } from './customerCloudRepository';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { assertCustomerReadContext, readCloudCustomerById } from './customerSnapshotReader';
 import { customerLocalRepository } from './customerLocalRepository';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
@@ -161,39 +162,24 @@ const validateCustomerDirectoryResult = (customer, { creditLimitContext = 'direc
   };
 };
 
-const getCloudCustomerById = async ({ licenseKey, customerId }) => {
-  let offset = 0;
-  for (let page = 0; page < 100; page += 1) {
-    const response = await customerCloudRepository.pullCustomerSnapshot({
-      licenseKey,
-      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
-      offset,
-      includeDeleted: true,
-      force: true
-    });
-    if (response?.success === false) {
-      throw new Error(response.message || response.code || 'CUSTOMER_SNAPSHOT_FAILED');
-    }
-
-    const customers = Array.isArray(response?.customers) ? response.customers : [];
-    const found = customers.find((customer) => String(customer?.id) === String(customerId));
-    if (found) return { customer: cloudCustomerToLocal(found), complete: true };
-
-    const hasMore = Boolean(response?.has_more ?? response?.hasMore);
-    if (!hasMore || customers.length === 0) return { customer: null, complete: true };
-    const nextOffset = Number(response?.next_offset ?? response?.nextOffset);
-    offset = Number.isSafeInteger(nextOffset) && nextOffset > offset
-      ? nextOffset
-      : offset + customers.length;
-  }
-  return { customer: null, complete: false };
+const getCloudCustomerById = async ({ licenseKey, customerId, actorHandle }) => {
+  const found = await readCloudCustomerById({ licenseKey, customerId, actorHandle });
+  return { customer: found ? cloudCustomerToLocal(found) : null, complete: true };
 };
 
-const getResponseCustomer = async ({ response, licenseKey, customerId }) => {
-  if (response?.customer?.id) return cloudCustomerToLocal(response.customer);
-  const snapshot = await getCloudCustomerById({ licenseKey, customerId });
-  if (!snapshot.complete) throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
-  return snapshot.customer;
+const getResponseCustomer = async ({ response, licenseKey, customerId, actorHandle }) => {
+  assertCustomerReadContext(licenseKey, actorHandle);
+  if (response?.customer?.id === customerId) return cloudCustomerToLocal(response.customer);
+  if (response?.customer?.id) throw Object.assign(new Error('CUSTOMER_SNAPSHOT_IDENTITY_MISMATCH'), { code: 'CUSTOMER_SNAPSHOT_IDENTITY_MISMATCH' });
+  // An uncertain conflict read must not turn into an offline write/retry.
+  try {
+    const snapshot = await getCloudCustomerById({ licenseKey, customerId, actorHandle });
+    return snapshot.customer;
+  } catch (cause) {
+    throw Object.assign(new Error('No se pudo confirmar la identidad Cloud del cliente. Conserva tu edición.'), {
+      code: 'CUSTOMER_VERSION_UNAVAILABLE', cause
+    });
+  }
 };
 
 const saveCustomerConflict = async ({ baseline, proposed, current, conflicts, source, reason = 'VERSION_CONFLICT' }) => {
@@ -309,6 +295,18 @@ export const customerRepository = {
         message: 'Tu usuario no tiene permiso para gestionar clientes.'
       };
     }
+    let actorHandle = null;
+    if (mode.cloudEnabled) {
+      try {
+        actorHandle = actorRuntimeController.capture('customers');
+        assertCustomerReadContext(mode.licenseKey, actorHandle);
+      } catch (error) {
+        return { success: false, code: error?.code || 'CUSTOMER_PERMISSION_REQUIRED', message: error.message, error };
+      }
+    }
+    const assertCloudContext = () => {
+      if (actorHandle) assertCustomerReadContext(mode.licenseKey, actorHandle);
+    };
     const isUpdate = Boolean(openedCustomer?.id);
     const id = openedCustomer?.id || customerData?.id || generateID('cust');
     const baseAtOpen = openedCustomer?.conflictCloudSnapshot || openedCustomer;
@@ -481,7 +479,7 @@ export const customerRepository = {
       }
 
       try {
-        const snapshot = await getCloudCustomerById({ licenseKey: mode.licenseKey, customerId: id });
+        const snapshot = await getCloudCustomerById({ licenseKey: mode.licenseKey, customerId: id, actorHandle });
         if (!snapshot.complete) throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
         if (!snapshot.customer) {
           return {
@@ -553,6 +551,7 @@ export const customerRepository = {
     };
 
     const queueAttempt = async (currentAttempt, message) => {
+      assertCloudContext();
       const payload = localCustomerToCloudPayload(currentAttempt.candidate);
       const localResult = await customerLocalRepository.saveCustomerLocal(currentAttempt.candidate, {
         existingCustomer: latestLocal || currentAttempt.baseline,
@@ -593,13 +592,16 @@ export const customerRepository = {
     }
 
     try {
+      assertCloudContext();
       let response = await customerCloudRepository.upsertCustomer({
+        actorHandle,
         licenseKey: mode.licenseKey,
         customer: localCustomerToCloudPayload(attempt.candidate),
         expectedVersion: attempt.expectedVersion,
         idempotencyKey: attempt.idempotencyKey
       });
 
+      assertCloudContext();
       if (response?.success === false && response.code === 'CUSTOMER_DELETED') {
         const deleted = response.customer ? cloudCustomerToLocal(response.customer) : null;
         return makeDeletedCustomerResult({
@@ -611,7 +613,7 @@ export const customerRepository = {
       }
 
       if (response?.success === false && response.code === 'VERSION_CONFLICT' && isUpdate) {
-        const current = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id });
+        const current = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id, actorHandle });
         if (!current) {
           return {
             success: false,
@@ -675,7 +677,9 @@ export const customerRepository = {
           reconciliationAttempts: 1
         };
 
+        assertCloudContext();
         response = await customerCloudRepository.upsertCustomer({
+          actorHandle,
           licenseKey: mode.licenseKey,
           customer: localCustomerToCloudPayload(attempt.candidate),
           expectedVersion: attempt.expectedVersion,
@@ -683,7 +687,7 @@ export const customerRepository = {
         });
 
         if (response?.success === false && response.code === 'VERSION_CONFLICT') {
-          const newest = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id });
+          const newest = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id, actorHandle });
           if (newest?.deletedAt || newest?.deletedTimestamp) {
             return makeDeletedCustomerResult({ baseline: attempt.baseline, proposed: attempt.candidate, current: newest, source: 'customerRepository.retry_conflict' });
           }
@@ -713,7 +717,9 @@ export const customerRepository = {
         };
       }
 
+      assertCloudContext();
       const saved = await customerLocalRepository.applyCloudCustomer(response.customer, {
+        actorHandle,
         source: 'mutation_ack',
         operationId: 'customer_repository_direct_ack'
       });
@@ -721,7 +727,10 @@ export const customerRepository = {
       return { success: true, data: saved, response };
     } catch (error) {
       Logger.warn('[Customers] Upsert cloud fallo:', error);
-      if (isRetryableCloudError(error)) {
+      if (error?.code !== 'CUSTOMER_VERSION_UNAVAILABLE' && isRetryableCloudError(error)) {
+        try { assertCloudContext(); } catch (cause) {
+          return { success: false, code: cause?.code || 'CUSTOMER_SNAPSHOT_CONTEXT_CHANGED', message: cause.message, error: cause };
+        }
         return queueAttempt(
           attempt,
           'Cambios guardados en este dispositivo. Sincronización pendiente.'

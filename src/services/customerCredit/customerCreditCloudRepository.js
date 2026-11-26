@@ -16,7 +16,8 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   callCloudSnapshotRpc,
   callCloudSyncRpc,
-  negotiateCloudSnapshotContract
+  negotiateCloudSnapshotContract,
+  requireCloudSnapshotContract
 } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
@@ -182,9 +183,7 @@ export const customerCreditCloudRepository = {
   async pullCreditSnapshot({
     licenseKey,
     limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-    offset = 0,
     customerId = null,
-    includeDeleted = false,
     snapshotProtocol = null,
     snapshotReferenceChangeSeq = null,
     pageCursor = null,
@@ -192,57 +191,28 @@ export const customerCreditCloudRepository = {
     actorHandle = actorRuntimeController.capture('customers')
   }) {
     assertSupabase();
+    actorHandle.assertCurrent('customers');
+    const protocol = requireCloudSnapshotContract(snapshotProtocol
+      || await this.negotiateSnapshotProtocol({ licenseKey, actorHandle, force }));
+    actorHandle.assertCurrent('customers');
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    actorHandle.assertCurrent();
-    const params = {
-      p_limit: normalizeLimit(limit),
-      p_offset: Math.max(Number(offset) || 0, 0),
-      p_customer_id: customerId,
-      p_include_deleted: Boolean(includeDeleted)
-    };
-    if (snapshotProtocol?.supported) {
-      const response = await callCloudSnapshotRpc({
-        client: supabaseClient,
-        rpcName: 'pos_pull_customer_credit_snapshot_v3',
-        family: 'customer_credit',
-        authArgs: baseArgs,
-        params: {
-          p_limit: Math.min(normalizeLimit(limit), 500),
-          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
-          p_page_cursor: pageCursor,
-          p_customer_id: customerId
-        },
-        snapshotContract: snapshotProtocol,
-        usesV2Envelope: true,
-        actorHandle
-      });
-      actorHandle.assertCurrent();
-      return response;
-    }
-    const response = await cachedCreditRpc({
-      rpcName: 'pos_pull_customer_credit_snapshot_v2',
-      licenseKey,
-      baseArgs,
-      params,
-      cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
-      force,
-      fn: async () => {
-        const response = await callCloudSyncRpc({
-          client: supabaseClient,
-          rpcName: 'pos_pull_customer_credit_snapshot_v2',
-          authArgs: baseArgs,
-          params,
-          family: 'customer_credit',
-          expectedCustomerId: customerId,
-          requireCursor: true,
-          expectedOffset: params.p_offset,
-          actorHandle
-        });
-        actorHandle.assertCurrent();
-        return response;
-      }
+    actorHandle.assertCurrent('customers');
+    const response = await callCloudSnapshotRpc({
+      client: supabaseClient,
+      rpcName: 'pos_pull_customer_credit_snapshot_v3',
+      family: 'customer_credit',
+      authArgs: baseArgs,
+      params: {
+        p_limit: Math.min(normalizeLimit(limit), 500),
+        p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+        p_page_cursor: pageCursor,
+        p_customer_id: customerId
+      },
+      snapshotContract: protocol,
+      usesV2Envelope: true,
+      actorHandle
     });
-    actorHandle.assertCurrent();
+    actorHandle.assertCurrent('customers');
     return response;
   },
 
