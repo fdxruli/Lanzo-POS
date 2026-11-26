@@ -17,6 +17,7 @@ import {
   POS_SYNC_DEFERRED_PULL_RETRY,
   shouldDeferPosBootstrapStartHook,
   SYNC_LIMITS,
+  SYNC_ENTITY_TYPES,
   SYNC_STATUS
 } from './syncConstants';
 import {
@@ -30,6 +31,30 @@ import { LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/loca
 import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
 const entityHandlers = new Map();
+// The registry remains single-owner for writes and lifecycle. Movement events
+// are read notifications: the two independent delta streams have their own
+// durable keys (product and sale), never a shared movement marker.
+const MOVEMENT_READ_TARGETS = [SYNC_ENTITY_TYPES.PRODUCT, SYNC_ENTITY_TYPES.SALE];
+const CATALOG_READ_ALIASES = new Set([SYNC_ENTITY_TYPES.CATEGORY, SYNC_ENTITY_TYPES.PRODUCT_BATCH]);
+const SALES_READ_ALIASES = new Set([SYNC_ENTITY_TYPES.SALE_ITEM, SYNC_ENTITY_TYPES.SALE_PAYMENT, SYNC_ENTITY_TYPES.SALE_CANCELLATION]);
+const LAYAWAY_READ_ALIASES = new Set([
+  SYNC_ENTITY_TYPES.LAYAWAY_PAYMENT,
+  SYNC_ENTITY_TYPES.LAYAWAY_INVENTORY_RESERVATION
+]);
+
+const canonicalEventReadType = (type) => {
+  const handler = entityHandlers.get(type);
+  if (handler && CATALOG_READ_ALIASES.has(type) && handler === entityHandlers.get(SYNC_ENTITY_TYPES.PRODUCT)) {
+    return SYNC_ENTITY_TYPES.PRODUCT;
+  }
+  if (handler && SALES_READ_ALIASES.has(type) && handler === entityHandlers.get(SYNC_ENTITY_TYPES.SALE)) {
+    return SYNC_ENTITY_TYPES.SALE;
+  }
+  if (handler && LAYAWAY_READ_ALIASES.has(type) && handler === entityHandlers.get(SYNC_ENTITY_TYPES.LAYAWAY)) {
+    return SYNC_ENTITY_TYPES.LAYAWAY;
+  }
+  return type;
+};
 const activityListeners = new Set();
 // Opt-in singleton ownership. Default callers never install this binding.
 let executionScope = null;
@@ -41,6 +66,11 @@ const canSchedule = (owner = executionScope) => !owner || (
 const observeJob = (label, factory) => executionScope
   ? executionScope.run(`pos:${label}`, factory) : (legacyWorkStarted = true, factory());
 const unknownHandler = label => executionScope?.markUnobservable(`pos_handler_lifetime:${label}`);
+export const isSyncHandlerHookLifecycleTracked = (handler, hook) => (
+  handler?.executionScopeLifecycle?.version === 1
+  && Array.isArray(handler.executionScopeLifecycle.awaitedHooks)
+  && handler.executionScopeLifecycle.awaitedHooks.includes(hook)
+);
 
 
 const runtime = {
@@ -433,12 +463,16 @@ const stopRealtimeChannel = async () => {
 };
 
 const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
+  const startedHandlers = new Set();
   for (const [entityType, handler] of entityHandlers.entries()) {
-    if (!handler?.onStart) continue;
+    if (!handler?.onStart || startedHandlers.has(handler)) continue;
+    startedHandlers.add(handler);
 
     try {
       if (executionScope && !canSchedule()) return;
-      unknownHandler(`start:${entityType}`);
+      if (!isSyncHandlerHookLifecycleTracked(handler, 'onStart')) {
+        unknownHandler(`start:${entityType}`);
+      }
       const result = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_start_handler_${entityType}` },
@@ -498,15 +532,21 @@ const dispatchPulledEvents = async (
   { isCurrent = null, entityTypes = [], force = false, generation = runtime.generation,
     capturedActorRevision = actorRevision } = {}
 ) => {
-  const grouped = (Array.isArray(events) ? events : []).reduce((acc, event) => {
-    const key = event.entity_type || event.entityType || 'generic';
-    if (!acc.has(key)) acc.set(key, []);
-    acc.get(key).push(event);
-    return acc;
-  }, new Map());
-  for (const entityType of entityTypes) {
-    if (!grouped.has(entityType)) grouped.set(entityType, []);
+  const grouped = new Map();
+  const add = (type, event = null) => {
+    const key = canonicalEventReadType(type);
+    if (!grouped.has(key)) grouped.set(key, []);
+    if (event) grouped.get(key).push(event);
+  };
+  for (const event of Array.isArray(events) ? events : []) {
+    const type = event.entity_type || event.entityType || 'generic';
+    if (type === SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT) {
+      for (const target of MOVEMENT_READ_TARGETS) add(target, event);
+    } else {
+      add(type, event);
+    }
   }
+  for (const entityType of entityTypes) add(entityType);
   if (grouped.size === 0) return { applied: true, processedHandlers: new Set() };
 
   const processedHandlers = new Set();
@@ -514,15 +554,27 @@ const dispatchPulledEvents = async (
   let recoverableFailureError = null;
   for (const [entityType, entityEvents] of grouped.entries()) {
     const handler = entityHandlers.get(entityType);
-    if (!handler?.onEvents) continue;
     if (isCurrent && !isCurrent()) return { applied: false, retryable: false, reason: 'context_stale', processedHandlers };
+    if (!handler?.onEvents) {
+      // A late registration must not lose a movement notification when the
+      // general cursor advances. Preserve its independent durable read.
+      if (entityEvents.some(event => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT)) {
+        const persisted = await persistDeferredHandlerRead(entityType, {
+          state: 'deferred', licenseKey, generation, capturedActorRevision
+        });
+        if (!persisted) return { applied: false, retryable: true, reason: 'deferred_marker_persist_failed', processedHandlers };
+      }
+      continue;
+    }
 
     let handlerResult;
     try {
       if (executionScope && !canSchedule()) {
         return { applied: false, retryable: false, reason: 'scope_closed', processedHandlers };
       }
-      unknownHandler(`events:${entityType}`);
+      if (!isSyncHandlerHookLifecycleTracked(handler, 'onEvents')) {
+        unknownHandler(`events:${entityType}`);
+      }
       handlerResult = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_event_handler_${entityType}` },
@@ -531,7 +583,7 @@ const dispatchPulledEvents = async (
           if (isCurrent && !isCurrent()) return { skipped: true, reason: 'context_stale' };
           return handler.onEvents(entityEvents, {
             licenseKey,
-            force: force || runtime.deferredHandlerReads.has(entityType),
+            force: force || hasDeferredHandlerReadFor(handler),
             reason: force ? 'deferred_handler_retry' : 'pos_sync_events'
           });
         }
@@ -789,6 +841,18 @@ export const posSyncOrchestrator = {
     };
   },
 
+  async deferEntityRead(entityType, { licenseKey = runtime.licenseKey, reason = 'entity_read_deferred' } = {}) {
+    if (!entityType || !runtime.started || !licenseKey || runtime.licenseKey !== licenseKey) return false;
+    const persisted = await persistDeferredHandlerRead(entityType, {
+      state: 'deferred',
+      handler: entityHandlers.get(entityType),
+      licenseKey,
+      generation: runtime.generation
+    });
+    if (persisted) scheduleDeferredPullRecovery(reason);
+    return persisted;
+  },
+
   async start({ licenseDetails, reason = 'manual' } = {}) {
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
     const posTopic = buildPosRealtimeTopic(licenseDetails);
@@ -888,6 +952,19 @@ export const posSyncOrchestrator = {
         ...runtime.deferredHandlerReads,
         ...(Array.isArray(persistedDeferredHandlerReads) ? persistedDeferredHandlerReads : [])
       ]);
+      // Older clients stored one ambiguous marker. Retain both obligations
+      // durably before letting either handler clear its own completion.
+      if (runtime.deferredHandlerReads.has(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT)) {
+        const next = new Set(runtime.deferredHandlerReads);
+        next.delete(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT);
+        for (const target of MOVEMENT_READ_TARGETS) next.add(target);
+        const persisted = await syncMetaService.setDeferredHandlerReads([...next], licenseKey);
+        if (persisted === false) throw new Error('POS_SYNC_MOVEMENT_READ_MARKER_PERSIST_FAILED');
+        if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+          return { started: false, status: runtime.status, stale: true };
+        }
+        runtime.deferredHandlerReads = next;
+      }
       runtime.deferredHandlerBlocked.clear();
       if (!hasDeferredReadWork()) {
         runtime.deferredPullRetryAttempt = 0;

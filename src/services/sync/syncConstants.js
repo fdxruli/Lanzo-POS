@@ -47,6 +47,9 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   SALE_ITEM: 'sale_item',
   SALE_PAYMENT: 'sale_payment',
   SALE_CANCELLATION: 'sale_cancellation',
+  LAYAWAY: 'layaway',
+  LAYAWAY_PAYMENT: 'layaway_payment',
+  LAYAWAY_INVENTORY_RESERVATION: 'layaway_inventory_reservation',
   REPORT: 'report',
   GENERIC: 'generic'
 });
@@ -74,6 +77,7 @@ export const SYNC_OPERATIONS = Object.freeze({
 
 export const SYNC_META_KEYS = Object.freeze({
   LAST_CHANGE_SEQ: 'pos_last_change_seq',
+  LAYAWAY_LAST_CHANGE_SEQ: 'layaway_last_change_seq',
   DEFERRED_READ_PENDING: 'pos_deferred_read_pending',
   DEFERRED_HANDLER_READS: 'pos_deferred_handler_reads',
   SYNC_ENABLED: 'pos_sync_enabled',
@@ -102,6 +106,7 @@ export const POS_DEFERRED_SNAPSHOT_DELAY_MS = Object.freeze({
   CASH: 2000,
   CREDIT: 3000,
   SALES: 4000,
+  LAYAWAYS: 3500,
   REPORTS: 5000
 });
 
@@ -112,6 +117,7 @@ export const POS_BOOTSTRAP_RESOURCES = Object.freeze({
   CASH: 'cash',
   CREDIT: 'credit',
   SALES: 'sales',
+  LAYAWAYS: 'layaways',
   REPORTS: 'reports'
 });
 

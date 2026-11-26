@@ -8,6 +8,7 @@ import {
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerLocalRepository } from '../customers/customerLocalRepository';
+import { assertCustomerReadContext, validateCustomerSnapshotPage } from '../customers/customerSnapshotPage';
 import { cashLocalRepository } from '../cash/cashLocalRepository';
 import { getCashMode } from '../cash/cashActor';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';
@@ -386,22 +387,31 @@ export const customerCreditRepository = {
     return response;
   },
 
-  async pullCreditSnapshot(options = {}) {
+  async pullCreditSnapshot({ customerId = null, limit = 500,
+    snapshotReferenceChangeSeq = null, pageCursor = null } = {}) {
     const mode = getMode();
     if (!mode.cloudEnabled || !mode.online) {
       return { success: true, skipped: true, readOnly: mode.cloudEnabled };
     }
-
+    const actorHandle = actorRuntimeController.capture('customers');
+    assertCustomerReadContext(mode.licenseKey, actorHandle);
+    const pageLimit = Math.min(Math.max(Number(limit) || 500, 1), 500);
     const response = await customerCreditCloudRepository.pullCreditSnapshot({
-      licenseKey: mode.licenseKey,
-      ...options
+      licenseKey: mode.licenseKey, customerId, limit: pageLimit,
+      snapshotReferenceChangeSeq, pageCursor, actorHandle
     });
-
-    if (response?.success === false) {
-      return fail(response.message || 'No se pudo refrescar credito cloud.', response.code || 'CUSTOMER_CREDIT_SNAPSHOT_FAILED', { response });
+    assertCustomerReadContext(mode.licenseKey, actorHandle);
+    validateCustomerSnapshotPage(response, {
+      limit: pageLimit, reference: snapshotReferenceChangeSeq, cursor: pageCursor, rowsKey: 'ledger_entries'
+    });
+    if (response.customer_id !== customerId || !Array.isArray(response.customers)
+      || response.ledger_reconciliation_complete !== response.snapshot_complete
+      || (customerId !== null && (response.customers.some(row => row.id !== customerId)
+        || response.ledger_entries.some(row => row.customer_id !== customerId)))) {
+      throw new Error('CUSTOMER_CREDIT_SNAPSHOT_SCOPE_MISMATCH');
     }
-
-    await applyCreditCloudResponse(response);
+    // No application of debt, ledger, sales or cash from an interface read.
+    // The durable credit sync handler owns local projection/reconciliation.
     return response;
   },
 

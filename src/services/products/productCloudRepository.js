@@ -1,19 +1,11 @@
 import { supabaseClient } from '../supabase';
-import {
-  CLOUD_REQUEST_COOLDOWN,
-  CLOUD_REQUEST_TAGS,
-  CLOUD_REQUEST_TTL,
-  buildBaseRpcContextFromArgs,
-  buildRpcRequestKey,
-  cloudRequestManager,
-  cloudRequestTags,
-  invalidateCloudCacheAfterCatalogMutation
-} from '../cloud';
+import { invalidateCloudCacheAfterCatalogMutation } from '../cloud';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { assertProductInventoryMutationCurrent, captureProductInventoryMutation, hasInitialProductStock } from '../auth/productInventoryAuthority';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
 import { SYNC_LIMITS } from '../sync/syncConstants';
-import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract, requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -114,23 +106,6 @@ const callCatalogMutationRpc = async (rpcName, licenseKey, args, actorHandle = n
   if (response?.success !== false) invalidateCloudCacheAfterCatalogMutation(licenseKey);
   return response;
 };
-
-const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({
-  rpcName,
-  key: buildRpcRequestKey(rpcName, {
-    ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
-    params
-  }),
-  ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
-  cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
-  force,
-  tags: [
-    CLOUD_REQUEST_TAGS.PRODUCTS,
-    cloudRequestTags.license(licenseKey),
-    cloudRequestTags.rpc(rpcName)
-  ],
-  fn
-});
 
 export const productCloudRepository = {
   async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey, actorHandle = null }) {
@@ -245,53 +220,31 @@ export const productCloudRepository = {
 
   async pullCatalogSnapshot({
     licenseKey,
-    entityType = 'all',
     limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-    offset = 0,
-    includeDeleted = true,
     snapshotProtocol = null,
     snapshotReferenceChangeSeq = null,
     pageCursor = null,
-    actorHandle = null,
-    force = false
+    actorHandle = actorRuntimeController.capture()
   }) {
+    actorHandle ||= actorRuntimeController.capture();
+    actorHandle.assertCurrent();
+    const protocol = requireCloudSnapshotContract(snapshotProtocol
+      || await this.negotiateSnapshotProtocol({ licenseKey, actorHandle }));
+    actorHandle.assertCurrent();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    if (snapshotProtocol?.supported) {
-      const params = {
+    actorHandle.assertCurrent();
+    return callCloudSnapshotRpc({
+      client: supabaseClient,
+      rpcName: 'pos_pull_product_catalog_snapshot_v2',
+      family: 'product_catalog',
+      authArgs: baseArgs,
+      params: {
         p_limit: Math.min(normalizeLimit(limit), 500),
         p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
         p_page_cursor: pageCursor
-      };
-      // Snapshot pages carry opaque cursors bound to the current authority
-      // context. Dispatch every page to PostgreSQL so a client cache cannot
-      // replay a projection after actor permissions or the tenant context changes.
-      return callCloudSnapshotRpc({
-        client: supabaseClient,
-        rpcName: 'pos_pull_product_catalog_snapshot_v2',
-        family: 'product_catalog',
-        authArgs: baseArgs,
-        params,
-        snapshotContract: snapshotProtocol,
-        actorHandle
-      });
-    }
-
-    const params = {
-      p_entity_type: entityType,
-      p_limit: normalizeLimit(limit),
-      p_offset: Math.max(Number(offset) || 0, 0),
-      p_include_deleted: Boolean(includeDeleted)
-    };
-    return cachedProductRpc({
-      rpcName: 'pos_pull_product_catalog_snapshot',
-      licenseKey,
-      baseArgs,
-      params,
-      force,
-      fn: () => callRpc('pos_pull_product_catalog_snapshot', {
-        ...baseArgs,
-        ...params
-      })
+      },
+      snapshotContract: protocol,
+      actorHandle
     });
   },
 

@@ -18,7 +18,7 @@ import {
   normalizeCashNetworkError
 } from './cashNetwork';
 import { isCanonicalCashStation, isLocalStationKey } from './cashStation';
-import { callCloudSnapshotRpc, negotiateCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
+import { callCloudSnapshotRpc, negotiateCloudSnapshotContract, requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -263,58 +263,33 @@ export const cashCloudRepository = {
     licenseKey,
     scope = 'mine',
     limit = 100,
-    offset = 0,
-    includeClosed = true,
     snapshotProtocol = null,
     snapshotReferenceChangeSeq = null,
     pageCursor = null,
-    actorHandle = null,
-    force = false,
-    cacheContext = {},
-    allowCache = true
+    actorHandle = null
   }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle?.assertCurrent?.();
-    if (snapshotProtocol?.supported) {
-      const response = await callCloudSnapshotRpc({
-        client: supabaseClient,
-        rpcName: 'pos_pull_cash_snapshot_v2',
-        family: 'cash_register',
-        authArgs: baseArgs,
-        params: {
-          p_scope: scope,
-          p_limit: Math.min(normalizeLimit(limit), 500),
-          p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
-          p_page_cursor: pageCursor
-        },
-        snapshotContract: snapshotProtocol,
-        actorHandle
-      });
-      actorHandle?.assertCurrent?.();
-      return response;
-    }
-    const params = {
-      p_scope: scope,
-      p_limit: Math.min(normalizeLimit(limit), 500),
-      p_offset: Math.max(Number(offset) || 0, 0),
-      p_include_closed: Boolean(includeClosed)
-    };
-    return cachedCashRpc({
-      rpcName: 'pos_pull_cash_snapshot',
-      licenseKey,
-      baseArgs,
-      cacheContext,
-      params,
-      ttlMs: CLOUD_REQUEST_TTL.SHORT,
-      cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
-      force,
-      allowCache,
-      fn: () => invokeCashReadRpc('pos_pull_cash_snapshot', {
-        ...baseArgs,
-        ...params
-      })
+    const protocol = requireCloudSnapshotContract(snapshotProtocol
+      || await negotiateCloudSnapshotContract({ client: supabaseClient, authArgs: baseArgs, actorHandle }));
+    actorHandle?.assertCurrent?.();
+    const response = await callCloudSnapshotRpc({
+      client: supabaseClient,
+      rpcName: 'pos_pull_cash_snapshot_v2',
+      family: 'cash_register',
+      authArgs: baseArgs,
+      params: {
+        p_scope: scope,
+        p_limit: Math.min(normalizeLimit(limit), 500),
+        p_snapshot_reference_change_seq: snapshotReferenceChangeSeq,
+        p_page_cursor: pageCursor
+      },
+      snapshotContract: protocol,
+      actorHandle
     });
+    actorHandle?.assertCurrent?.();
+    return response;
   },
 
   async pullCashChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {

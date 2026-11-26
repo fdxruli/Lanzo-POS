@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const snapshotPage = (rows = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false,
+  categories: [], products: [], batches: [], limit: 500,
+  has_more: false, snapshot_complete: true, next_page_cursor: null, ...rows
+});
+
 const mocks = vi.hoisted(() => ({
   pullCatalogSnapshot: vi.fn(),
   getCategoryById: vi.fn(),
@@ -13,8 +20,13 @@ const mocks = vi.hoisted(() => ({
   applyCloudCategory: vi.fn()
 }));
 
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: { capture: () => ({ assertCurrent() {} }) }
+}));
+
 vi.mock('../productCloudRepository', () => ({
   productCloudRepository: {
+    negotiateSnapshotProtocol: async () => ({ supported: true }),
     pullCatalogSnapshot: mocks.pullCatalogSnapshot,
     upsertCategory: mocks.upsertCategory
   }
@@ -46,7 +58,7 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.pullCatalogSnapshot.mockResolvedValue({
-    success: true,
+    ...snapshotPage(),
     categories: [],
     has_more: false
   });
@@ -76,12 +88,12 @@ const recoverCategory = (args) => recoverLocalCategoryInCloud({
 describe('product category Cloud gate', () => {
   it('accepts only a category found in the active tenant catalog', async () => {
     const category = { id: 'cat-qa', is_active: true };
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [category], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [category], has_more: false });
 
     await expect(ensureCategory({ licenseKey: 'qa-license', categoryId: 'cat-qa' }))
       .resolves.toEqual({ success: true, category });
     expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({
-      licenseKey: 'qa-license', entityType: 'categories', force: true, includeDeleted: true
+      licenseKey: 'qa-license', snapshotReferenceChangeSeq: null, pageCursor: null, limit: 500
     }));
     expect(mocks.getCategoryById).not.toHaveBeenCalled();
   });
@@ -224,7 +236,7 @@ describe('product category Cloud gate', () => {
       isActive: true, createdAt: '2025-01-01T00:00:00.000Z'
     };
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.upsertCategory.mockImplementationOnce(async ({ category, idempotencyKey }) => ({
       success: true,
       category: { ...category, is_active: true, server_version: 1 },
@@ -258,7 +270,7 @@ describe('product category Cloud gate', () => {
     });
     const localCategory = { id: 'cat-after-rpc', name: 'Generales QA', isActive: true };
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.upsertCategory.mockImplementationOnce(async ({ category, idempotencyKey }) => {
       actorCurrent = false;
       return {
@@ -287,7 +299,7 @@ describe('product category Cloud gate', () => {
     });
     const localCategory = { id: 'cat-timeout-revoked', name: 'Higiene QA', isActive: true };
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.upsertCategory.mockImplementationOnce(async () => {
       actorCurrent = false;
       const error = new Error('network timeout after commit');
@@ -307,7 +319,7 @@ describe('product category Cloud gate', () => {
   it('never restores an ID that Cloud returns as deleted, including through explicit recovery', async () => {
     mocks.getCategoryById.mockResolvedValue({ id: 'cat-deleted', name: 'Medicamentos QA', isActive: true });
     mocks.pullCatalogSnapshot.mockResolvedValue({
-      success: true,
+      ...snapshotPage(),
       categories: [{ id: 'cat-deleted', name: 'Medicamentos QA', is_active: false, deleted_at: '2026-01-01T00:00:00Z' }],
       has_more: false
     });
@@ -355,7 +367,7 @@ describe('product category Cloud gate', () => {
   it('rejects another Cloud category with the same normalized name', async () => {
     mocks.getCategoryById.mockResolvedValueOnce({ id: 'cat-local', name: ' Generales QA ', isActive: true });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true,
+      ...snapshotPage(),
       categories: [{ id: 'cat-cloud', name: 'generales   qa', is_active: true }],
       has_more: false
     });
@@ -370,7 +382,7 @@ describe('product category Cloud gate', () => {
     const cloudCategories = [];
     mocks.getCategoryById.mockResolvedValue(localCategory);
     mocks.pullCatalogSnapshot.mockImplementation(async () => ({
-      success: true, categories: [...cloudCategories], has_more: false
+      ...snapshotPage(), categories: [...cloudCategories], has_more: false
     }));
     mocks.upsertCategory.mockImplementation(async ({ category, idempotencyKey }) => {
       let confirmed = cloudCategories.find((item) => item.id === category.id);
@@ -453,7 +465,7 @@ describe('product category Cloud gate', () => {
     await Promise.all([currentReady, staleReady]);
     releaseCurrentTab();
     await cloudReadStarted;
-    resolveCloudRead({ success: true, categories: [], has_more: false });
+    resolveCloudRead({ ...snapshotPage(), categories: [], has_more: false });
     await expect(currentTab).resolves.toMatchObject({ id: localCategory.id });
 
     staleTabCurrent = false;
@@ -470,7 +482,7 @@ describe('product category Cloud gate', () => {
     let cloudCategory = null;
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
     mocks.pullCatalogSnapshot.mockImplementation(async () => ({
-      success: true, categories: cloudCategory ? [cloudCategory] : [], has_more: false
+      ...snapshotPage(), categories: cloudCategory ? [cloudCategory] : [], has_more: false
     }));
     mocks.upsertCategory.mockImplementationOnce(async ({ category }) => {
       cloudCategory = { ...category, is_active: true, server_version: 1 };
@@ -495,7 +507,7 @@ describe('product category Cloud gate', () => {
     let cloudCategory = null;
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
     mocks.pullCatalogSnapshot.mockImplementation(async () => ({
-      success: true, categories: cloudCategory ? [cloudCategory] : [], has_more: false
+      ...snapshotPage(), categories: cloudCategory ? [cloudCategory] : [], has_more: false
     }));
     mocks.upsertCategory.mockImplementation(async ({ category, idempotencyKey }) => {
       if (mocks.upsertCategory.mock.calls.length === 1) {
@@ -537,7 +549,7 @@ describe('product category Cloud gate', () => {
     const localCategory = { id: 'cat-second-timeout-revoked', name: 'Higiene QA', isActive: true };
     let upsertCount = 0;
     mocks.getCategoryById.mockResolvedValueOnce(localCategory);
-    mocks.pullCatalogSnapshot.mockResolvedValue({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValue({ ...snapshotPage(), categories: [], has_more: false });
     mocks.upsertCategory.mockImplementation(async () => {
       upsertCount += 1;
       if (upsertCount === 2) actorCurrent = false;
@@ -557,7 +569,7 @@ describe('product category Cloud gate', () => {
 
   it('does not apply a successful-looking response with a different category ID or recovery receipt', async () => {
     mocks.getCategoryById.mockResolvedValueOnce({ id: 'cat-original', name: 'Generales QA', isActive: true });
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.upsertCategory.mockResolvedValueOnce({
       success: true,
       category: { id: null, name: 'Generales QA', is_active: true },

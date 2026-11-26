@@ -13,14 +13,62 @@ import { getCashSessionStationLabel } from '../../../services/cash/businessCashS
 import { formatBusinessInstant } from '../../../utils/businessTime';
 
 const CajaHistoryList = ({
-  historial,
+  historial: localHistory,
   itemsPerPage = 10,
   title = 'Historial de cortes',
   eyebrow = 'Turnos anteriores',
   isCloudCash = false,
+  isReadOnly = false,
+  readCashHistory = null,
   businessTimezone = null
 }) => {
   const [paginaActual, setPaginaActual] = useState(1);
+  const [cloudHistory, setCloudHistory] = useState(null);
+  const [loadingCloud, setLoadingCloud] = useState(false);
+  const [cloudIncomplete, setCloudIncomplete] = useState(false);
+  const [historyMessage, setHistoryMessage] = useState('');
+  const historial = cloudHistory ?? localHistory;
+
+  const loadCloudHistory = async () => {
+    if (!readCashHistory || loadingCloud || isReadOnly) return;
+    setLoadingCloud(true);
+    setCloudHistory(null);
+    setCloudIncomplete(false);
+    setPaginaActual(1);
+    setHistoryMessage('');
+    try {
+      const response = await readCashHistory();
+      if (response?.success !== true || !Array.isArray(response.cashSessions)) {
+        throw new Error(response?.message || 'No se pudo consultar el historial Cloud.');
+      }
+      setCloudHistory(response.cashSessions);
+      const incomplete = Boolean(response.syncDeferred || response.omittedCount);
+      setCloudIncomplete(incomplete);
+      setHistoryMessage([
+        incomplete ? 'Historial Cloud parcial; no se confirmó su integridad.' : 'Historial Cloud consultado.',
+        response.syncDeferred ? 'Existen cambios todavía pendientes de sincronización.' : '',
+        response.omittedCount ? `${response.omittedCount} sesiones sin identidad financiera verificable no se muestran.` : ''
+      ].filter(Boolean).join(' '));
+    } catch (error) {
+      setHistoryMessage(error?.message || 'No se pudo consultar el historial Cloud.');
+    } finally {
+      setLoadingCloud(false);
+    }
+  };
+
+  const historyControls = isCloudCash && (
+    <div className="cash-opening-notice">
+      <div>
+        <p>{cloudHistory === null ? 'Vista local de los cortes disponibles (puede estar incompleta).' : cloudIncomplete ? 'Consulta Cloud parcial al momento de la lectura.' : 'Consulta Cloud al momento de la lectura.'}</p>
+        {historyMessage && <p role="status">{historyMessage}</p>}
+        {readCashHistory && (
+          <button type="button" className="ui-button ui-button--secondary ui-button--sm" onClick={loadCloudHistory} disabled={loadingCloud || isReadOnly}>
+            {loadingCloud ? 'Consultando…' : isReadOnly ? 'Cloud no disponible' : 'Consultar historial Cloud'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   const historialRender = useMemo(() => {
     const startIndex = (paginaActual - 1) * itemsPerPage;
@@ -113,9 +161,10 @@ const CajaHistoryList = ({
     return (
       <section id="caja-history-container" className="ui-card ui-card--compact caja-card" aria-labelledby="history-title">
         {sectionHeading}
+        {historyControls}
         <div className="ui-empty-state empty-state">
           <Archive className="empty-state-icon" size={30} aria-hidden="true" />
-          <p>No hay historial de cortes registrados.</p>
+          <p>{isCloudCash && cloudHistory === null ? 'No hay cortes en la vista local.' : cloudIncomplete ? 'No se pudo confirmar si existen más cortes.' : 'No hay historial de cortes registrados.'}</p>
         </div>
       </section>
     );
@@ -124,6 +173,7 @@ const CajaHistoryList = ({
   return (
     <section id="caja-history-container" className="ui-card ui-card--compact caja-card" aria-labelledby="history-title">
       {sectionHeading}
+        {historyControls}
 
       <div className="history-list">
         {historialRender.map((c) => (

@@ -2,6 +2,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const snapshotPage = (rows = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false,
+  categories: [], products: [], batches: [], limit: 500,
+  has_more: false, snapshot_complete: true, next_page_cursor: null, ...rows
+});
+
 const mocks = vi.hoisted(() => ({
   cloudEnabled: false,
   businessTypes: ['abarrotes'],
@@ -104,6 +111,7 @@ vi.mock('../productCloudRepository', () => ({
   productCloudRepository: {
     upsertCategory: mocks.upsertCategory,
     upsertProduct: mocks.upsertProduct,
+    negotiateSnapshotProtocol: async () => ({ supported: true }),
     pullCatalogSnapshot: mocks.pullCatalogSnapshot,
     deleteProduct: mocks.deleteProduct,
     toggleProductStatus: mocks.toggleProductStatus,
@@ -168,9 +176,12 @@ const apparelPreparedProduct = ({ serverVersion = 10, updated = [], created = []
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  for (const mock of Object.values(mocks)) {
+    if (typeof mock?.mockReset === 'function') mock.mockReset();
+  }
   mocks.cloudEnabled = false;
   mocks.businessTypes = ['abarrotes'];
-  mocks.licenseDetails = {};
+  mocks.licenseDetails = { valid: true, license_key: 'license-key' };
   mocks.appStatus = 'ready';
   mocks.assertProductActorCurrent.mockReset();
   mocks.captureProductActor.mockReset().mockImplementation(() => ({
@@ -201,12 +212,7 @@ beforeEach(() => {
   mocks.upsertProduct.mockResolvedValue({ success: true, product: { id: 'product-1', category_id: null } });
   mocks.upsertProductBatch.mockResolvedValue({ success: true, batch: { id: 'batch-1' } });
   mocks.toggleProductStatus.mockResolvedValue({ success: true, product: { id: 'product-1' } });
-  mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
-    success: true,
-    products: entityType === 'products' ? [] : undefined,
-    batches: entityType === 'batches' ? [] : undefined,
-    has_more: false
-  }));
+  mocks.pullCatalogSnapshot.mockImplementation(async () => snapshotPage());
   vi.stubGlobal('navigator', { onLine: true });
 });
 
@@ -311,7 +317,7 @@ describe('productRepository directed catalog events', () => {
     });
     mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
       actorRevoked = true;
-      return { success: true, categories: [], has_more: false };
+      return { ...snapshotPage(), categories: [], has_more: false };
     });
 
     await expect(productRepository.confirmLocalCategoryInCloud('category-legacy')).resolves.toMatchObject({
@@ -338,7 +344,7 @@ describe('productRepository directed catalog events', () => {
     });
     mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
       tenantChanged = true;
-      return { success: true, categories: [category], has_more: false };
+      return { ...snapshotPage(), categories: [category], has_more: false };
     });
 
     await expect(productRepository.confirmLocalCategoryInCloud(category.id)).resolves.toMatchObject({
@@ -358,7 +364,7 @@ describe('productRepository directed catalog events', () => {
     mocks.getCategoryById.mockResolvedValueOnce({ id: 'category-legacy', name: 'Generales QA', isActive: true });
     mocks.pullCatalogSnapshot.mockImplementationOnce(async () => {
       mocks.licenseDetails = { valid: true, license_key: 'other-license' };
-      return { success: true, categories: [], has_more: false };
+      return { ...snapshotPage(), categories: [], has_more: false };
     });
 
     await expect(productRepository.confirmLocalCategoryInCloud('category-legacy')).resolves.toMatchObject({
@@ -452,17 +458,12 @@ describe('productRepository directed catalog events', () => {
       product: { id: 'product-1', name: 'Playera QA SKU', rubroContext: 'apparel' },
       batches: [{ id: 'batch-a', attributes: { talla: 'S', color: 'Negro' }, sku: 'CLOUD-TAKEN' }]
     });
-    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
-      success: true,
-      products: entityType === 'products' ? [] : undefined,
-      batches: entityType === 'batches' ? [{ id: 'existing-batch', sku: 'cloud-taken' }] : undefined,
-      has_more: false
-    }));
+    mocks.pullCatalogSnapshot.mockImplementation(async () => snapshotPage({ batches: [{ id: 'existing-batch', sku: 'cloud-taken' }] }));
 
     const result = await productRepository.saveProduct({ name: 'Playera QA SKU' });
 
     expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
-    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.upsertProduct).not.toHaveBeenCalled();
   });
 
@@ -540,12 +541,7 @@ describe('productRepository directed catalog events', () => {
     mocks.businessTypes = ['apparel'];
     mocks.getProductById.mockResolvedValueOnce({ id: 'legacy-apparel', name: 'Playera heredada' });
     mocks.getBatchById.mockResolvedValueOnce(null);
-    mocks.pullCatalogSnapshot.mockImplementation(async ({ entityType }) => ({
-      success: true,
-      products: entityType === 'products' ? [] : undefined,
-      batches: entityType === 'batches' ? [{ id: 'existing-batch', sku: 'LEGACY-TAKEN' }] : undefined,
-      has_more: false
-    }));
+    mocks.pullCatalogSnapshot.mockImplementation(async () => snapshotPage({ batches: [{ id: 'existing-batch', sku: 'LEGACY-TAKEN' }] }));
 
     const result = await productRepository.saveBatch({
       id: 'new-apparel-batch',
@@ -555,7 +551,7 @@ describe('productRepository directed catalog events', () => {
     });
 
     expect(result).toMatchObject({ success: false, code: 'APPAREL_DUPLICATE_SKU' });
-    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledTimes(1);
   });
 
   it.each([false, true])('propagates a rejected local category save without enqueue or success events (PRO=%s)', async (cloudEnabled) => {
@@ -643,7 +639,7 @@ describe('productRepository directed catalog events', () => {
       }
     });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true, categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
+      ...snapshotPage(), categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
     });
     mocks.upsertProduct.mockResolvedValueOnce({
       success: true,
@@ -679,7 +675,7 @@ describe('productRepository directed catalog events', () => {
       }
     });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true, categories: [{ id: 'category-old', name: 'Higiene QA', is_active: true }], has_more: false
+      ...snapshotPage(), categories: [{ id: 'category-old', name: 'Higiene QA', is_active: true }], has_more: false
     });
     mocks.upsertProduct.mockResolvedValueOnce({
       success: true, product: {
@@ -706,7 +702,7 @@ describe('productRepository directed catalog events', () => {
       ...preparedProduct(true),
       product: { id: 'product-1', name: 'Jabón QA', categoryId: 'category-legacy', description: 'Cambio', serverVersion: 2 }
     });
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.getCategoryById.mockResolvedValueOnce({
       id: 'category-legacy', name: 'Higiene QA', isActive: true, syncStatus: 'synced', serverVersion: 1
     });
@@ -737,7 +733,7 @@ describe('productRepository directed catalog events', () => {
       batches: [{ id: 'batch-qa', productId: 'medicine-qa', stock: 8, expiryDate: '2027-05-01', manufacturerBatchId: 'LOT-007' }]
     });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true, categories: [{ id: 'medicines-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
+      ...snapshotPage(), categories: [{ id: 'medicines-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
     });
     mocks.upsertProduct.mockResolvedValueOnce({
       success: true, product: { id: 'medicine-qa', category_id: 'medicines-qa', stock: 12 }
@@ -763,7 +759,7 @@ describe('productRepository directed catalog events', () => {
     mocks.prepareProduct.mockResolvedValueOnce({
       ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
     });
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.getCategoryById.mockResolvedValueOnce({
       id: 'category-pending', name: 'Generales QA', isActive: true,
       syncStatus: 'pending', pendingOperationId: 'category-operation'
@@ -800,7 +796,7 @@ describe('productRepository directed catalog events', () => {
     mocks.prepareProduct.mockResolvedValueOnce({
       ...preparedProduct(false), product: { id: 'product-1', name: 'Con categoría', categoryId: 'category-pending' }
     });
-    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ success: true, categories: [], has_more: false });
+    mocks.pullCatalogSnapshot.mockResolvedValueOnce({ ...snapshotPage(), categories: [], has_more: false });
     mocks.getCategoryById.mockResolvedValueOnce({
       id: 'category-pending', name: 'Generales QA', isActive: true,
       syncStatus: 'pending', pendingOperationId: 'category-operation'
@@ -829,7 +825,7 @@ describe('productRepository directed catalog events', () => {
       ...preparedProduct(true), product: { id: 'product-1', name: 'Medicamento QA', categoryId: 'category-qa', price: 28, serverVersion: 2 }
     });
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true, categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
+      ...snapshotPage(), categories: [{ id: 'category-qa', name: 'Medicamentos QA', is_active: true }], has_more: false
     });
     mocks.upsertProduct.mockResolvedValueOnce({ success: true, product: { id: 'product-1', price: 28 } });
 

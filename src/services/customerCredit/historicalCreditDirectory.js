@@ -2,10 +2,11 @@ import { db, STORES } from '../db/dexie';
 import { useAppStore } from '../../store/useAppStore';
 import { Money } from '../../utils/moneyMath';
 import { customerCloudRepository } from '../customers/customerCloudRepository';
+import { readCloudCustomerById } from '../customers/customerSnapshotReader';
 import { localCustomerToCloudPayload } from '../customers/customerMapper';
 import { getCustomerPhoneValidationError, toIndexedPhoneKey } from '../db/customerPhoneUtils';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
-import { getLicenseKeyFromDetails, isCloudCustomerCreditSyncEnabled, isFin01HistoricalCreditImportEnabled, SYNC_LIMITS } from '../sync/syncConstants';
+import { getLicenseKeyFromDetails, isCloudCustomerCreditSyncEnabled, isFin01HistoricalCreditImportEnabled } from '../sync/syncConstants';
 
 const directoryFieldsMatch = (cloud, payload) => cloud.id === payload.id
   && String(cloud.name ?? '').trim() === payload.name
@@ -20,21 +21,6 @@ const assertDirectoryContext = (licenseKey, handle) => {
   if (!licenseKey || getLicenseKeyFromDetails(details) !== licenseKey
     || !isCloudCustomerCreditSyncEnabled(details) || !isFin01HistoricalCreditImportEnabled(details)) {
     throw new Error('HISTORICAL_DIRECTORY_CONTEXT_CHANGED');
-  }
-};
-const readCloudCustomer = async (licenseKey, customerId, assertCurrent) => {
-  let offset = 0;
-  for (;;) {
-    assertCurrent();
-    const page = await customerCloudRepository.pullCustomerSnapshot({ licenseKey, includeDeleted: true, force: true, offset, limit: SYNC_LIMITS.MAX_PULL_LIMIT });
-    assertCurrent();
-    if (page?.success === false) throw new Error(page.code || 'HISTORICAL_DIRECTORY_READ_FAILED');
-    if (!Array.isArray(page?.customers)) throw new Error('HISTORICAL_DIRECTORY_READ_FAILED');
-    const found = page.customers.find((row) => row.id === customerId);
-    if (found) return found;
-    if (!(page.has_more || page.hasMore)) return null;
-    if (!page.customers.length) throw new Error('HISTORICAL_DIRECTORY_READ_FAILED');
-    offset += page.customers.length;
   }
 };
 const assertCompatible = (cloud, request) => {
@@ -55,7 +41,7 @@ export const verifyPreparedHistoricalCreditDirectory = async ({ licenseKey, batc
     const assertCurrent = () => assertDirectoryContext(licenseKey, handle);
     assertCurrent();
     if (request.licenseKey !== licenseKey || request.tenantId !== batch.manifest.tenant_id) throw new Error('HISTORICAL_DIRECTORY_CONTEXT_CHANGED');
-    const customer = await readCloudCustomer(licenseKey, entry.customer_id, assertCurrent);
+    const customer = await readCloudCustomerById({ licenseKey, customerId: entry.customer_id, actorHandle: handle, assertContextCurrent: assertCurrent });
     if (customer) assertCompatible(customer, request);
   }
 };
@@ -96,7 +82,7 @@ export const prepareHistoricalCreditDirectory = async ({ licenseKey, batch, hand
         payload, idempotencyKey: `fin01-directory:${crypto.randomUUID()}`, state: 'PENDING' };
       await saveRequest(key, request);
     }
-    const existing = await readCloudCustomer(licenseKey, customer.id, assertCurrent);
+    const existing = await readCloudCustomerById({ licenseKey, customerId: customer.id, actorHandle: handle, assertContextCurrent: assertCurrent });
     if (existing) {
       assertCompatible(existing, request);
       await saveRequest(key, { ...request, state: 'VERIFIED_EXISTING', customer: existing });
@@ -110,7 +96,7 @@ export const prepareHistoricalCreditDirectory = async ({ licenseKey, batch, hand
     // row under lock, including one created between the read and this request.
     // Never retry this path with null or with the conflicting Cloud version.
     const response = await customerCloudRepository.upsertCustomer({ licenseKey, customer: request.payload,
-      expectedVersion: 0, idempotencyKey: request.idempotencyKey });
+      expectedVersion: 0, idempotencyKey: request.idempotencyKey, actorHandle: handle });
     assertCurrent();
     if (response?.success !== true || !response.customer) throw new Error(response?.code || 'HISTORICAL_DIRECTORY_UNCERTAIN');
     assertCompatible(response.customer, request);

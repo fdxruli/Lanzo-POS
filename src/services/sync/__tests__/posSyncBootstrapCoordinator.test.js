@@ -27,7 +27,10 @@ vi.mock('../../tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: mocks.assertAccess,
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
-vi.mock('../posSyncOrchestrator', () => ({ posSyncOrchestrator: {
+vi.mock('../posSyncOrchestrator', () => ({
+  isSyncHandlerHookLifecycleTracked: (handler, hook) => handler?.executionScopeLifecycle?.version === 1
+    && handler.executionScopeLifecycle.awaitedHooks?.includes(hook),
+  posSyncOrchestrator: {
   start: mocks.start, stop: mocks.stop,
   schedulePullIncremental: vi.fn(async () => undefined),
   processOutbox: vi.fn(async () => undefined)
@@ -40,15 +43,18 @@ vi.mock('../../customers/customerSyncHandler', () => ({ customerSyncHandler: { o
 vi.mock('../../customerCredit/customerCreditSyncHandler', () => ({ customerCreditSyncHandler: { onStart: vi.fn() } }));
 vi.mock('../../cash/cashSyncHandler', () => ({ cashSyncHandler: { onStart: vi.fn() } }));
 vi.mock('../../salesCloud/salesCloudSyncHandler', () => ({ salesCloudSyncHandler: { onStart: vi.fn() } }));
-vi.mock('../syncConstants', () => ({
-  getLicenseKeyFromDetails: (details) => details?.license_key || null,
-  isCloudPosSyncEnabled: () => mocks.cloudEnabled,
-  POS_BOOTSTRAP_JITTER_MS: { MIN: 0, MAX: 0 },
-  POS_BOOTSTRAP_RESOURCES: {
-    POS: 'pos', PRODUCTS: 'products', CUSTOMERS: 'customers', CASH: 'cash', CREDIT: 'credit', SALES: 'sales', REPORTS: 'reports'
-  },
-  POS_DEFERRED_SNAPSHOT_DELAY_MS: { PRODUCTS: 0, CUSTOMERS: 0, CASH: 0, CREDIT: 0, SALES: 0, REPORTS: 0 }
-}));
+vi.mock('../../salesCloud/layawaySyncHandler', () => ({ layawaySyncHandler: { onStart: vi.fn() } }));
+vi.mock('../syncConstants', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getLicenseKeyFromDetails: (details) => details?.license_key || null,
+    isCloudPosSyncEnabled: () => mocks.cloudEnabled,
+    POS_BOOTSTRAP_JITTER_MS: { MIN: 0, MAX: 0 },
+    POS_DEFERRED_SNAPSHOT_DELAY_MS: { ...actual.POS_DEFERRED_SNAPSHOT_DELAY_MS,
+      PRODUCTS: 0, CUSTOMERS: 0, CASH: 0, CREDIT: 0, SALES: 0, LAYAWAYS: 0, REPORTS: 0 }
+  };
+});
 
 import {
   startPosCloudBootstrap,
@@ -100,6 +106,13 @@ describe('posSyncBootstrapCoordinator route demand ownership', () => {
     expect(mocks.logs.filter(({ message, meta }) => (
       message.includes('module demand') && meta?.resource === 'products'
     ))).toHaveLength(1);
+
+    window.history.pushState({}, '', '/clientes');
+    await vi.runOnlyPendingTimersAsync();
+    await flush();
+    expect(mocks.logs.filter(({ message, meta }) => (
+      message.includes('module demand') && ['customers', 'credit', 'layaways'].includes(meta?.resource)
+    )).map(({ meta }) => meta.resource)).toEqual(['customers', 'credit', 'layaways']);
   });
 
   it('does not patch browser history when cloud sync is disabled', async () => {

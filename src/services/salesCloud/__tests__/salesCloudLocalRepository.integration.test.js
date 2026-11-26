@@ -76,7 +76,7 @@ const qa10Payments = [
 beforeEach(async () => {
   runtime.database = new Dexie(`sales-cloud-3b-${crypto.randomUUID()}`);
   runtime.database.version(1).stores({
-    sales: 'id, status, timestamp, cash_session_id', menu: 'id', product_batches: 'id, productId',
+    sales: 'id, status, timestamp, cash_session_id, cloudSaleId', menu: 'id', product_batches: 'id, productId',
     transaction_log: 'id', sync_cache: 'key', movimientos_caja: 'id, cash_session_id',
     deleted_sales: 'id, deletedAt', waste_logs: 'id, timestamp', layaways: 'id', customer_ledger: 'id'
   });
@@ -89,6 +89,31 @@ afterEach(async () => {
 });
 
 describe('Confirmed Cloud checkout projection', () => {
+  it('recovery of a committed sale twice stores one transaction and never changes stock, lots or cash', async () => {
+    const inventory = { id: 'pizza', stock: 7 };
+    const batch = { id: 'b1', productId: 'pizza', quantity: 7 };
+    const cash = { id: 'cash-original', monto: '10', cash_session_id: 'session-3b' };
+    await runtime.database.table(STORES.MENU).put(inventory);
+    await runtime.database.table(STORES.PRODUCT_BATCHES).put(batch);
+    await runtime.database.table(STORES.MOVIMIENTOS_CAJA).put(cash);
+    const { responsePayload } = makeFixture({ payments: qa10Payments });
+    const response = { ...responsePayload.children[0], items: [{ id: 'i1', sale_id: 'cloud-sale-qa10', product_name: 'Pizza', quantity: 1, unit_price: 100, line_total: 100, batch_id: 'b1' }] };
+    const actorHandle = { assertCurrent: vi.fn() };
+    const args = { localSale: { id: 'local-sale-3b' }, response, actorHandle, recoveryRead: true };
+    await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot(args);
+    const recovered = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot(args);
+    expect(recovered.items).toEqual([expect.objectContaining({ ...response.items[0], name: 'Pizza', price: 100, batchId: 'b1' })]);
+    expect(recovered.payments).toHaveLength(3);
+    expect(await runtime.database.table(STORES.TRANSACTION_LOG).count()).toBe(1);
+    expect(await runtime.database.table(STORES.MENU).get('pizza')).toEqual(inventory);
+    expect(await runtime.database.table(STORES.PRODUCT_BATCHES).get('b1')).toEqual(batch);
+    expect(await runtime.database.table(STORES.MOVIMIENTOS_CAJA).toArray()).toEqual([cash]);
+    await expect(salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({ ...args, localSale: { id: 'different-local-id' } })).rejects.toThrow('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
+    expect(await runtime.database.table(STORES.SALES).get('different-local-id')).toBeUndefined();
+    expect(await runtime.database.table(STORES.TRANSACTION_LOG).count()).toBe(1);
+  });
+
+
   it('atomically clears an old Staff checkout lock only for a server-confirmed closed receipt', async () => {
     const previous = {
       id: 'staff-checkout', status: 'open', isLockedForCheckout: true,

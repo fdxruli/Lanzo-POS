@@ -9,6 +9,7 @@ import {
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { cashCloudRepository } from './cashCloudRepository';
+import { readCashSessionHistory } from './cashHistoryReader';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import {
   areCashStationsEquivalent,
@@ -39,6 +40,7 @@ import {
 } from './cashNetwork';
 import { assertCanUseCashRegister, canAuditCashSessions } from './cashPermissions';
 import {
+  cloudCashSessionToLocal,
   localClosingToCloudPayload,
   localOpeningToCloudPayload
 } from './cashMapper';
@@ -1140,30 +1142,17 @@ export const cashRepository = {
         }
       }
 
-      let cashSessions = [];
-      try {
-        const snapshot = await this.pullCashSnapshot({
-          scope: mode.actor.isStaff ? 'mine' : 'all',
-          includeClosed: true,
-          limit: 50,
-          force,
-          cacheContext: cashReadCacheContext,
-          allowCache: false
-        });
-        cashSessions = snapshot.cashSessions || [];
-      } catch (snapshotError) {
-        if (!isCashNetworkUnavailableError(snapshotError)) {
-          Logger.warn('[Cash] Snapshot posterior a current fallo:', snapshotError);
-        }
-        assertSameScope();
-        cashSessions = await cashLocalRepository.getHistory({
-          actorKey: mode.actor.actorKey,
-          staffUserId: mode.actor.staffUserId,
-          isAdmin: !mode.actor.isStaff,
-          cashStationId: stationId,
-          limit: 50
-        });
-      }
+      // Current-session verification is financial authority; its history is
+      // only a local preview. A complete Cloud history is an explicit UI read
+      // through the stable keyset contract, not part of every preflight.
+      const cashSessions = await cashLocalRepository.getHistory({
+        actorKey: mode.actor.actorKey,
+        staffUserId: mode.actor.staffUserId,
+        isAdmin: false,
+        includeAll: !mode.actor.isStaff,
+        cashStationId: stationId,
+        limit: 50
+      });
 
       assertSameScope();
       cashNetworkWarningActive = false;
@@ -1911,73 +1900,63 @@ export const cashRepository = {
     return { success: true, cashSession: applied.cashSession, response };
   },
 
-  async pullCashSnapshot({
-    scope = 'mine',
-    includeClosed = true,
-    limit = 100,
-    offset = 0,
-    force = false,
-    cacheContext = null,
-    allowCache = false
-  } = {}) {
+  async readCashHistory() {
     const mode = getCashMode();
-
+    assertCanUseCashRegister();
     if (!mode.cloudEnabled || !mode.online) {
-      let station = null;
-      try {
-        station = await getStationForMode(mode);
-      } catch {
-        // An unresolved local station cannot safely expose cached cash rows.
+      return fail('Sin conexión a Caja Cloud. Solo está disponible el historial local.', 'CASH_HISTORY_CLOUD_UNAVAILABLE');
+    }
+    const actorHandle = actorRuntimeController.capture('cash_register');
+    const scope = actorHandle.actorType === 'staff' ? 'mine' : 'all';
+    const assertCurrent = () => {
+      actorHandle.assertCurrent('cash_register');
+      const current = getCashMode();
+      if (current.licenseKey !== mode.licenseKey || current.actor.actorKey !== mode.actor.actorKey) {
+        throw new Error('CASH_HISTORY_CONTEXT_CHANGED');
       }
-      const cashStationId = mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
-        ? station.cashStationId
-        : null;
-      const localStationKey = !mode.cloudEnabled && station?.localStationKey
-        ? station.localStationKey
-        : null;
-      const hasStationScope = Boolean(cashStationId || localStationKey);
-      const cashSessions = !hasStationScope
-        ? []
-        : await cashLocalRepository.getHistory({
-          actorKey: mode.actor.actorKey,
-          staffUserId: mode.actor.staffUserId,
-          isAdmin: false,
-          includeAll: scope === 'all' && !mode.actor.isStaff,
-          cashStationId,
-          localStationKey,
-          limit
-        });
-      return { success: true, cashSessions, movements: [], readOnly: mode.readOnly };
-    }
-    let station = null;
-    try {
-      station = await getStationForMode(mode);
-    } catch {
-      // The request will still carry license/device/staff context.
-    }
-    const response = await cashCloudRepository.pullCashSnapshot({
-      licenseKey: mode.licenseKey,
-      scope,
-      includeClosed,
-      limit,
-      offset,
-      force,
-      cacheContext: cacheContext || buildCashReadCacheContext(mode, station),
-      allowCache
+    };
+    assertCurrent();
+    const snapshotProtocol = await cashCloudRepository.negotiateSnapshotProtocol({
+      licenseKey: mode.licenseKey, actorHandle
     });
-
-    if (response?.success === false) {
-      return fail(response.message || 'No se pudo refrescar caja cloud.', response.code || 'CASH_SNAPSHOT_FAILED', { response });
-    }
-
-    assertAuthoritativeCashResponse(response, 'el snapshot de caja');
-    const applied = await applyCloudResponse(response);
+    assertCurrent();
+    const result = await readCashSessionHistory({
+      scope,
+      actorHandle,
+      fetchPage: async ({ referenceChangeSeq, pageCursor }) => {
+        assertCurrent();
+        const response = await cashCloudRepository.pullCashSnapshot({
+          licenseKey: mode.licenseKey,
+          scope,
+          limit: 500,
+          snapshotProtocol,
+          snapshotReferenceChangeSeq: referenceChangeSeq,
+          pageCursor,
+          actorHandle
+        });
+        assertCurrent();
+        return response;
+      }
+    });
+    const valid = result.sessions.filter(session => isCompleteCloudCashSession(session)
+      && (!isClosedCashSession(session) || (Number.isFinite(Date.parse(session.opened_at))
+        && Number.isFinite(Date.parse(session.closed_at)) && hasCloudValue(session.opening_amount)
+        && Number.isFinite(Number(session.opening_amount)))));
+    const cashSessions = valid.filter((session) => !session.deleted_at && isClosedCashSession(session))
+      .map((session) => ({ ...session, ...cloudCashSessionToLocal(session),
+        monto_conteo_inicial: session.opening_counted_amount ?? null,
+        monto_fondo_sugerido: session.opening_suggested_amount ?? null,
+        diferencia_apertura: session.opening_difference ?? null
+      }))
+      .sort((a, b) => String(b.fecha_apertura).localeCompare(String(a.fecha_apertura)) || String(a.id).localeCompare(String(b.id)));
+    assertCurrent();
     return {
       success: true,
-      cashSessions: applied.cashSessions,
-      movements: applied.movements,
-      latestChangeSeq: response.latest_change_seq,
-      response
+      cashSessions,
+      source: 'cloud',
+      referenceChangeSeq: result.referenceChangeSeq,
+      syncDeferred: result.syncDeferred,
+      omittedCount: result.sessions.length - valid.length
     };
   },
 
@@ -2007,7 +1986,7 @@ export const cashRepository = {
           localStationKey,
           limit: filters.limit || 100
         });
-      return { success: true, cashSessions, readOnly: mode.readOnly };
+      return { success: true, cashSessions, readOnly: mode.readOnly, source: 'local', nextOffset: null };
     }
     let station = null;
     try {
@@ -2026,7 +2005,16 @@ export const cashRepository = {
     }
 
     const applied = await applyCloudResponse(response);
-    return { success: true, cashSessions: applied.cashSessions, response };
+    const rawRows = response.cash_sessions ?? response.cashSessions;
+    const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
+    const offset = Math.max(Number(filters.offset) || 0, 0);
+    return {
+      success: true,
+      cashSessions: applied.cashSessions,
+      source: 'cloud',
+      nextOffset: Array.isArray(rawRows) && rawRows.length === limit ? offset + rawRows.length : null,
+      response
+    };
   }
 };
 

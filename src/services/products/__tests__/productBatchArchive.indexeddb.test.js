@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({ licenseDetails: mocks.license }) } }));
-vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: { getState: () => mocks.actor } }));
+vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: { getState: () => mocks.actor, capture: () => ({ assertCurrent() {} }) } }));
 vi.mock('../../auth/productInventoryAuthority', () => ({
   captureProductInventoryMutation: () => ({ sessionId: 'session-a' }),
   assertProductInventoryMutationCurrent: vi.fn()
@@ -37,7 +37,7 @@ vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: { enqueueOpe
 vi.mock('../productMigrationService', () => ({}));
 vi.mock('../productSyncHandler', () => ({}));
 vi.mock('../productCloudRepository', () => ({
-  productCloudRepository: { pullCatalogSnapshot: mocks.pullCatalogSnapshot, deleteProductBatch: mocks.deleteProductBatch }
+  productCloudRepository: { negotiateSnapshotProtocol: async () => ({ supported: true }), pullCatalogSnapshot: mocks.pullCatalogSnapshot, deleteProductBatch: mocks.deleteProductBatch }
 }));
 
 const stores = {
@@ -83,10 +83,14 @@ beforeAll(async () => {
 });
 afterAll(async () => db?.delete());
 
-const snapshot = ({ entityType, offset, limit }, rows = []) => ({
-  success: true, entity_type: entityType, offset, limit, total: rows.length, has_more: false,
-  latest_change_seq: 8, [entityType === 'product' ? 'products' : 'batches']: rows
+const snapshotPage = (rows = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false,
+  categories: [], products: [], batches: [], limit: 500,
+  has_more: false, snapshot_complete: true, next_page_cursor: null, ...rows
 });
+
+const snapshot = ({ limit }, rows = []) => snapshotPage({ limit, batches: rows });
 
 beforeEach(async () => {
   vi.resetAllMocks();
@@ -108,7 +112,7 @@ describe('archiving a batch with Cloud enabled', () => {
     })]);
     expect((await localRepository.listUnsyncedLocalCatalogForCloud()).deletes.batches).toEqual([]);
     expect(await db.table(stores.MENU).get(productId)).toEqual(product);
-    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({ includeDeleted: true, force: true }));
+    expect(mocks.pullCatalogSnapshot).toHaveBeenCalledWith(expect.objectContaining({ limit: 500, snapshotReferenceChangeSeq: null, pageCursor: null }));
     expect(mocks.deleteProductBatch).not.toHaveBeenCalled();
     expect(mocks.enqueueOperation).not.toHaveBeenCalled();
   });
@@ -123,8 +127,7 @@ describe('archiving a batch with Cloud enabled', () => {
 
   it.each(['incomplete', 'remote tombstone', 'concurrent inventory'])('blocks a %s before archiving', async (mode) => {
     mocks.pullCatalogSnapshot.mockImplementation(async (args) => {
-      if (args.entityType === 'product') return snapshot(args);
-      if (mode === 'incomplete') return { ...snapshot(args), latest_change_seq: null };
+      if (mode === 'incomplete') return { ...snapshot(args), snapshot_reference_change_seq: null };
       if (mode === 'remote tombstone') return snapshot(args, [{ id: batchId, product_id: productId, deleted_at: '2026-11-20' }]);
       await db.table(POS_SYNC_STORES.OUTBOX).put({
         id: 'pending-inventory', entityType: 'inventory_entry', entityId: 'entry-a',
@@ -156,8 +159,7 @@ describe('archiving a batch with Cloud enabled', () => {
     const conflicts = db.table(POS_SYNC_STORES.CONFLICTS);
     await conflicts.put(unrelated);
 
-    mocks.pullCatalogSnapshot.mockImplementation(async (args) => snapshot(args, args.entityType === 'product_batch'
-      ? [{ id: 'local-batch-02', product_id: productId }] : []));
+    mocks.pullCatalogSnapshot.mockImplementation(async (args) => snapshot(args, [{ id: 'local-batch-02', product_id: productId }]));
     await expect(productRepository.deleteBatch(archiveRequest)).resolves.toMatchObject({ success: false, blocked: true });
     expect(await conflicts.get(priorConflict.id)).toEqual(priorConflict);
 

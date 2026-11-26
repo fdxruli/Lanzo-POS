@@ -6,7 +6,8 @@ import { customerCreditSyncHandler } from '../customerCredit/customerCreditSyncH
 import { productLocalRepository } from '../products/productLocalRepository';
 import { productSyncHandler } from '../products/productSyncHandler';
 import { salesCloudSyncHandler } from '../salesCloud/salesCloudSyncHandler';
-import { posSyncOrchestrator } from './posSyncOrchestrator';
+import { layawaySyncHandler } from '../salesCloud/layawaySyncHandler';
+import { isSyncHandlerHookLifecycleTracked, posSyncOrchestrator } from './posSyncOrchestrator';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
@@ -25,13 +26,14 @@ const RESOURCE_DELAY = Object.freeze({
   [POS_BOOTSTRAP_RESOURCES.CASH]: POS_DEFERRED_SNAPSHOT_DELAY_MS.CASH,
   [POS_BOOTSTRAP_RESOURCES.CREDIT]: POS_DEFERRED_SNAPSHOT_DELAY_MS.CREDIT,
   [POS_BOOTSTRAP_RESOURCES.SALES]: POS_DEFERRED_SNAPSHOT_DELAY_MS.SALES,
+  [POS_BOOTSTRAP_RESOURCES.LAYAWAYS]: POS_DEFERRED_SNAPSHOT_DELAY_MS.LAYAWAYS,
   [POS_BOOTSTRAP_RESOURCES.REPORTS]: POS_DEFERRED_SNAPSHOT_DELAY_MS.REPORTS
 });
 
 const ROUTE_RESOURCES = Object.freeze([
   { test: (path) => path === '/' || path === '', resources: [POS_BOOTSTRAP_RESOURCES.POS] },
   { test: (path) => path.startsWith('/productos'), resources: [POS_BOOTSTRAP_RESOURCES.PRODUCTS] },
-  { test: (path) => path.startsWith('/clientes'), resources: [POS_BOOTSTRAP_RESOURCES.CUSTOMERS, POS_BOOTSTRAP_RESOURCES.CREDIT] },
+  { test: (path) => path.startsWith('/clientes'), resources: [POS_BOOTSTRAP_RESOURCES.CUSTOMERS, POS_BOOTSTRAP_RESOURCES.CREDIT, POS_BOOTSTRAP_RESOURCES.LAYAWAYS] },
   { test: (path) => path.startsWith('/caja'), resources: [POS_BOOTSTRAP_RESOURCES.CASH] },
   { test: (path) => path.startsWith('/ventas'), resources: [POS_BOOTSTRAP_RESOURCES.REPORTS, POS_BOOTSTRAP_RESOURCES.SALES] }
 ]);
@@ -310,7 +312,10 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
 
   if (owner && (!canSchedule() || !owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
   // Snapshot providers do not yet expose their full raw/descendant lifetime.
-  owner?.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
+  if (owner && !(normalizedResource === POS_BOOTSTRAP_RESOURCES.LAYAWAYS
+    && isSyncHandlerHookLifecycleTracked(layawaySyncHandler, 'onStart'))) {
+    owner.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
+  }
   const result = await runWithLocalTenantSyncLease(
     { license_key: licenseKey },
     { reason: `deferred_snapshot_handler_${normalizedResource}` },
@@ -327,6 +332,8 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
           return customerCreditSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
         case POS_BOOTSTRAP_RESOURCES.SALES:
           return salesCloudSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.LAYAWAYS:
+          return layawaySyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
         case POS_BOOTSTRAP_RESOURCES.REPORTS:
           return { skipped: true, reason: 'reports_load_on_repository_demand' };
         default:

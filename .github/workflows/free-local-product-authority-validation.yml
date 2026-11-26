@@ -7,12 +7,30 @@ on:
     paths:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'scripts/qa/single-instance-f012d1/registry.test.js'
+      - 'scripts/qa/single-instance-f012d/sync.test.js'
+      - 'src/services/sync/__tests__/layawaySync.integration.test.jsx'
+      - 'src/services/sync/posSyncOrchestrator.js'
+      - 'src/services/sync/__tests__/posSyncOrchestrator*.test.js'
+      - 'src/services/products/productSyncHandler.js'
+      - 'src/services/salesCloud/**'
+      - 'src/services/cash/**'
+      - 'src/services/customers/**'
+      - 'src/services/customerCredit/**'
       - 'src/services/products/productRepository.js'
+      - 'src/services/products/productCatalogReader.js'
+      - 'src/services/products/productCloudRepository.js'
+      - 'src/services/products/productCategoryCloudGate.js'
+      - 'src/services/products/productIndividualRecoveryService.js'
+      - 'src/services/products/__tests__/productCatalogReader.test.js'
       - 'src/services/products/__tests__/productRepository.freeLocalAuthority.test.js'
       - 'src/services/products/__tests__/productSyncHandler.cutover.test.js'
       - 'src/services/products/productLocalCatalogRecovery.js'
       - 'src/services/products/productMigrationService.js'
       - 'scripts/supabase/catalog_recovery_pg_regression.py'
+      - 'scripts/supabase/layaway_coherent_read_pg_regression.py'
+      - 'supabase/tests/fixtures/layaway-coherent-read-live.json'
+      - 'supabase/migrations/*_layaway_coherent_read_v1.sql'
       - 'supabase/migrations/*_recover_local_product_group.sql'
       - 'src/services/inventory/inventoryEntryService.js'
       - 'src/services/inventory/__tests__/inventoryEntryService*.test.js'
@@ -49,6 +67,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Layaway coherent reads on isolated PostgreSQL 17
+        run: python3 scripts/supabase/layaway_coherent_read_pg_regression.py --isolated-fixture
+
+      - name: Cold commercial registry contract
+        run: npx vitest run scripts/qa/single-instance-f012d1/registry.test.js --maxWorkers=1
+
+      - name: Inventory movement dispatch regression
+        run: npx vitest run src/services/sync/__tests__/posSyncOrchestrator.realHandlers.test.js --maxWorkers=2
+
+      - name: Inventory movement two-device projection with IndexedDB
+        run: npx vitest run src/services/sync/__tests__/inventoryMovementDispatch.integration.test.jsx --maxWorkers=1
+
+      - name: Orchestrator lifecycle, deferred reads and Outbox regression
+        run: >-
+          npx vitest run
+          scripts/qa/single-instance-f012d/sync.test.js
+          src/services/sync/__tests__/layawaySync.integration.test.jsx
+          src/services/sync/__tests__/posSyncOrchestrator.deferredRead.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.lifecycle.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.outbox.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.realtime.test.js
+          --maxWorkers=4
+
       - name: Focused product / inventory / authority regression tests
         run: >-
           npx vitest run
@@ -61,6 +102,43 @@ jobs:
           src/services/inventory/__tests__/inventoryEntryService.test.js
           src/services/inventory/__tests__/inventoryEntryService.freeLocalAuthority.test.js
           src/store/slices/license/licenseSessionTransitions.test.js
+          --maxWorkers=4
+
+      - name: Product catalog keyset read and recovery regression
+        run: >-
+          npx vitest run
+          src/services/products/__tests__/productCatalogReader.test.js
+          src/services/products/__tests__/productCategoryCloudGate.test.js
+          src/services/products/__tests__/productRepository.events.test.js
+          src/services/products/__tests__/productIndividualRecoveryService.test.js
+          src/services/products/__tests__/productBatchArchive.indexeddb.test.js
+          src/services/sync/__tests__/snapshotRepositoryDispatch.test.js
+          --maxWorkers=4
+
+      - name: Customer directory V3 and historical credit read regression
+        run: >-
+          npx vitest run
+          src/services/customers/__tests__
+          src/services/customerCredit/__tests__
+          src/services/sync/__tests__/cloudSyncCompatibility.test.js
+          src/services/sync/__tests__/snapshotRepositoryDispatch.test.js
+          src/services/sync/__tests__/snapshotClientHandlers.integration.test.jsx
+          --maxWorkers=4
+
+      - name: Sale recovery V2 and cash history regression
+        run: >-
+          npx vitest run
+          src/services/salesCloud/__tests__
+          src/services/cash/cashHistoryReader.test.js
+          src/services/cash/cashRepository.stationAlignment.test.js
+          src/services/cash/cashRepository.networkRecovery.test.js
+          src/services/cash/cashRepository.adminCloseReview.test.js
+          src/services/cash/cashLocalRepository.test.js
+          src/components/caja/sections/__tests__/CajaHistoryList.test.jsx
+          src/components/caja/sections/__tests__/CajaStaffAuditPanel.progressiveDisclosure.test.jsx
+          src/hooks/__tests__/useCaja.networkRecovery.test.jsx
+          src/pages/__tests__/CajaPage.progressiveDisclosure.test.jsx
+          src/services/ecommerce/__tests__/ecommercePosConversionService.test.js
           --maxWorkers=4
 
       - name: Catalog recovery and lost-response integration on isolated PostgreSQL
@@ -92,6 +170,23 @@ jobs:
           src/services/products/__tests__/productRepository.freeLocalAuthority.test.js
           src/services/products/__tests__/productSyncHandler.cutover.test.js
           src/store/slices/license/licenseSessionTransitions.test.js
+          src/services/customers/customerCloudRepository.js
+          src/services/customers/customerSnapshotPage.js
+          src/services/customers/customerSnapshotReader.js
+          src/services/customers/customerRepository.js
+          src/services/customers/customerSyncHandler.js
+          src/services/customerCredit/customerCreditCloudRepository.js
+          src/services/customerCredit/customerCreditRepository.js
+          src/services/customerCredit/historicalCreditDirectory.js
+          src/services/salesCloud/salesCloudRepository.js
+          src/services/salesCloud/salesCloudCashierService.js
+          src/services/salesCloud/salesCloudRecoveryRead.js
+          src/services/salesCloud/salesCloudLocalRepository.js
+          src/services/cash/cashHistoryReader.js
+          src/services/cash/cashRepository.js
+          src/services/sync/posSyncOrchestrator.js
+          src/services/products/productSyncHandler.js
+          src/services/salesCloud/salesCloudSyncHandler.js
 
       - name: Production build
         run: npm run build

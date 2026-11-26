@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const snapshotPage = (rows = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false,
+  categories: [], products: [], batches: [], limit: 500,
+  has_more: false, snapshot_complete: true, next_page_cursor: null, ...rows
+});
+
 const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   runMigration: vi.fn(),
@@ -68,6 +75,7 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   addInventoryEntry: mocks.addInventoryEntry,
   upsertCategory: mocks.upsertCategory,
   upsertProductBatch: mocks.upsertProductBatch,
+  negotiateSnapshotProtocol: async () => ({ supported: true }),
   pullCatalogSnapshot: mocks.pullCatalogSnapshot,
   deleteProduct: mocks.deleteProduct,
   deleteCategory: mocks.deleteCategory,
@@ -118,7 +126,7 @@ describe('product sync repeated cutover safety', () => {
     mocks.listOperationsForEntity.mockResolvedValue([]);
     mocks.getMeta.mockResolvedValue(12);
     mocks.pullCatalogSnapshot.mockResolvedValue({
-      success: true, categories: [], products: [], batches: [], has_more: false
+      ...snapshotPage(), categories: [], products: [], batches: [], has_more: false
     });
   });
 
@@ -436,7 +444,7 @@ describe('product sync repeated cutover safety', () => {
   it('holds a product outbox operation when Cloud does not confirm its selected category', async () => {
     const response = { success: true, product: { id: 'product-category', category_id: null } };
     mocks.pullCatalogSnapshot.mockResolvedValueOnce({
-      success: true, categories: [{ id: 'category-qa', is_active: true }], has_more: false
+      ...snapshotPage(), categories: [{ id: 'category-qa', is_active: true }], has_more: false
     });
     mocks.upsertProduct.mockResolvedValue(response);
 

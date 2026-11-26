@@ -7,7 +7,8 @@ vi.mock('../../auth/actorRuntimeController', async (importOriginal) => ({ ...awa
   return { actorType: boundary.actorType, assertCurrent() { if (generation !== boundary.generation) throw new Error('ACTOR_CONTEXT_STALE'); } };
 } } }));
 vi.mock('../../customers/customerCloudRepository', () => ({ customerCloudRepository: {
-  upsertCustomer: boundary.upsert, pullCustomerSnapshot: boundary.pull, migrateLocalCustomers: vi.fn()
+  upsertCustomer: boundary.upsert, pullCustomerSnapshot: boundary.pull, migrateLocalCustomers: vi.fn(),
+  negotiateSnapshotProtocol: async () => ({ supported: true })
 } }));
 vi.mock('../customerCreditCloudRepository', () => ({ customerCreditCloudRepository: { historicalCreditBatch: boundary.rpc } }));
 
@@ -40,7 +41,11 @@ beforeEach(async () => {
   await openTestTenantRuntime();
   await db.table(STORES.CUSTOMERS).put({ ...local });
   await db.table(STORES.CUSTOMER_LEDGER).put({ ...movement });
-  boundary.pull.mockImplementation(async () => ({ success: true, customers: [...boundary.directory.values()], has_more: false }));
+  boundary.pull.mockImplementation(async () => ({
+    success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+    snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false, limit: 500,
+    customers: [...boundary.directory.values()], has_more: false, snapshot_complete: true, next_page_cursor: null
+  }));
   // Controlled Cloud double: mirrors the installed create/version guard and
   // financial protocol. This is NOT an execution of PostgreSQL or Production.
   boundary.upsert.mockImplementation(async ({ customer, expectedVersion }) => {
@@ -102,6 +107,18 @@ describe('FIN-01 directory bridge: real tenant Dexie, simulated Cloud', () => {
     expect(boundary.upsert).toHaveBeenCalledTimes(1);
   });
 
+  it('does not create an identity or change historical debt on a deferred directory read', async () => {
+    const missing = await migration.preview({ licenseKey });
+    const original = await db.table(STORES.CUSTOMERS).get(local.id);
+    const originalLedger = await db.table(STORES.CUSTOMER_LEDGER).get(movement.id);
+    const pull = boundary.pull.getMockImplementation();
+    boundary.pull.mockImplementationOnce(async () => ({ ...await pull(), sync_deferred: true }));
+    await expect(migration.prepareDirectory({ licenseKey, reviewedHash: missing.hash })).rejects.toThrow('CUSTOMER_SNAPSHOT_DEFERRED');
+    expect(boundary.upsert).not.toHaveBeenCalled();
+    expect(await db.table(STORES.CUSTOMERS).get(local.id)).toEqual(original);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).get(movement.id)).toEqual(originalLedger);
+  });
+
   it('does not prepare on startup, reconnect or a read-only review', async () => {
     await migration.runInitialMigrationIfNeeded({ licenseKey });
     await migration.runInitialMigrationIfNeeded({ licenseKey });
@@ -151,7 +168,11 @@ describe('FIN-01 directory bridge: real tenant Dexie, simulated Cloud', () => {
     await expect(migration.prepareDirectory({ licenseKey, reviewedHash: missing.hash })).rejects.toThrow('timeout');
     const retryReview = await migration.preview({ licenseKey });
     await migration.prepareDirectory({ licenseKey, reviewedHash: retryReview.hash });
-    expect(boundary.upsert.mock.calls[0][0]).toEqual(boundary.upsert.mock.calls[1][0]);
+    const [{ actorHandle: firstActor, ...firstRequest }, { actorHandle: retryActor, ...retryRequest }] =
+      boundary.upsert.mock.calls.map(([request]) => request);
+    expect(firstRequest).toEqual(retryRequest);
+    expect(firstActor.assertCurrent).toBeTypeOf('function');
+    expect(retryActor.assertCurrent).toBeTypeOf('function');
     expect(boundary.directory.size).toBe(1);
     expect(boundary.receipts.size).toBe(0);
   });

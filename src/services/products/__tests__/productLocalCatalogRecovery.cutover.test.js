@@ -3,9 +3,16 @@ import 'fake-indexeddb/auto';
 import { execFileSync } from 'node:child_process';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const snapshotPage = (rows = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 8, safe_change_seq: 8, sync_deferred: false,
+  categories: [], products: [], batches: [], limit: 500,
+  has_more: false, snapshot_complete: true, next_page_cursor: null, ...rows
+});
+
 const mocks = vi.hoisted(() => ({
   recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), negotiateSnapshotProtocol: vi.fn(),
-  getMeta: vi.fn(), setMeta: vi.fn(),
+  getMeta: vi.fn(), setMeta: vi.fn(), advanceMeta: vi.fn(),
   tenantLease: vi.fn(), readInventory: vi.fn(), saveConflict: vi.fn()
 }));
 
@@ -43,9 +50,16 @@ vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: {
   listOperationsForEntity: vi.fn(async () => [])
 } }));
 vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
-  getMeta: mocks.getMeta, setMeta: mocks.setMeta
+  getMeta: mocks.getMeta, setMeta: mocks.setMeta, advanceMeta: mocks.advanceMeta
 } }));
 vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: { saveConflict: mocks.saveConflict } }));
+vi.mock('../../auth/actorRuntimeController', () => ({
+  actorRuntimeController: {
+    capture: () => ({ assertCurrent() {} }),
+    getState: () => ({ actorKey: 'admin:cutover', actorType: 'admin', sessionId: 'session-cutover',
+      permissions: ['products', 'inventory'], tenant: { opaqueId: 'CUTOVER' }, deviceRef: 'device-cutover' })
+  }
+}));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract,
   negotiateSnapshotProtocol: mocks.negotiateSnapshotProtocol, pullCatalogSnapshot: mocks.snapshot,
@@ -93,8 +107,9 @@ describe('atomic catalog recovery and local confirmation', () => {
     mocks.contract.mockResolvedValue({ success: true, contract_version: 1 });
     mocks.getMeta.mockResolvedValue(true);
     mocks.setMeta.mockResolvedValue(true);
-    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: false, reason: 'legacy_fixture' });
-    mocks.snapshot.mockResolvedValue({ success: true, categories: [], products: [], batches: [] });
+    mocks.advanceMeta.mockImplementation(async (_key, seq) => seq);
+    mocks.negotiateSnapshotProtocol.mockResolvedValue({ supported: true });
+    mocks.snapshot.mockResolvedValue(snapshotPage());
     mocks.recover.mockImplementation(async (args) => asReceipt(args));
   });
 
