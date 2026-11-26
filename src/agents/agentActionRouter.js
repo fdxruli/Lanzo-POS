@@ -32,12 +32,12 @@ const SAFE_ROUTES = {
   },
   '/productos': {
     label: 'Productos',
-    permission: 'products',
+    permission: ['products', 'inventory'],
     aliases: ['producto', 'productos', 'inventario', 'stock', 'catalogo', 'catálogo']
   },
   '/productos?tab=list': {
     label: 'Lista de productos',
-    permission: 'products',
+    permission: ['products', 'inventory'],
     aliases: ['lista de productos', 'bajo margen', 'agotado', 'agotados', 'stock bajo', 'precio', 'costo']
   },
   '/productos?tab=add': {
@@ -52,7 +52,7 @@ const SAFE_ROUTES = {
   },
   '/productos?tab=batches': {
     label: 'Lotes',
-    permission: 'products',
+    permission: 'inventory',
     aliases: ['lote', 'lotes', 'caducidad producto', 'fifo']
   },
   '/productos?tab=categories': {
@@ -248,7 +248,65 @@ export const resolveAgentAction = (action = {}) => {
   };
 };
 
-export const executeAgentAction = (resolvedAction, navigate) => {
+const RECORD_REVIEW_ROUTES = Object.freeze({
+  product: '/productos?tab=list',
+  batches: '/productos?tab=batches'
+});
+
+const hasControlCharacter = (value) => {
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+};
+
+const isSafeRecordId = (value) => (
+  (typeof value === 'string' || typeof value === 'number')
+  && String(value).trim().length > 0
+  && String(value).trim().length <= 180
+  && !hasControlCharacter(value)
+);
+
+/**
+ * Resolve record reviews only through LANZO-owned routes. The record id is
+ * carried in router state (never interpolated into a path or accepted from an
+ * AI-provided route).
+ */
+export const resolveAgentRecordReviewAction = ({ kind = 'product', recordId } = {}) => {
+  const route = RECORD_REVIEW_ROUTES[kind];
+  const referenceValid = isSafeRecordId(recordId);
+  if (!route || !referenceValid) {
+    return {
+      id: `record-review-${kind}`,
+      label: kind === 'batches' ? 'Consultar lotes' : 'Revisar producto',
+      type: AGENT_ACTION_TYPES.REVIEW,
+      route: '',
+      routeLabel: '',
+      permission: '',
+      canNavigate: false,
+      isRouteAllowed: false,
+      confirmationRequired: false,
+      status: 'blocked_reference',
+      recordReference: null,
+      steps: []
+    };
+  }
+
+  const resolved = resolveAgentAction({
+    type: AGENT_ACTION_TYPES.REVIEW,
+    label: kind === 'batches' ? 'Consultar lotes' : 'Revisar producto',
+    route
+  });
+  return {
+    ...resolved,
+    confirmationRequired: false,
+    recordReference: { kind, id: String(recordId).trim() }
+  };
+};
+
+export const executeAgentAction = (resolvedAction, navigate, navigationOptions) => {
   if (!resolvedAction) {
     return { success: false, message: 'Acción no disponible.' };
   }
@@ -260,8 +318,15 @@ export const executeAgentAction = (resolvedAction, navigate) => {
     };
   }
 
+  if (resolvedAction.status === 'blocked_reference') {
+    return {
+      success: false,
+      message: 'El registro relacionado no tiene una referencia válida.'
+    };
+  }
+
   if (resolvedAction.canNavigate && resolvedAction.route) {
-    navigate(resolvedAction.route);
+    navigate(resolvedAction.route, navigationOptions);
     return {
       success: true,
       message: `Navegando a ${resolvedAction.routeLabel || resolvedAction.route}.`
@@ -278,5 +343,6 @@ export default {
   AGENT_ACTION_TYPES,
   getAllowedAgentRoutes,
   resolveAgentAction,
+  resolveAgentRecordReviewAction,
   executeAgentAction
 };

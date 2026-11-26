@@ -15,6 +15,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import CommercialAIHistoryModal from './CommercialAIHistoryModal';
 import {
   loadSalesProfitabilityProducts,
@@ -44,8 +45,9 @@ import {
   validateLiaScenarioForm
 } from './liaFormValidation';
 import { getAIAgentUsageStatus } from '../../services/aiService';
+import { useActorAccess } from '../../services/auth/useActorAccess';
+import { executeAgentAction, resolveAgentRecordReviewAction } from '../../agents/agentActionRouter';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import {
   buildSalesProfitabilityHistoryEntry,
   buildSalesProfitabilityHistoryScopeKey,
@@ -1197,7 +1199,39 @@ function CoverageEvidence({ response }) {
   );
 }
 
-function NarrativeEvidence({ response }) {
+const getRecommendationReviewTarget = (recommendation, references = []) => {
+  const evidenceKeys = new Set(asArray(recommendation?.evidenceKeys).filter((key) => typeof key === 'string'));
+  const matches = asArray(references).filter((reference) => evidenceKeys.has(reference?.evidenceKey));
+  if (matches.length !== 1) return null;
+
+  const reference = matches[0];
+  if (recommendation?.focus?.type && recommendation.focus.type !== 'product') return null;
+  if (recommendation?.focus?.type === 'product'
+    && recommendation.focus.key !== reference.productName
+    && recommendation.focus.key !== reference.evidenceKey) return null;
+
+  const needsCostReview = reference.costStatus === 'estimated'
+    || reference.costStatus === 'incomplete'
+    || reference.riskType === 'missing_cost';
+  const hasProfitabilityRisk = ['negative_margin', 'low_margin', 'many_sales_low_profit', 'high_sales_low_contribution']
+    .includes(reference.riskType);
+  return {
+    productId: reference.productId,
+    productName: reference.productName,
+    costReview: needsCostReview || Boolean(reference.costSource),
+    actions: [
+      {
+        kind: 'product',
+        label: needsCostReview ? 'Revisar costo' : hasProfitabilityRisk ? 'Revisar rentabilidad' : 'Revisar producto'
+      },
+      ...(needsCostReview && reference.costSource === 'inventory_receipt'
+        ? [{ kind: 'batches', label: 'Consultar lotes', costReview: true }]
+        : [])
+    ]
+  };
+};
+
+function NarrativeEvidence({ response, result, onReviewRecommendation, canReviewProduct, canReviewInventory }) {
   const narrative = response.aiNarrative;
   const candidates = asArray(response.assortment?.opportunityCandidates);
   if (narrative?.status === 'unavailable') {
@@ -1223,8 +1257,13 @@ function NarrativeEvidence({ response }) {
           <div className="commercial-ai-narrative__recommendations">
             <strong>Oportunidades priorizadas por Lía</strong>
             <div className="commercial-ai-narrative__recommendation-list">
-              {asArray(narrative.recommendations).map((item) => (
-                <article className="commercial-ai-narrative__recommendation" key={`${item.title}-${item.priority || 'medium'}`}>
+              {asArray(narrative.recommendations).map((item) => {
+                const target = getRecommendationReviewTarget(item, result?.navigationReferences);
+                const availableActions = target?.actions.filter((action) => (
+                  action.kind === 'batches' ? canReviewInventory : canReviewProduct
+                )) || [];
+                return (
+                  <article className="commercial-ai-narrative__recommendation" key={`${item.title}-${item.priority || 'medium'}`}>
                   <div>
                     <b>{item.title}</b>
                     <span>
@@ -1239,8 +1278,23 @@ function NarrativeEvidence({ response }) {
                   {item.action && <p><strong>Qué probar:</strong> {item.action}</p>}
                   {item.measurement && <p><strong>Qué medir:</strong> {item.measurement}</p>}
                   {item.expectedImpact && <small>Qué permitirá validar: {item.expectedImpact} · Requiere confirmación manual</small>}
-                </article>
-              ))}
+                    {availableActions.length > 0 && (
+                      <div className="commercial-ai-recommendation-actions" aria-label="Revisar evidencia relacionada">
+                        {availableActions.map((action) => (
+                          <button
+                            key={`${item.title}-${action.kind}`}
+                            type="button"
+                            className="commercial-ai-recommendation-action"
+                            onClick={() => onReviewRecommendation?.(item, result, { ...target, ...action })}
+                          >
+                            <Search size={16} aria-hidden="true" /> {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1284,7 +1338,7 @@ function NarrativeStatusNotice({ result }) {
   );
 }
 
-function AnalysisResult({ result, onDownload, isDownloading }) {
+function AnalysisResult({ result, onDownload, isDownloading, onReviewRecommendation, canReviewProduct, canReviewInventory }) {
   const response = result?.response || null;
   const isLocalAnswer = ['out_of_scope', 'not_ready', 'local_answer'].includes(response?.status);
   const narrative = response?.aiNarrative || null;
@@ -1328,13 +1382,27 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
           {narrativeAvailable ? (
             <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
               <h3>Qué probar</h3>
-              <NarrativeEvidence response={response} />
+              <NarrativeEvidence
+                response={response}
+                result={result}
+                onReviewRecommendation={onReviewRecommendation}
+                canReviewProduct={canReviewProduct}
+                canReviewInventory={canReviewInventory}
+              />
             </section>
           ) : (
             <section className="commercial-ai-executive-block">
               <h3>Análisis calculado por Lanzo</h3>
               <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
-              {narrative?.status === 'unavailable' && <NarrativeEvidence response={response} />}
+              {narrative?.status === 'unavailable' && (
+                <NarrativeEvidence
+                  response={response}
+                  result={result}
+                  onReviewRecommendation={onReviewRecommendation}
+                  canReviewProduct={canReviewProduct}
+                  canReviewInventory={canReviewInventory}
+                />
+              )}
             </section>
           )}
 
@@ -1494,6 +1562,8 @@ const historyEntryToAnalysisResult = (entry) => {
   const ai = report?.ai || {};
   if (!report?.result) return null;
   return {
+    historyEntryId: entry.id,
+    navigationReferences: asArray(entry.navigationReferences),
     response: {
       status: report.result.status,
       executiveSummary: report.result.executiveSummary,
@@ -1552,6 +1622,9 @@ function HistoryPanel({
   onClear,
   onDownload,
   isDownloading,
+  onReviewRecommendation,
+  canReviewProduct,
+  canReviewInventory,
   onClose
 }) {
   const [confirmation, setConfirmation] = useState(null);
@@ -1691,6 +1764,9 @@ function HistoryPanel({
               result={historyEntryToAnalysisResult(selectedEntry)}
               onDownload={() => onDownload(selectedEntry)}
               isDownloading={isDownloading}
+              onReviewRecommendation={onReviewRecommendation}
+              canReviewProduct={canReviewProduct}
+              canReviewInventory={canReviewInventory}
             />
           </section>
         )}
@@ -1700,10 +1776,28 @@ function HistoryPanel({
   );
 }
 
+const isValidLiaResumeSnapshot = (snapshot, contextToken) => {
+  if (!snapshot || typeof snapshot !== 'object' || snapshot.version !== 1
+    || !contextToken || snapshot.contextToken !== contextToken) return false;
+  if (snapshot.kind === 'history') {
+    return typeof snapshot.historyEntryId === 'string'
+      && /^\d{10,13}-\d{1,6}$/u.test(snapshot.historyEntryId);
+  }
+  if (snapshot.kind !== 'analysis') return false;
+  return typeof snapshot.question === 'string'
+    && snapshot.question.length <= 1200
+    && [7, 30, 90, 365].includes(snapshot.periodDays)
+    && snapshot.result?.response
+    && ['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer'].includes(snapshot.result.response.status);
+};
+
 export default function CommercialAIAgentsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const actorSnapshot = useActorRuntimeSnapshot();
+  const actorAccess = useActorAccess();
+  const actorSnapshot = actorAccess.runtimeSnapshot;
   const businessTimezone = resolveBusinessTimezone(companyProfile);
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const tenantOpaqueId = actorSnapshot?.tenant?.opaqueId || '';
@@ -1719,11 +1813,22 @@ export default function CommercialAIAgentsPage() {
     if (!tenantOpaqueId || !actorKey || !sessionId || !licenseKey) return null;
     return JSON.stringify([tenantOpaqueId, actorKey, sessionId, licenseKey]);
   }, [tenantOpaqueId, actorKey, sessionId, licenseKey]);
-  const [question, setQuestion] = useState('');
-  const [periodDays, setPeriodDays] = useState(30);
-  const [compare, setCompare] = useState(false);
-  const [scenario, setScenario] = useState({});
-  const [competitiveEvidence, setCompetitiveEvidence] = useState({ competitors: [] });
+  const resumeCandidate = location.state?.liaResumeSnapshot;
+  const resumeContextMismatch = Boolean(resumeCandidate?.contextToken
+    && resumeCandidate.contextToken !== historyContextToken);
+  const resolvedResumeSnapshot = isValidLiaResumeSnapshot(resumeCandidate, historyContextToken)
+    ? resumeCandidate
+    : null;
+  const resumeSnapshotRef = useRef(resolvedResumeSnapshot);
+  if (resumeSnapshotRef.current?.contextToken !== historyContextToken) {
+    resumeSnapshotRef.current = resolvedResumeSnapshot;
+  }
+  const resumeSnapshot = resumeSnapshotRef.current;
+  const [question, setQuestion] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.question : '');
+  const [periodDays, setPeriodDays] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.periodDays : 30);
+  const [compare, setCompare] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.compare === true : false);
+  const [scenario, setScenario] = useState(() => resumeSnapshot?.kind === 'analysis' && resumeSnapshot.scenario && typeof resumeSnapshot.scenario === 'object' ? resumeSnapshot.scenario : {});
+  const [competitiveEvidence, setCompetitiveEvidence] = useState(() => resumeSnapshot?.kind === 'analysis' && resumeSnapshot.competitiveEvidence && typeof resumeSnapshot.competitiveEvidence === 'object' ? resumeSnapshot.competitiveEvidence : { competitors: [] });
   const [questionValidationSubmitted, setQuestionValidationSubmitted] = useState(false);
   const [scenarioValidationSubmitted, setScenarioValidationSubmitted] = useState(false);
   const [competitiveValidationSubmitted, setCompetitiveValidationSubmitted] = useState(false);
@@ -1737,11 +1842,11 @@ export default function CommercialAIAgentsPage() {
   const [productLoadRetry, setProductLoadRetry] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState(null);
-  const [result, setResult] = useState(null);
-  const [downloadContext, setDownloadContext] = useState(null);
+  const [result, setResult] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.result : null);
+  const [downloadContext, setDownloadContext] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.downloadContext || null : null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(null);
-  const [usageStatus, setUsageStatus] = useState(null);
+  const [usageStatus, setUsageStatus] = useState(() => resumeSnapshot?.kind === 'analysis' ? resumeSnapshot.usageStatus || resumeSnapshot.result?.usageStatus || null : null);
   const [isLoadingUsage, setIsLoadingUsage] = useState(true);
   const [usageError, setUsageError] = useState(null);
   const [historyState, setHistoryState] = useState({
@@ -1752,10 +1857,12 @@ export default function CommercialAIAgentsPage() {
   });
   const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState(null);
   const [historyModalContext, setHistoryModalContext] = useState(null);
+  const [resumeIssue, setResumeIssue] = useState(null);
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const questionRef = useRef(null);
   const [isDownloadingHistory, setIsDownloadingHistory] = useState(false);
   const analysisInFlightRef = useRef(false);
+  const restoreAnalysisInputsRef = useRef(resumeSnapshot?.kind === 'analysis');
   const analysisInputsRevisionRef = useRef(0);
   const historyContextTokenRef = useRef(historyContextToken);
   const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
@@ -1777,6 +1884,11 @@ export default function CommercialAIAgentsPage() {
       }
     };
   }, [historyContextToken]);
+
+  useEffect(() => {
+    if (!resumeSnapshot || location.state?.liaResumeSnapshot?.version !== 1) return;
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate, resumeSnapshot]);
 
   const refreshUsage = useCallback(async () => {
     setIsLoadingUsage(true);
@@ -1814,6 +1926,7 @@ export default function CommercialAIAgentsPage() {
   useEffect(() => {
     let active = true;
     analysisInputsRevisionRef.current += 1;
+    const activeResume = resumeSnapshot?.kind === 'analysis' ? resumeSnapshot : null;
     historyScopeRef.current = { contextToken: null, scopeKey: null };
     setHistoryState({
       contextToken: historyContextToken,
@@ -1823,12 +1936,20 @@ export default function CommercialAIAgentsPage() {
     });
     setSelectedHistoryEntryId(null);
     setHistoryModalContext(null);
-    setResult(null);
-    setDownloadContext(null);
+    setResumeIssue(resumeContextMismatch
+      ? 'El negocio o la sesión cambió. Por seguridad, el análisis anterior no se restauró.'
+      : null);
+    setResult(activeResume?.result || null);
+    setDownloadContext(activeResume?.downloadContext || null);
     setDownloadError(null);
-    setQuestion('');
-    setScenario({});
-    setCompetitiveEvidence({ competitors: [] });
+    setQuestion(activeResume?.question || '');
+    setPeriodDays(activeResume?.periodDays || 30);
+    setCompare(activeResume?.compare === true);
+    setScenario(activeResume?.scenario && typeof activeResume.scenario === 'object' ? activeResume.scenario : {});
+    setCompetitiveEvidence(activeResume?.competitiveEvidence && typeof activeResume.competitiveEvidence === 'object'
+      ? activeResume.competitiveEvidence
+      : { competitors: [] });
+    restoreAnalysisInputsRef.current = Boolean(activeResume);
     setQuestionValidationSubmitted(false);
     setScenarioValidationSubmitted(false);
     setCompetitiveValidationSubmitted(false);
@@ -1867,11 +1988,20 @@ export default function CommercialAIAgentsPage() {
         isLoading: false,
         issue: loaded.issue
       });
+      if (resumeSnapshot?.kind === 'history') {
+        if (loaded.entries.some((entry) => entry.id === resumeSnapshot.historyEntryId)) {
+          setSelectedHistoryEntryId(resumeSnapshot.historyEntryId);
+          setHistoryModalContext(historyContextToken);
+          setResumeIssue(null);
+        } else {
+          setResumeIssue('La consulta guardada ya no está disponible en el historial de este negocio y sesión.');
+        }
+      }
     };
 
     void loadHistory();
     return () => { active = false; };
-  }, [historyContext, historyContextToken]);
+  }, [historyContext, historyContextToken, resumeContextMismatch, resumeSnapshot]);
 
   const period = useMemo(
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
@@ -1966,6 +2096,10 @@ export default function CommercialAIAgentsPage() {
   }, [excludedProducts]);
 
   useEffect(() => {
+    if (restoreAnalysisInputsRef.current) {
+      restoreAnalysisInputsRef.current = false;
+      return;
+    }
     const inferred = inferCommercialScenarioFromQuestion(question);
     setScenario(inferred.intent === intent ? inferred.scenario : {});
     setProductSearch('');
@@ -2306,6 +2440,66 @@ export default function CommercialAIAgentsPage() {
       }
     }, 0);
   };
+
+  const canReviewProduct = actorAccess.canAccessPermission('products')
+    || actorAccess.canAccessPermission('inventory');
+  const canReviewInventory = actorAccess.canAccessPermission('inventory');
+  const handleReviewRecommendation = useCallback((recommendation, resultForReview, target) => {
+    void recommendation;
+    if (!target || !historyContextToken || !resultForReview?.response) return;
+    if (target.kind === 'batches' && !actorAccess.canAccessPermission('inventory')) return;
+    if (target.kind !== 'batches' && !canReviewProduct) return;
+
+    const action = resolveAgentRecordReviewAction({ kind: target.kind, recordId: target.productId });
+    if (!action.canNavigate || !action.recordReference) return;
+    const resumeSnapshot = resultForReview.historyEntryId
+      ? {
+        version: 1,
+        kind: 'history',
+        contextToken: historyContextToken,
+        historyEntryId: resultForReview.historyEntryId
+      }
+      : {
+        version: 1,
+        kind: 'analysis',
+        contextToken: historyContextToken,
+        question,
+        periodDays,
+        compare,
+        scenario,
+        competitiveEvidence,
+        result: resultForReview,
+        downloadContext,
+        usageStatus: usageStatus || resultForReview.usageStatus || null
+      };
+    const navigationState = {
+      liaProductReview: {
+        contextToken: historyContextToken,
+        recordReference: action.recordReference,
+        productName: target.productName,
+        costReview: target.costReview === true,
+        resumeSnapshot
+      }
+    };
+    const execution = executeAgentAction(
+      action,
+      (route, options) => navigate(route, options),
+      { state: navigationState }
+    );
+    if (!execution.success) setAnalysisError(execution.message);
+  }, [
+    actorAccess,
+    canReviewProduct,
+    compare,
+    competitiveEvidence,
+    downloadContext,
+    historyContextToken,
+    navigate,
+    periodDays,
+    question,
+    scenario,
+    usageStatus
+  ]);
 
   const activeHistoryState = historyState.contextToken === historyContextToken
     ? historyState
@@ -2683,7 +2877,17 @@ export default function CommercialAIAgentsPage() {
         {isAnalyzing && <div className="commercial-ai-loading" role="status"><span className="commercial-ai-spinner" /> Calculando resultados y preparando una explicación clara…</div>}
         {analysisError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {analysisError}</div>}
         {downloadError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {downloadError}</div>}
-        <div className="commercial-ai-output-space"><AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} /></div>
+        <div className="commercial-ai-output-space">
+          {resumeIssue && <p className="commercial-ai-history__notice" role="status">{resumeIssue}</p>}
+          <AnalysisResult
+            result={result}
+            onDownload={handleDownload}
+            isDownloading={isDownloading}
+            onReviewRecommendation={handleReviewRecommendation}
+            canReviewProduct={canReviewProduct}
+            canReviewInventory={canReviewInventory}
+          />
+        </div>
         {activeHistoryState.issue && <p className="commercial-ai-history__notice" role="status">{HISTORY_ISSUE_MESSAGES[activeHistoryState.issue] || HISTORY_ISSUE_MESSAGES.storage_unavailable}</p>}
       </section>
 
@@ -2698,6 +2902,9 @@ export default function CommercialAIAgentsPage() {
         onClear={handleClearHistory}
         onDownload={handleDownloadHistoryEntry}
         isDownloading={isDownloadingHistory}
+        onReviewRecommendation={handleReviewRecommendation}
+        canReviewProduct={canReviewProduct}
+        canReviewInventory={canReviewInventory}
         onClose={closeHistory}
       />}
 

@@ -475,6 +475,55 @@ describe('ProductList inventory entry availability', () => {
   });
 });
 
+describe('ProductList contextual review from Lía', () => {
+  it('shows the current catalog cost and keeps the focused product in read-only mode', () => {
+    render(<ProductList
+      products={[{
+        id: 'product-review-1',
+        name: 'Producto revisado',
+        price: 100,
+        cost: 73.5,
+        stock: 4,
+        isActive: true,
+        trackStock: false
+      }]}
+      categories={[]}
+      isLoading={false}
+      reviewOnly
+      historicalCostReview
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+      onToggleStatus={vi.fn()}
+    />);
+
+    expect(screen.getByText('Costo registrado actualmente en el catálogo')).toBeInTheDocument();
+    expect(screen.getByText('$73.50')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Activo')).not.toBeInTheDocument();
+  });
+
+  it('does not display a missing catalog cost as zero', () => {
+    render(<ProductList
+      products={[{
+        id: 'product-review-2',
+        name: 'Costo incompleto',
+        price: 100,
+        cost: null,
+        stock: 0,
+        isActive: true,
+        trackStock: false
+      }]}
+      categories={[]}
+      isLoading={false}
+      reviewOnly
+    />);
+
+    expect(screen.getByText('Costo actual del catálogo')).toBeInTheDocument();
+    expect(screen.getByText('No disponible')).toBeInTheDocument();
+  });
+});
+
 
 it('F-04 finds sellable inventory after 60 ingredients using indexed search', async () => {
   const database = new Dexie(`f04-inventory-${crypto.randomUUID()}`, { indexedDB, IDBKeyRange });

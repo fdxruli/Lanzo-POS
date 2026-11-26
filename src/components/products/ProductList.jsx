@@ -58,7 +58,7 @@ const CATEGORY_OPTION_PREFIX = 'category:';
 const UNCATEGORIZED_OPTION_VALUE = 'inventory:uncategorized';
 const PRODUCT_SEARCH_TIMEOUT_MS = 15000;
 
-export default function ProductList({ products, categories = [], isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true }) {
+export default function ProductList({ products, categories = [], isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true, reviewOnly = false, historicalCostReview = false }) {
   const features = useFeatureConfig();
 
   // Acciones del Store (solo paginacion/cache)
@@ -351,7 +351,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
             ))}
           </select>
 
-          {canManageProducts && features.hasDailyPricing && (
+          {!reviewOnly && canManageProducts && features.hasDailyPricing && (
             <button
                 className="ui-button ui-button--secondary btn-update-price"
                 onClick={onOpenDailyPrice}
@@ -466,7 +466,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                   </div>
 
                   <div className="actions-area">
-                    {isTracked && canManageInventory && (
+                    {!reviewOnly && isTracked && canManageInventory && (
                       <button
                         className="ui-button ui-button--neutral ui-button--sm btn-action btn-batches"
                         onClick={() => onManageBatches(item.id)}
@@ -476,7 +476,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         <Icons.Layers /> <span>Lotes / historial</span>
                       </button>
                     )}
-                    {isTracked && canManageInventory && canAddInventoryEntry(item) && (
+                    {!reviewOnly && isTracked && canManageInventory && canAddInventoryEntry(item) && (
                       <button
                         className="ui-button ui-button--primary ui-button--sm btn-action"
                         onClick={() => setProductForInventoryEntry(item)}
@@ -486,7 +486,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         <span>＋</span> <span>{isMedicine ? 'Recibir medicamento' : 'Agregar existencia'}</span>
                       </button>
                     )}
-                    {canManageProducts && isActive && (
+                    {!reviewOnly && canManageProducts && isActive && (
                       item.syncStatus !== 'synced' || !item.serverVersion || !item.lastSyncedAt
                     ) && (
                       <button
@@ -497,12 +497,12 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         Verificar Cloud
                       </button>
                     )}
-                    {canManageProducts && (
+                    {!reviewOnly && canManageProducts && (
                     <button className="ui-button ui-button--ghost ui-button--sm btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
                     </button>
                     )}
-                    {canDeleteProducts && (
+                    {!reviewOnly && canDeleteProducts && (
                     <button className="ui-button ui-button--danger ui-button--sm btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar" disabled={!isActive}>
                       <Icons.Delete /> <span>Eliminar</span>
                     </button>
@@ -550,6 +550,15 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                     </span>
                   </div>
                 </div>
+
+                {reviewOnly && (
+                  <div className="product-lia-review-cost" role="note">
+                    <span>{historicalCostReview ? 'Costo registrado actualmente en el catálogo' : 'Costo actual del catálogo'}</span>
+                    <strong>{item.cost !== null && item.cost !== undefined && item.cost !== '' && Number.isFinite(Number(item.cost))
+                      ? `$${Number(item.cost).toFixed(2)}`
+                      : 'No disponible'}</strong>
+                  </div>
+                )}
 
                 {/* 4. Detalles Específicos por Rubro */}
                 <div className="details-container">
@@ -601,7 +610,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
                 {/* 5. Footer con Switch de Estado y Acciones Secundarias */}
                 <div className="complex-footer">
-                  {canManageProducts && (
+                  {!reviewOnly && canManageProducts && (
                   <div className="status-switch-container" onClick={() => onToggleStatus(item)} title={isActive ? "Desactivar" : "Activar"}>
                     <div className={`switch-track ${isActive ? 'checked' : ''}`}>
                       <div className="switch-thumb"></div>
@@ -610,7 +619,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                   </div>
                   )}
 
-                  <div className="footer-actions">
+                  {!reviewOnly && <div className="footer-actions">
                     {/* Badges Informativos */}
                     {features.hasWholesale && item.wholesaleTiers?.length > 0 && (
                       <span className="ui-badge ui-badge--info feat-badge purple" title="Tiene precios de mayoreo">Mayoreo</span>
@@ -625,7 +634,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                         <Icons.Waste /> Merma
                       </button>
                     )}
-                  </div>
+                  </div>}
                 </div>
               </div>
             );
