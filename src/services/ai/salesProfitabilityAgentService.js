@@ -840,6 +840,60 @@ const sanitizeSalesProfitabilityResponse = (response = {}) => {
   };
 };
 
+// Kept alongside the client result, never included in buildSalesProfitabilityContext
+// or sent to the narrative provider. Names join the provider's allow-listed
+// evidence back to one deterministic catalog id, and duplicates fail closed.
+const hasNavigationControlCharacter = (value) => {
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+};
+
+const buildProductNavigationReferences = (response = {}) => {
+  const rowsByEvidenceKey = new Map();
+  const riskByProductId = new Map(
+    (Array.isArray(response.productRisks) ? response.productRisks : [])
+      .filter((risk) => risk?.productId !== null && risk?.productId !== undefined)
+      .map((risk) => [String(risk.productId), risk])
+  );
+
+  (Array.isArray(response.current?.products) ? response.current.products : []).forEach((product) => {
+    const productName = typeof product?.name === 'string' ? product.name.trim() : '';
+    const productId = product?.productId === null || product?.productId === undefined
+      ? ''
+      : String(product.productId).trim();
+    if (!productName || productName.length > 180 || !productId || productId.length > 180
+      || hasNavigationControlCharacter(productName) || hasNavigationControlCharacter(productId)) return;
+
+    const evidenceKey = `product:${productName}`;
+    const matches = rowsByEvidenceKey.get(evidenceKey) || [];
+    matches.push({
+      evidenceKey,
+      productId,
+      productName,
+      costStatus: ['definitive', 'estimated', 'incomplete'].includes(product.costStatus)
+        ? product.costStatus
+        : null,
+      costSource: ['inventory_movement', 'sale_item_snapshot', 'inventory_receipt', 'missing'].includes(product.costSource)
+        ? product.costSource
+        : null,
+      riskType: ['missing_cost', 'negative_margin', 'low_margin', 'many_sales_low_profit', 'high_sales_low_contribution']
+        .includes(riskByProductId.get(productId)?.riskType)
+        ? riskByProductId.get(productId).riskType
+        : null
+    });
+    rowsByEvidenceKey.set(evidenceKey, matches);
+  });
+
+  return Array.from(rowsByEvidenceKey.values())
+    .filter((matches) => matches.length === 1)
+    .map(([reference]) => reference)
+    .slice(0, MAX_RESPONSE_PRODUCT_ROWS);
+};
+
 const hardenDeterministicResult = ({
   deterministic,
   currentDataset,
@@ -1443,6 +1497,7 @@ export const createSalesProfitabilityAgentRunner = ({
     if (!intentHasUsefulEvidence(deterministic)) {
       return {
         response: sanitizeSalesProfitabilityResponse(deterministic),
+        navigationReferences: buildProductNavigationReferences(deterministic),
         usageStatus: null,
         providerCalled: false,
         quotaOutcome: 'not_consumed',
@@ -1471,6 +1526,7 @@ export const createSalesProfitabilityAgentRunner = ({
       },
       source: deterministic.source
     });
+    const navigationReferences = buildProductNavigationReferences(deterministic);
 
     let providerOutcome = null;
     try {
@@ -1496,6 +1552,7 @@ export const createSalesProfitabilityAgentRunner = ({
 
       return {
         response,
+        navigationReferences,
         usageStatus: providerResult.usageStatus || null,
         providerCalled: providerOutcome.providerCalled,
         quotaOutcome: providerOutcome.quotaOutcome,
@@ -1538,6 +1595,7 @@ export const createSalesProfitabilityAgentRunner = ({
             recommendations: []
           }
         }),
+        navigationReferences,
         usageStatus: null,
         providerCalled: execution.providerCalled,
         quotaOutcome: execution.quotaOutcome,

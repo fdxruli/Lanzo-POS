@@ -28,9 +28,10 @@ import {
 import { normalizeBusinessTypes } from '../utils/businessType';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 import { useActorAccess } from '../services/auth/useActorAccess';
+import { ADMIN_ROUTE_PATHS } from '../router/adminRoutePaths';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
 import { classifyActorAuthorityError } from '../services/auth/actorAuthorityErrors';
 import {
@@ -92,8 +93,19 @@ const getProductImageMigrationSessionKey = (value) => {
     return `${PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX}${(hash >>> 0).toString(36)}`;
 };
 
+const isSafeLiaRecordId = (value) => {
+    if (typeof value !== 'string' || !value.trim() || value.length > 180) return false;
+    for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        if (code < 32 || code === 127) return false;
+    }
+    return true;
+};
+
 export default function ProductsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const productFormDraftScope = createProductFormDraftScope(actorRuntimeController.getState());
     const [productFormDraft] = useState(() => readProductFormDraft(productFormDraftScope));
     const [showDailyPrice, setShowDailyPrice] = useState(false);
@@ -108,6 +120,15 @@ export default function ProductsPage() {
     // refreshes both the visible tab and its click-time permission check.
     const actorAccess = useActorAccess();
     const canAccess = actorAccess.canAccessPermission;
+    const actorSnapshot = actorAccess.runtimeSnapshot;
+    const currentLiaContextToken = useMemo(() => {
+        const tenantOpaqueId = actorSnapshot?.tenant?.opaqueId || '';
+        const actorKey = actorSnapshot?.actorKey || '';
+        const sessionId = actorSnapshot?.sessionId || '';
+        if (!tenantOpaqueId || !actorKey || !sessionId) return null;
+        return JSON.stringify([tenantOpaqueId, actorKey, sessionId]);
+    }, [actorSnapshot]);
+    const liaProductReview = location.state?.liaProductReview || null;
     const canManageProducts = canAccess('products');
     const canManageInventory = canAccess('inventory');
     const canDeleteProducts = canManageProducts && canManageInventory;
@@ -153,16 +174,106 @@ export default function ProductsPage() {
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectNewCategoryOnCreate, setSelectNewCategoryOnCreate] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
+    const [liaReviewRecord, setLiaReviewRecord] = useState({
+        status: 'idle', product: null, contextToken: null, referenceId: null
+    });
     const [, setShowDataTransfer] = useState(false);
     const legacyImageMigrationRef = useRef({ licenseKey: null, running: false });
     const productCategoryCreateRequestRef = useRef(null);
     const [productCategoryCreateRequest, setProductCategoryCreateRequest] = useState(null);
+
+    const liaReviewReference = liaProductReview?.recordReference;
+    const isLiaReviewContextCurrent = Boolean(
+        currentLiaContextToken && liaProductReview?.contextToken === currentLiaContextToken
+    );
+    const isLiaReviewReferenceValid = Boolean(
+        liaReviewReference && ['product', 'batches'].includes(liaReviewReference.kind)
+        && isSafeLiaRecordId(liaReviewReference.id)
+    );
+    const hasLiaReviewPermission = liaReviewReference?.kind === 'batches'
+        ? canManageInventory
+        : canManageProducts || canManageInventory;
+    const liaReviewStateMatchesRequest = liaReviewRecord.contextToken === currentLiaContextToken
+        && liaReviewRecord.referenceId === liaReviewReference?.id;
+    const currentLiaReviewRecord = !isLiaReviewContextCurrent
+        ? { status: 'context_changed', product: null }
+        : !isLiaReviewReferenceValid
+            ? { status: 'invalid_reference', product: null }
+            : !hasLiaReviewPermission
+                ? { status: 'permission_denied', product: null }
+                : !liaReviewStateMatchesRequest
+                    ? { status: 'loading', product: null }
+                    : liaReviewRecord;
+    const isLiaProductReview = Boolean(liaProductReview)
+        && liaReviewReference?.kind === 'product'
+        && currentLiaReviewRecord.status === 'found'
+        && String(currentLiaReviewRecord.product?.id) === liaReviewReference.id;
+    const productsForSale = liaProductReview
+        ? (isLiaProductReview ? [currentLiaReviewRecord.product] : [])
+        : products;
 
     const invalidateProductCategoryCreateRequest = useCallback(() => {
         productCategoryCreateRequestRef.current = null;
         setProductCategoryCreateRequest(null);
         setSelectNewCategoryOnCreate(false);
     }, []);
+
+    useEffect(() => {
+        if (!liaProductReview) {
+            setLiaReviewRecord({ status: 'idle', product: null, contextToken: null, referenceId: null });
+            return undefined;
+        }
+
+        const reference = liaProductReview.recordReference;
+        const setCurrentReviewRecord = (status, product = null) => {
+            setLiaReviewRecord({
+                status,
+                product,
+                contextToken: currentLiaContextToken,
+                referenceId: reference?.id ?? null
+            });
+        };
+        if (!currentLiaContextToken || liaProductReview.contextToken !== currentLiaContextToken) {
+            setCurrentReviewRecord('context_changed');
+            return undefined;
+        }
+        if (!reference || !['product', 'batches'].includes(reference.kind)
+            || !isSafeLiaRecordId(reference.id)) {
+            setCurrentReviewRecord('invalid_reference');
+            return undefined;
+        }
+        if (reference.kind === 'batches' && !canAccess('inventory')) {
+            setCurrentReviewRecord('permission_denied');
+            return undefined;
+        }
+        if (reference.kind === 'product' && !canAccess('products') && !canAccess('inventory')) {
+            setCurrentReviewRecord('permission_denied');
+            return undefined;
+        }
+
+        let active = true;
+        setCurrentReviewRecord('loading');
+        productRepository.getProductById(reference.id)
+            .then((product) => {
+                if (!active) return;
+                const sameId = product && String(product.id) === reference.id;
+                const deleted = product && (
+                    product.deletedAt || product.deletedTimestamp || product.deleted_at || product.deleted_timestamp
+                    || product.deletionPending === true
+                );
+                if (!sameId || deleted) {
+                    setCurrentReviewRecord('unavailable');
+                    return;
+                }
+                setCurrentReviewRecord('found', product);
+                if (reference.kind === 'batches') setSelectedBatchProductId(reference.id);
+            })
+            .catch(() => {
+                if (active) setCurrentReviewRecord('unavailable');
+            });
+
+        return () => { active = false; };
+    }, [canAccess, currentLiaContextToken, liaProductReview]);
 
     const handleOpenCategoryManagerFromProduct = (onCategoryCreated) => {
         const requestId = Symbol('product-category-create');
@@ -369,7 +480,6 @@ export default function ProductsPage() {
         if (paramValue === 'list') setSearchParams({});
         else setSearchParams({ tab: paramValue });
     };
-    const productsForSale = products;
     const ingredientsOnly = products;
 
     const handleActionableError = (errorResult) => {
@@ -874,9 +984,45 @@ export default function ProductsPage() {
         handleTabChange('batches');
     };
 
+    const returnToLia = () => {
+        const resumeSnapshot = liaProductReview?.resumeSnapshot;
+        navigate(`/${ADMIN_ROUTE_PATHS.aiAgents}`, {
+            state: resumeSnapshot ? { liaResumeSnapshot: resumeSnapshot } : null
+        });
+    };
+
     return (
         <>
             <main className="ui-page products-page" aria-label="Productos">
+
+            {liaProductReview && <section className="lia-product-review" aria-labelledby="lia-product-review-title">
+                <div className="lia-product-review__heading">
+                    <div>
+                        <p className="lia-product-review__eyebrow">Revisión desde Lía</p>
+                        <h2 id="lia-product-review-title">
+                            {currentLiaReviewRecord.status === 'found'
+                                ? currentLiaReviewRecord.product.name
+                                : liaProductReview.productName || 'Registro relacionado'}
+                        </h2>
+                    </div>
+                    <button type="button" className="lia-product-review__back" onClick={returnToLia}>Volver al análisis</button>
+                </div>
+                {currentLiaReviewRecord.status === 'loading' && <p role="status">Abriendo el registro del negocio…</p>}
+                {currentLiaReviewRecord.status === 'context_changed' && <p role="status">El negocio o la sesión cambió. No se consultó el registro anterior.</p>}
+                {currentLiaReviewRecord.status === 'invalid_reference' && <p role="status">La referencia del producto no es válida. No se abrió ningún registro.</p>}
+                {currentLiaReviewRecord.status === 'permission_denied' && <p role="status">Tu permiso actual no permite revisar este registro.</p>}
+                {currentLiaReviewRecord.status === 'unavailable' && <p role="status">Este producto ya no está disponible o fue eliminado. No se abrió otro registro.</p>}
+                {currentLiaReviewRecord.status === 'found' && currentLiaReviewRecord.product.isActive === false && (
+                    <p role="status">Este producto está archivado. Se muestra su ficha actual para consulta.</p>
+                )}
+                {currentLiaReviewRecord.status === 'found' && liaProductReview.costReview === true && (
+                    <p className="lia-product-review__cost-note" role="note">
+                        {liaProductReview.recordReference.kind === 'batches'
+                            ? 'Lía analizó el costo asociado a las ventas del periodo. Los costos de lotes disponibles hoy son referencias actuales y pueden ser distintos.'
+                            : 'El costo registrado actualmente en Productos puede ser distinto del costo asociado a las ventas del periodo que analizó Lía.'}
+                    </p>
+                )}
+            </section>}
 
             <section className="ui-section products-tabs-section" aria-label="Secciones de productos">
             <div className="tabs-container products-tabs" id="product-tabs">
@@ -964,7 +1110,7 @@ export default function ProductsPage() {
                 />
             )}
 
-            {activeTab === 'view-products' && (
+            {activeTab === 'view-products' && (!liaProductReview || isLiaProductReview) && (
                 <ProductList
                     products={productsForSale}
                     categories={categories}
@@ -977,6 +1123,8 @@ export default function ProductsPage() {
                     canManageProducts={canManageProducts}
                     canManageInventory={canManageInventory}
                     canDeleteProducts={canDeleteProducts}
+                    reviewOnly={isLiaProductReview}
+                    historicalCostReview={isLiaProductReview && liaProductReview.costReview === true}
                 />
             )}
 

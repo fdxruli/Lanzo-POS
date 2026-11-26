@@ -224,10 +224,62 @@ describe('sales profitability agent service', () => {
     expect(result.response.current.costStatus).toBe('estimated');
     expect(JSON.stringify(result.response)).not.toContain('private-product-id');
     expect(JSON.stringify(result.response)).not.toContain('internal-sale-id');
+    expect(result.navigationReferences).toEqual([expect.objectContaining({
+      evidenceKey: 'product:Producto A',
+      productName: 'Producto A',
+      productId: 'private-product-id',
+      costStatus: 'estimated',
+      costSource: 'sale_item_snapshot'
+    })]);
+    expect(JSON.stringify(analyze.mock.calls[0][0].context)).not.toContain('private-product-id');
     expect(result.response.queryRange.current).toMatchObject({
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
       toExclusiveUtc: '2026-09-08T06:00:00.000Z'
     });
+  });
+
+  it('fails closed when deterministic products share the provider evidence name', async () => {
+    const duplicateReports = repository(
+      {
+        ...history,
+        rows: [{ ...history.rows[0], itemsCount: 2, itemsQuantity: 3 }]
+      },
+      {
+        ...profit,
+        rows: [
+          { ...profit.rows[0], quantity: 2, line_total: 80, cogs: 40, gross_profit: 40 },
+          {
+            ...profit.rows[0],
+            product_id: 'private-product-id-2',
+            quantity: 1,
+            line_total: 20,
+            unit_cost: 5,
+            cogs: 5,
+            gross_profit: 15,
+            gross_margin_percent: 75
+          }
+        ]
+      }
+    );
+    const analyze = vi.fn(async (request) => {
+      expect(JSON.stringify(request.context)).not.toContain('private-product-id');
+      return { rawResultContent: providerResponse };
+    });
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: duplicateReports,
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.navigationReferences).toEqual([]);
   });
 
   it('preserves deterministic results and the Edge unavailable diagnostic after one consumed provider call', async () => {

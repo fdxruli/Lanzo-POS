@@ -14,7 +14,8 @@ const shared = vi.hoisted(() => ({
     saveProduct: vi.fn(),
     confirmLocalCategoryInCloud: vi.fn(),
     deleteCategory: vi.fn(),
-    getCategoryProductCounts: vi.fn()
+    getCategoryProductCounts: vi.fn(),
+    getProductById: vi.fn()
   },
   broadcastDBChange: vi.fn(),
   showMessageModal: vi.fn(),
@@ -118,13 +119,19 @@ vi.mock('../../components/products/form-v2/ProductFormV2', async () => {
   };
 });
 vi.mock('../../components/products/ProductList', () => ({
-  default: function MockProductList({ onEdit }) {
+  default: function MockProductList({ onEdit, products = [], reviewOnly = false, historicalCostReview = false }) {
     return (
       <div>
-        <button type="button" onClick={() => onEdit({ id: 'product-b', name: 'Producto B' })}>Editar producto B</button>
-        <button type="button" onClick={() => onEdit({
-          id: 'soap-qa', name: 'Jabón QA', description: 'Descripción anterior', categoryId: 'hygiene-qa'
-        })}>Editar Jabón QA</button>
+        {products.map((product) => <span key={product.id} data-testid="listed-product">{product.name}</span>)}
+        {reviewOnly && <span data-testid="product-review-mode">{historicalCostReview ? 'Costo histórico' : 'Solo lectura'}</span>}
+        {!reviewOnly && (
+          <>
+            <button type="button" onClick={() => onEdit({ id: 'product-b', name: 'Producto B' })}>Editar producto B</button>
+            <button type="button" onClick={() => onEdit({
+              id: 'soap-qa', name: 'Jabón QA', description: 'Descripción anterior', categoryId: 'hygiene-qa'
+            })}>Editar Jabón QA</button>
+          </>
+        )}
       </div>
     );
   }
@@ -151,6 +158,35 @@ const renderPage = (initialEntry = '/productos?tab=categories') => render(
     <ProductsPage />
   </MemoryRouter>
 );
+
+const setReviewActor = (permissions = ['products', 'inventory'], overrides = {}) => {
+  shared.app.licenseDetails = { ...PRO_LICENSE, license_key: 'license-a' };
+  const runtimeSnapshot = {
+    actorKey: 'admin:admin-a',
+    sessionId: 'session-a',
+    tenant: { opaqueId: 'tenant-a' },
+    ...overrides
+  };
+  shared.actorAccess = {
+    runtimeSnapshot,
+    canAccessPermission: (permission) => permissions.includes(permission)
+  };
+  return JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
+};
+
+const reviewLocation = ({ contextToken, recordReference = { kind: 'product', id: 'product-real-1' }, productName = 'Producto real' } = {}) => ({
+  pathname: '/productos',
+  search: '?tab=list',
+  state: {
+    liaProductReview: {
+      contextToken,
+      recordReference,
+      productName,
+      costReview: true,
+      resumeSnapshot: { version: 1, kind: 'analysis', question: '¿Mi negocio es rentable?' }
+    }
+  }
+});
 
 const createDeferred = () => {
   let resolve;
@@ -189,12 +225,95 @@ describe('ProductsPage category save flow', () => {
     shared.repository.confirmLocalCategoryInCloud.mockReset();
     shared.repository.deleteCategory.mockReset().mockResolvedValue({ success: true });
     shared.repository.getCategoryProductCounts.mockReset().mockResolvedValue({ complete: false, counts: {} });
+    shared.repository.getProductById.mockReset();
     shared.broadcastDBChange.mockReset();
     shared.showMessageModal.mockReset();
     shared.showConfirmModal.mockReset().mockResolvedValue(true);
   });
 
   afterEach(() => cleanup());
+
+  it('opens the exact product by its stable id in read-only review mode and distinguishes historical cost', async () => {
+    const contextToken = setReviewActor();
+    shared.repository.getProductById.mockResolvedValueOnce({
+      id: 'product-real-1', name: 'Producto real', cost: 42, isActive: true
+    });
+    renderPage(reviewLocation({ contextToken }));
+
+    expect(await screen.findByTestId('listed-product')).toHaveTextContent('Producto real');
+    expect(screen.getByTestId('product-review-mode')).toHaveTextContent('Costo histórico');
+    expect(screen.getByRole('heading', { name: 'Producto real' })).toBeInTheDocument();
+    expect(screen.getByText(/costo registrado actualmente en Productos puede ser distinto/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar producto B' })).not.toBeInTheDocument();
+    expect(shared.repository.getProductById).toHaveBeenCalledTimes(1);
+    expect(shared.repository.getProductById).toHaveBeenCalledWith('product-real-1');
+  });
+
+  it('does not show catalog products while the Lía product reference is pending', async () => {
+    const contextToken = setReviewActor();
+    const pendingProduct = createDeferred();
+    shared.catalog.menu = [{ id: 'catalog-fallback', name: 'Producto que no corresponde' }];
+    shared.repository.getProductById.mockReturnValueOnce(pendingProduct.promise);
+
+    renderPage(reviewLocation({ contextToken }));
+
+    expect(await screen.findByText(/Abriendo el registro del negocio/)).toBeInTheDocument();
+    expect(screen.queryByTestId('listed-product')).not.toBeInTheDocument();
+
+    await act(async () => pendingProduct.resolve({
+      id: 'product-real-1', name: 'Producto real', cost: 42, isActive: true
+    }));
+    expect(await screen.findByTestId('listed-product')).toHaveTextContent('Producto real');
+    expect(screen.queryByText('Producto que no corresponde')).not.toBeInTheDocument();
+  });
+
+  it('does not look up invalid references or disclose a product after business, actor, or session changes', async () => {
+    const contextToken = setReviewActor();
+    const invalidId = reviewLocation({ contextToken, recordReference: { kind: 'product', id: 'bad\nreference' } });
+    renderPage(invalidId);
+    expect(await screen.findByText(/referencia del producto no es válida/i)).toBeInTheDocument();
+    expect(shared.repository.getProductById).not.toHaveBeenCalled();
+    cleanup();
+
+    const changedContexts = [
+      { tenant: { opaqueId: 'tenant-b' } },
+      { actorKey: 'admin:admin-b' },
+      { sessionId: 'session-b' }
+    ];
+    for (const changedContext of changedContexts) {
+      setReviewActor(['products', 'inventory'], changedContext);
+      renderPage(reviewLocation({ contextToken }));
+      expect(await screen.findByText(/negocio o la sesión cambió/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('listed-product')).not.toBeInTheDocument();
+      expect(shared.repository.getProductById).not.toHaveBeenCalled();
+      cleanup();
+    }
+
+    const sameContext = setReviewActor([]);
+    renderPage(reviewLocation({ contextToken: sameContext }));
+    expect(await screen.findByText(/tu permiso actual no permite revisar este registro/i)).toBeInTheDocument();
+    expect(shared.repository.getProductById).not.toHaveBeenCalled();
+  });
+
+  it('explains archived and unavailable products without redirecting to another record', async () => {
+    const contextToken = setReviewActor();
+    shared.repository.getProductById.mockResolvedValueOnce({
+      id: 'product-real-1', name: 'Producto archivado', cost: 15, isActive: false
+    });
+    const archived = reviewLocation({ contextToken, productName: 'Producto real' });
+    renderPage(archived);
+    expect(await screen.findByText(/está archivado/i)).toBeInTheDocument();
+    expect(screen.getByTestId('listed-product')).toHaveTextContent('Producto archivado');
+    expect(shared.repository.getProductById).toHaveBeenCalledTimes(1);
+    expect(shared.repository.getProductById).toHaveBeenCalledWith('product-real-1');
+    cleanup();
+
+    const unavailableContext = setReviewActor();
+    shared.repository.getProductById.mockResolvedValueOnce(null);
+    renderPage(reviewLocation({ contextToken: unavailableContext }));
+    expect(await screen.findByText(/ya no está disponible o fue eliminado/i)).toBeInTheDocument();
+    expect(shared.repository.getProductById).toHaveBeenCalledTimes(2);
+  });
 
   it('offers the existing verification recovery and keeps product fields after a tenant preflight block', async () => {
     renderPage('/productos?tab=list');

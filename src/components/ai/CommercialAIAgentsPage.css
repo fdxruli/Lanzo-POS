@@ -905,6 +905,35 @@
   font-size: 0.84rem;
 }
 
+.commercial-ai-recommendation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+}
+
+.commercial-ai-recommendation-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #93c5fd;
+  border-radius: 0.6rem;
+  color: #1d4ed8;
+  background: #eff6ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.commercial-ai-recommendation-action:hover { background: #dbeafe; }
+.commercial-ai-recommendation-action:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+
 .commercial-ai-narrative__recommendation small,
 .commercial-ai-narrative > small {
   color: #64748b;
@@ -1430,6 +1459,9 @@
   .commercial-ai-history__detail-header button {
     align-self: flex-start;
   }
+
+  .commercial-ai-recommendation-actions { flex-direction: column; }
+  .commercial-ai-recommendation-action { width: 100%; }
 
   .commercial-ai-competitive-grid { grid-template-columns: 1fr; }
   .commercial-ai-competitive-grid__wide { grid-column: auto; }

@@ -70,6 +70,42 @@ const createLocalEntryId = (timestamp) => {
   return `${timestamp}-${entrySequence}`;
 };
 
+const safeNavigationReferences = (value) => {
+  if (!Array.isArray(value)) return [];
+  const hasControlCharacter = (text) => {
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      if (code < 32 || code === 127) return true;
+    }
+    return false;
+  };
+  const seenEvidence = new Set();
+  return value.slice(0, 40).flatMap((reference) => {
+    const source = asRecord(reference);
+    const productId = typeof source.productId === 'string' || typeof source.productId === 'number'
+      ? String(source.productId).trim()
+      : '';
+    const productName = typeof source.productName === 'string' ? source.productName.trim() : '';
+    const evidenceKey = typeof source.evidenceKey === 'string' ? source.evidenceKey.trim() : '';
+    if (!productId || productId.length > 180 || hasControlCharacter(productId)
+      || !productName || productName.length > 180 || hasControlCharacter(productName)
+      || evidenceKey !== `product:${productName}`
+      || seenEvidence.has(evidenceKey)) return [];
+    seenEvidence.add(evidenceKey);
+    return [{
+      evidenceKey,
+      productName,
+      productId,
+      costStatus: ['definitive', 'estimated', 'incomplete'].includes(source.costStatus) ? source.costStatus : null,
+      costSource: ['inventory_movement', 'sale_item_snapshot', 'inventory_receipt', 'missing'].includes(source.costSource)
+        ? source.costSource
+        : null,
+      riskType: ['missing_cost', 'negative_margin', 'low_margin', 'many_sales_low_profit', 'high_sales_low_contribution']
+        .includes(source.riskType) ? source.riskType : null
+    }];
+  });
+};
+
 const hasNarrative = (narrative) => (
   narrative?.status !== 'unavailable'
   && (
@@ -173,6 +209,9 @@ const safeEntry = (value) => {
     timezone: report.request.period.timezone || 'America/Mexico_City',
     execution: { mode },
     quota: { status: usageStatus, reason: usageReason },
+    // Internal record refs are stored beside, not inside, the redacted report.
+    // Older entries without this optional field remain fully compatible.
+    navigationReferences: safeNavigationReferences(source.navigationReferences),
     report
   };
 };
@@ -198,6 +237,7 @@ export const buildSalesProfitabilityHistoryEntry = ({
     queriedAt: queriedAtDate.toISOString(),
     execution: { mode: execution.mode },
     quota: { status: execution.usageStatus, reason: execution.usageReason },
+    navigationReferences: result?.navigationReferences,
     report
   });
 };
