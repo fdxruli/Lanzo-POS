@@ -343,9 +343,9 @@ export const salesCloudLocalRepository = {
               customerId: cloudSale.customer_id ?? null,
               customerName: cloudSale.customer_name ?? null,
               customerPhone: cloudSale.customer_phone ?? null,
-              subtotal: cloudSale.subtotal == null ? undefined : String(cloudSale.subtotal),
-              discountTotal: cloudSale.discount_total == null ? undefined : String(cloudSale.discount_total),
-              taxTotal: cloudSale.tax_total == null ? undefined : String(cloudSale.tax_total),
+              subtotal: (cloudSale.subtotal === null || cloudSale.subtotal === undefined) ? undefined : String(cloudSale.subtotal),
+              discountTotal: (cloudSale.discount_total === null || cloudSale.discount_total === undefined) ? undefined : String(cloudSale.discount_total),
+              taxTotal: (cloudSale.tax_total === null || cloudSale.tax_total === undefined) ? undefined : String(cloudSale.tax_total),
               items: items.map(item => ({
                 ...item,
                 productId: item.product_id,
