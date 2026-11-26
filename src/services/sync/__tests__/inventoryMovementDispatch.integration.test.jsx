@@ -205,7 +205,7 @@ describe('inventory movement dispatch: two authorized device contexts, real repo
     expect(await syncMetaService.getMeta(SALES_SEQ,0,{licenseKey:LICENSE})).toBe(7);
     expect((await db.table(STORES.SYNC_CACHE).get('cloud_sale:'+SALE)).value).toMatchObject({
       sale: { status: 'closed', server_version: 1 }, items: [item],
-      payments: [expect.objectContaining({ id: payment.id, amount: '20.00' })]
+      payments: [expect.objectContaining({ id: payment.id, amount: '20', method: 'cash', sale_id: SALE })]
     });
 
     // Server-confirmed cancellation restores stock; the client applies only
