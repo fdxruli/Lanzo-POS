@@ -36,4 +36,3 @@ export const validateCustomerSnapshotPage = (response, { limit, reference = null
   }
   return { rows, reference: nextReference, next, complete: response.snapshot_complete };
 };
-
