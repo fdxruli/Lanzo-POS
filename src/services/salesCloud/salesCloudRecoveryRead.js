@@ -5,6 +5,8 @@ const money = value => {
   const cents = Math.round(Number(value) * 100);
   return Number.isSafeInteger(cents) ? cents : null;
 };
+const committedEffects = new Set(['payment_recorded', 'cash_applied', 'inventory_applied', 'cash_inventory_applied',
+  'credit_applied', 'cash_credit_applied', 'cash_inventory_credit_applied', 'cloud_applied']);
 const validRows = (rows) => Array.isArray(rows) && rows.every(row => text(row?.id))
   && new Set(rows.map(row => row.id)).size === rows.length;
 const sameDate = (a, b) => a === null && b === null || (text(a) && text(b) && Number.isFinite(Date.parse(a)) && Date.parse(a) === Date.parse(b));
@@ -44,11 +46,13 @@ export const validateRecoveredSale = ({ payload, cloudSale: sale, localSaleId, i
   const payments = Array.isArray(payload.payments) ? payload.payments.filter(row => row?.sale_id === sale.id) : null;
   const total = money(sale.total), paid = money(sale.amount_paid), balance = money(sale.balance_due);
   if (payload.success !== true || sale.status !== 'closed' || sale.source_mode !== 'cloud_committed'
-    || sale.effects_status !== 'payment_recorded' || sale.deleted_at || sale.cancelled_at
+    || !committedEffects.has(sale.effects_status) || sale.deleted_at || sale.cancelled_at
     || !Number.isSafeInteger(sale.server_version) || sale.server_version < 1
     || !text(sale.sold_at) || !Number.isFinite(Date.parse(sale.sold_at))
     || total === null || paid === null || balance === null || paid + balance !== total
-    || !text(sale.payment_method) || !text(sale.payment_status)
+    || !text(sale.payment_method)
+    || (balance === 0 ? sale.payment_status !== 'paid' : !['partial', 'credit_pending'].includes(sale.payment_status))
+    || (balance > 0 && (sale.credit_effect_status !== 'applied' || !text(sale.customer_id) || !text(sale.credit_ledger_charge_id)))
     || !validRows(items) || items.length === 0 || !validRows(payments)
     || items.some(row => !text(row.product_name) || !Number.isFinite(Number(row.quantity))
       || Number(row.quantity) <= 0 || money(row.unit_price) === null || money(row.line_total) === null)

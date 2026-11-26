@@ -32,6 +32,14 @@ describe('CajaHistoryList', () => {
     expect(screen.getByText('Responsable 101')).toBeVisible();
   });
 
+  it('does not present a deferred empty Cloud history as absence of cuts', async () => {
+    const readCashHistory = vi.fn().mockResolvedValue({ success: true, cashSessions: [], syncDeferred: true });
+    render(<CajaHistoryList historial={[]} isCloudCash readCashHistory={readCashHistory} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Consultar historial Cloud' }));
+    expect(await screen.findByText('No se pudo confirmar si existen más cortes.')).toBeVisible();
+    expect(screen.queryByText('No hay historial de cortes registrados.')).not.toBeInTheDocument();
+  });
+
   it('does not offer a Cloud query when read only', () => {
     const readCashHistory = vi.fn();
     render(<CajaHistoryList historial={[]} isCloudCash isReadOnly readCashHistory={readCashHistory} />);

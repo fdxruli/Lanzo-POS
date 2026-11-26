@@ -25,6 +25,7 @@ const CajaHistoryList = ({
   const [paginaActual, setPaginaActual] = useState(1);
   const [cloudHistory, setCloudHistory] = useState(null);
   const [loadingCloud, setLoadingCloud] = useState(false);
+  const [cloudIncomplete, setCloudIncomplete] = useState(false);
   const [historyMessage, setHistoryMessage] = useState('');
   const historial = cloudHistory ?? localHistory;
 
@@ -32,6 +33,7 @@ const CajaHistoryList = ({
     if (!readCashHistory || loadingCloud || isReadOnly) return;
     setLoadingCloud(true);
     setCloudHistory(null);
+    setCloudIncomplete(false);
     setPaginaActual(1);
     setHistoryMessage('');
     try {
@@ -40,8 +42,10 @@ const CajaHistoryList = ({
         throw new Error(response?.message || 'No se pudo consultar el historial Cloud.');
       }
       setCloudHistory(response.cashSessions);
+      const incomplete = Boolean(response.syncDeferred || response.omittedCount);
+      setCloudIncomplete(incomplete);
       setHistoryMessage([
-        'Historial Cloud consultado.',
+        incomplete ? 'Historial Cloud parcial; no se confirmó su integridad.' : 'Historial Cloud consultado.',
         response.syncDeferred ? 'Existen cambios todavía pendientes de sincronización.' : '',
         response.omittedCount ? `${response.omittedCount} sesiones sin identidad financiera verificable no se muestran.` : ''
       ].filter(Boolean).join(' '));
@@ -55,7 +59,7 @@ const CajaHistoryList = ({
   const historyControls = isCloudCash && (
     <div className="cash-opening-notice">
       <div>
-        <p>{cloudHistory === null ? 'Vista local de los cortes disponibles (puede estar incompleta).' : 'Consulta Cloud al momento de la lectura.'}</p>
+        <p>{cloudHistory === null ? 'Vista local de los cortes disponibles (puede estar incompleta).' : cloudIncomplete ? 'Consulta Cloud parcial al momento de la lectura.' : 'Consulta Cloud al momento de la lectura.'}</p>
         {historyMessage && <p role="status">{historyMessage}</p>}
         {readCashHistory && (
           <button type="button" className="ui-button ui-button--secondary ui-button--sm" onClick={loadCloudHistory} disabled={loadingCloud || isReadOnly}>
@@ -160,7 +164,7 @@ const CajaHistoryList = ({
         {historyControls}
         <div className="ui-empty-state empty-state">
           <Archive className="empty-state-icon" size={30} aria-hidden="true" />
-          <p>{isCloudCash && cloudHistory === null ? 'No hay cortes en la vista local.' : 'No hay historial de cortes registrados.'}</p>
+          <p>{isCloudCash && cloudHistory === null ? 'No hay cortes en la vista local.' : cloudIncomplete ? 'No se pudo confirmar si existen más cortes.' : 'No hay historial de cortes registrados.'}</p>
         </div>
       </section>
     );

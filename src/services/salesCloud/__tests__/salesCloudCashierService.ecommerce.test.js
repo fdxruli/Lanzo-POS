@@ -434,8 +434,8 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(result).toBe('sales.cloud_commit:normal-sale-1:device-a');
   });
 
-  it('recovers a direct confirmed sale with all children, without another financial dispatch', async () => {
-    mocks.getSale.mockResolvedValueOnce({ success: true, sale: confirmedSale, items: confirmedItems, payments: confirmedPayments });
+  it.each(['payment_recorded', 'cash_applied', 'cash_inventory_applied'])('recovers a direct confirmed %s sale with all children, without another financial dispatch', async effects_status => {
+    mocks.getSale.mockResolvedValueOnce({ success: true, sale: { ...confirmedSale, effects_status }, items: confirmedItems, payments: confirmedPayments });
     await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: true, exists: true, cloudSaleId: confirmedSale.id });
     expect(mocks.pullSalesSnapshot).not.toHaveBeenCalled();
     expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledWith(expect.objectContaining({
@@ -460,8 +460,18 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
 
   it('recovers by the original idempotency key when the Cloud ID differs and no local ID is present', async () => {
     mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
-    const { local_sale_id: _omitted, ...byKey } = confirmedSale;
+    const byKey = { ...confirmedSale };
+    delete byKey.local_sale_id;
     mocks.pullSalesSnapshot.mockResolvedValueOnce(page({ ...foundPage, sales: [byKey] }));
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: true, exists: true });
+    assertNoEffects();
+  });
+
+  it('recovers a confirmed wholly credit sale with no payment rows but authoritative charge lineage', async () => {
+    const sale = { ...confirmedSale, effects_status: 'credit_applied', payment_method: 'credit',
+      payment_status: 'credit_pending', amount_paid: 0, balance_due: 10,
+      customer_id: 'customer-1', credit_ledger_charge_id: 'charge-1', credit_effect_status: 'applied' };
+    mocks.getSale.mockResolvedValueOnce({ success: true, sale, items: confirmedItems, payments: [] });
     await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: true, exists: true });
     assertNoEffects();
   });
