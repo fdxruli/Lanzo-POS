@@ -76,7 +76,7 @@ const qa10Payments = [
 beforeEach(async () => {
   runtime.database = new Dexie(`sales-cloud-3b-${crypto.randomUUID()}`);
   runtime.database.version(1).stores({
-    sales: 'id, status, timestamp, cash_session_id', menu: 'id', product_batches: 'id, productId',
+    sales: 'id, status, timestamp, cash_session_id, cloudSaleId', menu: 'id', product_batches: 'id, productId',
     transaction_log: 'id', sync_cache: 'key', movimientos_caja: 'id, cash_session_id',
     deleted_sales: 'id, deletedAt', waste_logs: 'id, timestamp', layaways: 'id', customer_ledger: 'id'
   });
@@ -102,12 +102,15 @@ describe('Confirmed Cloud checkout projection', () => {
     const args = { localSale: { id: 'local-sale-3b' }, response, actorHandle, recoveryRead: true };
     await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot(args);
     const recovered = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot(args);
-    expect(recovered.items).toEqual(response.items);
+    expect(recovered.items).toEqual([expect.objectContaining({ ...response.items[0], name: 'Pizza', price: 100, batchId: 'b1' })]);
     expect(recovered.payments).toHaveLength(3);
     expect(await runtime.database.table(STORES.TRANSACTION_LOG).count()).toBe(1);
     expect(await runtime.database.table(STORES.MENU).get('pizza')).toEqual(inventory);
     expect(await runtime.database.table(STORES.PRODUCT_BATCHES).get('b1')).toEqual(batch);
     expect(await runtime.database.table(STORES.MOVIMIENTOS_CAJA).toArray()).toEqual([cash]);
+    await expect(salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({ ...args, localSale: { id: 'different-local-id' } })).rejects.toThrow('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
+    expect(await runtime.database.table(STORES.SALES).get('different-local-id')).toBeUndefined();
+    expect(await runtime.database.table(STORES.TRANSACTION_LOG).count()).toBe(1);
   });
 
 

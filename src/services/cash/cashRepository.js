@@ -1926,21 +1926,28 @@ export const cashRepository = {
       fetchPage: async ({ referenceChangeSeq, pageCursor }) => {
         assertCurrent();
         const response = await cashCloudRepository.pullCashSnapshot({
-        licenseKey: mode.licenseKey,
-        scope,
-        limit: 500,
-        snapshotProtocol,
-        snapshotReferenceChangeSeq: referenceChangeSeq,
-        pageCursor,
-        actorHandle
+          licenseKey: mode.licenseKey,
+          scope,
+          limit: 500,
+          snapshotProtocol,
+          snapshotReferenceChangeSeq: referenceChangeSeq,
+          pageCursor,
+          actorHandle
         });
         assertCurrent();
         return response;
       }
     });
-    const valid = result.sessions.filter(isCompleteCloudCashSession);
+    const valid = result.sessions.filter(session => isCompleteCloudCashSession(session)
+      && (!isClosedCashSession(session) || (Number.isFinite(Date.parse(session.opened_at))
+        && Number.isFinite(Date.parse(session.closed_at)) && hasCloudValue(session.opening_amount)
+        && Number.isFinite(Number(session.opening_amount)))));
     const cashSessions = valid.filter((session) => !session.deleted_at && isClosedCashSession(session))
-      .map((session) => ({ ...session, ...cloudCashSessionToLocal(session) }))
+      .map((session) => ({ ...session, ...cloudCashSessionToLocal(session),
+        monto_conteo_inicial: session.opening_counted_amount ?? null,
+        monto_fondo_sugerido: session.opening_suggested_amount ?? null,
+        diferencia_apertura: session.opening_difference ?? null
+      }))
       .sort((a, b) => String(b.fecha_apertura).localeCompare(String(a.fecha_apertura)) || String(a.id).localeCompare(String(b.id)));
     assertCurrent();
     return {

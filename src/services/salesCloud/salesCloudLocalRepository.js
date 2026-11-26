@@ -321,14 +321,47 @@ export const salesCloudLocalRepository = {
         actorHandle?.assertCurrent();
         const existing = await db.table(STORES.SALES).get(saleId);
         actorHandle?.assertCurrent();
-        if (recoveryRead && existing?.cloudSaleId && existing.cloudSaleId !== cloudSale.id) throw new Error('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
+        if (recoveryRead) {
+          const alreadyMapped = await db.table(STORES.SALES).where('cloudSaleId').equals(cloudSale.id).toArray();
+          actorHandle?.assertCurrent();
+          const existingKey = existing?.metadata?.ecommerceConversionKey || existing?.metadata?.idempotencyKey;
+          const incomingKey = localSale.metadata?.ecommerceConversionKey || localSale.metadata?.idempotencyKey;
+          if (alreadyMapped.some(row => row.id !== saleId)
+            || (existing?.cloudSaleId && existing.cloudSaleId !== cloudSale.id)
+            || (existingKey && incomingKey && existingKey !== incomingKey)) throw new Error('CLOUD_SALE_RECOVERY_IDENTITY_CONFLICT');
+        }
         if (existing?.sourceMode === 'cloud_committed'
             && Number(existing.cloudServerVersion || 0) > Number(cloudSale.server_version || 0)) {
+          if (recoveryRead) throw new Error('CLOUD_SALE_RECOVERY_LOCAL_VERSION_NEWER');
           localSnapshot = existing;
           return;
         }
         localSnapshot = buildLocalCloudCommittedSale({
-          localSale: { ...existing, ...localSale, ...(recoveryRead ? { items } : {}) }, cloudSale, items, response
+          localSale: {
+            ...existing, ...localSale,
+            ...(recoveryRead ? {
+              customerId: cloudSale.customer_id ?? null,
+              customerName: cloudSale.customer_name ?? null,
+              customerPhone: cloudSale.customer_phone ?? null,
+              subtotal: cloudSale.subtotal == null ? undefined : String(cloudSale.subtotal),
+              discountTotal: cloudSale.discount_total == null ? undefined : String(cloudSale.discount_total),
+              taxTotal: cloudSale.tax_total == null ? undefined : String(cloudSale.tax_total),
+              items: items.map(item => ({
+                ...item,
+                productId: item.product_id,
+                name: item.product_name,
+                price: item.unit_price,
+                cost: item.unit_cost,
+                lineId: item.metadata?.lineId || item.id,
+                lineTotal: item.line_total,
+                discountAmount: item.discount_amount,
+                taxAmount: item.tax_amount,
+                batchId: item.batch_id,
+                batchSku: item.batch_sku,
+                batchExpiryDate: item.batch_expiry_date
+              }))
+            } : {})
+          }, cloudSale, items, response
         });
         actorHandle?.assertCurrent();
         await db.table(STORES.SALES).put(localSnapshot);

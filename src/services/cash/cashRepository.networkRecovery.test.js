@@ -26,7 +26,9 @@ const runtime = vi.hoisted(() => ({
   stationState: vi.fn(),
   localState: vi.fn(),
   projection: vi.fn(),
-  history: vi.fn()
+  history: vi.fn(),
+  snapshot: vi.fn(),
+  negotiateSnapshotProtocol: vi.fn()
 }));
 
 vi.mock('../Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
@@ -42,7 +44,8 @@ vi.mock('./cashCloudRepository', () => ({
   cashCloudRepository: {
     getCurrentCashSession: (...args) => runtime.current(...args),
     getCashStationState: (...args) => runtime.stationState(...args),
-    pullCashSnapshot: vi.fn()
+    pullCashSnapshot: runtime.snapshot,
+    negotiateSnapshotProtocol: runtime.negotiateSnapshotProtocol
   }
 }));
 vi.mock('./cashLocalRepository', () => ({
@@ -81,7 +84,7 @@ vi.mock('./cashActor', () => ({
   getCashMode: () => runtime.mode
 }));
 vi.mock('./cashPermissions', () => ({ assertCanUseCashRegister: vi.fn(), canAuditCashSessions: vi.fn(() => true) }));
-vi.mock('./cashMapper', () => ({ localClosingToCloudPayload: vi.fn((value) => value), localOpeningToCloudPayload: vi.fn((value) => value) }));
+vi.mock('./cashMapper', async (importOriginal) => ({ ...await importOriginal(), localClosingToCloudPayload: vi.fn((value) => value), localOpeningToCloudPayload: vi.fn((value) => value) }));
 vi.mock('../financial/financialIntentLedger', () => ({
   markFinancialIntentProjectionApplied: vi.fn(),
   markFinancialIntentProjectionFailed: vi.fn()
@@ -91,6 +94,8 @@ vi.mock('./cashSyncHandler', () => ({}));
 
 import Logger from '../Logger';
 import { cashRepository } from './cashRepository';
+import { cashLocalRepository } from './cashLocalRepository';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const cachedSession = {
   id: 'cash-local-known',
@@ -103,6 +108,10 @@ const cachedSession = {
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.mode.online = true;
+  runtime.mode.cloudEnabled = true;
+  runtime.mode.actor = { actorKey: 'admin:one', isStaff: false, staffUserId: null };
+  runtime.snapshot.mockReset();
+  runtime.negotiateSnapshotProtocol.mockReset().mockResolvedValue({ supported: true });
   runtime.mode.readOnly = false;
   runtime.mode.stateKnown = false;
   runtime.mode.networkUnavailable = false;
@@ -124,6 +133,46 @@ beforeEach(() => {
 });
 
 describe('cashRepository network recovery', () => {
+  it('reads 501 closed Cloud sessions for Admin without applying local projections', async () => {
+    const actorHandle = { actorType: 'admin', actorKey: 'admin:one', assertCurrent: vi.fn() };
+    const capture = vi.spyOn(actorRuntimeController, 'capture').mockReturnValue(actorHandle);
+    const session = id => ({ id, status: 'closed', actor_key: 'staff:one', cash_station_id: STATION_B,
+      opened_at: '2026-09-06T09:00:00Z', closed_at: '2026-09-06T10:00:00Z', opening_amount: 100,
+      closing_counted_amount: 125, cash_difference: 0 });
+    const cursor = { position_rank: 1, position_id: 's499' };
+    const page = (cash_sessions, extra = {}) => ({ success: true, scope: 'all', snapshot_contract: 'keyset_reference_v1',
+      snapshot_contract_version: 1, snapshot_reference_change_seq: 20, safe_change_seq: 20, sync_deferred: false,
+      limit: 500, cash_sessions, movements: [], has_more: false, snapshot_complete: true, next_page_cursor: null, ...extra });
+    runtime.snapshot.mockResolvedValueOnce(page(Array.from({ length: 500 }, (_, i) => session('s'+i)), {
+      has_more: true, snapshot_complete: false, next_page_cursor: cursor
+    })).mockResolvedValueOnce(page([session('s500')]));
+    try {
+      const result = await cashRepository.readCashHistory();
+      expect(result.cashSessions).toHaveLength(501);
+      expect(result.cashSessions[0]).toMatchObject({ cashStationId: STATION_B, monto_cierre: '125', diferencia: '0', monto_conteo_inicial: null });
+      expect(runtime.snapshot.mock.calls.map(([p]) => [p.scope, p.snapshotReferenceChangeSeq, p.pageCursor])).toEqual([['all',null,null],['all',20,cursor]]);
+      expect(cashLocalRepository.applyCloudCashSessions).not.toHaveBeenCalled();
+      expect(cashLocalRepository.applyCloudCashMovements).not.toHaveBeenCalled();
+    } finally { capture.mockRestore(); }
+  });
+
+  it('rejects foreign Staff history and skips Cloud on Free/Local', async () => {
+    runtime.mode.actor = { actorKey: 'staff:one', isStaff: true, staffUserId: 'one' };
+    const actorHandle = { actorType: 'staff', actorKey: 'staff:one', assertCurrent: vi.fn() };
+    const capture = vi.spyOn(actorRuntimeController, 'capture').mockReturnValue(actorHandle);
+    runtime.snapshot.mockResolvedValueOnce({ success: true, scope: 'mine', snapshot_contract: 'keyset_reference_v1',
+      snapshot_contract_version: 1, snapshot_reference_change_seq: 20, safe_change_seq: 20, sync_deferred: false,
+      limit: 500, cash_sessions: [{ id: 'foreign', actor_key: 'staff:other' }], movements: [],
+      has_more: false, snapshot_complete: true, next_page_cursor: null });
+    try {
+      await expect(cashRepository.readCashHistory()).rejects.toThrow('CASH_HISTORY_SESSION_INVALID');
+      expect(runtime.snapshot).toHaveBeenCalledWith(expect.objectContaining({ scope: 'mine' }));
+      runtime.mode.cloudEnabled = false;
+      await expect(cashRepository.readCashHistory()).resolves.toMatchObject({ success: false, code: 'CASH_HISTORY_CLOUD_UNAVAILABLE' });
+      expect(runtime.snapshot).toHaveBeenCalledOnce();
+    } finally { capture.mockRestore(); }
+  });
+
   it('does not throw for Failed to fetch and logs the outage once', async () => {
     runtime.current.mockRejectedValue(new TypeError('Failed to fetch'));
 
