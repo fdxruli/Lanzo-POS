@@ -90,6 +90,171 @@ const transactionTables = ({ cash = false, stock = false, profile = false } = {}
     ...(cash ? [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)] : [])
 ];
 
+const normalizeCloudServerVersion = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const version = Number(value);
+    return Number.isSafeInteger(version) && version >= 0 ? version : null;
+};
+
+const isCloudLayawayRecord = (layaway) => (
+    layaway?.cloudLayaway === true || layaway?.sourceMode === 'cloud_committed'
+);
+
+const assertCloudLayawayProjectionAllowed = (existing) => {
+    if (existing && !isCloudLayawayRecord(existing)) {
+        const error = new Error('CLOUD_LAYAWAY_LOCAL_PENDING_CONFLICT');
+        error.code = error.message;
+        throw error;
+    }
+};
+
+const buildCloudLayawayProjection = (response = {}, existing = null) => {
+    const cloudLayaway = response?.layaway || response;
+    const id = cloudLayaway?.id || cloudLayaway?.layaway_id || null;
+    if (!id) throw new Error('CLOUD_LAYAWAY_SNAPSHOT_INVALID');
+
+    const numberOr = (value, fallback = 0) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const localItems = Array.isArray(cloudLayaway.items)
+        ? cloudLayaway.items.map((item) => ({
+            ...item,
+            id: item.id || null,
+            productId: item.product_id || item.productId || item.parentId || null,
+            productName: item.product_name || item.productName || item.name || null,
+            productSku: item.product_sku || item.productSku || item.sku || null,
+            quantity: numberOr(item.quantity ?? item.qty, 0),
+            price: numberOr(item.unit_price ?? item.unitPrice ?? item.price, 0),
+            cost: item.unit_cost ?? item.unitCost ?? item.cost ?? null,
+            lineTotal: numberOr(item.line_total ?? item.lineTotal ?? item.total, 0),
+            batchId: item.batch_id || item.batchId || null
+        }))
+        : (existing?.items || []);
+    const cloudPayments = Array.isArray(response?.payments)
+        ? response.payments
+        : (Array.isArray(cloudLayaway.payments) ? cloudLayaway.payments : null);
+    const existingPayments = Array.isArray(existing?.payments) ? existing.payments : [];
+    const confirmedPayments = cloudPayments
+        ? cloudPayments.map((payment) => {
+            const previous = existingPayments.find((item) => item.id === payment.id);
+            return {
+                ...payment,
+                id: payment.id,
+                amount: numberOr(payment.amount, 0),
+                date: payment.created_at || payment.createdAt || payment.date || previous?.date || null,
+                type: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
+                paymentType: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
+                status: payment.status || 'confirmed',
+                paymentMethod: payment.payment_method || payment.paymentMethod || 'cash',
+                cashMovementId: payment.cash_movement_id || payment.cashMovementId || null,
+                cashSessionId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cash_session_id: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cajaId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cashStationId: payment.cash_station_id || payment.cashStationId || null,
+                actorKey: payment.actor_key || payment.actorKey || null
+            };
+        })
+        : existingPayments;
+    const confirmedPaymentIds = new Set(confirmedPayments.map((payment) => payment.id));
+    const unresolvedLocalPayments = existingPayments.filter((payment) => (
+        ['pending', 'prepared', 'pending_receipt'].includes(String(payment?.status || '').toLowerCase())
+        && !confirmedPaymentIds.has(payment.id)
+    ));
+    const paymentsById = new Map([...confirmedPayments, ...unresolvedLocalPayments]
+        .filter((payment) => payment?.id)
+        .map((payment) => [payment.id, payment]));
+    const mutationPayment = response?.payment && typeof response.payment === 'object'
+        ? response.payment : null;
+    if (mutationPayment?.id) {
+        paymentsById.set(mutationPayment.id, {
+            ...mutationPayment,
+            id: mutationPayment.id,
+            amount: numberOr(mutationPayment.amount, 0),
+            date: mutationPayment.created_at || mutationPayment.createdAt || mutationPayment.date || nowIso(),
+            type: mutationPayment.payment_type || mutationPayment.paymentType || 'installment',
+            paymentType: mutationPayment.payment_type || mutationPayment.paymentType || 'installment',
+            status: mutationPayment.status || 'confirmed',
+            paymentMethod: mutationPayment.payment_method || mutationPayment.paymentMethod || 'cash',
+            cashMovementId: mutationPayment.cash_movement_id || mutationPayment.cashMovementId || null,
+            cashSessionId: mutationPayment.cash_session_id || mutationPayment.cashSessionId || null,
+            cash_session_id: mutationPayment.cash_session_id || mutationPayment.cashSessionId || null,
+            cajaId: mutationPayment.cash_session_id || mutationPayment.cashSessionId || null,
+            cashStationId: mutationPayment.cash_station_id || mutationPayment.cashStationId || null,
+            actorKey: mutationPayment.actor_key || mutationPayment.actorKey || null
+        });
+    }
+    const payments = [...paymentsById.values()];
+    const updatedAt = cloudLayaway.updated_at || cloudLayaway.updatedAt || nowIso();
+    const createdAt = cloudLayaway.created_at || cloudLayaway.createdAt || existing?.createdAt || updatedAt;
+    const rawStatus = String(cloudLayaway.status || existing?.status || 'active').toLowerCase();
+    if (!['active', 'ready', 'completed', 'cancelled'].includes(rawStatus)) {
+        throw new Error('CLOUD_LAYAWAY_STATUS_INVALID');
+    }
+
+    return {
+        ...existing,
+        id,
+        customerId: cloudLayaway.customer_id ?? cloudLayaway.customerId ?? existing?.customerId ?? null,
+        customerName: cloudLayaway.customer_name ?? cloudLayaway.customerName ?? existing?.customerName ?? null,
+        customerPhone: cloudLayaway.customer_phone ?? cloudLayaway.customerPhone ?? existing?.customerPhone ?? null,
+        totalAmount: numberOr(cloudLayaway.total_amount ?? cloudLayaway.totalAmount, existing?.totalAmount || 0),
+        paidAmount: numberOr(cloudLayaway.paid_amount ?? cloudLayaway.paidAmount, existing?.paidAmount || 0),
+        balanceDue: numberOr(cloudLayaway.balance_due ?? cloudLayaway.balanceDue,
+            numberOr(cloudLayaway.total_amount ?? cloudLayaway.totalAmount, existing?.totalAmount || 0)
+            - numberOr(cloudLayaway.paid_amount ?? cloudLayaway.paidAmount, existing?.paidAmount || 0)),
+        currency: cloudLayaway.currency || existing?.currency || 'MXN',
+        deadline: cloudLayaway.deadline || cloudLayaway.due_date || existing?.deadline || null,
+        status: rawStatus,
+        items: localItems,
+        payments,
+        sourceMode: 'cloud_committed',
+        cloudLayaway: true,
+        cloudServerVersion: normalizeCloudServerVersion(cloudLayaway.server_version ?? cloudLayaway.serverVersion),
+        cloudLastIdempotencyKey: cloudLayaway.last_idempotency_key || cloudLayaway.lastIdempotencyKey || existing?.cloudLastIdempotencyKey || null,
+        cloudInventoryReservations: Array.isArray(response?.inventory_reservations)
+            ? response.inventory_reservations
+            : (existing?.cloudInventoryReservations || []),
+        cloudCashMovements: Array.isArray(response?.cash_movements)
+            ? response.cash_movements
+            : (existing?.cloudCashMovements || []),
+        cloudInventoryMovements: Array.isArray(response?.inventory_movements)
+            ? response.inventory_movements
+            : (existing?.cloudInventoryMovements || []),
+        conversionSaleId: cloudLayaway.conversion_sale_id || cloudLayaway.conversionSaleId || existing?.conversionSaleId || null,
+        refundId: cloudLayaway.refund_id || cloudLayaway.refundId || existing?.refundId || null,
+        refundCashMovementId: cloudLayaway.refund_cash_movement_id || cloudLayaway.refundCashMovementId || existing?.refundCashMovementId || null,
+        retainedMoney: Boolean(cloudLayaway.retained_money ?? cloudLayaway.retainedMoney ?? existing?.retainedMoney ?? false),
+        retainedPenaltyAmount: numberOr(cloudLayaway.retained_amount ?? cloudLayaway.retainedPenaltyAmount, existing?.retainedPenaltyAmount || 0),
+        createdAt,
+        updatedAt,
+        deliveredAt: cloudLayaway.completed_at || cloudLayaway.completedAt || existing?.deliveredAt || null
+    };
+};
+
+const applyCloudLayawaySnapshotInTransaction = async (table, response, actorHandle = null) => {
+    actorHandle?.assertCurrent?.('pos');
+    const cloudLayaway = response?.layaway || response;
+    const id = cloudLayaway?.id || cloudLayaway?.layaway_id || null;
+    if (!id) throw new Error('CLOUD_LAYAWAY_SNAPSHOT_INVALID');
+    const existing = await table.get(id);
+    actorHandle?.assertCurrent?.('pos');
+    assertCloudLayawayProjectionAllowed(existing);
+    if (existing?.cloudDeleted === true) {
+        return { layaway: existing, applied: false, stale: true };
+    }
+    const projected = buildCloudLayawayProjection(response, existing);
+    const currentVersion = normalizeCloudServerVersion(existing?.cloudServerVersion);
+    const incomingVersion = normalizeCloudServerVersion(projected.cloudServerVersion);
+    if (currentVersion !== null && (incomingVersion === null || currentVersion >= incomingVersion)) {
+        return { layaway: existing, applied: false, stale: currentVersion > (incomingVersion ?? -1) };
+    }
+    actorHandle?.assertCurrent?.('pos');
+    await table.put(projected);
+    actorHandle?.assertCurrent?.('pos');
+    return { layaway: projected, applied: true, stale: false };
+};
+
 
 const inventoryError = (code, message) => {
     const error = new Error(`${code}: ${message}`);
@@ -716,108 +881,112 @@ export const layawayRepository = {
     // Cloud layaways are already committed by the server. This projection
     // stores the server snapshot for UI/recovery only; it never reserves,
     // releases, consumes stock, or creates a local cash movement.
-    async upsertCloudSnapshot(response = {}, { preserveNewer = false } = {}) {
-        const cloudLayaway = response?.layaway || response;
-        const id = cloudLayaway?.id || cloudLayaway?.layaway_id || null;
-        if (!id) throw new Error('CLOUD_LAYAWAY_SNAPSHOT_INVALID');
+    async upsertCloudSnapshot(response = {}, { actorHandle = null } = {}) {
+        const table = db.table(STORES.LAYAWAYS);
+        return db.transaction('rw', table, async () => {
+            const result = await applyCloudLayawaySnapshotInTransaction(table, response, actorHandle);
+            return result.layaway;
+        });
+    },
+
+    async applyCloudChangesPage(page = {}, { actorHandle = null } = {}) {
+        const arrayKeys = [
+            'events', 'layaways', 'payments', 'inventory_reservations',
+            'cash_movements', 'inventory_movements', 'deleted_ids'
+        ];
+        if (arrayKeys.some((key) => !Array.isArray(page?.[key]))) {
+            throw new Error('CLOUD_LAYAWAY_PAGE_PROJECTION_INVALID');
+        }
+
+        const parents = new Map();
+        for (const layaway of page.layaways) {
+            const id = layaway?.id || layaway?.layaway_id;
+            if (!id || parents.has(id)) throw new Error('CLOUD_LAYAWAY_PAGE_PARENT_INVALID');
+            parents.set(id, layaway);
+        }
+        const deletedIds = new Set();
+        for (const value of page.deleted_ids) {
+            const id = typeof value === 'string' ? value : value?.id || value?.layaway_id;
+            if (!id || deletedIds.has(id)) throw new Error('CLOUD_LAYAWAY_PAGE_TOMBSTONE_INVALID');
+            deletedIds.add(id);
+        }
+        const getChildLayawayId = (key, row) => (
+            row?.layaway_id || row?.layawayId
+            || (key === 'cash_movements' && row?.reference_type === 'layaway' ? row?.reference_id : null)
+            || (key === 'inventory_movements' ? row?.metadata?.layaway_id : null)
+        );
+        for (const [key, rows] of [
+            ['payments', page.payments],
+            ['inventory_reservations', page.inventory_reservations],
+            ['cash_movements', page.cash_movements],
+            ['inventory_movements', page.inventory_movements]
+        ]) {
+            for (const row of rows) {
+                const id = getChildLayawayId(key, row);
+                if (!row?.id || !id || (!parents.has(id) && !deletedIds.has(id))) {
+                    throw new Error('CLOUD_LAYAWAY_PAGE_CHILD_INVALID');
+                }
+            }
+        }
 
         const table = db.table(STORES.LAYAWAYS);
-        const existing = await table.get(id);
-        const numberOr = (value, fallback = 0) => {
-            const parsed = Number(value);
-            return Number.isFinite(parsed) ? parsed : fallback;
-        };
-        const localItems = Array.isArray(cloudLayaway.items)
-            ? cloudLayaway.items.map((item) => ({
-                ...item,
-                id: item.id || null,
-                productId: item.product_id || item.productId || item.parentId || null,
-                productName: item.product_name || item.productName || item.name || null,
-                productSku: item.product_sku || item.productSku || item.sku || null,
-                quantity: numberOr(item.quantity ?? item.qty, 0),
-                price: numberOr(item.unit_price ?? item.unitPrice ?? item.price, 0),
-                cost: item.unit_cost ?? item.unitCost ?? item.cost ?? null,
-                lineTotal: numberOr(item.line_total ?? item.lineTotal ?? item.total, 0),
-                batchId: item.batch_id || item.batchId || null
-            }))
-            : (existing?.items || []);
-        const cloudPayments = Array.isArray(response?.payments)
-            ? response.payments
-            : (Array.isArray(cloudLayaway.payments) ? cloudLayaway.payments : null);
-        const payments = cloudPayments
-            ? cloudPayments.map((payment) => ({
-                ...payment,
-                id: payment.id,
-                amount: numberOr(payment.amount, 0),
-                date: payment.created_at || payment.createdAt || payment.date || nowIso(),
-                type: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
-                paymentType: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
-                status: payment.status || 'confirmed',
-                paymentMethod: payment.payment_method || payment.paymentMethod || 'cash',
-                cashMovementId: payment.cash_movement_id || payment.cashMovementId || null,
-                cashSessionId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
-                cash_session_id: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
-                cajaId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
-                cashStationId: payment.cash_station_id || payment.cashStationId || null,
-                actorKey: payment.actor_key || payment.actorKey || null
-            }))
-            : (existing?.payments || []);
-        const updatedAt = cloudLayaway.updated_at || cloudLayaway.updatedAt || nowIso();
-        const createdAt = cloudLayaway.created_at || cloudLayaway.createdAt || existing?.createdAt || updatedAt;
-        const projected = {
-            ...existing,
-            id,
-            customerId: cloudLayaway.customer_id ?? cloudLayaway.customerId ?? existing?.customerId ?? null,
-            customerName: cloudLayaway.customer_name ?? cloudLayaway.customerName ?? existing?.customerName ?? null,
-            customerPhone: cloudLayaway.customer_phone ?? cloudLayaway.customerPhone ?? existing?.customerPhone ?? null,
-            totalAmount: numberOr(cloudLayaway.total_amount ?? cloudLayaway.totalAmount, existing?.totalAmount || 0),
-            paidAmount: numberOr(cloudLayaway.paid_amount ?? cloudLayaway.paidAmount, existing?.paidAmount || 0),
-            balanceDue: numberOr(cloudLayaway.balance_due ?? cloudLayaway.balanceDue, 0),
-            currency: cloudLayaway.currency || existing?.currency || 'MXN',
-            deadline: cloudLayaway.deadline || cloudLayaway.due_date || existing?.deadline || null,
-            status: cloudLayaway.status || existing?.status || 'active',
-            items: localItems,
-            payments,
-            sourceMode: 'cloud_committed',
-            cloudLayaway: true,
-            cloudServerVersion: cloudLayaway.server_version ?? cloudLayaway.serverVersion ?? null,
-            cloudLastIdempotencyKey: cloudLayaway.last_idempotency_key || cloudLayaway.lastIdempotencyKey || null,
-            cloudInventoryReservations: Array.isArray(response?.inventory_reservations)
-                ? response.inventory_reservations
-                : (existing?.cloudInventoryReservations || []),
-            cloudCashMovements: Array.isArray(response?.cash_movements)
-                ? response.cash_movements
-                : (existing?.cloudCashMovements || []),
-            cloudInventoryMovements: Array.isArray(response?.inventory_movements)
-                ? response.inventory_movements
-                : (existing?.cloudInventoryMovements || []),
-            conversionSaleId: cloudLayaway.conversion_sale_id || cloudLayaway.conversionSaleId || existing?.conversionSaleId || null,
-            refundId: cloudLayaway.refund_id || cloudLayaway.refundId || existing?.refundId || null,
-            refundCashMovementId: cloudLayaway.refund_cash_movement_id || cloudLayaway.refundCashMovementId || existing?.refundCashMovementId || null,
-            retainedMoney: Boolean(cloudLayaway.retained_money ?? cloudLayaway.retainedMoney ?? existing?.retainedMoney ?? false),
-            retainedPenaltyAmount: numberOr(cloudLayaway.retained_amount ?? cloudLayaway.retainedPenaltyAmount, existing?.retainedPenaltyAmount || 0),
-            createdAt,
-            updatedAt,
-            deliveredAt: cloudLayaway.completed_at || cloudLayaway.completedAt || existing?.deliveredAt || null
-        };
-
-        if (!preserveNewer) {
-            await table.put(projected);
-            return projected;
-        }
         return db.transaction('rw', table, async () => {
-            const current = await table.get(id);
-            const currentVersion = current?.cloudServerVersion ?? -1;
-            if (Number(currentVersion) >= Number(projected.cloudServerVersion)) return current;
-            await table.put(projected);
-            return projected;
+            actorHandle?.assertCurrent?.('pos');
+            let applied = 0;
+            let stale = 0;
+            let deleted = 0;
+            for (const [id, layaway] of parents) {
+                if (deletedIds.has(id)) continue;
+                const snapshot = {
+                    layaway,
+                    payments: page.payments.filter((row) => getChildLayawayId('payments', row) === id),
+                    inventory_reservations: page.inventory_reservations.filter((row) => getChildLayawayId('inventory_reservations', row) === id),
+                    cash_movements: page.cash_movements.filter((row) => getChildLayawayId('cash_movements', row) === id),
+                    inventory_movements: page.inventory_movements.filter((row) => getChildLayawayId('inventory_movements', row) === id)
+                };
+                const result = await applyCloudLayawaySnapshotInTransaction(table, snapshot, actorHandle);
+                if (result.applied) applied += 1;
+                if (result.stale) stale += 1;
+            }
+            for (const id of deletedIds) {
+                actorHandle?.assertCurrent?.('pos');
+                const existing = await table.get(id);
+                actorHandle?.assertCurrent?.('pos');
+                assertCloudLayawayProjectionAllowed(existing);
+                if (existing?.cloudDeleted === true) {
+                    stale += 1;
+                    continue;
+                }
+                const parent = parents.get(id);
+                const incomingVersion = normalizeCloudServerVersion(parent?.server_version ?? parent?.serverVersion);
+                const currentVersion = normalizeCloudServerVersion(existing?.cloudServerVersion);
+                if (existing && currentVersion !== null
+                    && (incomingVersion === null || currentVersion > incomingVersion)) {
+                    stale += 1;
+                    continue;
+                }
+                await table.put({
+                    id,
+                    status: 'deleted',
+                    cloudLayaway: true,
+                    sourceMode: 'cloud_committed',
+                    cloudDeleted: true,
+                    cloudServerVersion: incomingVersion ?? currentVersion
+                });
+                actorHandle?.assertCurrent?.('pos');
+                applied += 1;
+                deleted += 1;
+            }
+            actorHandle?.assertCurrent?.('pos');
+            return { success: true, applied, deleted, stale, changedCount: applied };
         });
     },
 
     async getByCustomer(customerId, onlyActive = true) {
         if (onlyActive) return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId)
-            .filter((layaway) => ['active', 'ready'].includes(layaway.status)).toArray();
-        return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId).toArray();
+            .filter((layaway) => !layaway.cloudDeleted && ['active', 'ready'].includes(layaway.status)).toArray();
+        return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId)
+            .filter((layaway) => !layaway.cloudDeleted).toArray();
     },
 
     async getById(id) {

@@ -171,7 +171,7 @@ export const reportingService = {
         incluirMermas ? queryByTimestampRange(STORES.WASTE, range) : Promise.resolve([]),
         incluirProductos ? db.table(STORES.MENU).toArray() : Promise.resolve([]),
         incluirClientes ? db.table(STORES.CUSTOMERS).toArray() : Promise.resolve([]),
-        db.table(STORES.LAYAWAYS).toArray().catch(() => []),
+        db.table(STORES.LAYAWAYS).filter((layaway) => !layaway.cloudDeleted).toArray().catch(() => []),
         db.table(STORES.MOVIMIENTOS_CAJA).toArray(),
         db.table(STORES.CUSTOMER_LEDGER).toArray(),
         db.table(STORES.SALES).filter(isCancelledSale).toArray()

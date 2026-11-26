@@ -23,10 +23,6 @@
       "handler": "productSyncHandler"
     },
     {
-      "entity": "inventory_movement",
-      "handler": "productSyncHandler"
-    },
-    {
       "entity": "inventory_entry",
       "handler": "productSyncHandler"
     },
@@ -59,16 +55,24 @@
       "handler": "salesCloudSyncHandler"
     },
     {
-      "entity": "inventory_movement",
-      "handler": "salesCloudSyncHandler"
-    },
-    {
       "entity": "restaurant_order",
       "handler": "restaurantOrdersSyncHandler"
     },
     {
       "entity": "restaurant_order_item",
       "handler": "restaurantOrdersSyncHandler"
+    },
+    {
+      "entity": "layaway",
+      "handler": "layawaySyncHandler"
+    },
+    {
+      "entity": "layaway_payment",
+      "handler": "layawaySyncHandler"
+    },
+    {
+      "entity": "layaway_inventory_reservation",
+      "handler": "layawaySyncHandler"
     }
   ],
   "effective": {
@@ -77,7 +81,6 @@
     "category": "productSyncHandler",
     "product": "productSyncHandler",
     "product_batch": "productSyncHandler",
-    "inventory_movement": "salesCloudSyncHandler",
     "inventory_entry": "productSyncHandler",
     "customer": "customerSyncHandler",
     "customer_ledger": "customerCreditSyncHandler",
@@ -87,7 +90,10 @@
     "sale_payment": "salesCloudSyncHandler",
     "sale_cancellation": "salesCloudSyncHandler",
     "restaurant_order": "restaurantOrdersSyncHandler",
-    "restaurant_order_item": "restaurantOrdersSyncHandler"
+    "restaurant_order_item": "restaurantOrdersSyncHandler",
+    "layaway": "layawaySyncHandler",
+    "layaway_payment": "layawaySyncHandler",
+    "layaway_inventory_reservation": "layawaySyncHandler"
   },
-  "limit": "Actual auto root cold import order. Other roots or future hot registration can overwrite the shared Map; not a universal order claim."
+  "limit": "Actual auto root cold import order. No duplicate entity registration observed. Inventory movement read fan-out is verified independently in posSyncOrchestrator.realHandlers.test.js; no universal hot-registration claim."
 }

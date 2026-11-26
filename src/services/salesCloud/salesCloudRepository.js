@@ -411,14 +411,23 @@ export const salesCloudRepository = {
     return parseRpcPayload(data);
   },
 
-  async pullLayawayChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
+  async pullLayawayChanges({
+    licenseKey,
+    sinceChangeSeq = 0,
+    limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+    actorHandle = null
+  }) {
     assertSupabase();
+    actorHandle?.assertCurrent?.('pos');
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle?.assertCurrent?.('pos');
     const { data, error } = await supabaseClient.rpc('pos_pull_layaway_changes', {
       ...baseArgs,
       p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
-      p_limit: normalizeLimit(limit)
+      // pos_pull_layaway_changes caps its effective page size at 499.
+      p_limit: Math.min(normalizeLimit(limit), SYNC_LIMITS.MAX_PULL_LIMIT - 1)
     });
+    actorHandle?.assertCurrent?.('pos');
     if (error) throw error;
     return parseRpcPayload(data);
   }

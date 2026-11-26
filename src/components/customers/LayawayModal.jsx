@@ -163,6 +163,16 @@ export default function LayawayModal({
         };
     }, [show, customer, loadLayaways, actorGeneration]);
 
+    useEffect(() => {
+        if (!show || !customer || typeof window === 'undefined') return undefined;
+        const refreshFromCloud = () => {
+            const loadVersion = ++loadVersionRef.current;
+            loadLayaways(loadVersion);
+        };
+        window.addEventListener('lanzo:layaway-sync-updated', refreshFromCloud);
+        return () => window.removeEventListener('lanzo:layaway-sync-updated', refreshFromCloud);
+    }, [show, customer, loadLayaways, actorGeneration]);
+
     const handleAddPayment = async (layaway) => {
         if (processingId || paymentInFlight.current || !paymentReviews
             || paymentReviews.some((review) => review.layawayId === layaway.id)) return;

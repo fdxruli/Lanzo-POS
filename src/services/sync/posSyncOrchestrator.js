@@ -37,6 +37,10 @@ const entityHandlers = new Map();
 const MOVEMENT_READ_TARGETS = [SYNC_ENTITY_TYPES.PRODUCT, SYNC_ENTITY_TYPES.SALE];
 const CATALOG_READ_ALIASES = new Set([SYNC_ENTITY_TYPES.CATEGORY, SYNC_ENTITY_TYPES.PRODUCT_BATCH]);
 const SALES_READ_ALIASES = new Set([SYNC_ENTITY_TYPES.SALE_ITEM, SYNC_ENTITY_TYPES.SALE_PAYMENT, SYNC_ENTITY_TYPES.SALE_CANCELLATION]);
+const LAYAWAY_READ_ALIASES = new Set([
+  SYNC_ENTITY_TYPES.LAYAWAY_PAYMENT,
+  SYNC_ENTITY_TYPES.LAYAWAY_INVENTORY_RESERVATION
+]);
 
 const canonicalEventReadType = (type) => {
   const handler = entityHandlers.get(type);
@@ -45,6 +49,9 @@ const canonicalEventReadType = (type) => {
   }
   if (handler && SALES_READ_ALIASES.has(type) && handler === entityHandlers.get(SYNC_ENTITY_TYPES.SALE)) {
     return SYNC_ENTITY_TYPES.SALE;
+  }
+  if (handler && LAYAWAY_READ_ALIASES.has(type) && handler === entityHandlers.get(SYNC_ENTITY_TYPES.LAYAWAY)) {
+    return SYNC_ENTITY_TYPES.LAYAWAY;
   }
   return type;
 };
@@ -451,8 +458,10 @@ const stopRealtimeChannel = async () => {
 };
 
 const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
+  const startedHandlers = new Set();
   for (const [entityType, handler] of entityHandlers.entries()) {
-    if (!handler?.onStart) continue;
+    if (!handler?.onStart || startedHandlers.has(handler)) continue;
+    startedHandlers.add(handler);
 
     try {
       if (executionScope && !canSchedule()) return;
@@ -821,6 +830,18 @@ export const posSyncOrchestrator = {
     return () => {
       entityHandlers.delete(entityType);
     };
+  },
+
+  async deferEntityRead(entityType, { licenseKey = runtime.licenseKey, reason = 'entity_read_deferred' } = {}) {
+    if (!entityType || !runtime.started || !licenseKey || runtime.licenseKey !== licenseKey) return false;
+    const persisted = await persistDeferredHandlerRead(entityType, {
+      state: 'deferred',
+      handler: entityHandlers.get(entityType),
+      licenseKey,
+      generation: runtime.generation
+    });
+    if (persisted) scheduleDeferredPullRecovery(reason);
+    return persisted;
   },
 
   async start({ licenseDetails, reason = 'manual' } = {}) {

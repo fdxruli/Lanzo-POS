@@ -14,7 +14,8 @@ it('records registration order through actual cold commercial auto-bootstrap imp
     const sourceNames = {
       Products: 'productSyncHandler', Customers: 'customerSyncHandler',
       CustomerCredit: 'customerCreditSyncHandler', Cash: 'cashSyncHandler',
-      SalesCloud: 'salesCloudSyncHandler', RestaurantOrders: 'restaurantOrdersSyncHandler'
+      SalesCloud: 'salesCloudSyncHandler', Layaways: 'layawaySyncHandler',
+      RestaurantOrders: 'restaurantOrdersSyncHandler'
     };
     let pending = [];
     const calls = [];
@@ -29,7 +30,7 @@ it('records registration order through actual cold commercial auto-bootstrap imp
       }
     }
     const effective = Object.fromEntries(calls.map(call => [call.entity, call.handler]));
-    expect(calls).toHaveLength(15); expect(pending).toEqual([]);
+    expect(calls).toHaveLength(18); expect(pending).toEqual([]);
     // Movement notifications fan out at read dispatch, never through competing
     // lifecycle/Outbox registrations. Detect any duplicate registry owner.
     expect(new Set(calls.map(call => call.entity)).size).toBe(calls.length);
@@ -43,9 +44,12 @@ it('records registration order through actual cold commercial auto-bootstrap imp
       sale: 'salesCloudSyncHandler',
       sale_item: 'salesCloudSyncHandler',
       sale_payment: 'salesCloudSyncHandler',
-      sale_cancellation: 'salesCloudSyncHandler'
+      sale_cancellation: 'salesCloudSyncHandler',
+      layaway: 'layawaySyncHandler',
+      layaway_payment: 'layawaySyncHandler',
+      layaway_inventory_reservation: 'layawaySyncHandler'
     });
-    expect(new Set(Object.values(effective)).size).toBe(6);
+    expect(new Set(Object.values(effective)).size).toBe(7);
     mkdirSync('scripts/qa/single-instance-f012d1/evidence', { recursive: true });
     writeFileSync('scripts/qa/single-instance-f012d1/evidence/registrations.json', JSON.stringify({
       entry: 'cold posSyncBootstrapAutoCoordinator module graph, no start or activation',

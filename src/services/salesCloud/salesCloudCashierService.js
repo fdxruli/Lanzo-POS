@@ -280,7 +280,7 @@ export const applySplitSalesFinancialResponseProjection = async ({ requestPayloa
 };
 
 export const applyLayawayFinancialResponseProjection = async ({ requestPayload, responsePayload, intent, actorHandle }) => {
-  actorHandle?.assertCurrent?.();
+  actorHandle?.assertCurrent?.('pos');
   const request = requestPayload || intent?.requestPayload || {};
   const response = responsePayload || intent?.responsePayload || {};
   const layawayId = request.layaway_id || request.layawayId || response.layaway?.id || null;
@@ -297,27 +297,28 @@ export const applyLayawayFinancialResponseProjection = async ({ requestPayload, 
       sourceMode: 'cloud_committed',
       syncStatus: 'SYNCED'
     },
-    response
+    response,
+    actorHandle
   });
 
   if (!localSale) {
     throw Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
   }
 
-  actorHandle?.assertCurrent?.();
-  const layaway = await layawayRepository.upsertCloudSnapshot(response);
-  actorHandle?.assertCurrent?.();
-  const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload(response);
+  actorHandle?.assertCurrent?.('pos');
+  const layaway = await layawayRepository.upsertCloudSnapshot(response, { actorHandle });
+  actorHandle?.assertCurrent?.('pos');
+  const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload(response, { actorHandle });
 
-  actorHandle?.assertCurrent?.();
+  actorHandle?.assertCurrent?.('pos');
   return { localSale, layaway, conversion: { success: true, saleId: localSale.id }, appliedPayload };
 };
 
 export const applyCloudLayawayMutationProjection = async ({ responsePayload, intent, actorHandle }) => {
-  actorHandle?.assertCurrent?.();
+  actorHandle?.assertCurrent?.('pos');
   const response = responsePayload || intent?.responsePayload || {};
-  const layaway = await layawayRepository.upsertCloudSnapshot(response);
-  actorHandle?.assertCurrent?.();
+  const layaway = await layawayRepository.upsertCloudSnapshot(response, { actorHandle });
+  actorHandle?.assertCurrent?.('pos');
   return { layaway, appliedPayload: response };
 };
 
@@ -330,13 +331,14 @@ export const isExactLayawayPaymentResult = (response, layawayId, paymentId) => (
 );
 
 const projectCloudLayawayPayment = async ({ intent, actorHandle }) => {
+  actorHandle.assertCurrent('pos');
   const request = intent.requestPayload;
   if (!isExactLayawayPaymentResult(intent.responsePayload, request.layaway_id, request.payment.id)) {
     throw new Error('FINANCIAL_LAYAWAY_PAYMENT_RESULT_MISMATCH');
   }
-  actorHandle.assertCurrent();
-  const layaway = await layawayRepository.upsertCloudSnapshot(intent.responsePayload, { preserveNewer: true });
-  actorHandle.assertCurrent();
+  actorHandle.assertCurrent('pos');
+  const layaway = await layawayRepository.upsertCloudSnapshot(intent.responsePayload, { actorHandle });
+  actorHandle.assertCurrent('pos');
   return { layaway };
 };
 
@@ -774,7 +776,9 @@ export const salesCloudCashierService = {
     paymentType = 'initial_deposit',
     licenseDetails = null
   } = {}) {
+    const actorHandle = actorRuntimeController.capture('pos');
     const context = await getRuntimeContext();
+    actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
@@ -782,7 +786,6 @@ export const salesCloudCashierService = {
     }
     if (!layawayData?.id) throw friendlyCloudCashierError(new Error('LAYAWAY_ID_REQUIRED'));
 
-    const actorHandle = actorRuntimeController.capture();
     const payment = initialPayment && typeof initialPayment === 'object'
       ? initialPayment
       : (Number(initialPayment) > 0 ? {
@@ -804,6 +807,7 @@ export const salesCloudCashierService = {
         actorHandle,
         project: applyCloudLayawayMutationProjection
       });
+      actorHandle.assertCurrent('pos');
       if (response?.success === false) {
         const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_CREATE_FAILED');
         error.code = response.code;
@@ -835,10 +839,10 @@ export const salesCloudCashierService = {
     payment,
     cashSessionId = null,
     licenseDetails = null,
-    actorHandle = actorRuntimeController.capture()
+    actorHandle = actorRuntimeController.capture('pos')
   } = {}) {
     const context = await getRuntimeContext();
-    actorHandle.assertCurrent();
+    actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
@@ -857,6 +861,7 @@ export const salesCloudCashierService = {
         actorHandle,
         project: projectCloudLayawayPayment
       });
+      actorHandle.assertCurrent('pos');
       if (response?.success === false) {
         const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_PAYMENT_FAILED');
         error.code = response.code;
@@ -864,7 +869,7 @@ export const salesCloudCashierService = {
         throw error;
       }
       const projection = response?.projection || null;
-      actorHandle.assertCurrent();
+      actorHandle.assertCurrent('pos');
       if (!isExactLayawayPaymentResult(response, layawayId, payment.id)) {
         throw new Error('FINANCIAL_LAYAWAY_PAYMENT_RESULT_MISMATCH');
       }
@@ -921,7 +926,9 @@ export const salesCloudCashierService = {
     licenseDetails = null,
     actorHandle: providedActorHandle = null
   } = {}) {
+    const actorHandle = providedActorHandle || actorRuntimeController.capture('pos');
     const context = await getRuntimeContext();
+    actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
@@ -929,7 +936,6 @@ export const salesCloudCashierService = {
     }
     if (!layawayId) throw friendlyCloudCashierError(new Error('LAYAWAY_ID_REQUIRED'));
 
-    const actorHandle = providedActorHandle || actorRuntimeController.capture();
     const idempotencyKey = `layaway.cancel:${layawayId}`;
     try {
       const response = await salesCloudRepository.cancelCloudLayaway({
@@ -943,6 +949,7 @@ export const salesCloudCashierService = {
         actorHandle,
         project: applyCloudLayawayMutationProjection
       });
+      actorHandle.assertCurrent('pos');
       if (response?.success === false) {
         const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_CANCEL_FAILED');
         error.code = response.code;
@@ -1134,14 +1141,15 @@ export const salesCloudCashierService = {
   },
 
   async processCloudLayawayCompletion({ request, licenseDetails = null } = {}) {
+    const actorHandle = actorRuntimeController.capture('pos');
     const context = await getRuntimeContext();
+    actorHandle.assertCurrent('pos');
     const details = licenseDetails || context.licenseDetails;
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
     if (!context.layawaysExperimentalEnabled || !context.licenseKey || !isCloudLayawaysEnabled(details)) {
       throw friendlyCloudCashierError(new Error('CLOUD_LAYAWAYS_DISABLED'));
     }
 
-    const actorHandle = actorRuntimeController.capture();
     const idempotencyKey = 'sales.layaway_complete:' + (request?.layaway_id || request?.layawayId || 'unknown');
 
     try {
@@ -1152,6 +1160,7 @@ export const salesCloudCashierService = {
         actorHandle,
         project: applyLayawayFinancialResponseProjection
       });
+      actorHandle.assertCurrent('pos');
       if (response?.success === false) {
         const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_COMPLETION_FAILED');
         error.code = response.code;
