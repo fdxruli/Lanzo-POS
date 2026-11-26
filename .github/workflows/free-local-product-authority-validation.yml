@@ -64,6 +64,9 @@ jobs:
       - name: Inventory movement dispatch regression
         run: npx vitest run src/services/sync/__tests__/posSyncOrchestrator.realHandlers.test.js -t "inventory movement dispatch" --maxWorkers=2
 
+      - name: Inventory movement two-device projection with IndexedDB
+        run: npx vitest run src/services/sync/__tests__/inventoryMovementDispatch.integration.test.jsx --maxWorkers=1
+
       - name: Orchestrator lifecycle, deferred reads and Outbox regression
         run: >-
           npx vitest run
