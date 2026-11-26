@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'scripts/qa/single-instance-f012d1/registry.test.js'
       - 'src/services/sync/posSyncOrchestrator.js'
       - 'src/services/sync/__tests__/posSyncOrchestrator*.test.js'
       - 'src/services/products/productSyncHandler.js'
@@ -61,8 +62,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cold commercial registry contract
+        run: npx vitest run scripts/qa/single-instance-f012d1/registry.test.js --maxWorkers=1
+
       - name: Inventory movement dispatch regression
-        run: npx vitest run src/services/sync/__tests__/posSyncOrchestrator.realHandlers.test.js -t "inventory movement dispatch" --maxWorkers=2
+        run: npx vitest run src/services/sync/__tests__/posSyncOrchestrator.realHandlers.test.js --maxWorkers=2
 
       - name: Inventory movement two-device projection with IndexedDB
         run: npx vitest run src/services/sync/__tests__/inventoryMovementDispatch.integration.test.jsx --maxWorkers=1
