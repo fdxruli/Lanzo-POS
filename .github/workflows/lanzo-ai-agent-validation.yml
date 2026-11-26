@@ -1,0 +1,21 @@
+name: Lanzo AI Agent Edge Validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/lanzo-ai-agent/**'
+      - '.github/workflows/lanzo-ai-agent-validation.yml'
+permissions:
+  contents: read
+jobs:
+  edge-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test supabase/functions/lanzo-ai-agent/index.test.ts

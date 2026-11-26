@@ -40,3 +40,83 @@
     padding-inline: var(--ui-space-sm);
   }
 }
+.lia-product-review {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0 0 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.8rem;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.lia-product-review__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.lia-product-review__eyebrow {
+    margin: 0 0 0.2rem;
+    color: #1d4ed8;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.lia-product-review__heading h2 {
+    margin: 0;
+    color: #1e293b;
+    font-size: 1.05rem;
+    overflow-wrap: anywhere;
+}
+
+.lia-product-review > p {
+    margin: 0;
+    color: #334155;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.lia-product-review__back {
+    flex: none;
+    min-height: 2.75rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #93c5fd;
+    border-radius: 0.6rem;
+    color: #1d4ed8;
+    background: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.lia-product-review__back:focus-visible {
+    outline: 3px solid #60a5fa;
+    outline-offset: 2px;
+}
+
+.product-lia-review-cost {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.35rem 0.75rem;
+    margin-top: 0.65rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #dbeafe;
+    border-radius: 0.55rem;
+    color: #334155;
+    background: #f8fbff;
+    font-size: 0.82rem;
+}
+
+.product-lia-review-cost strong { color: #1e3a8a; }
+
+@media (max-width: 640px) {
+    .lia-product-review__heading { align-items: stretch; flex-direction: column; }
+    .lia-product-review__back { width: 100%; }
+}

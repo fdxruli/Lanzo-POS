@@ -144,6 +144,41 @@ describe('sales profitability local history', () => {
     expect(downloaded.report.ai.directAnswer).toBe(directAnswer);
   });
 
+  it('keeps safe product references beside history while excluding them from the exported report', () => {
+    const navigationReferences = [{
+      evidenceKey: 'product:Producto A',
+      productName: 'Producto A',
+      productId: 'private-product-id',
+      costStatus: 'estimated',
+      costSource: 'sale_item_snapshot',
+      riskType: 'negative_margin'
+    }];
+    const entry = buildEntry({ navigationReferences });
+    const scopeKey = 'scope-product-review';
+    const reopened = loadSalesProfitabilityHistory({
+      scopeKey,
+      storage: memoryStorage({ initial: JSON.stringify({ schemaVersion: 1, scopeKey, entries: [entry] }) })
+    }).entries[0];
+    const exported = buildSalesProfitabilityHistoryDownloadPayload(reopened);
+
+    expect(reopened.navigationReferences).toEqual(navigationReferences);
+    expect(JSON.stringify(exported.report)).not.toContain('private-product-id');
+    expect(JSON.stringify(exported)).not.toContain('navigationReferences');
+  });
+
+  it('keeps older history entries without navigation references readable', () => {
+    const oldEntry = buildEntry();
+    delete oldEntry.navigationReferences;
+    const scopeKey = 'scope-old-entry';
+    const reopened = loadSalesProfitabilityHistory({
+      scopeKey,
+      storage: memoryStorage({ initial: JSON.stringify({ schemaVersion: 1, scopeKey, entries: [oldEntry] }) })
+    }).entries[0];
+
+    expect(reopened.report.result).toBeTruthy();
+    expect(reopened.navigationReferences).toEqual([]);
+  });
+
   it('persists goal, what-if and strategy results as snapshots that reopen without querying live data', () => {
     const storage = memoryStorage();
     const entry = buildSalesProfitabilityHistoryEntry({

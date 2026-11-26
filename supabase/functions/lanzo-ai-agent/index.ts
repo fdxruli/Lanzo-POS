@@ -786,7 +786,7 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
         : request.context.sales.evidenceKeys)
       : [],
     responseContract: {
-      ...(compactNarrative ? { directAnswer: `respuesta directa específica para ${request.intent}, máximo 3 frases y 500 caracteres` } : {}),
+      directAnswer: compactNarrative ? `respuesta directa específica para ${request.intent}, máximo 3 frases y 500 caracteres` : 'respuesta directa y breve a la pregunta',
       explanation: compactNarrative ? 'texto, 2–4 frases y máximo 800 caracteres' : 'breve y clara',
       recommendations: [{
         ...(compactNarrative ? {
@@ -1062,11 +1062,17 @@ function normalizeCommercialProviderResponse(
   const safeNarrativeText = (value: unknown, maxLength: number) => safeCommercialText(value, '', maxLength);
   const answerMaxLength = compactNarrative ? 500 : 1600;
   const explanationMaxLength = compactNarrative ? 800 : 1600;
-  const directAnswer = safeNarrativeText(compactNarrative ? parsed?.directAnswer : (parsed?.answer || parsed?.executiveSummary), answerMaxLength);
-  const executiveSummary = compactNarrative
-    ? directAnswer
-    : safeNarrativeText(parsed?.executiveSummary || parsed?.answer, answerMaxLength);
   const explanation = safeNarrativeText(parsed?.explanation, explanationMaxLength);
+  const explicitAnswer = safeNarrativeText(parsed?.directAnswer, answerMaxLength);
+  const legacySummary = safeNarrativeText(parsed?.executiveSummary, answerMaxLength)
+    || safeNarrativeText(parsed?.answer, answerMaxLength);
+  // Non-compact narratives also need a visible heading for existing clients.
+  // Reuse only validated provider text, never invent an answer.
+  const directAnswer = compactNarrative
+    ? explicitAnswer
+    : explicitAnswer || legacySummary || explanation
+      || safeNarrativeText(providerRecommendations[0]?.title, answerMaxLength);
+  const executiveSummary = compactNarrative ? directAnswer : legacySummary || directAnswer;
   const minimumUsefulRecommendations = minimumUsefulRecommendationsForIntent(
     request.intent,
     isRecordValue(compactEvidence.sales) ? compactEvidence.sales.opportunityCandidates : []
@@ -1130,7 +1136,7 @@ function normalizeCommercialProviderResponse(
     aiNarrative: {
       status: hasNarrativeContent ? 'available' : 'unavailable',
       ...(diagnosticCode ? { diagnosticCode } : {}),
-      directAnswer: compactNarrative ? directAnswer || null : null,
+      directAnswer: directAnswer || null,
       executiveSummary: executiveSummary || null,
       explanation: explanation || null,
       recommendations: providerRecommendations,

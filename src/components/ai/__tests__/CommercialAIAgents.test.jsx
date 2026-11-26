@@ -5,7 +5,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import CommercialAIAgentsPage from '../CommercialAIAgentsPage';
 import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
 
@@ -132,7 +132,27 @@ const completedAgentResult = (executiveSummary) => ({
 
 function CurrentPath() {
   const location = useLocation();
-  return <output data-testid="current-path">{location.pathname}</output>;
+  return <output data-testid="current-path">{location.pathname}{location.search}</output>;
+}
+
+function ReviewReturnPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const review = location.state?.liaProductReview;
+  return (
+    <section>
+      <output data-testid="review-record-id">{review?.recordReference?.id || ''}</output>
+      <output data-testid="review-navigation-state">{JSON.stringify(location.state || {})}</output>
+      <button
+        type="button"
+        onClick={() => navigate('/agentes-ia', {
+          state: { liaResumeSnapshot: review?.resumeSnapshot }
+        })}
+      >
+        Volver al análisis
+      </button>
+    </section>
+  );
 }
 
 describe('commercial AI center', () => {
@@ -295,6 +315,126 @@ describe('commercial AI center', () => {
     expect(container.querySelector('.commercial-ai-output-space .commercial-ai-result').innerHTML).toBe(original);
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
     expect(runtime.getUsage).toHaveBeenCalledTimes(usageCalls);
+  });
+
+  it('opens one recommendation by stable product id and returns to the saved analysis without rerunning it', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        ...completedAgentResult('¿Mi negocio es rentable?').response,
+        intent: 'profitability_summary',
+        executiveSummary: 'Sí, la utilidad bruta del periodo fue positiva.',
+        aiNarrative: {
+          status: 'available',
+          directAnswer: 'Sí, la utilidad bruta del periodo fue positiva.',
+          executiveSummary: 'Sí, la utilidad bruta del periodo fue positiva.',
+          explanation: 'El cálculo corresponde a los costos de las ventas del periodo.',
+          recommendations: [{
+            title: 'Revisar el costo de Producto A',
+            focus: { type: 'product', key: 'Producto A' },
+            recommendationType: 'investigation',
+            explanation: 'El costo estimado requiere validación.',
+            action: 'Revisar el registro antes de tomar decisiones.',
+            measurement: 'Comparar el costo registrado.',
+            expectedImpact: 'Aclarar la base del margen.',
+            priority: 'medium',
+            evidenceKeys: ['product:Producto A'],
+            requiresConfirmation: true
+          }]
+        },
+        coverage: { validSales: 1, costCoverage: 1 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: []
+      },
+      navigationReferences: [{
+        evidenceKey: 'product:Producto A',
+        productName: 'Producto A',
+        productId: 'product-123',
+        costStatus: 'estimated',
+        costSource: 'inventory_receipt',
+        riskType: null
+      }],
+      usageStatus: { used: 3, limit: 15, remaining: 12 },
+      providerCalled: true,
+      quotaOutcome: 'consumed'
+    });
+    render(
+      <MemoryRouter initialEntries={['/agentes-ia']}>
+        <Routes>
+          <Route path="/agentes-ia" element={<CommercialAIAgentsPage />} />
+          <Route path="/productos" element={<><CurrentPath /><ReviewReturnPage /></>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await screen.findByRole('heading', { name: 'Sí, la utilidad bruta del periodo fue positiva.' });
+    await waitFor(() => expect(runtime.historyStorage.size).toBe(1));
+    expect(screen.queryByRole('button', { name: 'Consultar lotes' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar costo' }));
+
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/productos?tab=list');
+    expect(screen.getByTestId('review-record-id')).toHaveTextContent('product-123');
+    const reviewNavigationState = JSON.parse(screen.getByTestId('review-navigation-state').textContent);
+    const expectedNavigationContext = JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
+    expect(reviewNavigationState.liaProductReview.contextToken).toBe(expectedNavigationContext);
+    expect(reviewNavigationState.liaProductReview.resumeSnapshot.contextToken).toBe(expectedNavigationContext);
+    expect(JSON.stringify(reviewNavigationState)).not.toContain('license-a');
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al análisis' }));
+
+    await screen.findByRole('heading', { name: 'Sí, la utilidad bruta del periodo fue positiva.' });
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveValue('¿Mi negocio es rentable?');
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(1);
+    fireEvent.click(screen.getByText('Ver cálculos y evidencia técnica'));
+    expect(screen.getByText('Uso IA: 3 / 15')).toBeInTheDocument();
+
+    const history = await openHistory();
+    fireEvent.click(within(history).getByRole('button', { name: 'Ver respuesta' }));
+    fireEvent.click(within(history).getByRole('button', { name: 'Revisar costo' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/productos?tab=list');
+    expect(screen.getByTestId('review-record-id')).toHaveTextContent('product-123');
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al análisis' }));
+
+    const resumedHistory = await screen.findByRole('dialog', { name: 'Historial de consultas' });
+    expect(within(resumedHistory).getByRole('button', { name: 'Revisar costo' })).toBeInTheDocument();
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(1);
+  });
+
+  it.each([
+    ['business', () => bindTestActor({ tenant: { ...boundAdmin.tenant, opaqueId: 'tenant-b' } })],
+    ['actor', () => bindTestActor({ actorId: 'admin-b' })],
+    ['session', () => bindTestActor({ sessionId: 'session-b' })]
+  ])('does not restore a saved analysis after the %s context changes', async (_context, changeContext) => {
+    const contextToken = JSON.stringify(['tenant-a', 'admin:admin-a', 'session-a']);
+    const snapshot = {
+      version: 1,
+      kind: 'analysis',
+      contextToken,
+      question: '¿Mi negocio es rentable?',
+      periodDays: 30,
+      result: completedAgentResult('Resultado del contexto anterior')
+    };
+    runtime.actorSnapshot = changeContext();
+
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/agentes-ia',
+        state: { liaResumeSnapshot: snapshot }
+      }]}>
+        <CommercialAIAgentsRoute>
+          <CommercialAIAgentsPage />
+        </CommercialAIAgentsRoute>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/El negocio o la sesión cambió/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Resultado del contexto anterior' })).not.toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
   it('keeps the history count current and requires cancellation or confirmation before deleting', async () => {
@@ -762,6 +902,48 @@ describe('commercial AI center', () => {
     expect(notice).toBeInTheDocument();
     expect(screen.queryByText(/no consumió un uso de IA/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ status: 'available', explanation: 'Interpretación parcial de los costos registrados.', recommendations: [] }, 'Interpretación parcial de los costos registrados.'],
+    [{ status: 'available', recommendations: [{ title: 'Revisar costos', explanation: 'Validar el registro.', priority: 'medium' }] }, 'Recomendaciones de Lía']
+  ])('renders useful partial narratives after a consumed analysis: %#', async (aiNarrative, heading) => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', intent: 'product_risk',
+        executiveSummary: 'Sin productos en riesgo.', explanation: 'Cálculo determinístico.',
+        confidence: 'medium', source: 'cloud', coverage: { validSales: 1 },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: [],
+        aiNarrative
+      },
+      providerCalled: true, quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Qué productos están afectando mi rentabilidad?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
+    expect(screen.queryByText(/El uso de IA quedó registrado/)).not.toBeInTheDocument();
+    if (aiNarrative.recommendations.length) expect(screen.getByText('Revisar costos')).toBeInTheDocument();
+  });
+
+  it('warns when a consumed legacy narrative claims availability but is empty', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', executiveSummary: 'Sin productos en riesgo.', explanation: 'Cálculo determinístico.',
+        confidence: 'medium', source: 'cloud', coverage: { validSales: 1 },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: [],
+        aiNarrative: { status: 'available', directAnswer: ' ', executiveSummary: '', explanation: '', recommendations: [] }
+      },
+      providerCalled: true, quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Qué productos están afectando mi rentabilidad?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(await screen.findByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
+    expect(screen.queryByText('Respuesta de Lía')).not.toBeInTheDocument();
   });
 
   it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {

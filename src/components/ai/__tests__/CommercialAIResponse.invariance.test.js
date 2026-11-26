@@ -16,11 +16,16 @@ describe('approved response and Free boundaries', () => {
   it('preserves every report component and the historical adapter byte for byte', () => {
     const page = source('CommercialAIAgentsPage.jsx');
     const protectedReport = page.slice(page.indexOf('function Metric('), page.indexOf('function HistoryPanel('));
-    expect(hash(protectedReport)).toBe('cca23f163a0492d3f32838ba709734b63306bc42df6a27a16f1c8c55b208663a');
+    // Etapa 1.1 intentionally removes the writable-batch review action and
+    // serializes only opaque business/actor/session context for navigation.
+    // Deterministic report calculations and evidence selectors are unchanged.
+    expect(hash(protectedReport)).toBe('9e0b2bec33e27874f94adc0115ae0083bc3803efcd1bc8973410bbed62ff2d40');
   });
 
   it('preserves the entire original stylesheet including tables, metrics and report breakpoints', () => {
-    expect(hash(source('CommercialAIAgentsPage.css'))).toBe('7d3955b30d2ae9262d7aada0ac7d656382a82a78ab3f2169f802b64dcb8cd632');
+    // Etapa 1 appends the contextual review button styles and its mobile layout;
+    // the pre-existing report styles are unchanged in the reviewed diff.
+    expect(hash(source('CommercialAIAgentsPage.css'))).toBe('f0dce8cf04cf5f8a4536c44231236d208fcd23d2d0656b6e36620ab5ce82cf70');
   });
 
   it('preserves the Free showcase while requiring the current authenticated actor', () => {
