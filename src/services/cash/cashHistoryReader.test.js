@@ -5,7 +5,7 @@ const handle = (actorKey = 'staff:test') => ({ actorKey, assertCurrent: vi.fn() 
 const session = (id, actorKey = 'staff:test') => ({ id, actor_key: actorKey });
 const page = (cash_sessions, extra = {}) => ({
   success: true, scope: 'mine', snapshot_contract: 'keyset_reference_v1',
-  snapshot_contract_version: 1, snapshot_reference_change_seq: 45,
+  snapshot_contract_version: 1, snapshot_reference_change_seq: 45, safe_change_seq: 45, sync_deferred: false, limit: 500,
   has_more: false, snapshot_complete: true, next_page_cursor: null,
   cash_sessions, movements: [], ...extra
 });
@@ -17,7 +17,7 @@ describe('cash history read-only keyset traversal', () => {
     const fetchPage = vi.fn()
       .mockResolvedValueOnce(page(first, { has_more: true, snapshot_complete: false, next_page_cursor: cursor }))
       .mockResolvedValueOnce(page([session('s-500')], {
-        movements: [{ id: 'movement-1' }], has_more: true, snapshot_complete: false,
+        movements: Array.from({ length: 499 }, (_, i) => ({ id: 'movement-'+i })), has_more: true, snapshot_complete: false,
         next_page_cursor: { position_rank: 2, position_id: 'movement-1' }
       }));
     const result = await readCashSessionHistory({ scope: 'mine', fetchPage, actorHandle: handle() });
@@ -43,15 +43,24 @@ describe('cash history read-only keyset traversal', () => {
 
   it('rejects changed references, duplicate sessions and unavailable Cloud', async () => {
     const cursor = { position_rank: 1, position_id: 'first' };
-    const first = page([session('first')], { has_more: true, snapshot_complete: false, next_page_cursor: cursor });
+    const first = page([session('first')], { limit: 1, has_more: true, snapshot_complete: false, next_page_cursor: cursor });
     for (const [second, code] of [
-      [page([session('second')], { snapshot_reference_change_seq: 46 }), 'CASH_HISTORY_REFERENCE_CHANGED'],
-      [page([session('first')]), 'CASH_HISTORY_SESSION_INVALID'],
+      [page([session('second')], { limit: 1, snapshot_reference_change_seq: 46, safe_change_seq: 46 }), 'CASH_HISTORY_REFERENCE_CHANGED'],
+      [page([session('first')], { limit: 1 }), 'CASH_HISTORY_SESSION_INVALID'],
       [{ success: false, code: 'RPC_RATE_LIMITED' }, 'RPC_RATE_LIMITED']
     ]) {
       const fetchPage = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
-      await expect(readCashSessionHistory({ scope: 'mine', fetchPage, actorHandle: handle() })).rejects.toThrow(code);
+      await expect(readCashSessionHistory({ scope: 'mine', fetchPage, actorHandle: handle(), limit: 1 })).rejects.toThrow(code);
     }
+  });
+
+  it('marks deferred or advanced-frontier history explicitly and rejects missing completion evidence', async () => {
+    await expect(readCashSessionHistory({ scope: 'mine', actorHandle: handle(), fetchPage: async () =>
+      page([session('a')], { sync_deferred: true, safe_change_seq: 46 }) })).resolves.toMatchObject({ syncDeferred: true });
+    await expect(readCashSessionHistory({ scope: 'mine', actorHandle: handle(), fetchPage: async () =>
+      page([session('a')], { next_page_cursor: {}, snapshot_complete: false }) })).rejects.toThrow('CASH_HISTORY_PAGE_INVALID');
+    await expect(readCashSessionHistory({ scope: 'mine', actorHandle: handle(), fetchPage: async () =>
+      page([session('a')], { has_more: true, snapshot_complete: false, next_page_cursor: {} }) })).rejects.toThrow('CASH_HISTORY_CURSOR_INVALID');
   });
 
   it('does not return a page after actor authority changes', async () => {

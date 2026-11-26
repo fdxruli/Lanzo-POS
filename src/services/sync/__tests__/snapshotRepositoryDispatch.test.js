@@ -128,6 +128,14 @@ describe('versioned snapshot repository dispatch', () => {
     expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([CLOUD_SNAPSHOT_CONTRACT_RPC]);
   });
 
+  it('negotiates the sales read contract without legacy and rejects unsupported discovery', async () => {
+    await salesCloudRepository.pullSalesSnapshot({ licenseKey: LICENSE_KEY + '-sales-direct', actorHandle });
+    expect(mocks.rpc.mock.calls.map(([endpoint]) => endpoint)).toEqual([CLOUD_SNAPSHOT_CONTRACT_RPC, 'pos_pull_sales_snapshot_v2']);
+    mocks.rpc.mockClear();
+    await expect(salesCloudRepository.pullSalesSnapshot({ licenseKey: LICENSE_KEY + '-sales-unsupported', actorHandle, snapshotProtocol: { supported: false } })).rejects.toThrow('CLOUD_SNAPSHOT_CONTRACT_UNAVAILABLE');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it('routes all five modules through advertised endpoints and forwards a zero reference and opaque cursor', async () => {
     const protocol = await productCloudRepository.negotiateSnapshotProtocol({
       licenseKey: LICENSE_KEY, actorHandle

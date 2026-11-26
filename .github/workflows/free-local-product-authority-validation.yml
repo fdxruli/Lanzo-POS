@@ -7,6 +7,8 @@ on:
     paths:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'src/services/salesCloud/**'
+      - 'src/services/cash/**'
       - 'src/services/customers/**'
       - 'src/services/customerCredit/**'
       - 'src/services/products/productRepository.js'
@@ -91,6 +93,22 @@ jobs:
           src/services/sync/__tests__/snapshotClientHandlers.integration.test.jsx
           --maxWorkers=4
 
+      - name: Sale recovery V2 and cash history regression
+        run: >-
+          npx vitest run
+          src/services/salesCloud/__tests__
+          src/services/cash/cashHistoryReader.test.js
+          src/services/cash/cashRepository.stationAlignment.test.js
+          src/services/cash/cashRepository.networkRecovery.test.js
+          src/services/cash/cashRepository.adminCloseReview.test.js
+          src/services/cash/cashLocalRepository.test.js
+          src/components/caja/sections/__tests__/CajaHistoryList.test.jsx
+          src/components/caja/sections/__tests__/CajaStaffAuditPanel.progressiveDisclosure.test.jsx
+          src/hooks/__tests__/useCaja.networkRecovery.test.jsx
+          src/pages/__tests__/CajaPage.progressiveDisclosure.test.jsx
+          src/services/ecommerce/__tests__/ecommercePosConversionService.test.js
+          --maxWorkers=4
+
       - name: Catalog recovery and lost-response integration on isolated PostgreSQL
         shell: bash
         run: |
@@ -128,6 +146,12 @@ jobs:
           src/services/customerCredit/customerCreditCloudRepository.js
           src/services/customerCredit/customerCreditRepository.js
           src/services/customerCredit/historicalCreditDirectory.js
+          src/services/salesCloud/salesCloudRepository.js
+          src/services/salesCloud/salesCloudCashierService.js
+          src/services/salesCloud/salesCloudRecoveryRead.js
+          src/services/salesCloud/salesCloudLocalRepository.js
+          src/services/cash/cashHistoryReader.js
+          src/services/cash/cashRepository.js
 
       - name: Production build
         run: npm run build

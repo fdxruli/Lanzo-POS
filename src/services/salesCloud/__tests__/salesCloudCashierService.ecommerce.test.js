@@ -124,6 +124,7 @@ vi.mock('../../financial/financialIntentLedger', () => ({
 vi.mock('../salesCloudRepository', () => ({
   salesCloudRepository: {
     getSale: (...args) => mocks.getSale(...args),
+    negotiateSnapshotProtocol: async () => ({ supported: true }),
     pullSalesSnapshot: (...args) => mocks.pullSalesSnapshot(...args),
     createCloudCashierSale: (...args) => mocks.createCloudCashierSale(...args),
     createCloudCashierInventorySale: (...args) => mocks.createCloudCashierInventorySale(...args),
@@ -146,6 +147,9 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.actorHandle.assertCurrent.mockReset();
+  mocks.getSale.mockReset();
+  mocks.pullSalesSnapshot.mockReset();
+  mocks.saveCloudCommittedSaleSnapshot.mockReset();
   vi.stubEnv('VITE_ENABLE_CLOUD_CASHIER_SALES', 'true');
   mocks.recoveryTrace.splice(0);
   mocks.cloudCashierEnabled = true;
@@ -204,6 +208,35 @@ const projectResponse = async (options, response, operationType = 'sale.cashier_
     actorHandle: options.actorHandle
   });
   return { ...response, projection: { outcome: 'projection_applied', result } };
+};
+
+const recoveryArgs = { localSaleId: 'ecom-order-1', idempotencyKey: 'ecommerce:order-1', startedAt: '2026-07-11T20:00:00.000Z' };
+const confirmedSale = {
+  id: 'cloud-sale-1', local_sale_id: recoveryArgs.localSaleId,
+  idempotency_key: recoveryArgs.idempotencyKey, status: 'closed', source_mode: 'cloud_committed',
+  effects_status: 'payment_recorded', inventory_effect_status: 'applied',
+  server_version: 1, sold_at: recoveryArgs.startedAt, total: 10, amount_paid: 10, balance_due: 0,
+  payment_method: 'cash', payment_status: 'paid'
+};
+const confirmedItems = [{ sale_id: confirmedSale.id, id: 'item-1', product_name: 'Producto', quantity: 1, unit_price: 10, line_total: 10, batch_id: 'batch-1' }];
+const confirmedPayments = [{ sale_id: confirmedSale.id, id: 'payment-1', method: 'cash', amount: 10 }];
+const page = (extra = {}) => ({
+  success: true, snapshot_contract: 'keyset_reference_v1', snapshot_contract_version: 1,
+  snapshot_reference_change_seq: 9, safe_change_seq: 9, sync_deferred: false, limit: 500,
+  scope: { date_from: '2026-07-10T20:00:00.000Z', date_to: null, visibility: 'authorized' },
+  sales: [], items: [], payments: [], has_more: false, snapshot_complete: true, next_page_cursor: null, ...extra
+});
+const firstPage = (n = 0) => page({
+  sales: Array.from({ length: 500 }, (_, i) => ({ id: 'other-'+n+'-'+i })),
+  has_more: true, snapshot_complete: false, next_page_cursor: { position_rank: 1, position_id: 'other-'+n+'-499' }
+});
+const foundPage = page({ sales: [confirmedSale], items: confirmedItems, payments: confirmedPayments });
+const assertNoEffects = () => {
+  expect(mocks.createCloudCashierSale).not.toHaveBeenCalled();
+  expect(mocks.createCloudCashierInventorySale).not.toHaveBeenCalled();
+  expect(mocks.createCloudCreditSale).not.toHaveBeenCalled();
+  expect(mocks.pullCatalogChanges).not.toHaveBeenCalled();
+  expect(mocks.applyCloudSalesPayload).not.toHaveBeenCalled();
 };
 
 describe('salesCloudCashierService ecommerce idempotency', () => {
@@ -401,65 +434,77 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(result).toBe('sales.cloud_commit:normal-sale-1:device-a');
   });
 
-  it('recovers a committed cloud sale into Dexie using local_sale_id', async () => {
-    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
-    mocks.pullSalesSnapshot.mockResolvedValueOnce({
-      success: true,
-      sales: [{
-        id: 'cloud-sale-1',
-        local_sale_id: 'ecom-order-1',
-        status: 'closed',
-        metadata: { ecommerceConversionKey: 'ecommerce:order-1' }
-      }],
-      items: [{ sale_id: 'cloud-sale-1', id: 'item-1' }],
-      payments: [{ sale_id: 'cloud-sale-1', id: 'payment-1' }]
-    });
-    mocks.saveCloudCommittedSaleSnapshot.mockResolvedValueOnce({
-      id: 'ecom-order-1',
-      cloudSaleId: 'cloud-sale-1',
-      status: 'closed',
-      metadata: { ecommerceConversionKey: 'ecommerce:order-1' }
-    });
-
-    const result = await salesCloudCashierService.verifyCommittedSale({
-      localSaleId: 'ecom-order-1',
-      idempotencyKey: 'ecommerce:order-1',
-      startedAt: '2026-07-11T20:00:00.000Z'
-    });
-
-    expect(result).toMatchObject({
-      success: true,
-      exists: true,
-      saleId: 'ecom-order-1',
-      cloudSaleId: 'cloud-sale-1'
-    });
-    expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledWith({
-      localSale: expect.objectContaining({
-        id: 'ecom-order-1',
-        sourceMode: 'cloud_committed',
-        metadata: expect.objectContaining({
-          ecommerceConversionKey: 'ecommerce:order-1'
-        })
-      }),
-      response: expect.objectContaining({
-        sale: expect.objectContaining({
-          id: 'cloud-sale-1',
-          local_sale_id: 'ecom-order-1'
-        })
-      })
-    });
+  it('recovers a direct confirmed sale with all children, without another financial dispatch', async () => {
+    mocks.getSale.mockResolvedValueOnce({ success: true, sale: confirmedSale, items: confirmedItems, payments: confirmedPayments });
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: true, exists: true, cloudSaleId: confirmedSale.id });
+    expect(mocks.pullSalesSnapshot).not.toHaveBeenCalled();
+    expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      recoveryRead: true, actorHandle: mocks.actorHandle,
+      response: expect.objectContaining({ items: confirmedItems, payments: confirmedPayments })
+    }));
+    assertNoEffects();
   });
 
-  it('returns a conclusive absence only after the cloud snapshot is exhausted', async () => {
+  it('recovers a committed cloud sale after a lost response and 500 other sales using a stable keyset', async () => {
     mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
-    mocks.pullSalesSnapshot.mockResolvedValueOnce({ success: true, sales: [], items: [], payments: [] });
+    mocks.pullSalesSnapshot.mockResolvedValueOnce(firstPage()).mockResolvedValueOnce(foundPage);
+    const result = await salesCloudCashierService.verifyCommittedSale(recoveryArgs);
+    expect(result).toMatchObject({ success: true, exists: true, cloudSaleId: confirmedSale.id });
+    expect(mocks.pullSalesSnapshot.mock.calls.map(([p]) => [p.snapshotReferenceChangeSeq, p.pageCursor])).toEqual([[null,null],[9,firstPage().next_page_cursor]]);
+    expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      localSale: expect.objectContaining({ id: recoveryArgs.localSaleId, sourceMode: 'cloud_committed', metadata: expect.objectContaining({ ecommerceConversionKey: recoveryArgs.idempotencyKey }) }),
+      response: expect.objectContaining({ sale: expect.objectContaining({ id: confirmedSale.id, local_sale_id: recoveryArgs.localSaleId }), items: confirmedItems, payments: confirmedPayments })
+    }));
+    assertNoEffects();
+  });
 
-    const result = await salesCloudCashierService.verifyCommittedSale({
-      localSaleId: 'ecom-order-1',
-      idempotencyKey: 'ecommerce:order-1'
+  it('recovers by the original idempotency key when the Cloud ID differs and no local ID is present', async () => {
+    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
+    const { local_sale_id: _omitted, ...byKey } = confirmedSale;
+    mocks.pullSalesSnapshot.mockResolvedValueOnce(page({ ...foundPage, sales: [byKey] }));
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: true, exists: true });
+    assertNoEffects();
+  });
+
+  it('keeps the reservation pending even after exhausting a valid scoped snapshot', async () => {
+    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
+    mocks.pullSalesSnapshot.mockResolvedValueOnce(page());
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: false, code: 'ECOMMERCE_SALE_VERIFICATION_PENDING' });
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+    assertNoEffects();
+  });
+
+  it.each([
+    { sync_deferred: true }, { snapshot_complete: false }, { payments: undefined },
+    { payments: [] }, { items: [] }, { safe_change_seq: 10 },
+    { sales: [{ ...confirmedSale, idempotency_key: 'wrong-key' }] },
+    { sales: [{ ...confirmedSale, source_mode: 'shadow' }] }
+  ])('rejects incomplete or inconsistent sale projection %# without releasing the reservation', async extra => {
+    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
+    mocks.pullSalesSnapshot.mockResolvedValueOnce({ ...foundPage, ...extra });
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: false, code: 'ECOMMERCE_SALE_VERIFICATION_PENDING' });
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+    assertNoEffects();
+  });
+
+  it('stops safely at 20 pages without reporting absence', async () => {
+    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
+    for (let i = 0; i < 20; i++) mocks.pullSalesSnapshot.mockResolvedValueOnce(firstPage(i));
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: false, code: 'ECOMMERCE_SALE_VERIFICATION_PENDING' });
+    expect(mocks.pullSalesSnapshot).toHaveBeenCalledTimes(20);
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+    assertNoEffects();
+  });
+
+  it('rejects a changed actor during a fallback read', async () => {
+    mocks.getSale.mockResolvedValueOnce({ success: false, code: 'SALE_NOT_FOUND' });
+    mocks.pullSalesSnapshot.mockImplementationOnce(async () => {
+      mocks.actorHandle.assertCurrent.mockImplementation(() => { throw new Error('ACTOR_CONTEXT_STALE'); });
+      return foundPage;
     });
-
-    expect(result).toEqual({ success: true, exists: false });
+    await expect(salesCloudCashierService.verifyCommittedSale(recoveryArgs)).resolves.toMatchObject({ success: false, code: 'ECOMMERCE_SALE_VERIFICATION_PENDING' });
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+    assertNoEffects();
   });
 
   it('keeps verification pending when cloud lookup fails', async () => {
