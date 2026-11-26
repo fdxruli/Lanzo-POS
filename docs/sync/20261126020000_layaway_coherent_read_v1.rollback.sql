@@ -156,7 +156,7 @@ $expected_definition$)),
       raise exception 'LAYAWAY_READ_CONTRACT_DRIFT: %',v_signature;
     end if;
     if v_signature like 'public.%' then
-      if not v_row.prosecdef or not (v_row.proacl @> '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]
+      if not v_row.prosecdef or v_row.proacl is null or not (v_row.proacl @> '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]
         and v_row.proacl <@ '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]) then
         raise exception 'LAYAWAY_READ_ACL_DRIFT: %',v_signature;
       end if;
@@ -330,7 +330,7 @@ begin
       raise exception 'LAYAWAY_READ_CONTRACT_DRIFT: %',v_signature;
     end if;
     if v_signature like 'public.%' then
-      if not v_row.prosecdef or not (v_row.proacl @> '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]
+      if not v_row.prosecdef or v_row.proacl is null or not (v_row.proacl @> '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]
         and v_row.proacl <@ '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'::aclitem[]) then
         raise exception 'LAYAWAY_READ_ACL_DRIFT: %',v_signature;
       end if;

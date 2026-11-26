@@ -15,3 +15,7 @@ Existing PR338 financial fixture; the exact two installed readers, seven commerc
 2. Only after explicit installation authorization, apply the exact canonical migration as postgres. Its transaction aborts on drift or timeout. Verify ledger entry, function hashes/ACL, no unrelated changes; keep PR traceable.
 3. If rollback explicitly authorized, run the guarded `docs/sync/20261126020000_layaway_coherent_read_v1.rollback.sql` against the exact installed candidate, not general rollback or ledger deletion. The rollback verifies both candidate and restored definitions. A subsequent migration/ledger reconciliation requires separate approval.
 4. QA 5.3B and two-device business acceptance are separate; do not merge or install merely because CI is green.
+
+### First isolated run
+
+[Run 45740457620](https://github.com/fdxruli/Lanzo-POS/actions/runs/45740457620), PostgreSQL 17.12: exact normalized captured reader, writer and frontier hashes verified; fixture stopped before the first race because its actual stock projection trigger accesses the missing ecommerce_published_product_variants table. Added its canonical DDL from migration 20260715190958 exclusively to the disposable test bootstrap; no trigger bypass, no synthetic commercial mutation. Reader uses Staff and writer Admin on different fixture devices. Tightened null ACL rejection in migration and rollback. First run did not validate candidate installation or reproduce original defect.

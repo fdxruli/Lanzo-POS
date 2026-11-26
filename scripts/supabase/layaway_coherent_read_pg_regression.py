@@ -223,7 +223,7 @@ def check_committed_state(id, kind, payload):
 def race_case(phase, kind, mode):
     id = phase+'-'+kind+'-'+mode
     since, before = create_case(id, 20 if kind=='completion' else 5)
-    expr = get_expr(id) if mode=='get' else pull_expr(since)
+    expr = get_expr(id,STAFF) if mode=='get' else pull_expr(since,499,STAFF)
     helper = PAYMENT if mode=='get' else PARENT
     before_snapshot = capture_aggregate(read(expr), id)
     instrument_serializer(helper)
@@ -260,6 +260,12 @@ try:
     sql('set check_function_bodies=off;\n'+';\n'.join(json.loads((FIX/'02-function-sources.json').read_text()))+';')
     for filename in ['03-trigger-dependencies.sql','04-constraints-indexes-triggers.sql','05-policies.sql','06-function-acl.sql','seed-attempt-2.sql']:
         sql((FIX/filename).read_text())
+    # The historical fixture lacks the real variant table required by its
+    # installed stock-publication trigger. Reuse the exact canonical DDL;
+    # this table remains empty and no stock trigger is disabled or mocked.
+    variant_ddl = Path('supabase/migrations/20260715190958_ecom_products_model_1.sql').read_text()
+    variant_ddl = variant_ddl[variant_ddl.index('create table if not exists public.ecommerce_published_product_variants ('):]
+    sql(variant_ddl[:variant_ddl.index(';')+1])
     sql('grant anon,authenticated to postgres with set true;', user='lab_bootstrap')
     sql("alter table public.business_profiles add column if not exists timezone text;"
         "alter table public.pos_sync_events alter column change_seq drop default;"
@@ -294,7 +300,7 @@ try:
     since, before = create_case(id,5)
     instrument_frontier()
     try:
-        deferred = run_race(pull_expr(since),mutation(id,'payment'))
+        deferred = run_race(pull_expr(since,499,STAFF),mutation(id,'payment'))
     finally:
         restore_frontier()
     assert deferred['sync_deferred'] is True and deferred['latest_change_seq']==since
