@@ -45,7 +45,8 @@ import { openTenantRuntime, getActiveTenantDatabase, getActiveTenantRuntime } fr
 import { db, STORES } from '../../db/dexie';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
 import { assertLocalTenantAccess, resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
-import { posSyncOrchestrator } from '../posSyncOrchestrator';
+import { isSyncHandlerHookLifecycleTracked, posSyncOrchestrator } from '../posSyncOrchestrator';
+import { createSyncExecutionScope } from '../syncExecutionScope';
 import { syncMetaService } from '../syncMetaService';
 import { POS_SYNC_STORES, SYNC_META_KEYS, isCloudLayawaysEnabled } from '../syncConstants';
 import { layawayRepository } from '../../db/layaways';
@@ -586,6 +587,49 @@ describe('cloud layaway sync: confirmed server reads across separate actor/devic
     vi.unstubAllEnvs();
     vi.clearAllMocks();
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+  });
+
+  it.each(['onStart', 'onEvents'])('keeps the real layaway %s hook inside its scoped promise', async (hook) => {
+    grant('device-b');
+    expect(layawaySyncHandler.executionScopeLifecycle).toEqual({
+      version: 1,
+      awaitedHooks: ['onStart', 'onEvents']
+    });
+    expect(isSyncHandlerHookLifecycleTracked(layawaySyncHandler, hook)).toBe(true);
+    expect(posSyncOrchestrator.getStatus().handlers).toEqual(expect.arrayContaining([
+      'layaway', 'layaway_payment', 'layaway_inventory_reservation'
+    ]));
+    let releaseRead;
+    fixture.rpc.mockImplementationOnce((name) => {
+      expect(name).toBe('pos_pull_layaway_changes');
+      const query = new Promise(resolve => { releaseRead = resolve; });
+      query.abortSignal = () => query;
+      return query;
+    });
+
+    const scope = createSyncExecutionScope({
+      id: `layaway-${hook}-lifecycle`,
+      generation: 1,
+      context: { actor: 'owner-a', tenant: LICENSE, device: 'device-b' },
+      isContextCurrent: () => fixture.device === 'device-b'
+    });
+    const task = scope.run(`layaway:${hook}`, () => hook === 'onStart'
+      ? layawaySyncHandler.onStart({ licenseDetails: details, reason: 'manual' })
+      : layawaySyncHandler.onEvents([{ entity_type: 'layaway', entity_id: 'layaway-lifecycle' }], { licenseKey: LICENSE }));
+    await vi.waitFor(() => expect(releaseRead).toEqual(expect.any(Function)));
+    scope.quiesce();
+    expect(scope.getSnapshot().pending).toBe(1);
+
+    releaseRead(response({
+      success: true, events: [], layaways: [], payments: [], inventory_reservations: [],
+      cash_movements: [], inventory_movements: [], deleted_ids: [],
+      since_change_seq: 0, latest_change_seq: 0, server_latest_change_seq: 0,
+      safe_change_seq: 0, has_more: false, sync_deferred: false,
+      cursor_ahead_of_safe_frontier: false
+    }));
+
+    await expect(task).resolves.toMatchObject({ success: true, syncDeferred: false });
+    expect((await scope.settleObserved()).state).toBe('DRAINED');
   });
 
   it('reconciles create, payment, offline catch-up, cancellation, delivery and duplicate/stale reads without repeating writes', async () => {

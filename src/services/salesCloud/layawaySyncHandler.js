@@ -150,6 +150,12 @@ const pullLayawayChanges = async ({ licenseKey, actorHandle } = {}) => {
 };
 
 export const layawaySyncHandler = {
+  // Version 1 promises that these hooks await all critical RPC, projection,
+  // checkpoint, and recovery registration work; they do not detach work.
+  executionScopeLifecycle: Object.freeze({
+    version: 1,
+    awaitedHooks: Object.freeze(['onStart', 'onEvents'])
+  }),
   actorPermission: 'pos',
 
   async onStart({ licenseDetails, licenseKey, reason = 'manual', force = false } = {}) {

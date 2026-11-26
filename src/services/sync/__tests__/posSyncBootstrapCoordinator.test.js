@@ -27,7 +27,10 @@ vi.mock('../../tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: mocks.assertAccess,
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
-vi.mock('../posSyncOrchestrator', () => ({ posSyncOrchestrator: {
+vi.mock('../posSyncOrchestrator', () => ({
+  isSyncHandlerHookLifecycleTracked: (handler, hook) => handler?.executionScopeLifecycle?.version === 1
+    && handler.executionScopeLifecycle.awaitedHooks?.includes(hook),
+  posSyncOrchestrator: {
   start: mocks.start, stop: mocks.stop,
   schedulePullIncremental: vi.fn(async () => undefined),
   processOutbox: vi.fn(async () => undefined)

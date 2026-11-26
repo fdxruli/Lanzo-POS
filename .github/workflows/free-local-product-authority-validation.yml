@@ -8,6 +8,8 @@ on:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
       - 'scripts/qa/single-instance-f012d1/registry.test.js'
+      - 'scripts/qa/single-instance-f012d/sync.test.js'
+      - 'src/services/sync/__tests__/layawaySync.integration.test.jsx'
       - 'src/services/sync/posSyncOrchestrator.js'
       - 'src/services/sync/__tests__/posSyncOrchestrator*.test.js'
       - 'src/services/products/productSyncHandler.js'
@@ -80,6 +82,8 @@ jobs:
       - name: Orchestrator lifecycle, deferred reads and Outbox regression
         run: >-
           npx vitest run
+          scripts/qa/single-instance-f012d/sync.test.js
+          src/services/sync/__tests__/layawaySync.integration.test.jsx
           src/services/sync/__tests__/posSyncOrchestrator.deferredRead.test.js
           src/services/sync/__tests__/posSyncOrchestrator.lifecycle.test.js
           src/services/sync/__tests__/posSyncOrchestrator.outbox.test.js

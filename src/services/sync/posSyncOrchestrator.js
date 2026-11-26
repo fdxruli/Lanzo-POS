@@ -66,6 +66,11 @@ const canSchedule = (owner = executionScope) => !owner || (
 const observeJob = (label, factory) => executionScope
   ? executionScope.run(`pos:${label}`, factory) : (legacyWorkStarted = true, factory());
 const unknownHandler = label => executionScope?.markUnobservable(`pos_handler_lifetime:${label}`);
+export const isSyncHandlerHookLifecycleTracked = (handler, hook) => (
+  handler?.executionScopeLifecycle?.version === 1
+  && Array.isArray(handler.executionScopeLifecycle.awaitedHooks)
+  && handler.executionScopeLifecycle.awaitedHooks.includes(hook)
+);
 
 
 const runtime = {
@@ -465,7 +470,9 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
 
     try {
       if (executionScope && !canSchedule()) return;
-      unknownHandler(`start:${entityType}`);
+      if (!isSyncHandlerHookLifecycleTracked(handler, 'onStart')) {
+        unknownHandler(`start:${entityType}`);
+      }
       const result = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_start_handler_${entityType}` },
@@ -565,7 +572,9 @@ const dispatchPulledEvents = async (
       if (executionScope && !canSchedule()) {
         return { applied: false, retryable: false, reason: 'scope_closed', processedHandlers };
       }
-      unknownHandler(`events:${entityType}`);
+      if (!isSyncHandlerHookLifecycleTracked(handler, 'onEvents')) {
+        unknownHandler(`events:${entityType}`);
+      }
       handlerResult = await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_event_handler_${entityType}` },

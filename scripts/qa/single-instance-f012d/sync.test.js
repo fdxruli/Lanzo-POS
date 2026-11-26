@@ -6,7 +6,7 @@ const m=vi.hoisted(()=>({
   state:null,subscriber:null,callbacks:null,topic:null,
   assertTenant:vi.fn(),lease:vi.fn(),pull:vi.fn(),pending:vi.fn(),reset:vi.fn(),
   realtime:vi.fn(),stopRealtime:vi.fn(),status:vi.fn(),enabled:vi.fn(),cursor:vi.fn(),pullAt:vi.fn(),pullError:vi.fn(),
-  processing:vi.fn(),synced:vi.fn(),failed:vi.fn(),conflict:vi.fn(),snapshot:vi.fn(),cache:vi.fn(),installRecovery:vi.fn(),
+  processing:vi.fn(),synced:vi.fn(),failed:vi.fn(),conflict:vi.fn(),snapshot:vi.fn(),layawayStart:vi.fn(),layawayEvents:vi.fn(),cache:vi.fn(),installRecovery:vi.fn(),
   unsubscribe:vi.fn()
 }));
 vi.mock('../../../src/store/useAppStore',()=>({useAppStore:{getState:()=>m.state,subscribe:fn=>{m.subscriber=fn;return m.unsubscribe;}}}));
@@ -31,6 +31,10 @@ vi.mock('../../../src/services/customers/customerSyncHandler',()=>({customerSync
 vi.mock('../../../src/services/cash/cashSyncHandler',()=>({cashSyncHandler:{onStart:m.snapshot}}));
 vi.mock('../../../src/services/customerCredit/customerCreditSyncHandler',()=>({customerCreditSyncHandler:{onStart:m.snapshot}}));
 vi.mock('../../../src/services/salesCloud/salesCloudSyncHandler',()=>({salesCloudSyncHandler:{onStart:m.snapshot}}));
+vi.mock('../../../src/services/salesCloud/layawaySyncHandler',()=>({layawaySyncHandler:{
+  onStart:m.layawayStart,onEvents:m.layawayEvents,
+  executionScopeLifecycle:{version:1,awaitedHooks:['onStart','onEvents']}
+}}));
 vi.mock('../../../src/services/restaurant/restaurantOrdersSyncHandler.js',()=>({}));
 vi.mock('../../../src/services/financial/financialIntentRecoveryCoordinator',()=>({installFinancialIntentRecoveryCoordinator:m.installRecovery,assertFinancialRecoveryScopeAvailable:()=>{}}));
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
@@ -49,11 +53,15 @@ beforeEach(async()=>{
   m.state={appStatus:'ready',licenseDetails:details,currentDeviceRole:'admin'};
   m.assertTenant.mockResolvedValue(true);m.lease.mockImplementation(async(_a,_b,fn)=>fn());
   m.pull.mockResolvedValue({...response});m.pending.mockResolvedValue([]);m.processing.mockImplementation(async row=>row);m.cache.mockResolvedValue({products:[{id:'synthetic'}]});
-  m.snapshot.mockResolvedValue({success:true});m.realtime.mockImplementation(({callbacks})=>{m.callbacks=callbacks;return{id:'synthetic-channel'};});
+  m.snapshot.mockResolvedValue({success:true});m.layawayStart.mockResolvedValue({success:true});m.layawayEvents.mockResolvedValue({success:true});m.realtime.mockImplementation(({callbacks})=>{m.callbacks=callbacks;return{id:'synthetic-channel'};});
   m.stopRealtime.mockResolvedValue();
   pos=(await import('../../../src/services/sync/posSyncOrchestrator')).posSyncOrchestrator;
   boot=await import('../../../src/services/sync/posSyncBootstrapCoordinator');
   auto=await import('../../../src/services/sync/posSyncBootstrapAutoCoordinator');
+  const {layawaySyncHandler}=await import('../../../src/services/salesCloud/layawaySyncHandler');
+  for(const entityType of ['layaway','layaway_payment','layaway_inventory_reservation']) {
+    pos.registerEntitySyncHandler(entityType,layawaySyncHandler);
+  }
 });
 afterEach(async context=>{
   for(const s of scopes)s.quiesce();await flush();
@@ -66,6 +74,8 @@ describe('F012D actual POS coordinators with synthetic providers',()=>{
   it('D-02 concurrent starts have one effective initialization',async()=>{const s=owner();await Promise.all([start(s),start(s)]);expect(m.reset).toHaveBeenCalledTimes(1);await close(s);});
   it('D-03 stop during start prevents continuation resurrection',async()=>{const s=owner(),d=deferred();m.assertTenant.mockReturnValueOnce(d.promise);const p=start(s);await flush();await pos.stop();expect(s.getSnapshot().pending).toBeGreaterThan(0);d.resolve();await expect(p).resolves.toMatchObject({started:false,stale:true});expect(m.reset).not.toHaveBeenCalled();await s.drain();});
   it('D-04 legitimate restart requires previous generation drained',async()=>{const a=owner();await start(a);await close(a);const b=owner();await start(b);expect(m.reset).toHaveBeenCalledTimes(2);expect(b.generation).not.toBe(a.generation);await close(b);});
+  it('D-50 only awaited lifecycle hooks suppress UNKNOWN; uncontrolled start and event hooks remain UNKNOWN',async()=>{const s=owner();const controlled={onStart:async()=>({success:true}),onEvents:async()=>({success:true}),executionScopeLifecycle:{version:1,awaitedHooks:['onStart','onEvents']}};const uncontrolled={onStart:async()=>({success:true}),onEvents:async()=>({success:true})};pos.registerEntitySyncHandler('controlled',controlled);pos.registerEntitySyncHandler('uncontrolled',uncontrolled);await start(s);m.pull.mockResolvedValueOnce({...response,events:[{entity_type:'controlled'},{entity_type:'uncontrolled'}],latestChangeSeq:1});await pos.pullIncremental('lifecycle_contract_test');const result=await close(s);expect(result.unknown).not.toContain('pos_handler_lifetime:start:controlled');expect(result.unknown).not.toContain('pos_handler_lifetime:events:controlled');expect(result.unknown).toContain('pos_handler_lifetime:start:uncontrolled');expect(result.unknown).toContain('pos_handler_lifetime:events:uncontrolled');});
+  it('D-51 audited layaway snapshot does not add UNKNOWN',async()=>{const s=owner();await boot.startPosCloudBootstrap({licenseDetails:details,reason:'initial_bootstrap',executionScope:s});const starts=m.layawayStart.mock.calls.length;boot.scheduleDeferredSnapshot({resource:'layaways',delayMs:0});await vi.advanceTimersByTimeAsync(5000);expect(m.layawayStart).toHaveBeenCalledTimes(starts+1);await flush();s.quiesce();const result=await s.settleObserved();expect(result.unknown).not.toContain('snapshot_handler_lifetime:layaways');});
   it('D-05 active or UNKNOWN owner cannot be replaced',async()=>{const a=owner(),b=owner();await start(a);expect(()=>start(b)).toThrow('OWNER_MISMATCH');a.markUnobservable('untracked');await close(a);expect(()=>start(b)).toThrow('OWNER_MISMATCH');});
   it('D-06 changed actor guard blocks root before any tenant work',async()=>{const s=owner();current=false;expect(()=>start(s)).toThrow('CONTEXT_STALE');expect(m.assertTenant).not.toHaveBeenCalled();});
   it('D-07 changed tenant after RPC cannot apply events or cursor',async()=>{const s=owner();await start(s);const d=deferred();m.pull.mockReturnValueOnce(d.promise);const p=pos.pullIncremental();await flush();current=false;d.resolve({...response,latestChangeSeq:10});await p;expect(m.cursor).not.toHaveBeenCalled();await close(s);});

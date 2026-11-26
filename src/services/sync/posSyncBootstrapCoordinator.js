@@ -7,7 +7,7 @@ import { productLocalRepository } from '../products/productLocalRepository';
 import { productSyncHandler } from '../products/productSyncHandler';
 import { salesCloudSyncHandler } from '../salesCloud/salesCloudSyncHandler';
 import { layawaySyncHandler } from '../salesCloud/layawaySyncHandler';
-import { posSyncOrchestrator } from './posSyncOrchestrator';
+import { isSyncHandlerHookLifecycleTracked, posSyncOrchestrator } from './posSyncOrchestrator';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
@@ -312,7 +312,10 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
 
   if (owner && (!canSchedule() || !owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
   // Snapshot providers do not yet expose their full raw/descendant lifetime.
-  owner?.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
+  if (owner && !(normalizedResource === POS_BOOTSTRAP_RESOURCES.LAYAWAYS
+    && isSyncHandlerHookLifecycleTracked(layawaySyncHandler, 'onStart'))) {
+    owner.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
+  }
   const result = await runWithLocalTenantSyncLease(
     { license_key: licenseKey },
     { reason: `deferred_snapshot_handler_${normalizedResource}` },
