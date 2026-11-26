@@ -26,6 +26,9 @@ on:
       - 'src/services/products/productLocalCatalogRecovery.js'
       - 'src/services/products/productMigrationService.js'
       - 'scripts/supabase/catalog_recovery_pg_regression.py'
+      - 'scripts/supabase/layaway_coherent_read_pg_regression.py'
+      - 'supabase/tests/fixtures/layaway-coherent-read-live.json'
+      - 'supabase/migrations/*_layaway_coherent_read_v1.sql'
       - 'supabase/migrations/*_recover_local_product_group.sql'
       - 'src/services/inventory/inventoryEntryService.js'
       - 'src/services/inventory/__tests__/inventoryEntryService*.test.js'
@@ -61,6 +64,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Layaway coherent reads on isolated PostgreSQL 17
+        run: python3 scripts/supabase/layaway_coherent_read_pg_regression.py --isolated-fixture
 
       - name: Cold commercial registry contract
         run: npx vitest run scripts/qa/single-instance-f012d1/registry.test.js --maxWorkers=1
