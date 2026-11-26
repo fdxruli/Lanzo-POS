@@ -214,7 +214,7 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
     });
     actorHandle?.assertCurrent();
     if (counts.deferredCatalog) {
-      throw asError({ code: 'PRODUCT_CATALOG_LOCAL_CHANGES_PENDING' });
+      throw asError({ code: 'PRODUCT_CATALOG_LOCAL_CHANGES_PENDING', retryable: true });
     }
     if (counts.deferredInventory > 0) {
       const error = new Error('Recepción farmacéutica local pendiente: no avanzar cursor ni sobrescribir existencias.');
@@ -578,7 +578,6 @@ export const registerProductSyncHandler = () => {
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.CATEGORY, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler);
-  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_ENTRY, productSyncHandler);
   registered = true;
   Logger.log('[Products/Sync] Handler de catalogo registrado. Incluye movimientos de inventario para Fase 6C.');

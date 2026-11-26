@@ -278,7 +278,7 @@ const start = async () => {
   await flush();
 };
 
-beforeEach(async () => {
+beforeEach(async ({ task }) => {
   vi.resetModules();
   vi.resetAllMocks();
   vi.useFakeTimers();
@@ -318,9 +318,14 @@ beforeEach(async () => {
   });
 
   ({ posSyncOrchestrator: orchestrator } = await import('../posSyncOrchestrator'));
-  await import('../../products/productSyncHandler');
+  if (task.name.includes('sales registered first')) {
+    await import('../../salesCloud/salesCloudSyncHandler');
+    await import('../../products/productSyncHandler');
+  } else {
+    await import('../../products/productSyncHandler');
+    await import('../../salesCloud/salesCloudSyncHandler');
+  }
   await import('../../customers/customerSyncHandler');
-  await import('../../salesCloud/salesCloudSyncHandler');
 });
 
 afterEach(async () => {
@@ -331,7 +336,7 @@ afterEach(async () => {
 });
 
 describe('real incremental handlers propagate deferred reads to the central recovery timer', () => {
-  it('inventory movement dispatch: an isolated notification wakes catalog and sales delta readers', async () => {
+  it.each(['catalog registered first', 'sales registered first'])('inventory movement dispatch: an isolated notification wakes catalog and sales delta readers (%s)', async () => {
     mocks.catalogResponses.push({
       success: true, products: [{ id: 'product-movement', stock: 7, server_version: 2 }],
       batches: [{ id: 'batch-movement', product_id: 'product-movement', stock: 7, server_version: 2 }],
@@ -349,6 +354,87 @@ describe('real incremental handlers propagate deferred reads to the central reco
     expect(mocks.catalogApplied).toHaveLength(1);
     expect(mocks.catalogApplied[0].products[0].stock).toBe(7);
     expect(mocks.generalCursor).toBe(177);
+  });
+
+  it('inventory movement dispatch: a combined page calls each delta reader once', async () => {
+    const events = ['product_batch', 'sale_item', 'inventory_movement', 'product', 'sale', 'sale_payment']
+      .map((entity_type, i) => ({ entity_type, change_seq: 176 + i }));
+    mocks.catalogResponses.push({ success: true, products: [{ id: 'p', stock: 7 }], latest_change_seq: 181 });
+    mocks.salesResponses.push({ success: true, sales: [{ id: 's' }], latest_change_seq: 181 });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({ events, latestChangeSeq: 181 }));
+    await start();
+    await orchestrator.pullIncremental('combined_inventory_page');
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.salesApplied).toHaveLength(1);
+    expect(mocks.generalCursor).toBe(181);
+  });
+
+  it('inventory movement dispatch: catalog deferred survives sales completion and recovers without Broadcast', async () => {
+    mocks.catalogResponses.push(
+      { success: true, products: [], latest_change_seq: 175, sync_deferred: true },
+      { success: true, products: [{ id: 'p', stock: 7 }], latest_change_seq: 177 }
+    );
+    mocks.salesResponses.push({ success: true, sales: [{ id: 's' }], latest_change_seq: 177 });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({ events: [{ entity_type: 'inventory_movement', change_seq: 177 }], latestChangeSeq: 177 }))
+      .mockResolvedValueOnce(globalPage());
+    await start();
+    await orchestrator.pullIncremental('catalog_interrupted');
+    expect(mocks.salesApplied).toHaveLength(1);
+    expect(mocks.generalCursor).toBe(175);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['product']);
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+    expect(mocks.catalogApplied.at(-1).products).toEqual([{ id: 'p', stock: 7 }]);
+    expect(mocks.salesApplied).toHaveLength(1);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
+  });
+
+  it('inventory movement dispatch: sales deferred survives catalog completion and recovers without Broadcast', async () => {
+    mocks.catalogResponses.push({ success: true, products: [{ id: 'p', stock: 7 }], latest_change_seq: 177 });
+    mocks.salesResponses.push(
+      { success: true, sales: [], latest_change_seq: 0, sync_deferred: true },
+      { success: true, sales: [{ id: 's' }], latest_change_seq: 177 }
+    );
+    mocks.globalPull.mockResolvedValueOnce(globalPage({ events: [{ entity_type: 'inventory_movement', change_seq: 177 }], latestChangeSeq: 177 }))
+      .mockResolvedValueOnce(globalPage());
+    await start();
+    await orchestrator.pullIncremental('sales_interrupted');
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.generalCursor).toBe(175);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['sale']);
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+    expect(mocks.salesApplied.at(-1).sales).toEqual([{ id: 's' }]);
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
+  });
+
+  it('inventory movement dispatch: inventory-only Staff updates stock without sales access and restores POS later', async () => {
+    setActorPermissions(['inventory']);
+    mocks.catalogResponses.push({ success: true, products: [{ id: 'p', stock: 7 }], latest_change_seq: 177 });
+    mocks.globalPull.mockResolvedValueOnce(globalPage({ events: [{ entity_type: 'inventory_movement', change_seq: 177 }], latestChangeSeq: 177 }));
+    await start();
+    await orchestrator.pullIncremental('staff_inventory_only');
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.salesApplied).toHaveLength(0);
+    expect(mocks.generalCursor).toBe(177);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['sale']);
+    mocks.salesResponses.push({ success: true, sales: [{ id: 's' }], latest_change_seq: 177 });
+    setActorPermissions(['inventory', 'pos']);
+    await flush();
+    expect(mocks.salesApplied.at(-1).sales).toEqual([{ id: 's' }]);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual([]);
+  });
+
+  it('inventory movement dispatch: expands old durable movement markers to both consumers on restart', async () => {
+    mocks.meta.set(metaKey('TENANT-A', DEFERRED_HANDLERS), ['inventory_movement']);
+    mocks.catalogResponses.push({ success: true, products: [{ id: 'p', stock: 7 }], latest_change_seq: 177 });
+    mocks.salesResponses.push({ success: true, sales: [], latest_change_seq: 0, sync_deferred: true });
+    await start();
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['product', 'sale']);
+    await orchestrator.pullIncremental('legacy_marker_recovery');
+    expect(mocks.catalogApplied).toHaveLength(1);
+    expect(mocks.meta.get(metaKey('TENANT-A', DEFERRED_HANDLERS))).toEqual(['sale']);
   });
 
   it('recovers a deferred customer RPC automatically with the real customer handler and no Broadcast', async () => {

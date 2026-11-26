@@ -330,7 +330,6 @@ export const registerSalesCloudSyncHandler = () => {
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_ITEM, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_PAYMENT, salesCloudSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.SALE_CANCELLATION, salesCloudSyncHandler);
-  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT, salesCloudSyncHandler);
   registered = true;
   Logger.log('[SalesCloud/Sync] Handler Fase 6E registrado. Ventas cloud y cancelaciones usan Supabase como fuente oficial.');
   return true;

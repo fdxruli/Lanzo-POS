@@ -7,6 +7,9 @@ on:
     paths:
       - 'src/services/auth/productInventoryAuthority.js'
       - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'src/services/sync/posSyncOrchestrator.js'
+      - 'src/services/sync/__tests__/posSyncOrchestrator*.test.js'
+      - 'src/services/products/productSyncHandler.js'
       - 'src/services/salesCloud/**'
       - 'src/services/cash/**'
       - 'src/services/customers/**'
@@ -58,8 +61,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Inventory movement dispatch reproduction
+      - name: Inventory movement dispatch regression
         run: npx vitest run src/services/sync/__tests__/posSyncOrchestrator.realHandlers.test.js -t "inventory movement dispatch" --maxWorkers=2
+
+      - name: Orchestrator lifecycle, deferred reads and Outbox regression
+        run: >-
+          npx vitest run
+          src/services/sync/__tests__/posSyncOrchestrator.deferredRead.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.lifecycle.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.outbox.test.js
+          src/services/sync/__tests__/posSyncOrchestrator.realtime.test.js
+          --maxWorkers=4
 
       - name: Focused product / inventory / authority regression tests
         run: >-
@@ -155,6 +167,9 @@ jobs:
           src/services/salesCloud/salesCloudLocalRepository.js
           src/services/cash/cashHistoryReader.js
           src/services/cash/cashRepository.js
+          src/services/sync/posSyncOrchestrator.js
+          src/services/products/productSyncHandler.js
+          src/services/salesCloud/salesCloudSyncHandler.js
 
       - name: Production build
         run: npm run build
