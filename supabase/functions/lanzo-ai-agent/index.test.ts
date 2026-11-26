@@ -1618,7 +1618,8 @@ Deno.test('product_risk conserva respuesta directa, explicación parcial y recom
       }
     })(request(structuredCommercialRequest({
       intent: 'product_risk',
-      question: '¿Qué productos están afectando mi rentabilidad?'
+      question: '¿Qué productos están afectando mi rentabilidad?',
+      period: { from: '2026-09-01', to: '2026-09-07', previousFrom: null, previousTo: null, timezone: 'America/Mexico_City' }
     })));
     const body = await json(response);
     assertEquals(response.status, 200);
