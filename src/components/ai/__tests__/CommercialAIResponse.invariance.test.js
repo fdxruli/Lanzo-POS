@@ -16,7 +16,9 @@ describe('approved response and Free boundaries', () => {
   it('preserves every report component and the historical adapter byte for byte', () => {
     const page = source('CommercialAIAgentsPage.jsx');
     const protectedReport = page.slice(page.indexOf('function Metric('), page.indexOf('function HistoryPanel('));
-    expect(hash(protectedReport)).toBe('cca23f163a0492d3f32838ba709734b63306bc42df6a27a16f1c8c55b208663a');
+    // LIA-02 (#597): approved scope changes narrative visibility, quota notice and historical directAnswer only.
+    // All remaining report components stay protected by the exact source hash.
+    expect(hash(protectedReport)).toBe('3944c82ad0538eefab97c54c22865c0a13fe399118006d74848c9446b057186f');
   });
 
   it('preserves the entire original stylesheet including tables, metrics and report breakpoints', () => {

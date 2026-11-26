@@ -1256,8 +1256,18 @@ function NarrativeEvidence({ response }) {
   );
 }
 
+function hasVisibleNarrative(narrative) {
+  return narrative?.status === 'available' && (
+    [narrative.directAnswer, narrative.executiveSummary, narrative.explanation]
+      .some((value) => typeof value === 'string' && value.trim().length > 0)
+    || asArray(narrative.recommendations).length > 0
+  );
+}
+
 function NarrativeStatusNotice({ result }) {
-  if (result?.response?.aiNarrative?.status !== 'unavailable') return null;
+  const narrative = result?.response?.aiNarrative;
+  if (hasVisibleNarrative(narrative)) return null;
+  if (narrative?.status !== 'unavailable' && result?.providerCalled !== true && result?.quotaOutcome !== 'consumed') return null;
 
   const message = result.quotaOutcome === 'not_consumed'
     ? (result.providerCalled === true
@@ -1281,7 +1291,9 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
   const directAnswer = typeof narrative?.directAnswer === 'string' && narrative.directAnswer.trim()
     ? narrative.directAnswer
     : (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim() ? narrative.executiveSummary : null);
-  const narrativeAvailable = narrative?.status === 'available' && Boolean(directAnswer);
+  const narrativeAvailable = hasVisibleNarrative(narrative);
+  const narrativeHeading = directAnswer || (typeof narrative?.explanation === 'string' && narrative.explanation.trim()
+    ? narrative.explanation : 'Recomendaciones de Lía');
   if (!response) {
     return (
       <div className="commercial-ai-result commercial-ai-result--empty" aria-live="polite">
@@ -1300,7 +1312,7 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
       <div className="commercial-ai-result__header">
         <div>
           <p className="commercial-ai-eyebrow">{isLocalAnswer ? 'Respuesta' : narrativeAvailable ? 'Respuesta de Lía' : 'Análisis calculado por Lanzo'}</p>
-          <h2>{narrativeAvailable ? directAnswer : (response.executiveSummary || response.answer)}</h2>
+          <h2>{narrativeAvailable ? narrativeHeading : (response.executiveSummary || response.answer)}</h2>
         </div>
         {!isLocalAnswer && (
           <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
@@ -1517,6 +1529,7 @@ const historyEntryToAnalysisResult = (entry) => {
       aiNarrative: {
         status: ai.status,
         diagnosticCode: ai.diagnosticCode,
+        directAnswer: ai.directAnswer,
         executiveSummary: ai.executiveSummary,
         explanation: ai.explanation,
         recommendations: ai.recommendations

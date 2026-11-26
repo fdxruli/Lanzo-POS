@@ -1593,6 +1593,48 @@ Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva c�
   assertEquals(completions[0].args.p_success, true);
 });
 
+Deno.test('product_risk conserva respuesta directa, explicación parcial y recomendaciones visibles antes de consumir cuota', async () => {
+  const recommendation = {
+    title: 'Revisar el margen',
+    explanation: 'Confirmar los costos registrados.',
+    expectedImpact: 'Validar la evidencia del margen.',
+    priority: 'medium',
+    evidenceKeys: ['profitability.margin'],
+    requiresConfirmation: true
+  };
+  const cases = [
+    { payload: { directAnswer: 'No hay productos en riesgo.' }, heading: 'No hay productos en riesgo.' },
+    { payload: { explanation: 'Los costos registrados permiten revisar el margen.' }, heading: 'Los costos registrados permiten revisar el margen.' },
+    { payload: { recommendations: [recommendation] }, heading: recommendation.title },
+    { payload: { executiveSummary: 'Resumen anterior válido.' }, heading: 'Resumen anterior válido.' }
+  ];
+  for (const sample of cases) {
+    const client = analysisClient();
+    let providerCalls = 0;
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(JSON.stringify(sample.payload));
+      }
+    })(request(structuredCommercialRequest({
+      intent: 'product_risk',
+      question: '¿Qué productos están afectando mi rentabilidad?',
+      period: { from: '2026-09-01', to: '2026-09-07', previousFrom: null, previousTo: null, timezone: 'America/Mexico_City' }
+    })));
+    const body = await json(response);
+    assertEquals(response.status, 200);
+    assertEquals(body.quotaOutcome, 'consumed');
+    const normalized = JSON.parse(body.rawResultContent as string);
+    assertEquals(normalized.aiNarrative.status, 'available');
+    assertEquals(normalized.aiNarrative.directAnswer, sample.heading);
+    assertEquals(normalized.aiNarrative.executiveSummary, sample.heading);
+    assertEquals(providerCalls, 1);
+    const completions = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
+    assertEquals(completions.length, 1);
+    assertEquals(completions[0].args.p_success, true);
+  }
+});
+
 Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y consume una sola finalización', async () => {
   const cases = [
     { label: 'cuerpo narrativo vacío', content: '', code: 'AI_NARRATIVE_EMPTY' },
