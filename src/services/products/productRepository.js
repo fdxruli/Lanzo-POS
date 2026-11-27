@@ -786,10 +786,12 @@ export const productRepository = {
     };
 
     if (!isOnline()) {
-      await activeIngredientRepository.ensureQueued(activeIngredientIds, {
-        licenseKey: mode.licenseKey,
-        actorHandle
-      });
+      if (activeIngredientIds.length > 0) {
+        await activeIngredientRepository.ensureQueued(activeIngredientIds, {
+          licenseKey: mode.licenseKey,
+          actorHandle
+        });
+      }
       return savePending('Producto guardado localmente. Se sincronizara cuando vuelva internet.');
     }
 

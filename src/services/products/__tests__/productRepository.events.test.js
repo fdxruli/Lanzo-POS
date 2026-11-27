@@ -158,6 +158,7 @@ vi.mock('../productConstants', () => ({
 vi.mock('../productEvents', () => ({ notifyProductsChanged: mocks.notify }));
 
 import { productRepository } from '../productRepository';
+import { activeIngredientRepository } from '../../pharmacy/activeIngredientRepository';
 
 const preparedProduct = (editing = false) => ({
   productId: 'product-1',
@@ -597,14 +598,41 @@ describe('productRepository directed catalog events', () => {
     }));
   });
 
-  it('emits a directed pending event for an offline PRO creation without calling cloud', async () => {
+  it.each([
+    { label: 'ordinary', composition: null, dependencies: [] },
+    {
+      label: 'pharmacy',
+      composition: { version: 1, activeIngredients: [{
+        activeIngredientId: 'ai-amoxicillin', name: 'Amoxicillin', amount: 500,
+        unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+      }] },
+      dependencies: ['ai-amoxicillin']
+    }
+  ])('emits a directed pending event for an offline PRO $label creation without calling cloud', async ({ composition, dependencies }) => {
     mocks.cloudEnabled = true;
     vi.stubGlobal('navigator', { onLine: false });
+    const ensureQueued = vi.spyOn(activeIngredientRepository, 'ensureQueued').mockResolvedValue([]);
+    if (composition) {
+      mocks.prepareProduct.mockResolvedValueOnce({
+        ...preparedProduct(false),
+        product: { id: 'product-1', name: 'Offline medicine', metadata: { pharmacy: { composition } } }
+      });
+    }
 
     await productRepository.saveProduct({ name: 'Offline' });
 
     expect(mocks.upsertProduct).not.toHaveBeenCalled();
     expect(mocks.enqueue).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ activeIngredientDependencies: dependencies })
+    }));
+    if (dependencies.length > 0) {
+      expect(ensureQueued).toHaveBeenCalledWith(dependencies, expect.objectContaining({ licenseKey: 'license-key' }));
+      expect(ensureQueued.mock.invocationCallOrder[0]).toBeLessThan(mocks.savePreparedProductLocal.mock.invocationCallOrder[0]);
+      expect(ensureQueued.mock.invocationCallOrder[0]).toBeLessThan(mocks.enqueue.mock.invocationCallOrder[0]);
+    } else {
+      expect(ensureQueued).not.toHaveBeenCalled();
+    }
     expect(mocks.notify).toHaveBeenLastCalledWith(expect.objectContaining({
       productId: 'product-1',
       operation: 'created',

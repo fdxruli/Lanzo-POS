@@ -21,11 +21,13 @@ vi.mock('../../db/dexie', async () => {
   const db = new Dexie('catalog-recovery-cutover');
   db.version(1).stores({
     menu: '&id', categories: '&id', productBatches: '&id,productId', deletedMenu: '&id',
+    active_ingredients: 'id, &[businessKey+nameKey], nameKey, businessKey, isActive, syncStatus, updatedAt',
     deletedCategories: '&id', sales: '&id,status', layaways: '&id,status', inventoryEvents: '&id,productId',
     posSyncOutbox: '&id,entityType'
   });
   return { db, STORES: {
     MENU: 'menu', CATEGORIES: 'categories', PRODUCT_BATCHES: 'productBatches', DELETED_MENU: 'deletedMenu',
+    ACTIVE_INGREDIENTS: 'active_ingredients',
     DELETED_CATEGORIES: 'deletedCategories', SALES: 'sales', LAYAWAYS: 'layaways', INVENTORY_EVENTS: 'inventoryEvents'
   } };
 });
