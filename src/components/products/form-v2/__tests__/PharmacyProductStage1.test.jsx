@@ -5,7 +5,10 @@ import ProductFormV2 from '../ProductFormV2';
 
 vi.mock('../../../../services/pharmacy/activeIngredientRepository', () => ({
   activeIngredientRepository: {
-    list: vi.fn(async () => [{ id: 'ai-amoxicilina', name: 'Amoxicilina', isActive: true }]),
+    list: vi.fn(async () => [
+      { id: 'ai-amoxicilina', name: 'Amoxicilina', isActive: true },
+      { id: 'ai-clavulanato', name: 'Ácido clavulánico', isActive: true }
+    ]),
     create: vi.fn(async (name) => ({ id: 'ai-created', name: String(name).trim(), isActive: true }))
   }
 }));
@@ -19,27 +22,34 @@ const show = (props = {}) => render(<ProductFormV2
   onSave={() => true} onCancel={() => {}} {...props}
 />);
 const openSanitary = () => fireEvent.click(screen.getByRole('button', { name: /Datos farmacéuticos/i }));
-const addAmoxicillin = async () => {
-  await waitFor(() => expect(screen.getByLabelText('Principio activo registrado').querySelectorAll('option')).toHaveLength(2));
-  fireEvent.change(screen.getByLabelText('Principio activo registrado'), { target: { value: 'ai-amoxicilina' } });
+const selectStandardPresentation = () => {
+  fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'tablet' } });
+  fireEvent.change(screen.getByLabelText('Tipo de envase'), { target: { value: 'box' } });
+  fireEvent.change(screen.getByLabelText('Contenido'), { target: { value: '10' } });
+  fireEvent.change(screen.getByLabelText('Unidad del contenido'), { target: { value: 'tableta' } });
+};
+const addIngredient = async (id, amount, index) => {
+  await waitFor(() => expect(screen.getByLabelText('Principio activo registrado').querySelectorAll('option')).toHaveLength(3));
+  fireEvent.change(screen.getByLabelText('Principio activo registrado'), { target: { value: id } });
   fireEvent.click(screen.getByRole('button', { name: 'Agregar a la composición' }));
-  fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '500' } });
-  fireEvent.change(screen.getByLabelText('Unidad'), { target: { value: 'mg' } });
-  fireEvent.change(screen.getByLabelText('Por cantidad base'), { target: { value: '1' } });
-  fireEvent.change(screen.getByLabelText('Unidad base'), { target: { value: 'Cápsula' } });
+  fireEvent.change(screen.getAllByLabelText('Cantidad')[index], { target: { value: String(amount) } });
+  fireEvent.change(screen.getAllByLabelText('Unidad de medida')[index], { target: { value: 'mg' } });
+  fireEvent.change(screen.getAllByLabelText('Por cantidad base')[index], { target: { value: '1' } });
+  fireEvent.change(screen.getAllByLabelText('Unidad base')[index], { target: { value: 'tableta' } });
 };
 
 describe('Farmacia - recorrido visual de Etapa 1', () => {
-  it('guarda antibiótico IV con receta derivada y recupera datos al reabrir', async () => {
+  it('crea un medicamento combinado normalizado y recupera los mismos datos al editar', async () => {
     const onSave = vi.fn(() => true);
     const view = show({ onSave });
-    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Amoxicilina QA 500 mg' } });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Amoxicilina + ácido clavulánico QA' } });
+    fireEvent.change(screen.getByLabelText(/Costo/i), { target: { value: '25.5' } });
     fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '40' } });
     openSanitary();
     fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
-    fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'Cápsula' } });
-    await addAmoxicillin();
-    fireEvent.change(screen.getByLabelText('Presentación'), { target: { value: 'Caja con 12 cápsulas' } });
+    selectStandardPresentation();
+    await addIngredient('ai-amoxicilina', '500.5', 0);
+    await addIngredient('ai-clavulanato', '125.25', 1);
     fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'IV' } });
     fireEvent.click(screen.getByLabelText(/Antibiótico sujeto/i));
     expect(screen.getByText(/Requiere receta médica y controles adicionales/i)).toBeInTheDocument();
@@ -49,22 +59,35 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     const saved = onSave.mock.calls[0][0];
     expect(saved).toMatchObject({
       prescriptionType: 'antibiotic', requiresPrescription: true,
-      activeSubstance: 'Amoxicilina',
+      activeSubstance: 'Amoxicilina, Ácido clavulánico',
+      unit: 'pza', stock: 0, cost: 25.5, price: 40,
+      presentation: 'Caja con 10 tabletas',
       metadata: { pharmacy: {
-        fraction: 'IV', antibiotic: true, concentration: '500 mg por Cápsula',
-        composition: { version: 1, activeIngredients: [{
-          activeIngredientId: 'ai-amoxicilina', name: 'Amoxicilina', amount: 500,
-          unit: 'mg', basisAmount: 1, basisUnit: 'Cápsula'
-        }] }
+        fraction: 'IV', antibiotic: true, dosageFormCode: 'tablet', dosageForm: 'Tableta',
+        concentration: '500.5 mg por tableta; 125.25 mg por tableta',
+        commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+        composition: { version: 1, activeIngredients: [
+          { activeIngredientId: 'ai-amoxicilina', name: 'Amoxicilina', amount: 500.5, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' },
+          { activeIngredientId: 'ai-clavulanato', name: 'Ácido clavulánico', amount: 125.25, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }
+        ] }
       } }
     });
     view.unmount();
-    show({ productToEdit: saved });
+    const onEditSave = vi.fn(() => true);
+    show({ productToEdit: saved, onSave: onEditSave });
     openSanitary();
     expect(screen.getByLabelText(/Fracción sanitaria/)).toHaveValue('IV');
-    expect(screen.getByLabelText('Cantidad')).toHaveValue(500);
-    expect(screen.getByLabelText('Unidad')).toHaveValue('mg');
-    expect(screen.getByLabelText('Forma farmacéutica')).toHaveValue('Cápsula');
+    expect(screen.getAllByLabelText('Cantidad').map((input) => input.value)).toEqual(['500.5', '125.25']);
+    expect(screen.getAllByLabelText('Unidad de medida').map((input) => input.value)).toEqual(['mg', 'mg']);
+    expect(screen.getAllByLabelText('Unidad base').map((input) => input.value)).toEqual(['tableta', 'tableta']);
+    expect(screen.getByLabelText('Forma farmacéutica')).toHaveValue('tablet');
+    expect(screen.getByLabelText('Tipo de envase')).toHaveValue('box');
+    expect(screen.getByLabelText('Contenido')).toHaveValue(10);
+    fireEvent.change(screen.getByLabelText('Laboratorio'), { target: { value: 'Muse QA' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onEditSave).toHaveBeenCalledTimes(1));
+    expect(onEditSave.mock.calls[0][0].metadata.pharmacy).toMatchObject(saved.metadata.pharmacy);
+    expect(onEditSave.mock.calls[0][0]).toMatchObject({ unit: 'pza', stock: 0, cost: 25.5, price: 40 });
   });
   it('crea la fracción II inactiva y explica que no puede dispensarse', async () => {
     const onSave = vi.fn(() => true);
@@ -73,7 +96,8 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '60' } });
     openSanitary();
     fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
-    await addAmoxicillin();
+    selectStandardPresentation();
+    await addIngredient('ai-amoxicilina', '500', 0);
     fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'II' } });
     expect(screen.getByText(/No habilita dispensación/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));

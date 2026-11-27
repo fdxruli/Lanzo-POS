@@ -2,6 +2,13 @@ import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { toNumber, variantKey } from './productFormNormalization';
 import { SANITARY_FRACTIONS, hasChangedConfirmedClassification } from '../../../../utils/pharmacyClassification';
 import { normalizePharmacyComposition } from '../../../../services/pharmacy/pharmacyComposition';
+import {
+  isPharmacyMeasureCompatibleWithBase,
+  normalizePharmacyBaseUnit,
+  normalizePharmacyCommercialPresentation,
+  normalizePharmacyDosageFormCode,
+  normalizePharmacyMeasureUnit
+} from '../../../../services/pharmacy/pharmacyCatalog';
 
 export function validateProductForm(values, { activeRubro, isEditing = false, productToEdit = null } = {}) {
   const fieldErrors = {};
@@ -39,6 +46,8 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
       fieldErrors.pharmacyKind = 'Selecciona si se trata de un medicamento u otro producto de farmacia.';
     }
     if (values.pharmacyKind === 'medicine') {
+      const existingPharmacy = productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy || {};
+      const existingComposition = normalizePharmacyComposition(existingPharmacy.composition);
       const compositionRows = Array.isArray(values.compositionIngredients) ? values.compositionIngredients : [];
       if (!isEditing && compositionRows.length === 0) {
         fieldErrors.compositionIngredients = 'Agrega al menos un principio activo y su concentración.';
@@ -50,8 +59,51 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
           fieldErrors.compositionIngredients = 'Cada principio activo solo puede aparecer una vez en la composición.';
         } else if (!normalizedComposition) {
           fieldErrors.compositionIngredients = 'Completa cantidades, unidades y base de concentración con valores mayores que cero.';
+        } else {
+          const previousById = new Map((existingComposition?.activeIngredients || [])
+            .map((row) => [row.activeIngredientId, row]));
+          const hasUnsupportedUnit = compositionRows.some((row) => {
+            const measureUnit = normalizePharmacyMeasureUnit(row.unit);
+            const baseUnit = normalizePharmacyBaseUnit(row.basisUnit);
+            const previous = previousById.get(String(row.activeIngredientId || '').trim());
+            const keepsLegacyUnits = previous
+              && String(row.unit ?? '').trim() === previous.unit
+              && String(row.basisUnit ?? '').trim() === previous.basisUnit;
+            return (!measureUnit || !baseUnit || !isPharmacyMeasureCompatibleWithBase(measureUnit, baseUnit))
+              && !keepsLegacyUnits;
+          });
+          if (hasUnsupportedUnit) {
+            fieldErrors.compositionIngredients = 'Selecciona unidades normalizadas y compatibles. Las unidades históricas se conservan mientras no se cambien.';
+          }
         }
       }
+
+      const hasPackageData = Boolean(values.packageType || values.packageContentAmount || values.packageContentUnit);
+      const hasF02Presentation = Boolean(existingPharmacy.commercialPresentation);
+      const needsCatalogFields = !isEditing || hasPackageData || hasF02Presentation || Boolean(values.dosageFormCode);
+      if (needsCatalogFields) {
+        const formCode = normalizePharmacyDosageFormCode(values.dosageFormCode);
+        const keepsLegacyFormCode = isEditing
+          && String(values.dosageFormCode || '') === String(existingPharmacy.dosageFormCode || '');
+        if (!formCode && !keepsLegacyFormCode) {
+          fieldErrors.dosageFormCode = 'Selecciona una forma farmacéutica normalizada.';
+        }
+        const normalizedPresentation = normalizePharmacyCommercialPresentation({
+          version: 1,
+          packageType: values.packageType,
+          contentAmount: values.packageContentAmount,
+          contentUnit: values.packageContentUnit
+        });
+        const storedPresentation = existingPharmacy.commercialPresentation;
+        const keepsLegacyPresentation = isEditing && storedPresentation
+          && String(values.packageType || '') === String(storedPresentation.packageType || '')
+          && String(values.packageContentAmount ?? '') === String(storedPresentation.contentAmount ?? '')
+          && String(values.packageContentUnit || '') === String(storedPresentation.contentUnit || '');
+        if (!normalizedPresentation && !keepsLegacyPresentation) {
+          fieldErrors.commercialPresentation = 'Completa el tipo de envase, un contenido mayor que cero y su unidad.';
+        }
+      }
+
       if (values.sanitaryFraction && !fractions.includes(values.sanitaryFraction)) {
         fieldErrors.sanitaryFraction = 'Selecciona una fracción sanitaria válida.';
       }

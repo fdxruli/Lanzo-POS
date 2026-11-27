@@ -1,3 +1,5 @@
+import { normalizePharmacyBaseUnit, normalizePharmacyMeasureUnit } from './pharmacyCatalog';
+
 export const PHARMACY_COMPOSITION_VERSION = 1;
 
 const text = (value) => String(value ?? '').trim();
@@ -19,8 +21,12 @@ export const normalizePharmacyComposition = (composition) => {
     const basisAmount = positiveDecimal(item?.basisAmount);
     const activeIngredientId = text(item?.activeIngredientId ?? item?.id);
     const name = text(item?.name ?? item?.activeIngredientName);
-    const unit = text(item?.unit);
-    const basisUnit = text(item?.basisUnit);
+    const unitText = text(item?.unit);
+    const basisUnitText = text(item?.basisUnit);
+    // Normalize explicit, unambiguous aliases only. Unknown historical labels
+    // stay readable and round-trip unchanged until an operator edits them.
+    const unit = normalizePharmacyMeasureUnit(unitText) || unitText;
+    const basisUnit = normalizePharmacyBaseUnit(basisUnitText) || basisUnitText;
     if (!activeIngredientId || !name || !amount || !basisAmount || !unit || !basisUnit) return null;
     return { activeIngredientId, name, amount, unit, basisAmount, basisUnit };
   });

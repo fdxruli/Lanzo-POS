@@ -1,13 +1,12 @@
 import ProductExpirationFields from '../components/ProductExpirationFields';
 import ProductBatchSummary from '../components/ProductBatchSummary';
 import { SANITARY_FRACTIONS } from '../../../../utils/pharmacyClassification';
+import {
+  PHARMACY_DOSAGE_FORMS,
+  PHARMACY_PACKAGE_CONTENT_UNITS,
+  PHARMACY_PACKAGE_TYPES
+} from '../../../../services/pharmacy/pharmacyCatalog';
 import PharmacyCompositionEditor from './PharmacyCompositionEditor';
-
-const DOSAGE_FORMS = [
-  ['tablet', 'Tableta'], ['capsule', 'Cápsula'], ['solution', 'Solución'],
-  ['suspension', 'Suspensión'], ['cream', 'Crema'], ['injectable', 'Inyectable'],
-  ['other', 'Otra']
-];
 
 const prescriptionSummary = (values) => {
   if (values.pharmacyKind === 'other') return 'No aplica a este producto de farmacia.';
@@ -52,19 +51,68 @@ export default function PharmacyProductFields({
         {values.pharmacyKind === 'medicine' && isEditing && !hasStructuredComposition
           && field('concentration', 'Concentración (dato anterior)')}
         {values.pharmacyKind === 'medicine' && <div className="product-form-v2__field">
-          <label htmlFor="product-v2-dosageForm">Forma farmacéutica</label>
-          <input id="product-v2-dosageForm" list="pharmacy-dosage-forms"
-            value={values.dosageForm || ''} placeholder="Ej. Cápsula"
-            onChange={(event) => onFieldChange('dosageForm', event.target.value)} />
-          <datalist id="pharmacy-dosage-forms">
-            {DOSAGE_FORMS.filter(([id]) => id !== 'other').map(([, label]) => <option value={label} key={label} />)}
-          </datalist>
+          <label htmlFor="product-v2-dosageFormCode">Forma farmacéutica</label>
+          <select id="product-v2-dosageFormCode" value={values.dosageFormCode || ''}
+            aria-invalid={Boolean(errors.dosageFormCode)}
+            onChange={(event) => onFieldChange('dosageFormCode', event.target.value)}>
+            <option value="">Selecciona una forma farmacéutica</option>
+            {PHARMACY_DOSAGE_FORMS.map(({ value, label }) => <option value={value} key={value}>{label}</option>)}
+            {values.dosageFormCode && !PHARMACY_DOSAGE_FORMS.some(({ value }) => value === values.dosageFormCode)
+              && <option value={values.dosageFormCode}>Forma guardada: {values.dosageFormCode}</option>}
+          </select>
+          {errors.dosageFormCode && <small className="product-form-v2__error">{errors.dosageFormCode}</small>}
         </div>}
-        {field('presentation', 'Presentación', 'Ej. Caja con 12 cápsulas')}
+        {values.pharmacyKind === 'medicine' && isEditing && values.dosageFormCode && values.dosageFormLegacy
+          && field('dosageFormLegacy', 'Forma anterior conservada')}
+        {values.pharmacyKind === 'medicine' && isEditing && !values.dosageFormCode && values.dosageForm
+          && field('dosageForm', 'Forma anterior (texto libre)')}
+        {values.pharmacyKind !== 'medicine' && field('presentation', 'Presentación', 'Descripción anterior o comercial')}
         {field('laboratory', 'Laboratorio')}
         {values.pharmacyKind === 'medicine' && field('sanitaryRegistration', 'Registro sanitario (opcional)')}
       </div>
     </div>
+    {values.pharmacyKind === 'medicine' && <div className="product-form-v2__subsection pharmacy-commercial-presentation">
+      <h4>Presentación comercial</h4>
+      <p className="product-form-v2__hint">Describe el envase y su contenido. Esto no modifica la unidad de venta, existencias, costos ni precios.</p>
+      <div className="product-form-v2__field-grid">
+        <div className="product-form-v2__field">
+          <label htmlFor="product-v2-packageType">Tipo de envase</label>
+          <select id="product-v2-packageType" value={values.packageType || ''}
+            aria-invalid={Boolean(errors.commercialPresentation)}
+            onChange={(event) => onFieldChange('packageType', event.target.value)}>
+            <option value="">Selecciona un envase</option>
+            {PHARMACY_PACKAGE_TYPES.map(({ value, label }) => <option value={value} key={value}>{label}</option>)}
+            {values.packageType && !PHARMACY_PACKAGE_TYPES.some(({ value }) => value === values.packageType)
+              && <option value={values.packageType}>Envase guardado: {values.packageType}</option>}
+          </select>
+        </div>
+        <div className="product-form-v2__field">
+          <label htmlFor="product-v2-packageContentAmount">Contenido</label>
+          <input id="product-v2-packageContentAmount" type="number" min="0" step="any"
+            value={values.packageContentAmount ?? ''}
+            aria-invalid={Boolean(errors.commercialPresentation)}
+            onChange={(event) => onFieldChange('packageContentAmount', event.target.value)} />
+        </div>
+        <div className="product-form-v2__field">
+          <label htmlFor="product-v2-packageContentUnit">Unidad del contenido</label>
+          <select id="product-v2-packageContentUnit" value={values.packageContentUnit || ''}
+            aria-invalid={Boolean(errors.commercialPresentation)}
+            onChange={(event) => onFieldChange('packageContentUnit', event.target.value)}>
+            <option value="">Selecciona una unidad</option>
+            {PHARMACY_PACKAGE_CONTENT_UNITS.map(({ value, label }) => <option value={value} key={value}>{label}</option>)}
+            {values.packageContentUnit && !PHARMACY_PACKAGE_CONTENT_UNITS.some(({ value }) => value === values.packageContentUnit)
+              && <option value={values.packageContentUnit}>Unidad guardada: {values.packageContentUnit}</option>}
+          </select>
+        </div>
+      </div>
+      {errors.commercialPresentation && <small className="product-form-v2__error" role="alert">{errors.commercialPresentation}</small>}
+      {isEditing && <div className="product-form-v2__field">
+        <label htmlFor="product-v2-presentationLegacy">Descripción anterior (texto libre)</label>
+        <input id="product-v2-presentationLegacy" value={values.presentationLegacy || ''}
+          placeholder="Se conserva como referencia histórica"
+          onChange={(event) => onFieldChange('presentationLegacy', event.target.value)} />
+      </div>}
+    </div>}
     {values.pharmacyKind === 'medicine' && <PharmacyCompositionEditor values={values} onCompositionChange={onCompositionChange} validationError={errors.compositionIngredients} />}
     {values.pharmacyKind === 'medicine' && <div className="product-form-v2__subsection">
       <h4>Control sanitario</h4>

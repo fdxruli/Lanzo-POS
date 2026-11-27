@@ -33,6 +33,8 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     : null;
   const expirationMode = source.expirationMode || (config.strictExpiry && capabilities.hasExpiry !== false ? 'STRICT' : 'NONE');
   const pharmacy = getPharmacyClassification(source);
+  const pharmacyMetadata = source.metadata?.pharmacy || source.pharmacy || {};
+  const commercialPresentation = pharmacyMetadata.commercialPresentation || null;
 
   return {
     ...source,
@@ -56,6 +58,14 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     pharmacyKind: pharmacy.recorded || productToEdit ? pharmacy.kind : '',
     sanitaryFraction: pharmacy.fraction, isAntibiotic: pharmacy.antibiotic,
     concentration: pharmacy.concentration, dosageForm: pharmacy.dosageForm,
+    dosageFormCode: pharmacyMetadata.dosageFormCode || '',
+    dosageFormLegacy: pharmacyMetadata.dosageFormLegacy || (pharmacyMetadata.dosageFormCode ? '' : pharmacy.dosageForm || ''),
+    packageType: commercialPresentation?.packageType || '',
+    packageContentAmount: commercialPresentation?.contentAmount ?? '',
+    packageContentUnit: commercialPresentation?.contentUnit || '',
+    presentationLegacy: commercialPresentation
+      ? (commercialPresentation.legacyDescription || '')
+      : (source.presentation || ''),
     compositionIngredients: getCompositionRows(source), compositionTouched: false,
     sanitaryRegistration: pharmacy.sanitaryRegistration, classificationStatus: pharmacy.status,
     prescriptionType: source.prescriptionType, requiresPrescription: Boolean(source.requiresPrescription),

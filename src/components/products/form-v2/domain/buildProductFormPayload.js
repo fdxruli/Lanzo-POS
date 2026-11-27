@@ -10,6 +10,11 @@ import {
   formatCompositionConcentration,
   normalizePharmacyComposition
 } from '../../../../services/pharmacy/pharmacyComposition';
+import {
+  formatPharmacyCommercialPresentation,
+  getPharmacyDosageFormLabel,
+  normalizePharmacyCommercialPresentation
+} from '../../../../services/pharmacy/pharmacyCatalog';
 
 export function buildProductFormPayload(values, { activeRubro, productToEdit = null } = {}) {
   const isEditing = Boolean(productToEdit?.id);
@@ -79,17 +84,70 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
   delete payload.batchSummary;
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) {
     // Los datos medicinales se guardan en un solo objeto, también enviado a metadata JSONB Cloud.
+    const existingPharmacy = productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy || {};
+    const existingCommercialPresentation = existingPharmacy.commercialPresentation;
+    const dosageFormCode = String(values.dosageFormCode || existingPharmacy.dosageFormCode || '').trim();
+    const dosageFormLabel = getPharmacyDosageFormLabel(dosageFormCode);
     const pharmacy = {
-      ...(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy || {}),
+      ...existingPharmacy,
       version: 1,
       kind: values.pharmacyKind === 'other' ? 'other' : 'medicine',
       fraction: values.pharmacyKind === 'other' ? null : (values.sanitaryFraction || null),
       status: values.pharmacyKind === 'other' || values.sanitaryFraction ? 'confirmed' : 'pending',
       antibiotic: values.pharmacyKind === 'medicine' && values.isAntibiotic === true,
       concentration: String(values.concentration || '').trim(),
-      dosageForm: String(values.dosageForm || '').trim(),
       sanitaryRegistration: String(values.sanitaryRegistration || '').trim()
     };
+    if (dosageFormCode) {
+      pharmacy.dosageFormCode = dosageFormCode;
+      pharmacy.dosageForm = dosageFormLabel || String(existingPharmacy.dosageForm || values.dosageForm || dosageFormCode).trim();
+      if (!existingPharmacy.dosageFormCode && !existingPharmacy.dosageFormLegacy) {
+        const previousDosageForm = String(values.dosageFormLegacy || existingPharmacy.dosageForm || '').trim();
+        if (previousDosageForm && previousDosageForm !== pharmacy.dosageForm) {
+          pharmacy.dosageFormLegacy = previousDosageForm;
+        }
+      }
+    } else {
+      pharmacy.dosageForm = String(values.dosageForm || existingPharmacy.dosageForm || '').trim();
+    }
+    if (dosageFormCode || Object.hasOwn(existingPharmacy, 'dosageFormLegacy')) {
+      const legacyDosageForm = String(values.dosageFormLegacy || '').trim();
+      if (legacyDosageForm) pharmacy.dosageFormLegacy = legacyDosageForm;
+      else delete pharmacy.dosageFormLegacy;
+    }
+
+    const requestedCommercialPresentation = normalizePharmacyCommercialPresentation({
+      version: 1,
+      packageType: values.packageType,
+      contentAmount: values.packageContentAmount,
+      contentUnit: values.packageContentUnit
+    });
+    const preservedCommercialPresentation = normalizePharmacyCommercialPresentation(existingCommercialPresentation);
+    if (requestedCommercialPresentation) {
+      const previousDescription = String(
+        values.presentationLegacy
+          ?? existingCommercialPresentation?.legacyDescription
+          ?? (isEditing ? productToEdit?.presentation : '')
+          ?? ''
+      ).trim();
+      pharmacy.commercialPresentation = {
+        ...requestedCommercialPresentation,
+        ...(previousDescription ? { legacyDescription: previousDescription } : {})
+      };
+      payload.presentation = formatPharmacyCommercialPresentation(requestedCommercialPresentation);
+    } else if (preservedCommercialPresentation) {
+      pharmacy.commercialPresentation = existingCommercialPresentation;
+      payload.presentation = formatPharmacyCommercialPresentation(preservedCommercialPresentation);
+    } else if (existingCommercialPresentation && typeof existingCommercialPresentation === 'object') {
+      pharmacy.commercialPresentation = existingCommercialPresentation;
+      payload.presentation = String(productToEdit?.presentation ?? values.presentation ?? '').trim();
+    } else {
+      delete pharmacy.commercialPresentation;
+      payload.presentation = values.pharmacyKind === 'medicine'
+        ? String(values.presentationLegacy ?? values.presentation ?? '').trim()
+        : String(values.presentation || '').trim();
+    }
+
     const existingComposition = productToEdit?.metadata?.pharmacy?.composition
       ?? productToEdit?.pharmacy?.composition;
     const shouldClearComposition = values.compositionTouched === true
@@ -105,7 +163,8 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
       pharmacy.concentration = formatCompositionConcentration(composition);
     }
     const shouldRecord = !isEditing || Boolean(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy)
-      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other' || values.compositionTouched);
+      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other' || values.compositionTouched
+        || dosageFormCode || requestedCommercialPresentation);
     if (shouldRecord) {
       metadata.pharmacy = pharmacy;
       payload.pharmacy = pharmacy;
@@ -116,7 +175,9 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
         ? formatCompositionActiveSubstance(composition)
         : String(values.activeSubstance || '').trim()),
       laboratory: String(values.laboratory || '').trim(),
-      presentation: String(values.presentation || '').trim(),
+      presentation: values.pharmacyKind === 'medicine'
+        ? payload.presentation
+        : String(values.presentation || '').trim(),
       prescriptionType: legacy.prescriptionType,
       requiresPrescription: legacy.requiresPrescription,
       batchManagement: { enabled: trackStock, selectionStrategy: 'fefo' }

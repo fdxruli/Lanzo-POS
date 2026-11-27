@@ -52,6 +52,32 @@ describe('Farmacia - payload a Cloud y de regreso', () => {
     expect(getProductFormDefaults({ activeRubro: 'farmacia', productToEdit: reloaded }))
       .toMatchObject({ sanitaryFraction: 'IV', isAntibiotic: true, concentration: '500 mg', dosageForm: 'capsule' });
   });
+  it('round-trips normalized F02 metadata through the existing Cloud product mapping', () => {
+    const values = {
+      ...newMedication(), dosageFormCode: 'capsule', packageType: 'bottle',
+      packageContentAmount: '120.5', packageContentUnit: 'mL', presentationLegacy: 'Frasco de texto anterior',
+      compositionIngredients: [{ activeIngredientId: 'ai-canonical', name: 'Amoxicilina',
+        amount: '0.125', unit: 'µg', basisAmount: '5', basisUnit: 'mL' }]
+    };
+    const initial = buildProductFormPayload(values, { activeRubro: 'farmacia' });
+    const cloud = productToCloudPayload(initial);
+    const reloaded = cloudProductToLocal(cloud);
+    expect(reloaded.metadata.pharmacy).toMatchObject({
+      dosageFormCode: 'capsule', dosageForm: 'Cápsula',
+      commercialPresentation: {
+        version: 1, packageType: 'bottle', contentAmount: 120.5, contentUnit: 'mL',
+        legacyDescription: 'Frasco de texto anterior'
+      },
+      composition: { version: 1, activeIngredients: [{
+        activeIngredientId: 'ai-canonical', name: 'Amoxicilina', amount: 0.125, unit: 'µg',
+        basisAmount: 5, basisUnit: 'mL'
+      }] }
+    });
+    expect(getProductFormDefaults({ activeRubro: 'farmacia', productToEdit: reloaded })).toMatchObject({
+      dosageFormCode: 'capsule', packageType: 'bottle', packageContentAmount: 120.5, packageContentUnit: 'mL',
+      presentationLegacy: 'Frasco de texto anterior'
+    });
+  });
   it('fuerza inactivo un medicamento nuevo fracción II', () => {
     const values = { ...newMedication(), sanitaryFraction: 'II', isAntibiotic: false };
     expect(buildProductFormPayload(values, { activeRubro: 'farmacia' }))

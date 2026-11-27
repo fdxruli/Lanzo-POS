@@ -194,7 +194,11 @@ describe('backupRestore', () => {
     const composition = { version: 1, activeIngredients: [{ activeIngredientId: 'ai-paracetamol',
       name: 'Paracetamol', amount: 500, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }] };
     const archive = await openCurrentArchive(databaseName, {
-      products: [{ id: 'product-paracetamol', name: 'Paracetamol 500 mg', metadata: { pharmacy: { composition } } }],
+      products: [{ id: 'product-paracetamol', name: 'Paracetamol 500 mg', metadata: { pharmacy: {
+        dosageFormCode: 'tablet', dosageForm: 'Tableta',
+        commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+        composition
+      } } }],
       activeIngredients: [{ id: 'ai-paracetamol', businessKey: 'business-a', name: 'Paracetamol',
         nameKey: 'paracetamol', isActive: true }]
     });
@@ -205,8 +209,11 @@ describe('backupRestore', () => {
     expect(await destination.table('active_ingredients').get('ai-paracetamol')).toMatchObject({
       businessKey: 'business-a', nameKey: 'paracetamol'
     });
-    expect((await destination.table('menu').get('product-paracetamol')).metadata.pharmacy.composition)
-      .toEqual(composition);
+    expect((await destination.table('menu').get('product-paracetamol')).metadata.pharmacy).toMatchObject({
+      dosageFormCode: 'tablet', dosageForm: 'Tableta',
+      commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+      composition
+    });
     destination.close();
   });
 
