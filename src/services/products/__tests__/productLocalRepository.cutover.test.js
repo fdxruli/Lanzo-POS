@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rows = vi.hoisted(() => ({
   categories: [],
+  active_ingredients: [],
   menu: [],
   productBatches: [],
   deletedCategories: [],
@@ -56,6 +57,7 @@ vi.mock('../../db/dexie', () => ({
   },
   STORES: {
     CATEGORIES: 'categories',
+    ACTIVE_INGREDIENTS: 'active_ingredients',
     MENU: 'menu',
     PRODUCT_BATCHES: 'productBatches',
     DELETED_CATEGORIES: 'deletedCategories',
@@ -195,6 +197,7 @@ describe('product local catalog cutover intent', () => {
 
     await expect(productLocalRepository.listUnsyncedLocalCatalogForCloud()).resolves.toEqual({
       categories: [],
+      activeIngredients: [],
       products: [
         expect.objectContaining({ id: 'updated-product' }),
         expect.objectContaining({ id: 'deactivated-product', isActive: false })
@@ -230,6 +233,7 @@ describe('product local catalog cutover intent', () => {
     const intent = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
     expect(intent).toMatchObject({
       categories: [],
+      activeIngredients: [],
       products: [],
       batches: [],
       deletes: { categories: [], products: [], batches: [] }

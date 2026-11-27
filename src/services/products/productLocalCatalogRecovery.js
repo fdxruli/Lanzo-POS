@@ -4,13 +4,15 @@ import { listLocalOnlyInventoryEntriesForRecovery } from '../inventory/inventory
 import { syncConflictService } from '../sync/syncConflictService';
 import { syncMetaService } from '../sync/syncMetaService';
 import { syncOutboxService } from '../sync/syncOutboxService';
-import { OUTBOX_STATUS, SYNC_ENTITY_TYPES } from '../sync/syncConstants';
+import { OUTBOX_STATUS, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
+import { generateIdempotencyKey } from '../sync/idempotency';
 import { isLocalTenantAccessError, runWithLocalTenantSyncLease } from '../tenant/localTenantGuard';
 import { batchToCloudPayload, categoryToCloudPayload, productToCloudPayload } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
 import { readProductCatalog } from './productCatalogReader';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { productLocalRepository } from './productLocalRepository';
+import { activeIngredientRepository } from '../pharmacy/activeIngredientRepository';
 import { validateLocalCatalogForMigration } from './productMigrationValidation';
 import {
   buildIndividualRecoveryIdempotencyKey,
@@ -37,7 +39,8 @@ const definitiveConflict = (code) => /^(?:DUPLICATE_|VERSION_CONFLICT$|PRODUCT_D
 const numericFieldsValid = (row) => [row.stock, row.committedStock ?? row.committed_stock, row.price, row.cost]
   .every((value) => (value ?? null) === null || (typeof value === 'number' || typeof value === 'string' && value.trim())
     && Number.isFinite(Number(value)) && Number(value) >= 0);
-const pendingCount = (catalog) => catalog.categories.length + catalog.products.length + catalog.batches.length
+const pendingCount = (catalog) => catalog.categories.length + (catalog.activeIngredients?.length || 0)
+  + catalog.products.length + catalog.batches.length
   + Object.values(catalog.deletes || {}).reduce((sum, records) => sum + records.length, 0);
 
 const saveWarning = async (licenseKey, issues) => {
@@ -145,7 +148,7 @@ const recoverProduct = async ({ licenseKey, product, categoryBlocked, validation
   const localBatches = await productLocalRepository.getBatchesByProductId(product.id);
   const batches = localBatches.filter((batch) => !isDeleted(batch)).sort((a, b) => a.id.localeCompare(b.id));
   const invalid = validationIssues.find((issue) =>
-    (issue.type.startsWith('PRODUCT_') || issue.type.startsWith('DUPLICATE_PRODUCT_')) && relatedTo(issue, product.id)
+    (issue.type.startsWith('PRODUCT_') || issue.type.startsWith('PHARMACY_') || issue.type.startsWith('DUPLICATE_PRODUCT_')) && relatedTo(issue, product.id)
     || batches.some((batch) => (issue.type.startsWith('BATCH_') || issue.type.startsWith('STRICT_BATCH_')) && relatedTo(issue, batch.id))
   );
   if (invalid) throw errorWithCode(invalid.type, batches.some((batch) => batch.id === invalid.id) ? invalid.id : null);
@@ -240,6 +243,7 @@ export const productLocalCatalogRecovery = {
     ]);
     const records = new Map([
       [SYNC_ENTITY_TYPES.CATEGORY, catalog.categories],
+      [SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, catalog.activeIngredients || []],
       [SYNC_ENTITY_TYPES.PRODUCT, catalog.products],
       [SYNC_ENTITY_TYPES.PRODUCT_BATCH, catalog.batches]
     ].map(([entityType, items]) => [entityType, new Map(items.map((item) => [item.id, item]))]));
@@ -272,6 +276,41 @@ export const productLocalCatalogRecovery = {
     const reservedIds = await productLocalRepository.listLocalReservationIdsForRecovery(localCatalog.products);
     const validationIssues = validateLocalCatalogForMigration(localCatalog);
     const blockedCategories = new Set();
+    const blockedActiveIngredients = new Set();
+    for (const activeIngredient of catalog.activeIngredients || []) {
+      const confirmed = await run(SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, activeIngredient.id, async () => {
+        const operations = await syncOutboxService.listOperationsForEntity({
+          licenseKey, entityType: SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, entityId: activeIngredient.id
+        });
+        if (operations.some((row) => row.status !== OUTBOX_STATUS.SYNCED)) {
+          throw errorWithCode('PHARMACY_ACTIVE_INGREDIENT_OUTBOX_PENDING');
+        }
+        const actorHandle = actorRuntimeController.capture('products');
+        const idempotencyKey = generateIdempotencyKey({
+          entityType: SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT,
+          operation: SYNC_OPERATIONS.UPSERT,
+          entityId: activeIngredient.id,
+          prefix: 'catalog-recovery'
+        });
+        const response = await productCloudRepository.upsertActiveIngredient({
+          licenseKey,
+          activeIngredient,
+          expectedVersion: versionOf(activeIngredient) || null,
+          idempotencyKey,
+          actorHandle
+        });
+        if (response?.success !== true || response.idempotency_key !== idempotencyKey
+          || !response.active_ingredient?.id || versionOf(response.active_ingredient) < 1
+          || response.active_ingredient.name_key !== activeIngredient.nameKey) {
+          throw errorWithCode(response?.code || 'PHARMACY_ACTIVE_INGREDIENT_RECOVERY_CONFIRMATION_INVALID');
+        }
+        actorHandle.assertCurrent('products');
+        await activeIngredientRepository.applyCloudRecord(response.active_ingredient, {
+          localId: activeIngredient.id, actorHandle
+        });
+      });
+      if (!confirmed) blockedActiveIngredients.add(activeIngredient.id);
+    }
     let cloudCategories;
     let categoryActor;
     for (const category of catalog.categories) {
@@ -299,11 +338,18 @@ export const productLocalCatalogRecovery = {
     const orderedIds = [...productIds].sort((a, b) =>
       Number(parents.get(b)?.productType === 'ingredient') - Number(parents.get(a)?.productType === 'ingredient'));
     for (const id of orderedIds) {
-      await run(SYNC_ENTITY_TYPES.PRODUCT, id, () => {
+      await run(SYNC_ENTITY_TYPES.PRODUCT, id, async () => {
         const product = parents.get(id);
         if (!product) throw errorWithCode('PRODUCT_RECOVERY_LOCAL_PARENT_MISSING');
+        const composition = product.metadata?.pharmacy?.composition ?? product.pharmacy?.composition;
+        const refs = Array.isArray(composition?.activeIngredients)
+          ? composition.activeIngredients.map((item) => item?.activeIngredientId).filter(Boolean) : [];
+        if (refs.some((ingredientId) => blockedActiveIngredients.has(ingredientId))) {
+          throw errorWithCode('PHARMACY_ACTIVE_INGREDIENT_RECOVERY_PENDING');
+        }
+        const currentProduct = await productLocalRepository.getProductById(id) || product;
         return recoverProduct({
-          licenseKey, product, categoryBlocked: blockedCategories.has(product.categoryId),
+          licenseKey, product: currentProduct, categoryBlocked: blockedCategories.has(product.categoryId),
           validationIssues, rows, localOnlyEvents, reservedIds
         });
       });
@@ -322,6 +368,7 @@ export const productLocalCatalogRecovery = {
       const remaining = await productLocalRepository.listUnsyncedLocalCatalogForCloud();
       for (const [entityType, records] of [
         [SYNC_ENTITY_TYPES.CATEGORY, remaining.categories],
+        [SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, remaining.activeIngredients],
         [SYNC_ENTITY_TYPES.PRODUCT, remaining.products],
         [SYNC_ENTITY_TYPES.PRODUCT_BATCH, remaining.batches]
       ]) {

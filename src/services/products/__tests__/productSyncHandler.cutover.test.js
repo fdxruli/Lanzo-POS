@@ -35,12 +35,17 @@ const mocks = vi.hoisted(() => ({
   assertProductInventoryMutationCurrent: vi.fn()
 }));
 
-vi.mock('../../auth/actorRuntimeController', () => ({
-  actorRuntimeController: {
-    capture: vi.fn(() => ({ assertCurrent: vi.fn() })),
-    getState: vi.fn(() => ({ permissions: ['products'] }))
-  }
-}));
+vi.mock('../../auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    actorRuntimeController: {
+      ...actual.actorRuntimeController,
+      capture: vi.fn(() => ({ assertCurrent: vi.fn() })),
+      getState: vi.fn(() => ({ permissions: ['products'] }))
+    }
+  };
+});
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: mocks.getState }

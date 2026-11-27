@@ -1,6 +1,7 @@
 import ProductExpirationFields from '../components/ProductExpirationFields';
 import ProductBatchSummary from '../components/ProductBatchSummary';
 import { SANITARY_FRACTIONS } from '../../../../utils/pharmacyClassification';
+import PharmacyCompositionEditor from './PharmacyCompositionEditor';
 
 const DOSAGE_FORMS = [
   ['tablet', 'Tableta'], ['capsule', 'Cápsula'], ['solution', 'Solución'],
@@ -20,8 +21,9 @@ const prescriptionSummary = (values) => {
 };
 
 export default function PharmacyProductFields({
-  values, errors, onFieldChange, onExpirationMode, isEditing, productId, onOpenBatches
+  values, errors, onFieldChange, onCompositionChange, onExpirationMode, isEditing, productId, onOpenBatches
 }) {
+  const hasStructuredComposition = Array.isArray(values.compositionIngredients) && values.compositionIngredients.length > 0;
   const field = (name, label, placeholder = '') => (
     <div className="product-form-v2__field" key={name}>
       <label htmlFor={`product-v2-${name}`}>{label}</label>
@@ -45,8 +47,10 @@ export default function PharmacyProductFields({
           </select>
           {errors.pharmacyKind && <small className="product-form-v2__error">{errors.pharmacyKind}</small>}
         </div>
-        {values.pharmacyKind === 'medicine' && field('activeSubstance', 'Sustancia activa', 'Ej. Amoxicilina')}
-        {values.pharmacyKind === 'medicine' && field('concentration', 'Concentración', 'Ej. 500 mg o 250 mg/5 mL')}
+        {values.pharmacyKind === 'medicine' && isEditing && !hasStructuredComposition
+          && field('activeSubstance', 'Sustancia activa (dato anterior)')}
+        {values.pharmacyKind === 'medicine' && isEditing && !hasStructuredComposition
+          && field('concentration', 'Concentración (dato anterior)')}
         {values.pharmacyKind === 'medicine' && <div className="product-form-v2__field">
           <label htmlFor="product-v2-dosageForm">Forma farmacéutica</label>
           <input id="product-v2-dosageForm" list="pharmacy-dosage-forms"
@@ -61,6 +65,7 @@ export default function PharmacyProductFields({
         {values.pharmacyKind === 'medicine' && field('sanitaryRegistration', 'Registro sanitario (opcional)')}
       </div>
     </div>
+    {values.pharmacyKind === 'medicine' && <PharmacyCompositionEditor values={values} onCompositionChange={onCompositionChange} validationError={errors.compositionIngredients} />}
     {values.pharmacyKind === 'medicine' && <div className="product-form-v2__subsection">
       <h4>Control sanitario</h4>
       <div className="product-form-v2__field-grid">

@@ -39,7 +39,7 @@ export const productMigrationService = {
       const contextId = buildSnapshotContextId({
         licenseKey,
         streamKey: 'product_catalog',
-        scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+        scope: { entities: ['category', 'active_ingredient', 'product', 'product_batch'], includeDeleted: true },
         actorHandle
       });
       const snapshot = await durableSnapshotService.runConsistentSnapshot({
@@ -75,9 +75,10 @@ export const productMigrationService = {
             });
           }
           const rowCount = (response.categories?.length || 0)
+            + (response.active_ingredients?.length || 0)
             + (response.products?.length || 0)
             + (response.batches?.length || 0);
-          const pageApplied = counts.categories + counts.products + counts.batches;
+          const pageApplied = counts.categories + counts.activeIngredients + counts.products + counts.batches;
           applied += pageApplied;
           if (counts.rejected?.length || counts.deferredCatalog > 0) {
             return {

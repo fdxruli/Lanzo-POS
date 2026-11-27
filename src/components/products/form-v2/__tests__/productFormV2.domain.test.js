@@ -80,6 +80,14 @@ describe('Product Form V2 validation', () => {
       .toBeUndefined();
   });
 
+  it('requires a valid, unique structured composition for a new pharmacy medicine', () => {
+    const empty = validateProductForm(base({ stock: 0, pharmacyKind: 'medicine' }), { activeRubro: 'farmacia' });
+    expect(empty.fieldErrors.compositionIngredients).toBeTruthy();
+    const complete = [{ activeIngredientId: 'ai-1', name: 'Aspirina', amount: '125.5', unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }];
+    expect(validateProductForm(base({ stock: 0, pharmacyKind: 'medicine', compositionIngredients: complete }), { activeRubro: 'farmacia' }).fieldErrors.compositionIngredients).toBeUndefined();
+    expect(validateProductForm(base({ stock: 0, pharmacyKind: 'medicine', compositionIngredients: [...complete, ...complete] }), { activeRubro: 'farmacia' }).fieldErrors.compositionIngredients).toMatch(/una vez/);
+  });
+
   it('rejects incomplete and duplicate variants', () => {
     const result = validateProductForm(base({ hasVariants: true, quickVariants: [{ talla: 'M', color: 'Rojo' }, { talla: 'M', color: 'Rojo' }, { talla: 'L', color: '' }] }));
     expect(result.fieldErrors.quickVariants).toBeTruthy();

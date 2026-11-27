@@ -42,6 +42,10 @@ const normalizeBarcode = (value) => String(value || '').trim().toUpperCase();
 const DEFAULT_PORTABLE_CATEGORY_COLOR = '#cccccc';
 const PORTABLE_CATEGORY_COLOR_PATTERN = /^#[\da-f]{6}$/i;
 const csvDate = () => new Date().toISOString().slice(0, 10);
+const hasStructuredPharmacyComposition = (product) => {
+  const composition = product?.metadata?.pharmacy?.composition ?? product?.pharmacy?.composition;
+  return composition !== undefined && composition !== null;
+};
 
 const assertCurrentContext = (context) => {
   if (!isActiveTenantWorkerContext(context)) throw new Error('DATA_TRANSFER_CONTEXT_CHANGED');
@@ -177,6 +181,9 @@ export async function createPortableDataBundle({
     }
     return values;
   });
+  if (transferOnly && (recordsByTable.menu || []).some(hasStructuredPharmacyComposition)) {
+    throw new Error('DATA_TRANSFER_PHARMACY_COMPOSITION_REMAP_REQUIRED');
+  }
   assertAuthorized();
   assertCurrentContext(context);
 
@@ -668,6 +675,9 @@ const getPortableTables = (bundle) => {
     if (bundle.tableCounts?.[name] !== tables[name].length) {
       throw new Error(`El archivo está incompleto en la tabla ${name}.`);
     }
+  }
+  if ((tables.menu || []).some(hasStructuredPharmacyComposition)) {
+    throw new Error('DATA_TRANSFER_PHARMACY_COMPOSITION_REMAP_REQUIRED');
   }
   return Object.fromEntries(PORTABLE_TRANSFER_TABLES.map((name) => [name, Array.isArray(tables[name]) ? tables[name] : []]));
 };

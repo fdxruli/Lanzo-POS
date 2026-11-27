@@ -21,11 +21,13 @@ vi.mock('../../db/dexie', async () => {
   const db = new Dexie('catalog-recovery-cutover');
   db.version(1).stores({
     menu: '&id', categories: '&id', productBatches: '&id,productId', deletedMenu: '&id',
+    active_ingredients: 'id, &[businessKey+nameKey], nameKey, businessKey, isActive, syncStatus, updatedAt',
     deletedCategories: '&id', sales: '&id,status', layaways: '&id,status', inventoryEvents: '&id,productId',
     posSyncOutbox: '&id,entityType'
   });
   return { db, STORES: {
     MENU: 'menu', CATEGORIES: 'categories', PRODUCT_BATCHES: 'productBatches', DELETED_MENU: 'deletedMenu',
+    ACTIVE_INGREDIENTS: 'active_ingredients',
     DELETED_CATEGORIES: 'deletedCategories', SALES: 'sales', LAYAWAYS: 'layaways', INVENTORY_EVENTS: 'inventoryEvents'
   } };
 });
@@ -33,7 +35,15 @@ vi.mock('../../sync/syncConstants', async (loadActual) => {
   const actual = await loadActual();
   return { ...actual, POS_SYNC_STORES: { ...actual.POS_SYNC_STORES, OUTBOX: 'posSyncOutbox' } };
 });
-vi.mock('../../database', () => ({}));
+vi.mock('../../database', async () => {
+  const { db } = await import('../../db/dexie');
+  return {
+    loadData: async (storeName, key = null) => {
+      const table = db.table(storeName);
+      return key ? table.get(key) : table.toArray();
+    }
+  };
+});
 vi.mock('../../db/general', () => ({ categoriesRepository: {} }));
 vi.mock('../../utils', () => ({ generateID: vi.fn() }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({}) } }));

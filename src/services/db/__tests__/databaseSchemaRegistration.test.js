@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   LOCAL_TENANT_BINDING_DEXIE_VERSION,
   FINANCIAL_INTENT_DEXIE_VERSION,
+  PHARMACY_CATALOG_DEXIE_VERSION,
   POS_SYNC_DEXIE_VERSION,
   PRIMARY_KEY_RECOVERY_DEXIE_VERSION,
   RECOVERY_STORES,
@@ -19,7 +20,8 @@ const names = [];
 const stores = {
   SALES: 'sales',
   DELETED_SALES: 'deleted_sales',
-  FINANCIAL_INTENTS: 'financial_intents'
+  FINANCIAL_INTENTS: 'financial_intents',
+  ACTIVE_INGREDIENTS: 'active_ingredients'
 };
 
 const baseSchema = {
@@ -91,6 +93,7 @@ describe('canonical Dexie registration', () => {
     expect(firstDescription.versions).toContain(PRIMARY_KEY_RECOVERY_DEXIE_VERSION);
     expect(firstDescription.versions).toContain(LOCAL_TENANT_BINDING_DEXIE_VERSION);
     expect(firstDescription.versions).toContain(FINANCIAL_INTENT_DEXIE_VERSION);
+    expect(firstDescription.versions).toContain(PHARMACY_CATALOG_DEXIE_VERSION);
     expect(firstDescription.tables).toEqual(expect.arrayContaining([
       'sales',
       'deleted_sales',
@@ -101,7 +104,8 @@ describe('canonical Dexie registration', () => {
       RECOVERY_STORES.DELETED_SALES_BACKUP,
       RECOVERY_STORES.META,
       'local_tenant_binding',
-      'financial_intents'
+      'financial_intents',
+      'active_ingredients'
     ]));
     expect(first.table('sales').schema.primKey.keyPath).toBe('id');
     expect(second.table('sales').schema.primKey.keyPath).toBe('id');
@@ -189,7 +193,15 @@ describe('canonical Dexie registration', () => {
     const upgraded = createCanonicalLanzoDatabase(name);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(FINANCIAL_INTENT_DEXIE_VERSION);
+    expect(upgraded.verno).toBe(PHARMACY_CATALOG_DEXIE_VERSION);
+    expect(upgraded.table('active_ingredients').schema.idxByName['[businessKey+nameKey]'].unique).toBe(true);
+    await upgraded.table('active_ingredients').put({ id: 'ai-a', businessKey: 'business-a', nameKey: 'paracetamol' });
+    await expect(upgraded.table('active_ingredients').put({
+      id: 'ai-b', businessKey: 'business-a', nameKey: 'paracetamol'
+    })).rejects.toThrow();
+    await expect(upgraded.table('active_ingredients').put({
+      id: 'ai-c', businessKey: 'business-b', nameKey: 'paracetamol'
+    })).resolves.toBe('ai-c');
     await expect(upgraded.table('cajas').get('cash-device-bound')).resolves.toMatchObject({
       localStationKey: 'local:device:device-a',
       cashIdentityState: 'local',

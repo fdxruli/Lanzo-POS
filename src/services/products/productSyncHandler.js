@@ -30,6 +30,8 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { durableSnapshotService, buildSnapshotContextId } from '../sync/durableSnapshotService';
+import { activeIngredientRepository } from '../pharmacy/activeIngredientRepository';
+import { normalizePharmacyComposition } from '../pharmacy/pharmacyComposition';
 import {
   assertProductInventoryMutationCurrent,
   assertProductInventoryOperationActorCurrent,
@@ -71,6 +73,7 @@ const getExpectedVersion = (operation = {}) => {
 
 const isCatalogOperation = (operation = {}) => (
   operation.entityType === SYNC_ENTITY_TYPES.CATEGORY
+  || operation.entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT
   || operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
   || operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH
 );
@@ -157,7 +160,7 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
   const snapshotContextId = buildSnapshotContextId({
     licenseKey,
     streamKey: 'product_catalog',
-    scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+    scope: { entities: ['category', 'active_ingredient', 'product', 'product_batch'], includeDeleted: true },
     actorHandle
   });
   if (await durableSnapshotService.isActive({ licenseKey, streamKey: 'product_catalog', contextId: snapshotContextId })) {
@@ -222,7 +225,7 @@ export const pullCatalogChanges = async (licenseKeyOverride = null, { actorHandl
       error.catalogSyncContext = { phase: 'inventory_receipt_pending', licenseKey, retryable: true };
       throw error;
     }
-    applied += counts.categories + counts.products + counts.batches;
+    applied += counts.categories + counts.activeIngredients + counts.products + counts.batches;
     for (const product of [...(response.products || []), ...(response.product ? [response.product] : [])]) {
       if (product?.id) changedProductIds.add(product.id);
     }
@@ -392,7 +395,28 @@ export const productSyncHandler = {
     let response;
     let verifyLegacyPharmacyReceipt = false;
 
-    if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) {
+    if (operation.entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT) {
+      response = await productCloudRepository.upsertActiveIngredient({
+        actorHandle,
+        licenseKey,
+        activeIngredient: payload.activeIngredient,
+        expectedVersion,
+        idempotencyKey
+      });
+      if (response?.success === true) {
+        if (response.idempotency_key !== idempotencyKey || !response.active_ingredient?.id) {
+          throw asError({ code: 'PHARMACY_ACTIVE_INGREDIENT_CONFIRMATION_MISSING' }, 'PRODUCT_PUSH_FAILED');
+        }
+        if (await hasNewerLocalMutation(operation)) {
+          const staleResponse = createStaleConflictResponse(operation, response, 'post_rpc');
+          await saveStaleConflict(operation, staleResponse, 'post_rpc');
+          return { conflict: staleResponse, success: false };
+        }
+        await activeIngredientRepository.applyCloudRecord(response.active_ingredient, { localId: operation.entityId, actorHandle });
+        notifyProductsChanged({ source: 'productSyncHandler.activeIngredient', operation: 'synced', timestamp: Date.now() });
+        return response;
+      }
+    } else if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) {
       response = op === SYNC_OPERATIONS.DELETE
         ? await productCloudRepository.deleteCategory({
           actorHandle,
@@ -482,6 +506,21 @@ export const productSyncHandler = {
         idempotencyKey
       });
     } else {
+      const compositionValue = payload.product?.metadata?.pharmacy?.composition
+        ?? payload.product?.pharmacy?.composition;
+      if (compositionValue !== undefined && compositionValue !== null) {
+        const composition = normalizePharmacyComposition(compositionValue);
+        if (!composition) throw asError({ code: 'PHARMACY_COMPOSITION_INVALID' }, 'PRODUCT_PUSH_FAILED');
+        for (const component of composition.activeIngredients) {
+          const activeIngredient = await activeIngredientRepository.getById(component.activeIngredientId);
+          if (!activeIngredient) throw asError({ code: 'PHARMACY_ACTIVE_INGREDIENT_REFERENCE_MISSING' }, 'PRODUCT_PUSH_FAILED');
+          if (activeIngredient.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED || !activeIngredient.serverVersion) {
+            const error = asError({ code: 'PRODUCT_ACTIVE_INGREDIENT_DEPENDENCY_PENDING', retryable: true }, 'PRODUCT_PUSH_FAILED');
+            error.retryable = true;
+            throw error;
+          }
+        }
+      }
       await ensureCloudProductCategory({
         licenseKey,
         categoryId: payload.product?.category_id ?? payload.product?.categoryId,
@@ -576,6 +615,7 @@ export const registerProductSyncHandler = () => {
   if (registered) return false;
 
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.CATEGORY, productSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_ENTRY, productSyncHandler);

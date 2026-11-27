@@ -1,7 +1,9 @@
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
+import {
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
+  requireCloudSnapshotContract
+} from '../sync/cloudSyncProtocolV2';
 
-const collections = ['categories', 'products', 'batches'];
 const fail = (code) => { throw Object.assign(new Error(code), { code }); };
 
 // A read-only keyset traversal. Never persist its cursor or apply projections.
@@ -21,7 +23,11 @@ export const readProductCatalog = async ({
     await cloudRepository.negotiateSnapshotProtocol({ licenseKey, actorHandle: handle })
   );
   await assertCurrent();
-  const result = { categories: [], products: [], batches: [], snapshotReferenceChangeSeq: null };
+  const supportsActiveIngredients = snapshotProtocol.capabilities?.includes(CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY) === true;
+  const collections = supportsActiveIngredients
+    ? ['categories', 'active_ingredients', 'products', 'batches']
+    : ['categories', 'products', 'batches'];
+  const result = { categories: [], active_ingredients: [], products: [], batches: [], snapshotReferenceChangeSeq: null };
   const seen = collections.map(() => new Set());
   const cursors = new Set();
   let pageCursor = null;
@@ -72,7 +78,7 @@ export const readProductCatalog = async ({
       if (cursors.has(key)) fail('PRODUCT_RECOVERY_CLOUD_PAGINATION_STALLED');
       cursors.add(key);
     }
-    // SQL ranks all categories before products and batches. Seeing a later
+    // SQL ranks each reference partition before products and batches. Seeing a later
     // partition proves completion of the category partition, not the catalog.
     if (!response.has_more || (categoriesOnly && lastRank > 0)) return result;
     pageCursor = next;

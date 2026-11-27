@@ -5,6 +5,11 @@ import { normalizeWholesaleTiers } from './wholesaleTiers';
 import { normalizeExpirationFields, normalizeProduceSaleConfiguration, toNumber } from './productFormNormalization';
 import { calculateFractionedUnitCost } from './fractionedPricing';
 import { pharmacyLegacyIndicators, isSpecialPharmacyProduct } from '../../../../utils/pharmacyClassification';
+import {
+  formatCompositionActiveSubstance,
+  formatCompositionConcentration,
+  normalizePharmacyComposition
+} from '../../../../services/pharmacy/pharmacyComposition';
 
 export function buildProductFormPayload(values, { activeRubro, productToEdit = null } = {}) {
   const isEditing = Boolean(productToEdit?.id);
@@ -75,6 +80,7 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) {
     // Los datos medicinales se guardan en un solo objeto, también enviado a metadata JSONB Cloud.
     const pharmacy = {
+      ...(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy || {}),
       version: 1,
       kind: values.pharmacyKind === 'other' ? 'other' : 'medicine',
       fraction: values.pharmacyKind === 'other' ? null : (values.sanitaryFraction || null),
@@ -84,15 +90,31 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
       dosageForm: String(values.dosageForm || '').trim(),
       sanitaryRegistration: String(values.sanitaryRegistration || '').trim()
     };
+    const existingComposition = productToEdit?.metadata?.pharmacy?.composition
+      ?? productToEdit?.pharmacy?.composition;
+    const shouldClearComposition = values.compositionTouched === true
+      && (!Array.isArray(values.compositionIngredients) || values.compositionIngredients.length === 0);
+    const composition = Array.isArray(values.compositionIngredients) && values.compositionIngredients.length > 0
+      ? normalizePharmacyComposition({ version: 1, activeIngredients: values.compositionIngredients })
+      : normalizePharmacyComposition(existingComposition);
+    if (shouldClearComposition) {
+      pharmacy.composition = null;
+      pharmacy.concentration = '';
+    } else if (composition) {
+      pharmacy.composition = composition;
+      pharmacy.concentration = formatCompositionConcentration(composition);
+    }
     const shouldRecord = !isEditing || Boolean(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy)
-      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other');
+      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other' || values.compositionTouched);
     if (shouldRecord) {
       metadata.pharmacy = pharmacy;
       payload.pharmacy = pharmacy;
     }
     const legacy = pharmacyLegacyIndicators({ ...payload, metadata, pharmacy: shouldRecord ? pharmacy : undefined });
     Object.assign(payload, {
-      activeSubstance: String(values.activeSubstance || '').trim(),
+      activeSubstance: shouldClearComposition ? '' : (composition
+        ? formatCompositionActiveSubstance(composition)
+        : String(values.activeSubstance || '').trim()),
       laboratory: String(values.laboratory || '').trim(),
       presentation: String(values.presentation || '').trim(),
       prescriptionType: legacy.prescriptionType,

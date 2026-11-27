@@ -137,6 +137,32 @@ describe('portableDataTransfer', () => {
     ]);
   });
 
+  it('blocks portable transfer export when a product has structured pharmacy references', async () => {
+    const database = await activateTestBusiness();
+    await database.table(STORES.MENU).add({
+      id: 'pharmacy-product', name: 'Medicamento', metadata: { pharmacy: { composition: {
+        version: 1, activeIngredients: [{ activeIngredientId: 'ai-1', name: 'Principio A',
+          amount: 25, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }]
+      } } }
+    });
+
+    await expect(createPortableDataBundle({ transferOnly: true }))
+      .rejects.toThrow('DATA_TRANSFER_PHARMACY_COMPOSITION_REMAP_REQUIRED');
+  });
+
+  it('blocks portable import previews when composition references need identity remapping', async () => {
+    await activateTestBusiness();
+    const bundle = catalogBundleWith({ menu: [{
+      id: 'product-source', name: 'Medicamento', metadata: { pharmacy: { composition: {
+        version: 1, activeIngredients: [{ activeIngredientId: 'ai-source', name: 'Principio A',
+          amount: 25, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }]
+      } } }
+    }] });
+
+    await expect(previewCatalogTransfer(bundle))
+      .rejects.toThrow('DATA_TRANSFER_PHARMACY_COMPOSITION_REMAP_REQUIRED');
+  });
+
   it('builds a tenant-local ID map for product, category and recipe references', async () => {
     const bundle = catalogBundle();
     const plan = await buildCatalogTransferPlan(bundle, emptyDestination());

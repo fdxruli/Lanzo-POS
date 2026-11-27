@@ -27,6 +27,7 @@ import { createApparelSkuCandidate, resolveProductRubroContext } from './apparel
 import { productConflictService } from './productConflictService';
 import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
+import { activeIngredientRepository } from '../pharmacy/activeIngredientRepository';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
 import { CANONICAL_BUSINESS_TYPES } from '../../utils/businessType';
 import {
@@ -754,7 +755,12 @@ export const productRepository = {
       entityId: prepared.productId
     });
     const expectedVersion = options.expectedVersion ?? (prepared.editing ? prepared.product?.serverVersion || null : null);
-    const payload = { ...productMutationPayload, expectedVersion };
+    const composition = productMutationPayload.product?.metadata?.pharmacy?.composition
+      ?? productMutationPayload.product?.pharmacy?.composition;
+    const activeIngredientIds = Array.isArray(composition?.activeIngredients)
+      ? composition.activeIngredients.map((item) => item?.activeIngredientId).filter(Boolean)
+      : [];
+    const payload = { ...productMutationPayload, expectedVersion, activeIngredientDependencies: activeIngredientIds };
     const savePending = async (message) => {
       assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const result = await productLocalRepository.savePreparedProductLocal(prepared, pendingSync(idempotencyKey));
@@ -780,7 +786,21 @@ export const productRepository = {
     };
 
     if (!isOnline()) {
+      if (activeIngredientIds.length > 0) {
+        await activeIngredientRepository.ensureQueued(activeIngredientIds, {
+          licenseKey: mode.licenseKey,
+          actorHandle
+        });
+      }
       return savePending('Producto guardado localmente. Se sincronizara cuando vuelva internet.');
+    }
+
+    if (activeIngredientIds.length && await activeIngredientRepository.hasPending(activeIngredientIds)) {
+      await activeIngredientRepository.ensureQueued(activeIngredientIds, {
+        licenseKey: mode.licenseKey,
+        actorHandle
+      });
+      return savePending('Producto guardado. Primero se sincronizará su catálogo de principios activos.');
     }
 
     try {

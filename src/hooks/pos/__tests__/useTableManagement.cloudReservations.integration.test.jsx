@@ -17,6 +17,7 @@ const runtime = vi.hoisted(() => ({
 
 vi.mock('../../../services/db/dexie', () => ({
   STORES: { SALES: 'sales', MENU: 'menu', CATEGORIES: 'categories', PRODUCT_BATCHES: 'product_batches',
+    ACTIVE_INGREDIENTS: 'active_ingredients',
     CUSTOMERS: 'customers', SYNC_CACHE: 'sync_cache', TRANSACTION_LOG: 'transaction_log',
     INVENTORY_EVENTS: 'inventory_events', SEQUENCES: 'sequences', COMPANY: 'company' },
   db: {
@@ -204,6 +205,7 @@ beforeEach(async () => {
     verifySessionIntegrity: async () => true, licenseDetails: { valid: true, license_key: 'fixture-license' } };
   const database = new Dexie(`split-reservations-${crypto.randomUUID()}`);
   database.version(1).stores({ sales: 'id,status', menu: 'id', categories: 'id', product_batches: 'id,productId',
+    active_ingredients: 'id, &[businessKey+nameKey], nameKey, businessKey, isActive, syncStatus, updatedAt',
     customers: 'id', sync_cache: 'key', transaction_log: 'id',
     inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id',
     sync_outbox: 'id,status,entityType,createdAt,[status+createdAt],idempotencyKey' });

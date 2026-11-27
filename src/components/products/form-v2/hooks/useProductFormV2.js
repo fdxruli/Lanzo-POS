@@ -136,6 +136,11 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
     }
   }, []);
   const setFields = useCallback((next) => setValues((previous) => ({ ...previous, ...next })), []);
+  const setComposition = useCallback((compositionIngredients) => setValues((previous) => ({
+    ...previous,
+    compositionIngredients,
+    compositionTouched: true
+  })), []);
   const setSaleMode = useCallback((saleMode) => setValues((previous) => {
     const nextSaleMode = saleMode === 'bulk' ? 'bulk' : (saleMode === 'fractioned' ? 'fractioned' : 'unit');
     const currentUnit = previous.unit || 'pza';
@@ -413,5 +418,5 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
       submitInFlightRef.current = false;
     }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, saveOutcome, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, saveOutcome, barcodeMatches, barcodeLookupFailed, cloudBarcodeConflict, setField, setFields, setComposition, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

@@ -4,6 +4,7 @@ import { normalizeProductUnit, normalizePurchaseUnit, resolveProductSaleUnit } f
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
 import { normalizeProduceSaleConfiguration } from '../domain/productFormNormalization';
 import { getPharmacyClassification } from '../../../../utils/pharmacyClassification';
+import { getCompositionRows } from '../../../../services/pharmacy/pharmacyComposition';
 
 const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
 
@@ -55,6 +56,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     pharmacyKind: pharmacy.recorded || productToEdit ? pharmacy.kind : '',
     sanitaryFraction: pharmacy.fraction, isAntibiotic: pharmacy.antibiotic,
     concentration: pharmacy.concentration, dosageForm: pharmacy.dosageForm,
+    compositionIngredients: getCompositionRows(source), compositionTouched: false,
     sanitaryRegistration: pharmacy.sanitaryRegistration, classificationStatus: pharmacy.status,
     prescriptionType: source.prescriptionType, requiresPrescription: Boolean(source.requiresPrescription),
     restaurantType, productType: source.productType || (restaurantType === 'ingredient' ? 'ingredient' : 'sellable'),

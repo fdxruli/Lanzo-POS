@@ -15,8 +15,10 @@ export const CASH_FINANCIAL_DEXIE_VERSION = 32;
 // declaration in a new, monotonic version so existing tenant databases do not
 // trigger Dexie's schema-patch fallback at native version 320.
 export const FINANCIAL_INTENT_DEXIE_VERSION = 33;
+// Pharmacy active ingredients are a distinct catalog from recipe supplies.
+export const PHARMACY_CATALOG_DEXIE_VERSION = 34;
 export const CURRENT_NATIVE_DATABASE_VERSION =
-  FINANCIAL_INTENT_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
+  PHARMACY_CATALOG_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
 
 export const RECOVERY_STORES = Object.freeze({
   SALES_BACKUP: '__lanzo_sales_backup_v30',
@@ -211,6 +213,12 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
   if (stores.FINANCIAL_INTENTS) {
     db.version(FINANCIAL_INTENT_DEXIE_VERSION).stores({
       [stores.FINANCIAL_INTENTS]: FINANCIAL_INTENT_SCHEMA
+    });
+  }
+
+  if (stores.ACTIVE_INGREDIENTS) {
+    db.version(PHARMACY_CATALOG_DEXIE_VERSION).stores({
+      [stores.ACTIVE_INGREDIENTS]: 'id, &[businessKey+nameKey], nameKey, businessKey, isActive, syncStatus, updatedAt'
     });
   }
 

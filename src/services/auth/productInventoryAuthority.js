@@ -44,7 +44,7 @@ export const getProductInventoryMutationRequirements = ({
   operation,
   payload = {}
 } = {}) => {
-  if (entityType === SYNC_ENTITY_TYPES.CATEGORY) return [PRODUCT_PERMISSION];
+  if (entityType === SYNC_ENTITY_TYPES.CATEGORY || entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT) return [PRODUCT_PERMISSION];
   if (entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) return [INVENTORY_PERMISSION];
   if (entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) return [INVENTORY_PERMISSION];
 

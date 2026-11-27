@@ -46,6 +46,7 @@ const stores = {
   CATEGORIES: 'categories',
   DELETED_CATEGORIES: 'deleted_categories',
   PRODUCT_BATCHES: 'product_batches',
+  ACTIVE_INGREDIENTS: 'active_ingredients',
   INVENTORY_EVENTS: 'inventory_events',
   SALES: 'sales'
 };
@@ -71,6 +72,7 @@ beforeAll(async () => {
     [stores.MENU]: 'id', [stores.DELETED_MENU]: 'id',
     [stores.CATEGORIES]: 'id', [stores.DELETED_CATEGORIES]: 'id', [stores.SALES]: 'id',
     [stores.PRODUCT_BATCHES]: 'id, productId', [stores.INVENTORY_EVENTS]: 'id, productId',
+    [stores.ACTIVE_INGREDIENTS]: 'id, &[businessKey+nameKey], nameKey, businessKey, isActive, syncStatus, updatedAt',
     [POS_SYNC_STORES.OUTBOX]: 'id, status, entityType, createdAt, [status+createdAt], idempotencyKey',
     [POS_SYNC_STORES.CONFLICTS]: 'id, entityType, entityId, status, createdAt'
   });
