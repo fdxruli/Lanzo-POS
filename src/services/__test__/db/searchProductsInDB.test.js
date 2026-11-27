@@ -257,6 +257,56 @@ describe('búsqueda farmacéutica F03', () => {
     expect(results.map(({ id }) => id)).toEqual(['decimal-mg']);
   });
 
+  it('distingue cantidades numéricas completas en filtros y búsqueda general', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue([]);
+    const rows = [
+      medicine('mg-500', 'Marca cinco centenas', [item('ai-paracetamol', 'Paracetamol', 500)], {
+        concentration: '1500 mg'
+      }),
+      medicine('mg-1500', 'Marca mil quinientos', [item('ai-paracetamol', 'Paracetamol', 1500)]),
+      medicine('mg-5', 'Marca cinco', [item('ai-paracetamol', 'Paracetamol', 5)]),
+      medicine('mg-15', 'Marca quince', [item('ai-paracetamol', 'Paracetamol', 15)]),
+      medicine('mg-0-5', 'Marca medio', [item('ai-paracetamol', 'Paracetamol', 0.5)]),
+      medicine('mg-per-5-ml', 'Marca suspensión', [item('ai-paracetamol', 'Paracetamol', 250, 'mg', 5, 'mL')], {
+        dosageFormCode: 'suspension', dosageForm: 'Suspensión'
+      })
+    ];
+
+    expect((await searchPharmacy(rows, '500 mg')).map(({ id }) => id)).toEqual(['mg-500']);
+    expect((await searchPharmacy(rows, '500mg')).map(({ id }) => id)).toEqual(['mg-500']);
+    expect((await searchPharmacy(rows, '1500 mg')).map(({ id }) => id)).toEqual(['mg-1500']);
+    expect((await searchPharmacy(rows, '5 mg')).map(({ id }) => id)).toEqual(['mg-5']);
+    expect((await searchPharmacy(rows, '0.5 mg')).map(({ id }) => id)).toEqual(['mg-0-5']);
+    expect((await searchPharmacy(rows, '', { concentration: '500 mg' })).map(({ id }) => id))
+      .toEqual(['mg-500']);
+    expect((await searchPharmacy(rows, '', { concentration: '5 mg' })).map(({ id }) => id))
+      .toEqual(['mg-5']);
+    expect((await searchPharmacy(rows, '', { concentration: '0.5 mg' })).map(({ id }) => id))
+      .toEqual(['mg-0-5']);
+  });
+
+  it('distingue cantidades de presentación estructuradas frente a texto histórico conflictivo', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue([]);
+    const rows = [
+      {
+        ...medicine('package-10', 'Marca caja chica', [item('ai-paracetamol', 'Paracetamol', 500)], {
+          commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' }
+        }),
+        presentation: 'Caja con 110 tabletas'
+      },
+      medicine('package-110', 'Marca caja grande', [item('ai-paracetamol', 'Paracetamol', 500)], {
+        commercialPresentation: { version: 1, packageType: 'box', contentAmount: 110, contentUnit: 'tableta' }
+      })
+    ];
+
+    expect((await searchPharmacy(rows, '10 tabletas')).map(({ id }) => id)).toEqual(['package-10']);
+    expect((await searchPharmacy(rows, '110 tabletas')).map(({ id }) => id)).toEqual(['package-110']);
+    expect((await searchPharmacy(rows, '', { presentation: '10 tabletas' })).map(({ id }) => id))
+      .toEqual(['package-10']);
+    expect((await searchPharmacy(rows, '', { presentation: '110 tabletas' })).map(({ id }) => id))
+      .toEqual(['package-110']);
+  });
+
   it('mantiene localizables medicamentos históricos con texto libre y sin composición', async () => {
     vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
     const historical = {

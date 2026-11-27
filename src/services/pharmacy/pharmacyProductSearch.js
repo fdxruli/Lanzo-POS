@@ -18,6 +18,47 @@ export const EMPTY_PHARMACY_SEARCH_FILTERS = Object.freeze({
 });
 
 const QUERY_STOPWORDS = new Set(['and', 'con', 'de', 'del', 'el', 'la', 'las', 'los', 'por', 'y']);
+const NUMERIC_QUERY_TOKEN = /^\d+(?:\.\d*)?$/;
+const PHARMACY_MEASURE_UNITS = new Set(['mg', 'mcg', 'ug', 'g', 'ml', 'l', 'ui', 'iu', 'meq', 'mmol', 'mol', 'ufc']);
+
+const normalizeNumericToken = (token) => {
+  const [integerPart, decimalPart = ''] = token.split('.');
+  const integer = integerPart.replace(/^0+(?=\d)/, '') || '0';
+  const fraction = decimalPart.replace(/0+$/, '');
+  return fraction ? `${integer}.${fraction}` : integer;
+};
+
+const getNumericTokens = (value) => normalizePharmacySearchValue(value).match(/\d+(?:\.\d+)?/g) || [];
+
+const matchesSearchToken = (value, token) => {
+  const normalizedValue = normalizePharmacySearchValue(value);
+  if (!NUMERIC_QUERY_TOKEN.test(token)) return normalizedValue.includes(token);
+  const normalizedToken = normalizeNumericToken(token);
+  return getNumericTokens(normalizedValue).some((candidate) => (
+    normalizeNumericToken(candidate) === normalizedToken
+  ));
+};
+
+const expandNumericUnitToken = (token) => {
+  const match = token.match(/^(\d+(?:\.\d*)?)(mcg|mmol|meq|mg|ug|ui|iu|ml|g|l|mol|ufc)$/);
+  return match ? [match[1], match[2]] : [token];
+};
+
+const getNumericUnitPairs = (tokens) => tokens.flatMap((token, index) => (
+  NUMERIC_QUERY_TOKEN.test(token) && PHARMACY_MEASURE_UNITS.has(tokens[index + 1])
+    ? [[token, tokens[index + 1]]]
+    : []
+));
+
+const matchesNumericUnitPair = (value, [amount, unit]) => {
+  const normalizedValue = normalizePharmacySearchValue(value);
+  const normalizedAmount = normalizeNumericToken(amount);
+  return [...normalizedValue.matchAll(/\d+(?:\.\d+)?/g)].some((match) => {
+    if (normalizeNumericToken(match[0]) !== normalizedAmount) return false;
+    const nextToken = normalizedValue.slice(match.index + match[0].length).match(/^\s*([a-z]+)\b/);
+    return nextToken?.[1] === unit;
+  });
+};
 
 export const normalizePharmacySearchValue = (value) => normalizeProductSearchValue(value)
   .replace(/[µμ]/g, 'u');
@@ -49,8 +90,9 @@ const getLegacyActiveSubstanceValues = (product = {}) => {
 const getConcentrationValues = (product = {}) => {
   const pharmacy = getPharmacyMetadata(product);
   const composition = getNormalizedComposition(product);
+  const structured = composition && formatCompositionConcentration(composition);
+  if (structured) return [structured];
   return [
-    composition && formatCompositionConcentration(composition),
     pharmacy?.concentration,
     product?.concentration
   ].filter((value) => typeof value === 'string' && value.trim());
@@ -73,8 +115,9 @@ const getDosageFormValues = (product = {}) => {
 const getPresentationValues = (product = {}) => {
   const pharmacy = getPharmacyMetadata(product);
   const structured = pharmacy?.commercialPresentation;
+  const structuredPresentation = formatPharmacyCommercialPresentation(structured);
+  if (structuredPresentation) return [structuredPresentation];
   return [
-    formatPharmacyCommercialPresentation(structured),
     structured?.legacyDescription,
     pharmacy?.commercialPresentationText,
     product?.presentation,
@@ -141,9 +184,15 @@ export const createPharmacySearchContext = async (searchTerm) => {
   };
 };
 
-const includesEveryQueryToken = (values, queryTokens) => queryTokens.every((queryToken) => (
-  values.some((value) => value.includes(queryToken))
-));
+const includesEveryQueryToken = (values, queryTokens) => {
+  const tokens = queryTokens.flatMap(expandNumericUnitToken);
+  if (!tokens.every((queryToken) => values.some((value) => matchesSearchToken(value, queryToken)))) {
+    return false;
+  }
+  return getNumericUnitPairs(tokens).every((pair) => (
+    values.some((value) => matchesNumericUnitPair(value, pair))
+  ));
+};
 
 const containsWholePhrase = (haystack, phrase) => {
   const index = haystack.indexOf(phrase);
@@ -180,7 +229,12 @@ export const matchesPharmacySearchQuery = (product, context) => {
 const includesFilter = (values, filter) => {
   const normalizedFilter = normalizePharmacySearchValue(filter);
   if (!normalizedFilter) return true;
-  return values.some((value) => normalizePharmacySearchValue(value).includes(normalizedFilter));
+  const filterTokens = queryTokensFor(normalizedFilter).flatMap(expandNumericUnitToken);
+  if (!filterTokens.length) return true;
+  return values.some((value) => (
+    filterTokens.every((token) => matchesSearchToken(value, token))
+    && getNumericUnitPairs(filterTokens).every((pair) => matchesNumericUnitPair(value, pair))
+  ));
 };
 
 export const hasPharmacySearchFilters = (filters = EMPTY_PHARMACY_SEARCH_FILTERS) => (
