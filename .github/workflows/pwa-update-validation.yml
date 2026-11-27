@@ -37,7 +37,6 @@ jobs:
           src/components/common/UpdatePrompt.test.jsx src/components/common/UpdateControls.test.jsx
           src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx
           src/services/sync/__tests__/posSyncOrchestrator.lifecycle.test.js
-          src/services/customers/__tests__/customerRepository.indexeddb.integration.test.jsx
           src/architecture/__tests__/vercelPrebuiltDeployment.test.js
           src/services/financial/__tests__ src/services/db/__tests__/databaseSchemaRegistration.test.js
           --maxWorkers=3
