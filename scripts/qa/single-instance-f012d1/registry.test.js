@@ -30,7 +30,7 @@ it('records registration order through actual cold commercial auto-bootstrap imp
       }
     }
     const effective = Object.fromEntries(calls.map(call => [call.entity, call.handler]));
-    expect(calls).toHaveLength(18); expect(pending).toEqual([]);
+    expect(calls).toHaveLength(19); expect(pending).toEqual([]);
     // Movement notifications fan out at read dispatch, never through competing
     // lifecycle/Outbox registrations. Detect any duplicate registry owner.
     expect(new Set(calls.map(call => call.entity)).size).toBe(calls.length);
@@ -38,6 +38,7 @@ it('records registration order through actual cold commercial auto-bootstrap imp
     expect(effective).not.toHaveProperty('inventory_movement');
     expect(effective).toMatchObject({
       category: 'productSyncHandler',
+      active_ingredient: 'productSyncHandler',
       product: 'productSyncHandler',
       product_batch: 'productSyncHandler',
       inventory_entry: 'productSyncHandler',
