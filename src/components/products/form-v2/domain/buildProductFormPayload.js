@@ -163,7 +163,8 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
       pharmacy.concentration = formatCompositionConcentration(composition);
     }
     const shouldRecord = !isEditing || Boolean(productToEdit?.metadata?.pharmacy || productToEdit?.pharmacy)
-      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other' || values.compositionTouched);
+      || Boolean(values.sanitaryFraction || values.pharmacyKind === 'other' || values.compositionTouched
+        || dosageFormCode || requestedCommercialPresentation);
     if (shouldRecord) {
       metadata.pharmacy = pharmacy;
       payload.pharmacy = pharmacy;

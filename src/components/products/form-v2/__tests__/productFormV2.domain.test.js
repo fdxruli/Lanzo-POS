@@ -207,6 +207,41 @@ describe('Product Form V2 payload', () => {
     });
   });
 
+  it('records new F02 fields when editing an unclassified historical medicine without a prior pharmacy object', () => {
+    const productToEdit = {
+      id: 'legacy-medicine-without-pharmacy-metadata', name: 'Medicamento histórico QA',
+      stock: 7, saleType: 'unit', unit: 'pza', cost: 12.5, price: 24,
+      presentation: 'Caja de texto histórico', isActive: true,
+      prescriptionType: 'otc', requiresPrescription: false, metadata: { custom: 'preservar' }
+    };
+    const values = {
+      ...base({ stock: 7, unit: 'pza', cost: 12.5, price: 24 }),
+      ...getProductFormDefaults({ activeRubro: 'farmacia', productToEdit }),
+      pharmacyKind: 'medicine', sanitaryFraction: '', isAntibiotic: false,
+      dosageFormCode: 'suspension', packageType: 'bottle',
+      packageContentAmount: '120.5', packageContentUnit: 'mL',
+      compositionIngredients: [], compositionTouched: false
+    };
+    const payload = buildProductFormPayload(values, { activeRubro: 'farmacia', productToEdit });
+
+    expect(payload.metadata).toMatchObject({
+      custom: 'preservar',
+      pharmacy: {
+        kind: 'medicine', fraction: null, status: 'pending',
+        dosageFormCode: 'suspension', dosageForm: 'Suspensión',
+        commercialPresentation: {
+          version: 1, packageType: 'bottle', contentAmount: 120.5, contentUnit: 'mL',
+          legacyDescription: 'Caja de texto histórico'
+        }
+      }
+    });
+    expect(payload).toMatchObject({
+      stock: 7, unit: 'pza', cost: 12.5, price: 24,
+      presentation: 'Frasco con 120.5 mL', isActive: true,
+      prescriptionType: 'otc', requiresPrescription: false
+    });
+  });
+
   it('defensively serializes produce sale modes with coherent canonical units', () => {
     const piece = buildProductFormPayload(base({ saleMode: 'unit', saleType: 'unit', unit: 'kg' }), { activeRubro: 'verduleria/fruteria' });
     expect(piece).toMatchObject({ saleType: 'unit', unit: 'pza' });
