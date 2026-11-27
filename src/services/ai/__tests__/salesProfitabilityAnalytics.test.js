@@ -92,10 +92,82 @@ describe('sales profitability deterministic analysis', () => {
     });
     expect(result.coverage.validSales).toBe(2);
     expect(result.coverage.excludedSales).toBe(6);
-    expect(result.coverage.sourceWarnings.join(' ')).toMatch(/legacy|shadow|ecommerce/i);
+    expect(result.coverage.sourceWarnings.join(' ')).toMatch(/importación histórica|auxiliares de sincronización|ecommerce no convertidos/i);
     expect(result.current.products.map((product) => product.name)).toEqual(expect.arrayContaining(['Operativo', 'Convertida']));
     expect(result.current.products.map((product) => product.name)).not.toContain('Legacy');
     expect(result.priceSimulation).toBeNull();
+  });
+
+  it('reconciles included, excluded, invalid and duplicate records without exposing internal identifiers', () => {
+    const rows = [
+      sale('sale-missing-cost', [item('Costo pendiente', 1, 100, null)], {
+        folio: 'POS-001', soldAt: '2026-09-01T12:00:00.000Z'
+      }),
+      sale('sale-cancelled', [item('Cancelada', 1, 80, 30)], {
+        folio: 'POS-002', status: 'cancelled', soldAt: '2026-09-02T12:00:00.000Z'
+      }),
+      sale('sale-rejected', [item('Rechazada', 1, 70, 20)], { status: 'rejected' }),
+      sale('sale-legacy', [item('Histórica', 1, 60, 20)], { sourceMode: 'legacy_imported' }),
+      sale('sale-shadow', [item('Auxiliar', 1, 50, 20)], { sourceMode: 'shadow' }),
+      sale('sale-pending', [item('Pendiente', 1, 40, 20)], { sourceMode: 'ecommerce_pending' }),
+      null,
+      sale('local-duplicate-private-id', [item('Copia local', 1, 110, 50)], {
+        sourceMode: 'local', ecommerceOrderId: 'private-order-id', folio: 'POS-LOCAL-003'
+      }),
+      sale('cloud-duplicate-private-id', [item('Venta confirmada', 1, 110, 50)], {
+        sourceMode: 'cloud_committed', ecommerceOrderId: 'private-order-id', folio: 'POS-CLOUD-003'
+      })
+    ];
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows, source: { mode: 'cloud_final' } }
+    });
+
+    expect(result.coverage).toMatchObject({
+      recordsEvaluated: 9,
+      rawSales: 9,
+      validSales: 2,
+      includedSales: 2,
+      excludedSales: 6,
+      ecommerceDuplicatesExcluded: 1,
+      discardedRecords: 7,
+      exclusionDetailsVersion: 1
+    });
+    expect(result.coverage.recordsEvaluated).toBe(
+      result.coverage.includedSales + result.coverage.discardedRecords
+    );
+    expect(result.coverage.exclusionDetails.map(({ reasonCode, kind }) => `${kind}:${reasonCode}`)).toEqual([
+      'excluded:cancelled_status',
+      'excluded:invalid_status',
+      'excluded:historical_source',
+      'excluded:shadow_record',
+      'excluded:ecommerce_not_converted',
+      'excluded:invalid_record',
+      'duplicate:ecommerce_duplicate'
+    ]);
+    expect(result.coverage.exclusionDetails.find((detail) => detail.reasonCode === 'cancelled_status')).toMatchObject({
+      reference: 'POS-002',
+      statusLabel: 'Cancelada',
+      originLabel: 'Nube',
+      amount: 80
+    });
+    expect(result.current.netSales).toBe(210);
+    expect(JSON.stringify(result.coverage.exclusionDetails)).not.toMatch(/private-order-id|sale-cancelled|local-duplicate-private-id|cloud-duplicate-private-id/);
+  });
+
+  it('records an explicit empty exclusion breakdown when no records were discarded', () => {
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('valid', [item('Válida', 1, 100, 40)])] }
+    });
+
+    expect(result.coverage).toMatchObject({
+      recordsEvaluated: 1,
+      includedSales: 1,
+      discardedRecords: 0,
+      exclusionDetailsVersion: 1,
+      exclusionDetails: []
+    });
   });
 
   it('keeps an unknown source only for compatibility, warns deterministically and never reports high confidence', () => {
@@ -110,7 +182,7 @@ describe('sales profitability deterministic analysis', () => {
       intent: 'profitability_summary'
     });
     expect(result.coverage.sourcePolicy.unknownSources).toBe(2);
-    expect(result.coverage.sourceWarnings.join(' ')).toContain('fuente no reconocida');
+    expect(result.coverage.sourceWarnings.join(' ')).toContain('origen no reconocido');
     expect(result.confidence).toBe('low');
   });
 

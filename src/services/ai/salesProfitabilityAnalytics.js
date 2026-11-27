@@ -82,6 +82,16 @@ const EXCLUDED_SALES_SOURCES = new Set([
 ]);
 
 const HISTORICAL_SOURCE_TOKEN_PATTERN = /(?:^|_)(?:legacy|historical|history|imported)(?:_|$)/u;
+const INTERNAL_REFERENCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const PRIVATE_CONTACT_PATTERN = /(?:\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\+?\d(?:[\s().-]*\d){9,14}\b)/iu;
+const EXCLUDED_STATUS_LABELS = new Map([
+  ['cancelled', 'Cancelada'], ['canceled', 'Cancelada'], ['cancelada', 'Cancelada'], ['cancelado', 'Cancelada'],
+  ['annulled', 'Anulada'], ['anulada', 'Anulada'], ['anulado', 'Anulada'],
+  ['reverted', 'Revertida'], ['revertida', 'Revertida'], ['revertido', 'Revertida'],
+  ['void', 'Anulada'], ['voided', 'Anulada'],
+  ['rejected', 'Rechazada'], ['rechazada', 'Rechazada'], ['rechazado', 'Rechazada'],
+  ['shadow', 'Auxiliar de sincronización']
+]);
 const MONEY_FORMATTER = new Intl.NumberFormat('es-MX', {
   style: 'currency',
   currency: 'MXN',
@@ -116,6 +126,15 @@ const safeText = (value, fallback = null, maxLength = 120) => {
   if (typeof value !== 'string') return fallback;
   const text = value.trim().slice(0, maxLength);
   return text || fallback;
+};
+
+const hasControlCharacter = (value) => {
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
 };
 
 const normalize = (value = '') => String(value)
@@ -252,30 +271,131 @@ const SALES_SOURCE_PREFERENCE = new Map([
 
 const salesSourcePreference = (sale) => SALES_SOURCE_PREFERENCE.get(normalizedSource(sale)) || 0;
 
+const visibleSaleReference = (sale = {}) => {
+  const source = asRecord(sale);
+  const internalIds = new Set([
+    source.id, source.sale_id, source.cloudSaleId, source.cloud_sale_id,
+    source.localSaleId, source.local_sale_id,
+    source.ecommerceOrderId, source.ecommerce_order_id
+  ].filter((value) => value !== null && value !== undefined).map((value) => String(value).trim()));
+  const candidates = [
+    source.posFolio, source.pos_folio, source.operationalFolio, source.operational_folio,
+    source.cloudFolio, source.cloud_folio, source.folio,
+    source.ecommerceOrderCode, source.ecommerce_order_code
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const value = String(candidate).trim();
+    if (!value || value.length > 80 || internalIds.has(value)
+      || INTERNAL_REFERENCE_PATTERN.test(value) || PRIVATE_CONTACT_PATTERN.test(value)
+      || hasControlCharacter(value)) continue;
+    return value;
+  }
+  return null;
+};
+
+const saleAmountForDisclosure = (sale = {}) => {
+  const source = asRecord(sale);
+  const total = numberOrNull(source.total ?? source.net_total ?? source.net_sales_total);
+  if (total !== null && total >= 0) return total;
+  const items = extractItems(source);
+  if (!items.length) return null;
+  let sum = 0;
+  let available = false;
+  for (const item of items) {
+    const itemTotal = numberOrNull(item?.total ?? item?.line_total ?? item?.subtotal ?? item?.net_total);
+    if (itemTotal === null || itemTotal < 0) continue;
+    sum += itemTotal;
+    available = true;
+  }
+  return available ? sum : null;
+};
+
+const saleDateForDisclosure = (sale = {}) => {
+  const source = asRecord(sale);
+  const value = source.soldAt ?? source.sold_at ?? source.timestamp ?? source.created_at ?? source.cancelledAt ?? source.cancelled_at;
+  if (value === null || value === undefined || value === '') return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const saleStatusLabel = (sale = {}) => {
+  const status = normalizedStatus(sale);
+  return EXCLUDED_STATUS_LABELS.get(status) || (status === 'closed' ? 'Cerrada' : 'No válida');
+};
+
+const saleOriginLabel = (sale = {}) => {
+  const source = normalizedSource(sale);
+  if (!source) return 'Origen no confirmado';
+  if (source.startsWith('shadow') || source.endsWith('_shadow')) return 'Auxiliar de sincronización';
+  if (HISTORICAL_SOURCE_TOKEN_PATTERN.test(source)) return 'Importación histórica';
+  if (source === 'cloud_final' || source === 'cloud_committed') return 'Nube';
+  if (source === 'local' || source === 'local_committed') return 'Local';
+  if (source === 'pos' || source === 'pos_sale' || source === 'pos_converted') return 'Punto de venta';
+  if (source === 'ecommerce_converted' || source === 'ecommerce_pos_converted') return 'Ecommerce convertido a venta POS';
+  if (source.startsWith('ecommerce_') || source === 'ecommerce_order') return 'Ecommerce';
+  return 'Otro origen';
+};
+
+const exclusionReasonCode = (sale, exclusion) => {
+  if (exclusion?.reason === 'cancelled_marker') return 'cancellation_marker';
+  if (exclusion?.reason === 'status') {
+    if (isExcludedSalesStatus(exclusion.status)) {
+      if (['cancelled', 'canceled', 'cancelada', 'cancelado'].includes(exclusion.status)) return 'cancelled_status';
+      if (exclusion.status === 'shadow') return 'shadow_record';
+      return 'invalid_status';
+    }
+  }
+  const source = exclusion?.source || normalizedSource(sale);
+  if (source.startsWith('shadow') || source.endsWith('_shadow')) return 'shadow_record';
+  if (HISTORICAL_SOURCE_TOKEN_PATTERN.test(source)) return 'historical_source';
+  if (source.startsWith('ecommerce_') || source === 'ecommerce_order') return 'ecommerce_not_converted';
+  return 'unsupported_source';
+};
+
+const buildExcludedSaleDetail = (sale, { reasonCode, kind = 'excluded' } = {}) => ({
+  kind,
+  reasonCode,
+  reference: visibleSaleReference(sale),
+  date: saleDateForDisclosure(sale),
+  statusLabel: reasonCode === 'invalid_record' ? null : saleStatusLabel(sale),
+  originLabel: reasonCode === 'invalid_record' ? null : saleOriginLabel(sale),
+  amount: saleAmountForDisclosure(sale)
+});
+
 export const normalizeValidSales = (history) => {
   const rows = extractRows(history);
   const excluded = [];
   const candidates = [];
+  const exclusionDetails = [];
   const sourcePolicy = {
     excludedSources: 0,
     excludedStatuses: 0,
     cancelledMarkers: 0,
+    invalidRecords: 0,
     legacySources: 0,
     shadowSources: 0,
     ecommerceSources: 0,
     unknownSources: 0
   };
 
-  rows.forEach((row) => {
-    if (!asRecord(row)) {
+  rows.forEach((row, rowIndex) => {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) {
       excluded.push(row);
       sourcePolicy.excludedSources += 1;
+      sourcePolicy.invalidRecords += 1;
+      exclusionDetails.push({ ...buildExcludedSaleDetail({}, { reasonCode: 'invalid_record' }), rowIndex });
       return;
     }
 
     const exclusion = excludedSaleReason(row);
     if (exclusion) {
       excluded.push(row);
+      exclusionDetails.push({
+        ...buildExcludedSaleDetail(row, { reasonCode: exclusionReasonCode(row, exclusion) }),
+        rowIndex
+      });
       if (exclusion.reason === 'status') sourcePolicy.excludedStatuses += 1;
       if (exclusion.reason === 'cancelled_marker') sourcePolicy.cancelledMarkers += 1;
       if (exclusion.reason === 'source') {
@@ -290,39 +410,53 @@ export const normalizeValidSales = (history) => {
 
     const source = normalizedSource(row);
     if (!source || !isOperationalSalesSource(source)) sourcePolicy.unknownSources += 1;
-    candidates.push(row);
+    candidates.push({ row, rowIndex });
   });
 
   const deduped = [];
   const ecommerceIndexes = new Map();
-  let ecommerceDuplicates = 0;
+  const duplicateDetails = [];
 
-  candidates.forEach((row) => {
+  candidates.forEach(({ row, rowIndex }) => {
     const key = ecommerceKey(row);
     if (!key) {
-      deduped.push(row);
+      deduped.push({ row, rowIndex });
       return;
     }
 
     const existingIndex = ecommerceIndexes.get(key);
     if (existingIndex === undefined) {
       ecommerceIndexes.set(key, deduped.length);
-      deduped.push(row);
+      deduped.push({ row, rowIndex });
       return;
     }
 
-    ecommerceDuplicates += 1;
-    if (salesSourcePreference(row) > salesSourcePreference(deduped[existingIndex])) {
-      deduped[existingIndex] = row;
+    const existing = deduped[existingIndex];
+    if (salesSourcePreference(row) > salesSourcePreference(existing.row)) {
+      duplicateDetails.push({
+        ...buildExcludedSaleDetail(existing.row, { reasonCode: 'ecommerce_duplicate', kind: 'duplicate' }),
+        rowIndex: existing.rowIndex
+      });
+      deduped[existingIndex] = { row, rowIndex };
+    } else {
+      duplicateDetails.push({
+        ...buildExcludedSaleDetail(row, { reasonCode: 'ecommerce_duplicate', kind: 'duplicate' }),
+        rowIndex
+      });
     }
   });
 
+  const allExclusionDetails = [...exclusionDetails, ...duplicateDetails]
+    .sort((left, right) => left.rowIndex - right.rowIndex)
+    .map(({ rowIndex: _rowIndex, ...detail }) => detail);
+
   return {
-    rows: deduped,
+    rows: deduped.map(({ row }) => row),
     excludedCount: excluded.length,
-    ecommerceDuplicates,
+    ecommerceDuplicates: duplicateDetails.length,
     rawCount: rows.length,
-    sourcePolicy
+    sourcePolicy,
+    exclusionDetails: allExclusionDetails
   };
 };
 
@@ -1621,16 +1755,19 @@ export const buildSalesProfitabilityAnalysis = ({
   const sourcePolicy = current.meta.sourcePolicy || {};
   const sourceWarnings = [];
   if ((sourcePolicy.legacySources || 0) > 0) {
-    sourceWarnings.push(`Se excluyeron ${sourcePolicy.legacySources} venta(s) legacy/históricas del dataset analítico.`);
+    sourceWarnings.push(`Se excluyeron ${sourcePolicy.legacySources} registro(s) de una importación histórica; no corresponden a ventas operativas actuales.`);
   }
   if ((sourcePolicy.shadowSources || 0) > 0) {
-    sourceWarnings.push(`Se excluyeron ${sourcePolicy.shadowSources} venta(s) shadow del dataset analítico.`);
+    sourceWarnings.push(`Se excluyeron ${sourcePolicy.shadowSources} registro(s) auxiliares de sincronización; no son ventas comerciales adicionales.`);
   }
   if ((sourcePolicy.ecommerceSources || 0) > 0) {
     sourceWarnings.push(`Se excluyeron ${sourcePolicy.ecommerceSources} registro(s) ecommerce no convertidos a venta POS.`);
   }
+  if ((sourcePolicy.invalidRecords || 0) > 0) {
+    sourceWarnings.push(`Se descartaron ${sourcePolicy.invalidRecords} registro(s) con un formato de venta no válido.`);
+  }
   if ((sourcePolicy.unknownSources || 0) > 0) {
-    sourceWarnings.push(`Hay ${sourcePolicy.unknownSources} venta(s) con fuente no reconocida; se conservaron por compatibilidad y se reportan con confianza limitada.`);
+    sourceWarnings.push(`${sourcePolicy.unknownSources} registro(s) con origen no reconocido se conservaron por compatibilidad; esto limita la confianza.`);
   }
   limitations.push(...simulation.limitations, ...sourceWarnings);
 
@@ -1644,9 +1781,14 @@ export const buildSalesProfitabilityAnalysis = ({
   const source = sourceModeToContractSource(sourceMode);
   const coverage = {
     validSales: current.salesCount,
+    recordsEvaluated: current.meta.rawCount,
+    includedSales: current.salesCount,
     rawSales: current.meta.rawCount,
     excludedSales: current.meta.excludedCount,
     ecommerceDuplicatesExcluded: current.meta.ecommerceDuplicates,
+    discardedRecords: current.meta.excludedCount + current.meta.ecommerceDuplicates,
+    exclusionDetailsVersion: 1,
+    exclusionDetails: current.meta.exclusionDetails,
     productsIncluded: current.products.length,
     productsMissingCost: current.missingCostProducts.length,
     costCoverage: current.costCoverage,
@@ -1656,6 +1798,7 @@ export const buildSalesProfitabilityAnalysis = ({
       excludedSources: sourcePolicy.excludedSources || 0,
       excludedStatuses: sourcePolicy.excludedStatuses || 0,
       cancelledMarkers: sourcePolicy.cancelledMarkers || 0,
+      invalidRecords: sourcePolicy.invalidRecords || 0,
       legacySources: sourcePolicy.legacySources || 0,
       shadowSources: sourcePolicy.shadowSources || 0,
       ecommerceSources: sourcePolicy.ecommerceSources || 0,

@@ -589,6 +589,67 @@
   gap: 0.65rem;
 }
 
+.commercial-ai-coverage-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.commercial-ai-coverage-summary .commercial-ai-metric {
+  padding: 0.6rem 0.7rem;
+  background: #f0f9ff;
+}
+
+.commercial-ai-coverage-note {
+  margin: 0 0 0.75rem;
+  color: #475569;
+  font-size: 0.77rem;
+  line-height: 1.45;
+}
+
+.commercial-ai-exclusion-details,
+.commercial-ai-confidence-explanation {
+  margin-top: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.commercial-ai-exclusion-details summary,
+.commercial-ai-confidence-explanation summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.commercial-ai-exclusion-details ul,
+.commercial-ai-confidence-explanation ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.7rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.commercial-ai-exclusion-details li {
+  padding: 0.2rem 0 0.45rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.commercial-ai-exclusion-details li strong,
+.commercial-ai-exclusion-details li span,
+.commercial-ai-exclusion-details li small {
+  display: block;
+}
+
+.commercial-ai-exclusion-details li strong { color: #1e293b; }
+.commercial-ai-exclusion-details li span { margin-top: 0.15rem; }
+.commercial-ai-exclusion-details li small { margin-top: 0.12rem; color: #64748b; }
+.commercial-ai-confidence-explanation { background: #f8fafc; }
+
 .commercial-ai-metric {
   display: grid;
   gap: 0.22rem;
@@ -958,6 +1019,7 @@
   margin: 0;
   color: #64748b;
   font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .commercial-ai-channel-list,

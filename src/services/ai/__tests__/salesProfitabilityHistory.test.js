@@ -90,7 +90,7 @@ const memoryStorage = ({ initial = null, failWrites = false } = {}) => {
 };
 
 describe('sales profitability local history', () => {
-  it('stores a deterministic result as automatic and says no usage only with explicit no-charge evidence', () => {
+  it('labels a deterministic result clearly and says no usage only with explicit no-charge evidence', () => {
     const entry = buildEntry({
       response: { ...response, aiNarrative: null },
       providerCalled: false,
@@ -98,7 +98,7 @@ describe('sales profitability local history', () => {
       usageStatus: null
     });
 
-    expect(entry.execution.mode).toBe('automatic');
+    expect(entry.execution.mode).toBe('deterministic');
     expect(entry.quota).toEqual({ status: 'no', reason: 'no_provider_path' });
     expect(entry.report.usage).toEqual({ available: false });
     expect(entry.report.deterministic.profitability.profit).toBe(120);
@@ -142,6 +142,43 @@ describe('sales profitability local history', () => {
     expect(reopened.report.ai.directAnswer).toBe(directAnswer);
     expect(downloaded.report.result.executiveSummary).toBe(directAnswer);
     expect(downloaded.report.ai.directAnswer).toBe(directAnswer);
+  });
+
+  it('stores exclusion and confidence evidence in new snapshots without reconstructing old snapshots', () => {
+    const storage = memoryStorage();
+    const snapshot = buildEntry({
+      response: {
+        ...response,
+        coverage: {
+          ...response.coverage,
+          recordsEvaluated: 4,
+          includedSales: 2,
+          discardedRecords: 2,
+          exclusionDetailsVersion: 1,
+          exclusionDetails: [{
+            kind: 'excluded', reasonCode: 'cancelled_status', reference: 'FOLIO-10',
+            date: '2026-09-03T10:00:00.000Z', statusLabel: 'Cancelada', originLabel: 'Nube', amount: 40
+          }],
+          confidenceFactors: ['La fuente estuvo completa.']
+        }
+      },
+      storage
+    });
+    saveSalesProfitabilityHistoryEntry({ scopeKey: 'scope-breakdown', entry: snapshot, storage });
+    const loaded = loadSalesProfitabilityHistory({ scopeKey: 'scope-breakdown', storage });
+
+    expect(loaded.entries[0].report.result.coverage).toMatchObject({
+      recordsEvaluated: 4,
+      includedSales: 2,
+      discardedRecords: 2,
+      exclusionDetailsVersion: 1,
+      exclusionDetails: [{ reference: 'FOLIO-10', reasonCode: 'cancelled_status' }],
+      confidenceFactors: ['La fuente estuvo completa.']
+    });
+
+    const oldSnapshot = buildEntry({ response: { ...response, coverage: { validSales: 2, rawSales: 4, excludedSales: 2 } } });
+    expect(oldSnapshot.report.result.coverage.exclusionDetailsVersion).toBeNull();
+    expect(oldSnapshot.report.result.coverage.exclusionDetails).toEqual([]);
   });
 
   it('keeps safe product references beside history while excluding them from the exported report', () => {
@@ -395,7 +432,7 @@ describe('sales profitability local history', () => {
       elapsedMs: 2
     };
     expect(classifySalesProfitabilityExecution(fastAutomaticResult)).toMatchObject({
-      mode: 'automatic',
+      mode: 'deterministic',
       usageStatus: 'no'
     });
 

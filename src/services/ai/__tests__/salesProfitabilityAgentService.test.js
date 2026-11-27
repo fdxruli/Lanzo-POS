@@ -185,6 +185,7 @@ describe('sales profitability agent service', () => {
       expect(request.context).toBeTruthy();
       expect(JSON.stringify(request.context)).not.toContain('internal-sale-id');
       expect(JSON.stringify(request.context)).not.toContain('private-product-id');
+      expect(JSON.stringify(request.context)).not.toContain('exclusionDetails');
       expect(request.context.sales.summary.discounts).toBeNull();
       expect(request.context.sales.summary.discountsKnown).toBe(false);
       return { rawResultContent: providerResponse, usageStatus: { used: 1, limit: 15, remaining: 14 } };
@@ -236,6 +237,48 @@ describe('sales profitability agent service', () => {
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
       toExclusiveUtc: '2026-09-08T06:00:00.000Z'
     });
+  });
+
+  it('does not call the provider or consume quota when an explain-change period has no comparison sales', async () => {
+    const emptyHistory = {
+      source: { mode: 'cloud_final', stale: false },
+      rows: [], total_count: 0, limit: 100, offset: 0, has_more: false
+    };
+    const emptyProfit = {
+      source: { mode: 'cloud_final', stale: false },
+      rows: [], total_count: 0, limit: 100, offset: 0, has_more: false
+    };
+    const reports = {
+      getSalesFinalHistory: vi.fn(async ({ dateFrom }) => dateFrom === '2026-08-25T06:00:00.000Z' ? emptyHistory : history),
+      getSalesProfitReport: vi.fn(async ({ dateFrom }) => dateFrom === '2026-08-25T06:00:00.000Z' ? emptyProfit : profit)
+    };
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: reports,
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Por qué cambió mi margen?',
+      intent: 'explain_change',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      compare: true
+    });
+
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(2);
+    expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(2);
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(result.response.coverage).toMatchObject({
+      validSales: 1,
+      comparisonAvailable: false,
+      comparisonDataAvailable: false
+    });
+    expect(result.response.confidence).toBe('low');
+    expect(result.response.coverage.confidenceFactors.join(' ')).toMatch(/ambos periodos/i);
+    expect(result.response.executiveSummary).toMatch(/no hay una comparación de margen completa/i);
+    expect(analyze).not.toHaveBeenCalled();
   });
 
   it('fails closed when deterministic products share the provider evidence name', async () => {
@@ -915,7 +958,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.executiveSummary).toContain('utilidad bruta positiva');
   });
 
-  it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {
+  it('preserves Phase 2 action and evidence while keeping confidence tied to deterministic data', async () => {
     const recommendation = {
       title: 'Probar mayor exposición de Producto A',
       focus: { type: 'product', key: 'Producto A' },
@@ -985,7 +1028,6 @@ describe('sales profitability agent service', () => {
     expect(result.response.aiNarrative).toMatchObject({
       status: 'available',
       directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
-      confidence: 'high',
       recommendations: [{
         title: 'Probar mayor exposición de Producto A',
         action: 'Probar una ubicación más visible durante una semana.',
@@ -995,6 +1037,9 @@ describe('sales profitability agent service', () => {
       }]
     });
     expect(result.quotaOutcome).toBe('consumed');
+    expect(result.response.confidence).toBe('medium');
+    expect(result.response.coverage.confidenceFactors.join(' ')).toMatch(/costos estimados/i);
+    expect(result.response.aiNarrative).not.toHaveProperty('confidence');
   });
 
   it('does not call the provider for a price simulation without a reliable cost', async () => {

@@ -359,10 +359,7 @@ const mergeProviderResponse = (deterministic, providerResponse, intent = null) =
       explanation: status === 'available'
         ? (authoritativeProfitabilityAnswer ? (deterministic.explanation || null) : explanation)
         : null,
-      recommendations: status === 'available' ? providerRecommendations : [],
-      ...(status === 'available' && ['high', 'medium', 'low'].includes(String(narrative.confidence || response.confidence))
-        ? { confidence: narrative.confidence || response.confidence }
-        : {})
+      recommendations: status === 'available' ? providerRecommendations : []
     },
     actionDrafts: [],
     citations: []
@@ -499,43 +496,124 @@ const buildCoverage = ({
   currentMetadata,
   comparisonComplete,
   previousMetadata,
+  previous,
   hasPrevious
-}) => ({
-  ...deterministic.coverage,
-  productsIncluded: current.products.length,
-  costCoverage: current.costCoverage,
-  comparisonAvailable: comparisonComplete,
-  comparisonDataAvailable: hasPrevious === true
+}) => {
+  const comparisonDataAvailable = hasPrevious === true
+    && current.salesCount > 0
+    && Number(previous?.salesCount) > 0
     && current.sourceComplete === true
     && current.paginationComplete === true
     && previousMetadata?.sourceComplete === true
-    && previousMetadata?.paginationComplete === true,
-  comparisonItemsAvailable: hasPrevious === true
-    && current.sourceComplete === true
-    && current.paginationComplete === true
-    && current.detailComplete === true
-    && previousMetadata?.sourceComplete === true
-    && previousMetadata?.paginationComplete === true
-    && previousMetadata?.detailComplete === true,
-  salesDataComplete: current.salesCount > 0
-    && current.sourceComplete === true
-    && current.paginationComplete === true,
-  growthDataComplete: current.salesCount > 0
-    && current.sourceComplete === true
-    && current.paginationComplete === true
-    && current.detailComplete === true,
-  detailLines: Number(currentMetadata.matchedDetailLines) || 0,
-  expectedDetailLines: Number(currentMetadata.expectedDetailLines) || 0,
-  itemCoverage: Number(currentMetadata.itemCoverage) || 0,
-  itemsComplete: currentMetadata.detailComplete === true,
-  paginationComplete: currentMetadata.paginationComplete === true,
-  sourceComplete: current.sourceComplete === true,
-  historyTruncated: currentMetadata.historyTruncated === true,
-  detailTruncated: currentMetadata.detailTruncated === true,
-  knownCostOfSale: Number(currentMetadata.knownCost) || 0,
-  costStatus: current.costStatus,
-  complete: current.costComplete === true
-});
+    && previousMetadata?.paginationComplete === true;
+
+  return {
+    ...deterministic.coverage,
+    recordsEvaluated: current.meta?.rawCount ?? deterministic.coverage?.rawSales ?? null,
+    includedSales: current.salesCount,
+    discardedRecords: Number(current.meta?.excludedCount || 0) + Number(current.meta?.ecommerceDuplicates || 0),
+    exclusionDetailsVersion: 1,
+    exclusionDetails: Array.isArray(current.meta?.exclusionDetails) ? current.meta.exclusionDetails : [],
+    productsIncluded: current.products.length,
+    costCoverage: current.costCoverage,
+    comparisonAvailable: comparisonComplete && comparisonDataAvailable,
+    comparisonDataAvailable,
+    comparisonItemsAvailable: comparisonDataAvailable
+      && current.sourceComplete === true
+      && current.paginationComplete === true
+      && current.detailComplete === true
+      && previousMetadata?.sourceComplete === true
+      && previousMetadata?.paginationComplete === true
+      && previousMetadata?.detailComplete === true,
+    salesDataComplete: current.salesCount > 0
+      && current.sourceComplete === true
+      && current.paginationComplete === true,
+    growthDataComplete: current.salesCount > 0
+      && current.sourceComplete === true
+      && current.paginationComplete === true
+      && current.detailComplete === true,
+    detailLines: Number(currentMetadata.matchedDetailLines) || 0,
+    expectedDetailLines: Number(currentMetadata.expectedDetailLines) || 0,
+    itemCoverage: Number(currentMetadata.itemCoverage) || 0,
+    itemsComplete: currentMetadata.detailComplete === true,
+    paginationComplete: currentMetadata.paginationComplete === true,
+    sourceComplete: current.sourceComplete === true,
+    historyTruncated: currentMetadata.historyTruncated === true,
+    detailTruncated: currentMetadata.detailTruncated === true,
+    costStatus: current.costStatus,
+    knownCostOfSale: Number(currentMetadata.knownCost) || 0,
+    complete: current.costComplete === true
+  };
+};
+
+const CONFIDENCE_ORDER = Object.freeze({ low: 0, medium: 1, high: 2 });
+
+const capConfidence = (confidence, ceiling) => (
+  CONFIDENCE_ORDER[confidence] <= CONFIDENCE_ORDER[ceiling] ? confidence : ceiling
+);
+
+const buildConfidenceEvidence = ({ deterministic, current, previous, coverage, currentMetadata, previousMetadata }) => {
+  let confidence = deterministic.confidence || 'low';
+  const factors = [];
+  const sourcePolicy = current.meta?.sourcePolicy || {};
+  const sourceMode = currentMetadata.sourceMode || 'mixed';
+
+  if (current.salesCount === 0) {
+    confidence = 'low';
+    factors.push('No se encontraron ventas incluidas en el periodo.');
+  } else if (current.sourceComplete !== true || current.paginationComplete !== true) {
+    confidence = 'low';
+    factors.push('La lectura de ventas no cubrió por completo la fuente o el periodo.');
+  } else if (Number(sourcePolicy.unknownSources) > 0) {
+    confidence = 'low';
+    factors.push(`${sourcePolicy.unknownSources} registro(s) con origen no reconocido se conservaron por compatibilidad.`);
+  } else if (sourceMode === 'local') {
+    confidence = capConfidence(confidence, 'medium');
+    factors.push('Se usaron datos locales; pueden no incluir ventas de otras terminales.');
+  } else if (sourceMode === 'mixed') {
+    confidence = capConfidence(confidence, 'medium');
+    factors.push('La lectura combinó más de una fuente de datos.');
+  } else {
+    factors.push('La lectura de la fuente cubrió el periodo completo.');
+  }
+
+  const costCoverage = Number.isFinite(Number(current.costCoverage))
+    ? Math.max(0, Math.min(Number(current.costCoverage), 1))
+    : 0;
+  if (current.costStatus === 'definitive') {
+    factors.push('Los costos disponibles tienen respaldo definitivo.');
+  } else if (current.costStatus === 'estimated') {
+    confidence = capConfidence(confidence, 'medium');
+    factors.push('Hay costos estimados; la utilidad y el margen pueden diferir del costo definitivo.');
+  } else {
+    confidence = 'low';
+    factors.push(`La cobertura de costos es ${Math.round(costCoverage * 100)}%; los costos faltantes no se trataron como cero.`);
+  }
+
+  if (deterministic.intent === 'explain_change') {
+    if (coverage.comparisonAvailable === true && previous) {
+      factors.push('Hay ventas y costos comparables en ambos periodos.');
+      if (previous.costStatus === 'estimated') {
+        confidence = capConfidence(confidence, 'medium');
+        factors.push('El periodo anterior también contiene costos estimados.');
+      }
+    } else {
+      confidence = 'low';
+      factors.push('No hay ventas y costos completos en ambos periodos para comparar el margen.');
+    }
+  }
+
+  if (current.detailComplete !== true) {
+    confidence = capConfidence(confidence, 'medium');
+    factors.push('El detalle de artículos está incompleto.');
+  }
+  if (previousMetadata && previousMetadata.sourceComplete !== true) {
+    confidence = 'low';
+    factors.push('La fuente del periodo anterior está incompleta o desactualizada.');
+  }
+
+  return { confidence, factors: Array.from(new Set(factors)).slice(0, 6) };
+};
 
 const hardenComparison = (comparison, currentComplete, previousComplete) => {
   if (!comparison) return null;
@@ -916,6 +994,7 @@ const hardenDeterministicResult = ({
     currentMetadata,
     comparisonComplete,
     previousMetadata,
+    previous,
     hasPrevious: Boolean(previous)
   });
   if (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
@@ -1069,6 +1148,19 @@ const hardenDeterministicResult = ({
     hardened.limitations = unique([...hardened.limitations, ...(hardened.whatIfSimulation?.limitations || [])]);
   }
 
+  const confidenceEvidence = buildConfidenceEvidence({
+    deterministic,
+    current,
+    previous,
+    coverage,
+    currentMetadata,
+    previousMetadata
+  });
+  hardened.confidence = confidenceEvidence.confidence;
+  hardened.coverage = {
+    ...hardened.coverage,
+    confidenceFactors: confidenceEvidence.factors
+  };
   hardened.status = intentStatus(hardened);
   if (!intentHasUsefulEvidence(hardened)) {
     hardened.recommendations = incompleteRecommendations(hardened);

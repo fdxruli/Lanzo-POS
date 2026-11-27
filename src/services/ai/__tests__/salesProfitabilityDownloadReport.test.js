@@ -477,6 +477,54 @@ describe('sales profitability download report', () => {
     ]);
   });
 
+  it('exports the versioned exclusion breakdown while redacting internal and personal references', () => {
+    const report = buildSalesProfitabilityDownloadReport({
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        coverage: {
+          ...completedResult.response.coverage,
+          recordsEvaluated: 3,
+          includedSales: 1,
+          discardedRecords: 2,
+          exclusionDetailsVersion: 1,
+          exclusionDetails: [
+            {
+              kind: 'excluded', reasonCode: 'cancelled_status', reference: 'FOLIO-009',
+              date: '2026-09-06T10:00:00.000Z', statusLabel: 'Cancelada', originLabel: 'Nube', amount: 25
+            },
+            {
+              kind: 'duplicate', reasonCode: 'ecommerce_duplicate', reference: internalUuid,
+              date: '2026-09-06T11:00:00.000Z', statusLabel: 'Cerrada', originLabel: 'Nube', amount: 30,
+              internalId: internalUuid
+            },
+            {
+              kind: 'excluded', reasonCode: 'invalid_record', reference: '+52 961 123 4567',
+              date: '2026-09-06T12:00:00.000Z', statusLabel: 'Cancelada', originLabel: 'Nube', amount: 10
+            }
+          ],
+          confidenceFactors: ['La lectura de la fuente cubrió el periodo completo.']
+        }
+      }
+    }, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(sanitized.result.coverage).toMatchObject({
+      recordsEvaluated: 3,
+      includedSales: 1,
+      discardedRecords: 2,
+      exclusionDetailsVersion: 1,
+      exclusionDetails: [
+        { kind: 'excluded', reasonCode: 'cancelled_status', reference: 'FOLIO-009', amount: 25 },
+        { kind: 'duplicate', reasonCode: 'ecommerce_duplicate', reference: null, amount: 30 },
+        { kind: 'excluded', reasonCode: 'invalid_record', reference: null, amount: 10 }
+      ],
+      confidenceFactors: ['La lectura de la fuente cubrió el periodo completo.']
+    });
+    expect(JSON.stringify(sanitized.result.coverage)).not.toContain(internalUuid);
+    expect(JSON.stringify(sanitized.result.coverage)).not.toContain('+52 961 123 4567');
+  });
+
   it('builds and downloads an incomplete result without requiring AI output', () => {
     const incomplete = {
       providerCalled: false,
