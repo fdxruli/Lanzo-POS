@@ -38,7 +38,12 @@ import {
   assertActorSessionCanClose
 } from '../../../services/auth/actorOperationalHandoff';
 import { isAuthoritativeSessionDenial } from '../../../services/auth/sessionVerification';
-import { STAFF_ONLY_MODE_LOGIN_MESSAGE, STAFF_SESSION_CLOSED_MESSAGE } from './licenseConstants';
+import {
+  STAFF_ONLY_MODE_LOGIN_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE
+} from './licenseConstants';
 import { captureLicenseValidationContext, assertLicenseValidationContextCurrent,
   persistWithinLicenseValidationContext } from './licenseValidationContext';
 import Logger from '../../../services/Logger';
@@ -419,6 +424,7 @@ export const createLicenseStaffActions = ({
     });
     notifyPosCatalogSessionReset();
     let cleanupError = null;
+    let logoutOutcome = null;
     try {
       // stopLicenseSync synchronously clears timers/listeners, then may await
       // channel teardown. The actor fence is already closed, so teardown can
@@ -432,7 +438,7 @@ export const createLicenseStaffActions = ({
       Logger.warn('[StaffAuth] No se pudo detener completamente la sincronización al cerrar sesión:', error?.code || error?.message);
     }
     try {
-      await staffLogoutSession(licenseKey);
+      logoutOutcome = await staffLogoutSession(licenseKey);
     } catch (error) {
       cleanupError = error;
       Logger.warn('[StaffAuth] No se pudo limpiar la sesión Staff:', error?.code || error?.message);
@@ -446,16 +452,25 @@ export const createLicenseStaffActions = ({
       lockLocalTenantAccess('staff_actor_logged_out');
       get().lockDriveSession?.();
     }
+    const localCredentialsCleared = logoutOutcome?.localCredentialsCleared === true;
+    const remoteRevocationStatus = logoutOutcome?.remoteRevocationStatus || 'not_confirmed';
+    const closedMessage = remoteRevocationStatus === 'confirmed'
+      ? STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE
+      : remoteRevocationStatus === 'not_attempted'
+        ? STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE
+        : STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE;
     set({
       appStatus: 'staff_login_required',
       currentDeviceRole: 'staff',
       currentStaffUser: null,
       cashOpeningPolicy: 'manual',
       staffLoginLicenseKey: licenseKey || null,
-      staffLoginMessage: STAFF_SESSION_CLOSED_MESSAGE,
+      staffLoginMessage: closedMessage,
       staffLoginError: cleanupError ? {
         code: 'STAFF_LOGOUT_CLEANUP_FAILED',
-        message: 'No se pudo completar la limpieza local de la sesión Staff.'
+        message: localCredentialsCleared
+          ? 'La sesión local se invalidó, pero no se pudo actualizar todo el estado local del negocio.'
+          : 'No se pudo confirmar la invalidación local de las credenciales Staff.'
       } : null,
       _isLoggingOut: false
     });
@@ -463,10 +478,19 @@ export const createLicenseStaffActions = ({
       return {
         success: false,
         code: 'STAFF_LOGOUT_CLEANUP_FAILED',
-        message: 'La autoridad Staff se cerró, pero no se pudo confirmar la limpieza local de credenciales. No recargues y vuelve a intentarlo.'
+        localCredentialsCleared,
+        remoteRevocationStatus,
+        message: localCredentialsCleared
+          ? 'La sesión local se invalidó. No se confirmó la revocación remota y hubo un problema al actualizar el estado local.'
+          : 'No se pudo confirmar la invalidación local de credenciales Staff. No recargues y vuelve a intentarlo.'
       };
     }
-    return { success: true };
+    return {
+      success: true,
+      localCredentialsCleared,
+      remoteRevocationStatus,
+      message: closedMessage
+    };
   }
 });
 };

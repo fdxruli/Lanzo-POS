@@ -63,6 +63,15 @@ export const STAFF_DEVICE_AUTH_MESSAGE =
 export const STAFF_SESSION_CLOSED_MESSAGE =
   'Sesión Staff cerrada. Ingresa con tu usuario asignado para continuar.';
 
+export const STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE =
+  'Sesión Staff cerrada en este dispositivo y revocada por el servidor. Ingresa con tu usuario asignado para continuar.';
+
+export const STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE =
+  'Sesión Staff cerrada en este dispositivo. El servidor no confirmó su revocación; inicia sesión con conexión. Si está en Solo Staff, el propietario puede recuperar el acceso administrativo para revocar sus sesiones Staff.';
+
+export const STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE =
+  'Sesión Staff cerrada en este dispositivo. No se envió una solicitud de revocación al servidor; inicia sesión con conexión. Si está en Solo Staff, el propietario puede recuperar el acceso administrativo para revocar sus sesiones Staff.';
+
 export const STAFF_ONLY_MODE_LOGIN_MESSAGE =
   'Este dispositivo está en modo Solo Staff. Inicia sesión con el usuario asignado. Para habilitar acceso Admin, el propietario debe cambiar el modo desde otra sesión Admin autorizada.';
 

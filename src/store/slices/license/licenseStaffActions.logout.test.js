@@ -140,7 +140,11 @@ describe('Staff logout lifecycle', () => {
     mocks.clearAdminSessionCache.mockResolvedValue(undefined);
     mocks.staffLogoutSession.mockImplementation(async () => {
       mocks.events.push('remote_and_local_staff_logout');
-      return { success: true };
+      return {
+        success: true,
+        localCredentialsCleared: true,
+        remoteRevocationStatus: 'confirmed'
+      };
     });
     mocks.saveLicenseToStorage.mockImplementation(async () => mocks.events.push('license_save'));
     mocks.captureLicenseValidationContext.mockImplementation(() => ({
@@ -159,7 +163,12 @@ describe('Staff logout lifecycle', () => {
   it('invalidates Staff authority before draining sync and keeps the linked business data', async () => {
     const state = createStore();
 
-    await expect(state.logoutStaff()).resolves.toEqual({ success: true });
+    await expect(state.logoutStaff()).resolves.toMatchObject({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'confirmed'
+    });
+    expect(state.staffLoginMessage).toContain('revocada por el servidor');
 
     expect(mocks.events).toEqual([
       'actor_lock',
@@ -189,7 +198,11 @@ describe('Staff logout lifecycle', () => {
       return new Promise(() => {});
     });
 
-    await expect(state.logoutStaff()).resolves.toEqual({ success: true });
+    await expect(state.logoutStaff()).resolves.toMatchObject({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'confirmed'
+    });
 
     expect(mocks.events).toContain('stop_sync_started');
     expect(mocks.staffLogoutSession).toHaveBeenCalledWith('LIC-STAFF-QA');
@@ -209,6 +222,38 @@ describe('Staff logout lifecycle', () => {
     });
     expect(mocks.lockActorRuntime).not.toHaveBeenCalled();
     expect(mocks.staffLogoutSession).not.toHaveBeenCalled();
+  });
+
+  it('reports local invalidation separately when the remote reply was lost', async () => {
+    const state = createStore();
+    mocks.staffLogoutSession.mockResolvedValueOnce({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'not_confirmed'
+    });
+
+    await expect(state.logoutStaff()).resolves.toMatchObject({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'not_confirmed'
+    });
+    expect(state.staffLoginMessage).toContain('no confirmó su revocación');
+  });
+
+  it('reports when the server revocation request was not attempted', async () => {
+    const state = createStore();
+    mocks.staffLogoutSession.mockResolvedValueOnce({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'not_attempted'
+    });
+
+    await expect(state.logoutStaff()).resolves.toMatchObject({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'not_attempted'
+    });
+    expect(state.staffLoginMessage).toContain('No se envió una solicitud de revocación');
   });
 
   it('refuses logout during a backup or restore and explains the block', async () => {

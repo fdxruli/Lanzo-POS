@@ -3,6 +3,7 @@ import { notifyPosCatalogSessionReset } from '../../../services/products/posCata
 import {
   activateLicense,
   adminLoginOnDevice,
+  adminRecoverStaffOnlyDevice,
   adminLogoutSession,
   adminTakeoverFreeDevice,
   clearAdminSessionCache,
@@ -51,7 +52,8 @@ import {
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import {
   hasModernAdminIdentityEvidence,
-  requiresAdminIdentity
+  requiresAdminIdentity,
+  isProLicense
 } from './licenseGuards';
 import { hasFreeLocalSetupContinuity } from './freeLocalSetupContinuity';
 import {
@@ -92,7 +94,7 @@ const runTimedAuthOperation = async (operation, callback) => {
     traceAuth(`${operation}_completed`, null, monotonicNow() - startedAt);
   }
 };
-const createAttempt = (get, licenseKey) => {
+const createAttempt = (get, licenseKey, { allowLockedStaffLoginScreen = false } = {}) => {
   const tenant = getTenantRuntimeReadiness().runtime;
   let actor = actorRuntimeController.getState();
   let handle = null;
@@ -106,7 +108,7 @@ const createAttempt = (get, licenseKey) => {
       const currentActor = actorRuntimeController.getState();
       if ((state.adminLoginLicenseKey || state.licenseDetails?.license_key) !== licenseKey
         || (state.licenseDetails?.license_key && state.licenseDetails.license_key !== licenseKey)
-        || state.currentDeviceRole === 'staff'
+        || (state.currentDeviceRole === 'staff' && !allowLockedStaffLoginScreen)
         || currentTenant?.opaqueId !== tenant?.opaqueId
         || currentTenant?.databaseName !== tenant?.databaseName
         || currentTenant?.generation !== tenant?.generation
@@ -777,10 +779,28 @@ export const createLicenseAdminActions = ({ set, get }) => {
     return { success: false, adminLoginRequired: true };
   },
 
-  handleAdminLogin: async ({ username, password }) => {
+  handleAdminLogin: async ({ username, password, recoverFromStaffOnlyDevice = false }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
+    const recoveringStaffOnlyDevice = recoverFromStaffOnlyDevice === true;
     let attempt;
     try {
+      if (recoveringStaffOnlyDevice) {
+        const actor = actorRuntimeController.getState();
+        if (get().licenseDetails?.device_mode !== 'staff_only'
+          || !isProLicense(get().licenseDetails)
+          || get().currentStaffUser
+          || get().currentAdminUser
+          || actor.status === 'granted') {
+          return {
+            success: false,
+            code: 'DEVICE_MODE_RECOVERY_NOT_AVAILABLE',
+            message: 'Cierra la sesión Staff antes de recuperar el acceso administrativo.'
+          };
+        }
+        if (get().pendingAdminSessionResult) {
+          clearPendingAdminSession(set, 'admin_device_recovery_requires_fresh_owner_auth');
+        }
+      }
       const pending = get().pendingAdminSessionResult;
       if (pending) {
         const pendingValidation = validatePendingAdminSession({ pending, licenseKey, currentAdminUser: get().currentAdminUser });
@@ -812,13 +832,15 @@ export const createLicenseAdminActions = ({ set, get }) => {
       }
       initializeLocalTenantGuard('admin_login');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_login' });
-      attempt = createAttempt(get, licenseKey);
+      attempt = createAttempt(get, licenseKey, {
+        allowLockedStaffLoginScreen: recoveringStaffOnlyDevice
+      });
       attempt.assertCurrent();
       beginActorRuntimeAuthentication('admin');
       attempt.refreshActor();
       traceAuth('ACTOR_AUTHENTICATING');
       traceAuth('AUTH_REMOTE_STARTED');
-      const result = await adminLoginOnDevice({
+      const authOptions = {
         licenseKey,
         username,
         password,
@@ -827,8 +849,41 @@ export const createLicenseAdminActions = ({ set, get }) => {
           await assertLocalTenantAccess(tenantSource, { reason: 'admin_login_before_local_persistence' });
           attempt.assertCurrent();
         }
-      });
+      };
+      let result = recoveringStaffOnlyDevice
+        ? await adminRecoverStaffOnlyDevice(authOptions)
+        : await adminLoginOnDevice(authOptions);
       attempt.assertCurrent();
+
+      // A response can be lost after the recovery transaction commits. In
+      // that case the device token may already have rotated. The normal Admin
+      // login is a safe resolver: it succeeds only if the server now permits
+      // Admin on this device, and continues to reject staff_only devices.
+      const recoveryMayHaveCommitted = recoveringStaffOnlyDevice && !result.success
+        && (result.outcomeUnknown === true
+          || ['DEVICE_MODE_ALREADY_ADMIN_ONLY', 'DEVICE_TOKEN_INVALID', 'DEVICE_TOKEN_REQUIRED'].includes(result.code));
+      if (recoveryMayHaveCommitted) {
+        traceAuth('RECOVERY_OUTCOME_RECONCILIATION_STARTED', result.code);
+        const reconciliation = await adminLoginOnDevice(authOptions);
+        attempt.assertCurrent();
+        if (reconciliation.success) {
+          result = reconciliation;
+          traceAuth('RECOVERY_OUTCOME_RECONCILED');
+        } else if (reconciliation.code === 'DEVICE_MODE_ADMIN_NOT_ALLOWED') {
+          result = {
+            ...reconciliation,
+            message: 'El servidor confirmó que el dispositivo sigue en Solo Staff. La recuperación no se completó; vuelve a intentarlo cuando tengas conexión.'
+          };
+        } else if (result.outcomeUnknown === true) {
+          result = {
+            ...result,
+            message: 'No se pudo confirmar si el servidor completó el cambio. Vuelve a intentarlo con conexión; el dispositivo y sus datos locales se conservaron.'
+          };
+        } else {
+          result = reconciliation;
+        }
+      }
+
       if (!result.success || result.valid === false) {
         if (result.code === 'FREE_DEVICE_TAKEOVER_REQUIRED' || result.takeoverRequired === true) {
           lockActorRuntime('admin_free_device_takeover_required');

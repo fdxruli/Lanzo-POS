@@ -150,21 +150,22 @@ describe('activation storage boundary', () => {
     mocks.saveData.mockImplementation(async (_store, record) => credentials.set(record.key, record));
     mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
-    mocks.rpc.mockImplementation(async (rpcName) => {
-      expect(rpcName).toBe('staff_logout_session');
-      expect(credentials.get('staff_session_token')).toEqual({ value: null });
-      expect(credentials.get('staff_session_id')).toEqual({ value: null });
-      return { data: { success: true }, error: null };
-    });
+    mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
 
     const { staffLogoutSession } = await import('../supabase');
-    await expect(staffLogoutSession('QA-STAFF-LOGOUT')).resolves.toEqual({ success: true });
+    await expect(staffLogoutSession('QA-STAFF-LOGOUT')).resolves.toEqual({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'confirmed'
+    });
 
     expect(mocks.rpc).toHaveBeenCalledWith('staff_logout_session', {
       p_license_key: 'QA-STAFF-LOGOUT',
       p_device_fingerprint: 'fixture-device',
       p_staff_session_token: 'staff-token-fixture'
     });
+    expect(credentials.get('staff_session_token')).toEqual({ key: 'staff_session_token', value: null });
+    expect(credentials.get('staff_session_id')).toEqual({ key: 'staff_session_id', value: null });
   });
 
   it('does not hold local Staff logout open when the remote RPC hangs', async () => {
@@ -199,7 +200,11 @@ describe('activation storage boundary', () => {
       await rpcStarted;
       expect(triggerTimeout).toEqual(expect.any(Function));
       triggerTimeout();
-      await expect(logout).resolves.toEqual({ success: true });
+      await expect(logout).resolves.toEqual({
+        success: true,
+        localCredentialsCleared: true,
+        remoteRevocationStatus: 'not_confirmed'
+      });
     } finally {
       timeoutSpy.mockRestore();
     }

@@ -1228,14 +1228,17 @@ export const staffLogoutSession = async function (licenseKey) {
     // Remove the only persisted Staff credential before waiting on the network.
     // Keep the captured token only in this closure so a slow or failed RPC cannot
     // restore the local actor after a reload.
+    let localCredentialsCleared = false;
     if (licenseKey) {
         await runWithLocalTenantSyncLease(
             { license_key: licenseKey },
             { reason: 'staff_logout_credentials' },
             () => clearStaffSessionCache()
         );
+        localCredentialsCleared = true;
     }
 
+    let remoteRevocationStatus = 'not_attempted';
     if (navigator.onLine && staffSessionToken && licenseKey && deviceFingerprint) {
         let timeoutId;
         const remoteLogout = Promise.resolve()
@@ -1244,23 +1247,39 @@ export const staffLogoutSession = async function (licenseKey) {
                 p_device_fingerprint: deviceFingerprint,
                 p_staff_session_token: staffSessionToken
             }))
-            .then(({ error } = {}) => {
-                if (error) Logger.warn('Logout staff remoto fallo; la sesion local ya fue limpiada:', error.message);
+            .then(({ data, error } = {}) => {
+                if (error) {
+                    Logger.warn('Logout staff remoto fallo; la sesion local ya fue limpiada:', error.message);
+                    return 'not_confirmed';
+                }
+                if (data?.success === true) return 'confirmed';
+                Logger.warn('El servidor no confirmo el logout staff; la sesion local ya fue limpiada:', data?.code || 'EMPTY_RESPONSE');
+                return 'not_confirmed';
             })
             .catch((error) => {
                 Logger.warn('No se pudo cerrar sesion staff remotamente:', error?.message || error);
+                return 'not_confirmed';
             });
         const remoteLogoutTimeout = new Promise((resolve) => {
             timeoutId = setTimeout(() => resolve('timeout'), 5_000);
         });
         const result = await Promise.race([remoteLogout.then(() => 'completed'), remoteLogoutTimeout]);
         clearTimeout(timeoutId);
-        if (result === 'timeout') {
+        if (result === 'completed') {
+            // `remoteLogout` resolves to this status; keep the server result
+            // distinct from the local credential invalidation above.
+            remoteRevocationStatus = await remoteLogout;
+        } else {
+            remoteRevocationStatus = 'not_confirmed';
             Logger.warn('Logout staff remoto excedio el tiempo de espera; la sesion local ya fue limpiada.');
         }
     }
 
-    return { success: true };
+    return {
+        success: true,
+        localCredentialsCleared,
+        remoteRevocationStatus
+    };
 };
 
 const currentRevalidationPromises = new Map();
@@ -2364,6 +2383,67 @@ export const adminLoginOnDevice = async ({
             code: safeAdminDiagnosticCode(error?.code) || 'ADMIN_LOGIN_ERROR'
         });
         return { success: false, code: error?.code || 'ADMIN_LOGIN_ERROR', message: error?.message || 'No se pudo iniciar sesion administrativa.' };
+    }
+};
+
+export const adminRecoverStaffOnlyDevice = async ({
+    licenseKey,
+    username,
+    password,
+    beforeLocalPersistence = null
+}) => {
+    if (!navigator.onLine) {
+        return {
+            success: false,
+            code: 'ONLINE_REQUIRED',
+            message: 'La recuperación administrativa requiere conexión al servidor.'
+        };
+    }
+
+    try {
+        const [deviceFingerprint, deviceSecurityToken] = await Promise.all([
+            getStableDeviceId(),
+            getDeviceSecurityToken()
+        ]);
+        if (!deviceSecurityToken) {
+            return {
+                success: false,
+                code: 'DEVICE_TOKEN_REQUIRED',
+                message: 'No se pudo comprobar la identidad de este dispositivo.'
+            };
+        }
+
+        const { data, error } = await callAdminAuthRpc('admin_recover_staff_only_device', {
+            p_license_key: licenseKey,
+            p_username: username.trim(),
+            p_password: password,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_security_token: deviceSecurityToken
+        });
+        if (error) throw error;
+        return await buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+    } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
+        const errorText = `${error?.name || ''} ${error?.message || ''}`;
+        const outcomeUnknown = /network|fetch|timeout|timed out|connection|abort/i.test(errorText)
+            || error?.status === 0;
+        const serverFunctionUnavailable = ['PGRST202', '42883'].includes(error?.code)
+            || /could not find the function|function .* does not exist/i.test(errorText);
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'admin_device_recovery_failed',
+            code: safeAdminDiagnosticCode(error?.code) || (outcomeUnknown ? 'NETWORK_ERROR' : 'ADMIN_RECOVERY_ERROR'),
+            outcome: outcomeUnknown ? 'unknown' : 'rejected'
+        });
+        return {
+            success: false,
+            code: outcomeUnknown ? 'ADMIN_RECOVERY_OUTCOME_UNKNOWN' : error?.code || 'ADMIN_RECOVERY_ERROR',
+            outcomeUnknown,
+            message: outcomeUnknown
+                ? 'No se pudo confirmar el resultado de la recuperación. Comprueba tu conexión y vuelve a ingresar como propietario.'
+                : serverFunctionUnavailable
+                    ? 'El servidor aún no tiene disponible esta recuperación. El dispositivo conserva Solo Staff; vuelve a intentarlo después de actualizar el servidor.'
+                    : 'No se pudo contactar la operación de recuperación. El dispositivo conserva sus datos; inténtalo de nuevo.'
+        };
     }
 };
 
