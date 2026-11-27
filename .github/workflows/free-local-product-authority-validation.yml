@@ -154,6 +154,33 @@ jobs:
             src/services/products/__tests__/productMigrationService.cutover.test.js \
             src/services/sync/__tests__/posSyncBootstrapCoordinator.test.js
 
+      - name: Financial transaction replay and duplicate effects on isolated PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          container=lanzo-pr338-financial-replay-pg
+          evidence="$RUNNER_TEMP/pr338-financial-replay-evidence"
+          psql_wrapper="$RUNNER_TEMP/pr338-psql"
+          docker run --detach --name "$container" \
+            --env POSTGRES_HOST_AUTH_METHOD=trust \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP" \
+            postgres:17
+          trap 'docker rm --force "$container" >/dev/null' EXIT
+          timeout 45s docker exec "$container" sh -c 'until pg_isready -h 127.0.0.1 -q; do sleep 1; done'
+          docker exec "$container" createdb -U postgres pr338_integrated_fixture
+          cat > "$psql_wrapper" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i lanzo-pr338-financial-replay-pg psql -U postgres "$@"
+          EOF
+          chmod +x "$psql_wrapper"
+          mkdir -p "$evidence"
+          PGHOST=127.0.0.1 PGPORT=5432 PGDATABASE=pr338_integrated_fixture \
+            PSQL_BIN="$psql_wrapper" PR338_LAB_EVIDENCE_DIR="$evidence" \
+            node scripts/supabase/restaurant-real-financial-lab.mjs --isolated-fixture
+          cat "$evidence/result.json"
+
       - name: Existing Admin/Staff product-inventory authority contract
         run: npm run test:admin-staff-product-inventory-authority-contract
 

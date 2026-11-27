@@ -74,9 +74,13 @@ describe('POS Sync metadata recovery pause', () => {
     await expect(syncMetaService.setDeferredReadPending(true, 'LIC-A')).resolves.toBe(true);
     await expect(syncMetaService.getDeferredReadPending('LIC-A')).resolves.toBe(true);
     await expect(syncMetaService.getDeferredReadPending('LIC-B')).resolves.toBe(false);
+    await expect(syncMetaService.setDeferredPullRetryAfterAt(1_800_000_000_000, 'LIC-A')).resolves.toBe(true);
+    await expect(syncMetaService.getDeferredPullRetryAfterAt('LIC-A')).resolves.toBe(1_800_000_000_000);
+    await expect(syncMetaService.getDeferredPullRetryAfterAt('LIC-B')).resolves.toBe(0);
 
     expect(records.get('LIC-A:pos_last_change_seq')).toMatchObject({ value: 175 });
     expect(records.get('LIC-A:pos_deferred_read_pending')).toMatchObject({ value: true });
+    expect(records.get('LIC-A:pos_deferred_pull_retry_after_at')).toMatchObject({ value: 1_800_000_000_000 });
   });
 
   it('stores deferred handler work per license and normalizes duplicate entity keys', async () => {

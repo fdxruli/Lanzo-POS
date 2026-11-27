@@ -121,6 +121,20 @@ export const syncMetaService = {
     return this.setMeta(SYNC_META_KEYS.DEFERRED_READ_PENDING, Boolean(pending), { licenseKey });
   },
 
+  async getDeferredPullRetryAfterAt(licenseKey = null) {
+    const value = Number(await this.getMeta(SYNC_META_KEYS.DEFERRED_PULL_RETRY_AFTER_AT, 0, { licenseKey }));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  },
+
+  setDeferredPullRetryAfterAt(timestamp, licenseKey = null) {
+    const numericValue = Number(timestamp);
+    return this.setMeta(
+      SYNC_META_KEYS.DEFERRED_PULL_RETRY_AFTER_AT,
+      Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0,
+      { licenseKey }
+    );
+  },
+
   async getDeferredHandlerReads(licenseKey = null) {
     const value = await this.getMeta(SYNC_META_KEYS.DEFERRED_HANDLER_READS, [], { licenseKey });
     return Array.isArray(value)

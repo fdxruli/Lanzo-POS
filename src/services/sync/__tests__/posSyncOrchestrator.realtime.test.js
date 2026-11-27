@@ -102,6 +102,73 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     expect(mocks.cursor).toBe(1);
   });
 
+  it('SYNC-02: reconciles over HTTP when a Realtime broadcast is missed', async () => {
+    await start();
+    const onEvents = vi.fn().mockResolvedValue({ applied: 1 });
+    orchestrator.registerEntitySyncHandler('customer', { onEvents });
+    channels[0].status('SUBSCRIBED');
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+    expect(mocks.pull).toHaveBeenCalledOnce();
+    expect(orchestrator.getStatus()).toMatchObject({
+      deferredPullScheduled: false,
+      reconciliationPullScheduled: true,
+      realtimePullScheduled: false
+    });
+
+    mocks.pull.mockResolvedValueOnce({
+      success: true,
+      events: [{ entity_type: 'customer', change_seq: 4, id: 'missed-customer' }],
+      latestChangeSeq: 4,
+      hasMore: false
+    });
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 1);
+    await flush();
+    expect(mocks.pull).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+
+    expect(mocks.pull).toHaveBeenCalledTimes(2);
+    expect(mocks.pull.mock.calls.map(([args]) => args.sinceChangeSeq)).toEqual([0, 0]);
+    expect(onEvents).toHaveBeenCalledOnce();
+    expect(mocks.cursor).toBe(4);
+    expect(orchestrator.getStatus()).toMatchObject({
+      deferredPullPending: false,
+      reconciliationPullScheduled: true,
+      status: 'online'
+    });
+  });
+
+  it('SYNC-02: keeps bounded HTTP reconciliation while Realtime is degraded', async () => {
+    await start();
+    channels[0].status('SUBSCRIBED');
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+    expect(mocks.pull).toHaveBeenCalledOnce();
+
+    channels[0].status('CHANNEL_ERROR');
+    await flush();
+    expect(orchestrator.getStatus()).toMatchObject({ realtimeStatus: 'degraded' });
+    mocks.pull.mockResolvedValueOnce({
+      success: true,
+      events: [],
+      latestChangeSeq: 0,
+      hasMore: false
+    });
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await flush();
+
+    expect(mocks.pull).toHaveBeenCalledTimes(2);
+    expect(orchestrator.getStatus()).toMatchObject({
+      realtimeStatus: 'degraded',
+      status: 'degraded',
+      reconciliationPullScheduled: true
+    });
+  });
+
   it('keeps successful pulls degraded until subscribed, including after channel failure', async () => {
     await start();
     expect(orchestrator.getStatus().status).toBe('degraded');

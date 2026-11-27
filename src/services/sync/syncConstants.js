@@ -79,6 +79,7 @@ export const SYNC_META_KEYS = Object.freeze({
   LAST_CHANGE_SEQ: 'pos_last_change_seq',
   LAYAWAY_LAST_CHANGE_SEQ: 'layaway_last_change_seq',
   DEFERRED_READ_PENDING: 'pos_deferred_read_pending',
+  DEFERRED_PULL_RETRY_AFTER_AT: 'pos_deferred_pull_retry_after_at',
   DEFERRED_HANDLER_READS: 'pos_deferred_handler_reads',
   SYNC_ENABLED: 'pos_sync_enabled',
   LAST_FULL_PULL_AT: 'pos_last_full_pull_at',
@@ -89,6 +90,7 @@ export const SYNC_META_KEYS = Object.freeze({
 
 export const POS_SYNC_REALTIME_PULL_DEBOUNCE_MS = 1000;
 export const POS_SYNC_FOCUS_PULL_COOLDOWN_MS = 60 * 1000;
+export const POS_SYNC_HTTP_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
 export const POS_SYNC_MAX_PULL_LIMIT = 500;
 export const POS_SYNC_DEFERRED_PULL_RETRY = Object.freeze({
   BASE_DELAY_MS: 2000,

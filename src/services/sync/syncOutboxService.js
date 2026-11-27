@@ -498,6 +498,30 @@ export const syncOutboxService = {
       .toArray();
   },
 
+  async getNextStuckProcessingAt({
+    thresholdMs = SYNC_LIMITS.STUCK_PROCESSING_MS,
+    licenseKey = null
+  } = {}) {
+    if (!licenseKey) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_license_missing'
+      });
+    }
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_read' });
+    await ensureOpen();
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX)
+      .where('status')
+      .equals(OUTBOX_STATUS.PROCESSING)
+      .filter((row) => row.licenseKey === licenseKey)
+      .toArray();
+    const now = Date.now();
+    const deadlines = rows
+      .map((row) => Date.parse(row.updatedAt || row.createdAt || 0) + thresholdMs + 1)
+      .filter(Number.isFinite);
+    if (deadlines.length === 0) return null;
+    return Math.max(now, Math.min(...deadlines));
+  },
+
   async resetStuckProcessing(
     thresholdMs = SYNC_LIMITS.STUCK_PROCESSING_MS,
     { licenseKey = null } = {}
