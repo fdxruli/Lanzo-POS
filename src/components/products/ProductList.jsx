@@ -18,6 +18,12 @@ import WasteModal from './WasteModal';
 import InventoryEntryModal from './InventoryEntryModal';
 import { getPharmacyClassification } from '../../utils/pharmacyClassification';
 import { canAddInventoryEntry } from '../../services/inventory/inventoryEntryEligibility';
+import PharmacySearchFilters from './PharmacySearchFilters';
+import {
+  EMPTY_PHARMACY_SEARCH_FILTERS,
+  getPharmacyProductSearchSummary,
+  hasPharmacySearchFilters
+} from '../../services/pharmacy/pharmacyProductSearch';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import IndividualProductRecoveryDialog from './IndividualProductRecoveryDialog';
 import './ProductList.css';
@@ -60,6 +66,7 @@ const PRODUCT_SEARCH_TIMEOUT_MS = 15000;
 
 export default function ProductList({ products, categories = [], isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true, reviewOnly = false, historicalCostReview = false }) {
   const features = useFeatureConfig();
+  const isPharmacyBusiness = features.activeRubros?.includes('farmacia') === true;
 
   // Acciones del Store (solo paginacion/cache)
   const fetchPage = useInventoryCatalogStore((state) => state.fetchPage);
@@ -73,6 +80,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
   const [searchTerm, setSearchTerm] = useState('');
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [pharmacyFilters, setPharmacyFilters] = useState(EMPTY_PHARMACY_SEARCH_FILTERS);
   const normalizedSearchTerm = searchTerm.trim();
   const [searchResults, setSearchResults] = useState([]);
   const [searchConnection, setSearchConnection] = useState(null);
@@ -119,6 +127,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
     let isActive = true;
     const requestId = ++searchRequestId.current;
     const term = appliedSearchTerm;
+    const hasSearchFilters = isPharmacyBusiness && hasPharmacySearchFilters(pharmacyFilters);
     let timeoutId = null;
 
     if (searchTimeout.current !== null) {
@@ -126,7 +135,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       searchTimeout.current = null;
     }
 
-    if (!term) {
+    if (!term && !hasSearchFilters) {
       setSearchResults([]);
       setIsSearching(false);
       setHasSearchError(false);
@@ -152,6 +161,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
     const fetchSearchResults = async () => {
       try {
         const results = await searchProductsInDB(term, statusFilter, categoryFilter, {
+          ...(isPharmacyBusiness ? { pharmacySearch: true, pharmacyFilters } : {}),
           eligible: (product) => isInventoryCatalogEligible(product, {
             status: statusFilter,
             productType: 'sellable',
@@ -195,24 +205,26 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         if (searchTimeout.current === timeoutId) searchTimeout.current = null;
       }
     };
-  }, [appliedSearchTerm, catalogBlocked, categoryFilter, reconnect, reviewOnly, searchExecution, statusFilter]);
+  }, [appliedSearchTerm, catalogBlocked, categoryFilter, isPharmacyBusiness, pharmacyFilters, reconnect, reviewOnly, searchExecution, statusFilter]);
 
   const isSearchMode = appliedSearchTerm.length > 0;
+  const hasSearchFilters = isPharmacyBusiness && hasPharmacySearchFilters(pharmacyFilters);
+  const isCatalogSearchActive = isSearchMode || hasSearchFilters;
   const isSearchEditPending = isSearchMode && normalizedSearchTerm !== appliedSearchTerm;
-  const isSearchPending = isSearchMode && (isSearching || searchConnection !== reconnect);
-  const showSearchError = !catalogBlocked && searchConnection === reconnect && isSearchMode && hasSearchError;
-  const isInitialCatalogLoading = !isSearchMode && (isLoading || isGlobalLoading) && products.length === 0;
+  const isSearchPending = isCatalogSearchActive && (isSearching || searchConnection !== reconnect);
+  const showSearchError = !catalogBlocked && searchConnection === reconnect && isCatalogSearchActive && hasSearchError;
+  const isInitialCatalogLoading = !isCatalogSearchActive && (isLoading || isGlobalLoading) && products.length === 0;
   const displayProducts = useMemo(() => {
     if (reviewOnly) return products;
     if (catalogBlocked) return [];
-    if (!isSearchMode) return products;
+    if (!isCatalogSearchActive) return products;
     if (searchConnection !== reconnect) return [];
     return searchResults.filter((product) => isInventoryCatalogEligible(product, {
       status: statusFilter,
       productType: 'sellable',
       categoryId: categoryFilter
     }));
-  }, [catalogBlocked, categoryFilter, isSearchMode, products, reconnect, reviewOnly, searchConnection, searchResults, statusFilter]);
+  }, [catalogBlocked, categoryFilter, isCatalogSearchActive, products, reconnect, reviewOnly, searchConnection, searchResults, statusFilter]);
   const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
 
   useEffect(() => {
@@ -246,7 +258,8 @@ export default function ProductList({ products, categories = [], isLoading, onEd
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
-    if (!normalizedSearchTerm || (isSearching && normalizedSearchTerm === appliedSearchTerm)) return;
+    if ((!normalizedSearchTerm && !hasSearchFilters)
+        || (isSearching && normalizedSearchTerm === appliedSearchTerm)) return;
 
     if (normalizedSearchTerm !== appliedSearchTerm) setSearchResults([]);
     setAppliedSearchTerm(normalizedSearchTerm);
@@ -256,7 +269,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   };
 
   const handleRetrySearch = () => {
-    if (!appliedSearchTerm) return;
+    if (!appliedSearchTerm && !hasSearchFilters) return;
     setIsSearching(true);
     setHasSearchError(false);
     setSearchExecution((execution) => execution + 1);
@@ -297,7 +310,9 @@ export default function ProductList({ products, categories = [], isLoading, onEd
               <input
                 ref={searchInput}
                 type="text"
-                placeholder={features.hasLabFields ? "Buscar: Nombre, Sustancia..." : "Buscar: Nombre, Código..."}
+                placeholder={isPharmacyBusiness
+                  ? 'Buscar nombre, principio activo, concentración...'
+                  : 'Buscar nombre, código o SKU...'}
                 aria-label="Buscar productos"
                 enterKeyHint="search"
                 value={searchTerm}
@@ -318,7 +333,8 @@ export default function ProductList({ products, categories = [], isLoading, onEd
             <button
               type="submit"
               className="product-search-submit"
-              disabled={!normalizedSearchTerm || (isSearching && normalizedSearchTerm === appliedSearchTerm)}
+              disabled={(!normalizedSearchTerm && !hasSearchFilters)
+                || (isSearching && normalizedSearchTerm === appliedSearchTerm)}
             >
               <Icons.Search />
               Buscar
@@ -375,6 +391,14 @@ export default function ProductList({ products, categories = [], isLoading, onEd
           )}
         </div>}
       </div>
+
+      {!reviewOnly && isPharmacyBusiness && (
+        <PharmacySearchFilters
+          value={pharmacyFilters}
+          onChange={setPharmacyFilters}
+          className="product-list-pharmacy-filters"
+        />
+      )}
 
       {!reviewOnly && isSearchEditPending && (
         <p className="product-search-edit-note">
@@ -449,7 +473,15 @@ export default function ProductList({ products, categories = [], isLoading, onEd
             // Banderas de visualización
             const showLocation = item.location && item.location.trim() !== '';
             const showMinMax = features.hasMinMax && isTracked;
-            const showPharmacyDetails = features.hasLabFields && (item.sustancia || item.laboratorio);
+            const pharmacySummary = getPharmacyProductSearchSummary(item);
+            const showPharmacyDetails = isPharmacyBusiness && Boolean(
+              pharmacySummary.activeSubstance
+              || pharmacySummary.concentration
+              || pharmacySummary.dosageForm
+              || pharmacySummary.presentation
+              || item.laboratorio
+              || item.laboratory
+            );
             const showBarcode = item.barcode && item.barcode.trim() !== '';
 
             // Clases dinámicas
@@ -578,13 +610,15 @@ export default function ProductList({ products, categories = [], isLoading, onEd
                   {/* CASO: FARMACIA */}
                   {showPharmacyDetails && (
                     <div className="rubro-section pharmacy">
-                      <div className="detail-item full">
-                        <span className="label">Sustancia:</span>
-                        <span className="value">{item.sustancia}</span>
-                      </div>
+                      {pharmacySummary.activeSubstance && <div className="detail-item full">
+                        <span className="label">Principios activos:</span>
+                        <span className="value">{pharmacySummary.activeSubstance}</span>
+                      </div>}
                       <div className="detail-row">
-                        {item.presentation && <span className="pill-badge">{item.presentation}</span>}
-                        {item.laboratorio && <span className="lab-badge">{item.laboratorio}</span>}
+                        {pharmacySummary.concentration && <span className="pill-badge">{pharmacySummary.concentration}</span>}
+                        {pharmacySummary.dosageForm && <span className="pill-badge">{pharmacySummary.dosageForm}</span>}
+                        {pharmacySummary.presentation && <span className="pill-badge">{pharmacySummary.presentation}</span>}
+                        {(item.laboratory || item.laboratorio) && <span className="lab-badge">{item.laboratory || item.laboratorio}</span>}
                       </div>
                     </div>
                   )}

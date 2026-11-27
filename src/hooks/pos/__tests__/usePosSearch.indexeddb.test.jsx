@@ -14,6 +14,7 @@ import {
   resetLocalTenantGuardForTests
 } from '../../../services/tenant/localTenantGuard';
 import { usePosCatalogStore } from '../../../store/usePosCatalogStore';
+import { useAppStore } from '../../../store/useAppStore';
 import { usePosSearch } from '../usePosSearch';
 
 const { db, STORES } = database;
@@ -110,6 +111,65 @@ describe('POS search against the operational IndexedDB and store', () => {
 
     act(() => result.current.setSearchTerm(''));
     expect(ids(result)).toEqual(['pilas', 'para']);
+  });
+
+  it('searches pharmacy composition and historical fields in the local POS while preserving sale restrictions', async () => {
+    useAppStore.setState({ licenseDetails: null });
+    await db.table(STORES.ACTIVE_INGREDIENTS).put({
+      id: 'ai-local-paracetamol', businessKey: db.name, name: 'Paracetamol',
+      nameKey: 'paracetamol', isActive: true
+    });
+    await db.table(STORES.MENU).bulkPut([
+      product('pharmacy-structured', 'Marca local 500 mg', {
+        activeSubstance: 'Paracetamol',
+        requiresPrescription: true,
+        prescriptionType: 'controlled',
+        metadata: { pharmacy: {
+          kind: 'medicine', dosageFormCode: 'tablet', dosageForm: 'Tableta',
+          concentration: '500 mg por tableta',
+          commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+          composition: { version: 1, activeIngredients: [{
+            activeIngredientId: 'ai-local-paracetamol', name: 'Paracetamol', amount: 500,
+            unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+          }] }
+        } }
+      }),
+      product('pharmacy-legacy', 'Marca histórica local', {
+        activeSubstance: 'Paracetamol', concentration: '500 mg', presentation: 'Caja con 10 tabletas',
+        metadata: { pharmacy: { dosageForm: 'Tableta' } }
+      }),
+      product('pharmacy-inactive', 'Medicamento inactivo', {
+        isActive: false,
+        activeSubstance: 'Paracetamol',
+        metadata: { pharmacy: { composition: { version: 1, activeIngredients: [{
+          activeIngredientId: 'ai-local-paracetamol', name: 'Paracetamol', amount: 500,
+          unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+        }] } } }
+      })
+    ]);
+
+    const { result } = renderHook(() => usePosSearch({ debounceMs: 10, pharmacySearchEnabled: true }));
+    await waitForSearch(() => expect(ids(result)).toEqual(['pilas', 'para']));
+
+    act(() => result.current.setSearchTerm('PARACETAMOL'));
+    await waitForSearch(() => expect(new Set(ids(result))).toEqual(new Set([
+      'para', 'pharmacy-structured', 'pharmacy-legacy'
+    ])));
+    expect(ids(result)).not.toContain('pharmacy-inactive');
+    expect(result.current.menuVisual.find(({ id }) => id === 'pharmacy-structured'))
+      .toMatchObject({ requiresPrescription: true, prescriptionType: 'controlled' });
+
+    act(() => {
+      result.current.setSearchTerm('');
+      result.current.setPharmacyFilters({ dosageFormCode: 'tablet', concentration: '500 mg', presentation: '10 tabletas' });
+    });
+    await waitForSearch(() => expect(new Set(ids(result))).toEqual(new Set([
+      'pharmacy-structured', 'pharmacy-legacy'
+    ])));
+    expect(result.current.isSearchActive).toBe(true);
+
+    act(() => result.current.setPharmacyFilters({ dosageFormCode: '', concentration: '', presentation: '' }));
+    expect(result.current.isSearchActive).toBe(false);
   });
 
   it('reports an aborted IndexedDB query and restores the current catalog immediately on clear', async () => {

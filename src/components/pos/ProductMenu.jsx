@@ -17,6 +17,7 @@ import {
   CAT_DYNAMIC_OUT_OF_STOCK
 } from '../../services/products/productMenuEligibility';
 import ProductCard from './ProductCard';
+import PharmacySearchFilters from '../products/PharmacySearchFilters';
 import ProductModifiersModal from './ProductModifiersModal';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import VariantSelectorModal from './VariantSelectorModal';
@@ -132,6 +133,10 @@ export default function ProductMenu({
   selectedCategoryId,
   onSelectCategory,
   searchTerm,
+  pharmacySearchEnabled = false,
+  pharmacyFilters,
+  isSearchActive: searchActiveProp = false,
+  onPharmacyFiltersChange,
   searchFailed,
   onSearchChange,
   onOpenScanner,
@@ -150,6 +155,7 @@ export default function ProductMenu({
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const features = useFeatureConfig();
+  const isSearchActive = Boolean(searchActiveProp || searchTerm.trim());
 
   // --- ESTADOS PARA MODIFICADORES (Restaurantes) ---
   const [modModalOpen, setModModalOpen] = useState(false);
@@ -181,7 +187,7 @@ export default function ProductMenu({
   const isRestoringScrollRef = useRef(false);
   const hasMoreRef = useRef(hasMore);
   const isLoadingNextPageRef = useRef(isLoadingNextPage);
-  const searchActiveRef = useRef(Boolean(searchTerm.trim()));
+  const searchActiveRef = useRef(isSearchActive);
   const onLoadNextPageRef = useRef(onLoadNextPage);
 
   const cloudSalesInventoryEnabled = useMemo(
@@ -249,13 +255,13 @@ export default function ProductMenu({
 
   hasMoreRef.current = hasMore;
   isLoadingNextPageRef.current = isLoadingNextPage;
-  searchActiveRef.current = Boolean(searchTerm.trim());
+  searchActiveRef.current = isSearchActive;
   onLoadNextPageRef.current = onLoadNextPage;
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return undefined;
-    const targetPosition = searchTerm.trim() ? 0 : Math.max(0, Number(savedScrollPosition) || 0);
+    const targetPosition = isSearchActive ? 0 : Math.max(0, Number(savedScrollPosition) || 0);
     isRestoringScrollRef.current = true;
     let releaseFrame = null;
     const restore = () => {
@@ -279,7 +285,7 @@ export default function ProductMenu({
         cancelAnimationFrame(releaseFrame);
       }
     };
-  }, [activeViewKey, savedScrollPosition, searchTerm]);
+  }, [activeViewKey, isSearchActive, savedScrollPosition]);
 
   useLayoutEffect(() => {
     lastScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
@@ -319,7 +325,7 @@ export default function ProductMenu({
   }, []);
 
   const visibleProducts = products;
-  const observerEnabled = Boolean(hasMore && !searchTerm.trim() && visibleProducts.length !== 0);
+  const observerEnabled = Boolean(hasMore && !isSearchActive && visibleProducts.length !== 0);
 
   useEffect(() => {
     const sentinel = loadMoreSentinelRef.current;
@@ -666,11 +672,15 @@ export default function ProductMenu({
               type="search"
               id="pos-product-search"
               data-pos-physical-capture="true"
-              placeholder="Buscar por nombre, código o SKU"
+              placeholder={pharmacySearchEnabled
+                ? 'Nombre, principio activo, concentración...'
+                : 'Buscar por nombre, código o SKU'}
               value={searchTerm}
               onChange={handleSearchChange}
               autoComplete="off"
-              aria-label="Buscar productos por nombre, código o SKU"
+              aria-label={pharmacySearchEnabled
+                ? 'Buscar productos por nombre, código, SKU o principio activo'
+                : 'Buscar productos por nombre, código o SKU'}
             />
             <span className="pos-search-shortcut" aria-hidden="true">/ Buscar</span>
           </label>
@@ -687,6 +697,14 @@ export default function ProductMenu({
             <span>Código de barras</span>
           </button>
         </div>
+
+        {pharmacySearchEnabled && (
+          <PharmacySearchFilters
+            value={pharmacyFilters}
+            onChange={onPharmacyFiltersChange}
+            className="pos-pharmacy-search-filters"
+          />
+        )}
 
         {readOnly && (
           <p className="pos-menu-read-only-notice" role="status">
@@ -757,7 +775,7 @@ export default function ProductMenu({
               Cargando productos...
             </div>
           ) : visibleProducts.length === 0 ? (
-            (products.length === 0 && !searchTerm.trim() && !selectedCategoryId) ? (
+            (products.length === 0 && !isSearchActive && !selectedCategoryId) ? (
               <div className="menu-empty-state">
                 <PackageSearch size={38} aria-hidden="true" />
                 <p>No hay productos registrados.</p>
@@ -794,6 +812,7 @@ export default function ProductMenu({
                     isLoadingVariant={loadingVariantId === item.id}
                     hasAvailableVariants={variantStatusByProductId[item.id] === true}
                     strictExpiryBlocked={strictExpiryStatus?.blocked === true}
+                    showPharmacySummary={pharmacySearchEnabled && isSearchActive}
                     selectionDisabled={readOnly}
                   />
                 </div>
@@ -801,7 +820,7 @@ export default function ProductMenu({
             })
           )}
 
-          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
+          {!isSearchActive && hasMore && visibleProducts.length > 0 && (
             <div ref={loadMoreSentinelRef} className="pos-load-more-sentinel" aria-hidden="true" />
           )}
 
@@ -811,7 +830,7 @@ export default function ProductMenu({
             </div>
           )}
 
-          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
+          {!isSearchActive && hasMore && visibleProducts.length > 0 && (
             <button
               type="button"
               className="pos-load-more-button"

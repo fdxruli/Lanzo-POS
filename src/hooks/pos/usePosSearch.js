@@ -4,6 +4,10 @@ import { useCatalogReconnect } from '../useCatalogReconnect';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db, searchProductsInDB, STORES } from '../../services/database';
 import { normalizeProductSearchValue } from '../../services/db/productSearchIndex';
+import {
+    EMPTY_PHARMACY_SEARCH_FILTERS,
+    hasPharmacySearchFilters
+} from '../../services/pharmacy/pharmacyProductSearch';
 import { isPosCatalogEligible } from '../../services/products/productCatalogQueryService';
 import {
     CAT_DYNAMIC_EXPIRED,
@@ -19,7 +23,7 @@ import Logger from '../../services/Logger';
 const EMPTY_PRODUCTS = [];
 
 /** Mantiene el catálogo paginado y la consulta activa del POS. */
-export function usePosSearch({ debounceMs = 300 } = {}) {
+export function usePosSearch({ debounceMs = 300, pharmacySearchEnabled = false } = {}) {
     const menu = usePosCatalogStore((state) => state.items);
     const categories = usePosCatalogStore((state) => state.categories);
     const categoryId = usePosCatalogStore((state) => state.categoryId);
@@ -42,6 +46,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const checkHasExpiredProducts = usePosCatalogStore((state) => state.checkHasExpiredProducts);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [pharmacyFilters, setPharmacyFilters] = useState(EMPTY_PHARMACY_SEARCH_FILTERS);
     const term = normalizeProductSearchValue(searchTerm);
     const debouncedTerm = useDebounce(term, debounceMs);
     const [searchResult, setSearchResult] = useState(null);
@@ -50,10 +55,13 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const [assignedCategoryIds, setAssignedCategoryIds] = useState(null);
 
     // Catalog updates invalidate the scoped search, including product reconciliation.
-    const canSearch = Boolean(term) && term === debouncedTerm && !catalogBlocked && !isLoadingInitial;
+    const hasSearchFilters = pharmacySearchEnabled && hasPharmacySearchFilters(pharmacyFilters);
+    const isSearchActive = Boolean(term) || hasSearchFilters;
+    const canSearch = isSearchActive && term === debouncedTerm && !catalogBlocked && !isLoadingInitial;
     const request = useMemo(() => canSearch ? {
-        term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity
-    } : null, [canSearch, term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity]);
+        term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity,
+        pharmacySearchEnabled, pharmacyFilters
+    } : null, [canSearch, term, categoryId, expiredOnly, outOfStockOnly, menu, reconnect, sessionIdentity, pharmacySearchEnabled, pharmacyFilters]);
     const currentSearch = searchResult?.request === request ? searchResult : null;
 
     useEffect(() => {
@@ -64,6 +72,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         const search = async () => {
             try {
                 const items = await searchProductsInDB(term, 'active', categoryId, {
+                    ...(pharmacySearchEnabled ? { pharmacySearch: true, pharmacyFilters } : {}),
                     eligible: (item) => {
                         if (!isPosCatalogEligible(item)) return false;
                         const itemCategoryId = item.categoryId ?? item.category_id ?? null;
@@ -88,7 +97,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
 
         void search();
         return () => { active = false; };
-    }, [request]);
+    }, [request, pharmacySearchEnabled, pharmacyFilters]);
 
     useEffect(() => {
         if (catalogBlocked) return;
@@ -167,11 +176,14 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         setHasExpiredItems(hasCaducados);
     }, [refreshData, checkHasOutOfStockProducts, checkHasExpiredProducts]);
 
-    const menuVisual = catalogBlocked ? EMPTY_PRODUCTS : term ? currentSearch?.items ?? EMPTY_PRODUCTS : menu;
+    const menuVisual = catalogBlocked ? EMPTY_PRODUCTS : isSearchActive ? currentSearch?.items ?? EMPTY_PRODUCTS : menu;
 
     return {
         searchTerm,
         setSearchTerm,
+        pharmacyFilters,
+        setPharmacyFilters,
+        isSearchActive,
         menuVisual,
         searchFailed: currentSearch?.failed === true,
         categories: visibleCategories,
@@ -180,7 +192,7 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         hasOutOfStockItems,
         hasExpiredItems,
         hasMore: !term && !catalogBlocked && hasMore,
-        isLoadingInitial: isLoadingInitial || catalogLoading || (!catalogBlocked && Boolean(term) && !currentSearch),
+        isLoadingInitial: isLoadingInitial || catalogLoading || (!catalogBlocked && isSearchActive && !currentSearch),
         catalogUnavailable,
         isLoadingNextPage,
         loadNextPage,

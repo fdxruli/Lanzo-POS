@@ -34,18 +34,47 @@ export const buildProductSearchFields = (product = {}) => {
   );
   const barcodeNormalized = normalizeProductSearchValue(product.barcode);
   const skuNormalized = normalizeProductSearchValue(product.sku);
+  const pharmacy = product.metadata?.pharmacy || product.pharmacy || {};
+  const composition = pharmacy.composition;
+  const commercialPresentation = pharmacy.commercialPresentation;
+  const pharmacyValues = [
+    product.activeSubstance,
+    product.active_substance,
+    product.sustancia,
+    product.concentration,
+    product.dosageForm,
+    product.dosage_form,
+    product.presentation,
+    pharmacy.activeSubstance,
+    pharmacy.active_substance,
+    pharmacy.concentration,
+    pharmacy.dosageFormCode,
+    pharmacy.dosageForm,
+    pharmacy.dosageFormLegacy,
+    commercialPresentation?.packageType,
+    commercialPresentation?.contentAmount,
+    commercialPresentation?.contentUnit,
+    commercialPresentation?.legacyDescription,
+    ...(Array.isArray(composition?.activeIngredients)
+      ? composition.activeIngredients.flatMap((item) => [
+        item?.name,
+        item?.amount,
+        item?.unit,
+        item?.basisAmount,
+        item?.basisUnit
+      ])
+      : [])
+  ].filter((value) => value !== null && value !== undefined && String(value).trim());
+  const searchableValues = [nameNormalized, barcodeNormalized, skuNormalized, ...pharmacyValues];
+  const tokenValues = [nameNormalized, ...pharmacyValues];
 
   return {
     name_lower: nameNormalized,
     barcode_normalized: barcodeNormalized,
     sku_normalized: skuNormalized,
-    search_tokens: [...new Set(tokenize(nameNormalized))],
+    search_tokens: [...new Set(tokenValues.flatMap(tokenize))],
     search_ngrams: [
-      ...new Set([
-        ...buildSearchNgrams(nameNormalized),
-        ...buildSearchNgrams(barcodeNormalized),
-        ...buildSearchNgrams(skuNormalized)
-      ])
+      ...new Set(searchableValues.flatMap(buildSearchNgrams))
     ]
   };
 };

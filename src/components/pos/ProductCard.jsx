@@ -16,6 +16,7 @@ import { getProductAlerts } from '../../services/utils';
 import { getPosStockState } from '../../services/inventoryStock';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
 import { resolveProductSaleUnitLabel } from '../../utils/productUnitConfiguration';
+import { getPharmacyProductSearchSummary } from '../../services/pharmacy/pharmacyProductSearch';
 import './ProductCardStrictExpiry.css';
 
 /**
@@ -241,6 +242,7 @@ const ProductCard = memo(function ProductCard({
   isLoadingVariant,
   hasAvailableVariants,
   strictExpiryBlocked = false,
+  showPharmacySummary = false,
   selectionDisabled = false
 }) {
   // ── Lógica de negocio visual ──────────────────────────────────────────────
@@ -259,6 +261,22 @@ const ProductCard = memo(function ProductCard({
   const isTracking = !isRecipeBased && product?.trackStock !== false && (
     product?.trackStock === true || product?.batchManagement?.enabled === true
   );
+  const isPharmacyBusiness = features?.activeRubros?.includes('farmacia') === true;
+  const pharmacySummary = useMemo(() => (showPharmacySummary && isPharmacyBusiness
+    ? getPharmacyProductSearchSummary(product)
+    : { activeSubstance: '', concentration: '', dosageForm: '', presentation: '' }),
+  [isPharmacyBusiness, product, showPharmacySummary]);
+  const hasPharmacySummary = showPharmacySummary && isPharmacyBusiness && Boolean(
+    pharmacySummary.activeSubstance
+    || pharmacySummary.concentration
+    || pharmacySummary.dosageForm
+    || pharmacySummary.presentation
+  );
+  const pharmacySummaryLabel = hasPharmacySummary
+    ? [pharmacySummary.activeSubstance, pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation]
+      .filter(Boolean)
+      .join('. ')
+    : '';
 
   const unit = product?.saleType === 'bulk'
     ? ` ${resolveProductSaleUnitLabel(product)}`
@@ -353,7 +371,7 @@ const ProductCard = memo(function ProductCard({
       tabIndex={strictExpiryBlocked || selectionDisabled ? -1 : 0}
       aria-disabled={strictExpiryBlocked || selectionDisabled}
       title={selectionDisabled ? 'Mesa de solo lectura: no se pueden agregar productos.' : undefined}
-      aria-label={`${product?.name || ''} precio ${product?.price || 0}. ${stockState.kind === 'committed' ? 'Sin unidades libres: existencias comprometidas, toca para consultar' : stockState.kind === 'unknown' ? 'Inventario por verificar, toca para consultar' : footerState.label}`}
+      aria-label={`${product?.name || ''} precio ${product?.price || 0}. ${pharmacySummaryLabel ? `Información farmacéutica: ${pharmacySummaryLabel}. ` : ''}${stockState.kind === 'committed' ? 'Sin unidades libres: existencias comprometidas, toca para consultar' : stockState.kind === 'unknown' ? 'Inventario por verificar, toca para consultar' : footerState.label}`}
       onKeyDown={handleKeyDown}
     >
       {/* ── ZONA 1: IMAGEN + OVERLAY DE DEGRADADO ── */}
@@ -411,6 +429,20 @@ const ProductCard = memo(function ProductCard({
           {product?.name || ''}
         </h3>
 
+        {hasPharmacySummary && (
+          <div className="product-card__pharmacy-summary" aria-label="Información farmacéutica del producto">
+            {pharmacySummary.activeSubstance && (
+              <span title={pharmacySummary.activeSubstance}>{pharmacySummary.activeSubstance}</span>
+            )}
+            {[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation]
+              .filter(Boolean).length > 0 && (
+              <span title={[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation].filter(Boolean).join(' · ')}>
+                {[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="product-card__price-row">
           <span className="product-card__price">
             ${(Number(product?.price) || 0).toFixed(2)}
@@ -445,6 +477,9 @@ export default memo(ProductCard, (prevProps, nextProps) => {
     prevProps.isLoadingVariant === nextProps.isLoadingVariant &&
     prevProps.hasAvailableVariants === nextProps.hasAvailableVariants &&
     prevProps.strictExpiryBlocked === nextProps.strictExpiryBlocked &&
+    prevProps.showPharmacySummary === nextProps.showPharmacySummary &&
+    prevProps.selectionDisabled === nextProps.selectionDisabled &&
+    prevProps.features?.activeRubros?.includes('farmacia') === nextProps.features?.activeRubros?.includes('farmacia') &&
     prevProps.features?.hasLabFields === nextProps.features?.hasLabFields &&
     prevProps.features?.hasModifiers === nextProps.features?.hasModifiers &&
     prevProps.features?.hasVariants === nextProps.features?.hasVariants &&

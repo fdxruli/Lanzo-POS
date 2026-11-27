@@ -1,6 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import '@testing-library/jest-dom';
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
+
+afterEach(cleanup);
 
 vi.mock('../../common/LazyImage', () => ({
   default: ({ alt }) => <div role="img" aria-label={alt} />
