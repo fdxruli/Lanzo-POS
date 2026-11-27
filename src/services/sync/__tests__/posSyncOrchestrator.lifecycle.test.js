@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => ({
   pullSyncEvents: vi.fn(),
   resetStuckProcessing: vi.fn(async () => 0),
   getPendingOperations: vi.fn(async () => []),
+  claimPendingOperation: vi.fn(async row => row),
+  markSynced: vi.fn(async () => true),
+  markConflict: vi.fn(async () => true),
+  markFailed: vi.fn(async () => null),
+  pauseForUpdateRequiredFamily: vi.fn(async () => true),
+  getCloudSyncProtocolFamilyForEntity: vi.fn(() => 'customer'),
+  deferredReadPending: false,
   setRealtimeStatus: vi.fn(async () => true),
   setSyncEnabled: vi.fn(async () => true)
 }));
@@ -29,7 +36,7 @@ vi.mock('../syncMetaService', () => ({
     getLastChangeSeq: vi.fn(async () => 0),
     advanceLastChangeSeq: vi.fn(async value => value),
     setLastChangeSeq: vi.fn(async () => true),
-    getDeferredReadPending: vi.fn(async () => false),
+    getDeferredReadPending: vi.fn(async () => mocks.deferredReadPending),
     setDeferredReadPending: vi.fn(async () => true),
     getDeferredHandlerReads: vi.fn(async () => []),
     setDeferredHandlerReads: vi.fn(async () => true),
@@ -51,9 +58,15 @@ vi.mock('../../auth/actorRuntimeController', () => ({
 }));
 
 vi.mock('../syncOutboxService', () => ({
+  getCloudSyncProtocolFamilyForEntity: mocks.getCloudSyncProtocolFamilyForEntity,
   syncOutboxService: {
     resetStuckProcessing: mocks.resetStuckProcessing,
     getPendingOperations: mocks.getPendingOperations,
+    claimPendingOperation: mocks.claimPendingOperation,
+    markSynced: mocks.markSynced,
+    markConflict: mocks.markConflict,
+    markFailed: mocks.markFailed,
+    pauseForUpdateRequiredFamily: mocks.pauseForUpdateRequiredFamily,
     observeChanges: () => vi.fn()
   }
 }));
@@ -74,6 +87,7 @@ vi.mock('../../Logger', () => ({
 }));
 
 import { posSyncOrchestrator } from '../posSyncOrchestrator';
+import { POS_SYNC_HTTP_RECONCILE_INTERVAL_MS } from '../syncConstants';
 
 const licenseDetails = {
   license_key: 'TENANT-A',
@@ -90,6 +104,7 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mocks.assertTenant.mockResolvedValue({ status: 'pass' });
+    mocks.deferredReadPending = false;
     mocks.pullSyncEvents.mockResolvedValue({
       success: true,
       events: [],
@@ -145,7 +160,7 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
     expect(mocks.setSyncEnabled).not.toHaveBeenCalled();
   });
 
-  it('notifies restart safety subscribers when an outbox operation starts and finishes', async () => {
+  it('does not block update while an Outbox storage read is pending', async () => {
     await startDeferredBootstrap();
     let finishOutboxRead;
     mocks.getPendingOperations.mockImplementationOnce(() => new Promise((resolve) => {
@@ -155,7 +170,8 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
     const unsubscribe = posSyncOrchestrator.subscribeUpdateActivity(listener);
 
     const operation = posSyncOrchestrator.processOutbox('restart-safety-test');
-    await vi.waitFor(() => expect(posSyncOrchestrator.getUpdateActivity()).toBe(true));
+    await vi.waitFor(() => expect(posSyncOrchestrator.getStatus().outboxInProgress).toBe(true));
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
     expect(listener).toHaveBeenCalled();
 
     await vi.waitFor(() => expect(finishOutboxRead).toBeTypeOf('function'));
@@ -164,6 +180,81 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
     expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
     expect(listener.mock.calls.length).toBeGreaterThan(1);
     unsubscribe();
+  });
+
+  it('keeps update blocked while an Outbox send awaits durable confirmation', async () => {
+    await startDeferredBootstrap();
+    let finishPush;
+    const pushOperation = vi.fn(() => new Promise(resolve => { finishPush = resolve; }));
+    const unregister = posSyncOrchestrator.registerEntitySyncHandler('customer', { pushOperation });
+    mocks.getPendingOperations.mockResolvedValueOnce([{
+      id: 'financial-op', entityType: 'customer', operation: 'upsert', idempotencyKey: 'financial-op-key'
+    }]);
+
+    const operation = posSyncOrchestrator.processOutbox('update-safety-test');
+    await vi.waitFor(() => expect(pushOperation).toHaveBeenCalledOnce());
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(true);
+    expect(posSyncOrchestrator.getStatus().outboxOperationInProgress).toBe(true);
+
+    finishPush({ success: true, receipt: 'confirmed' });
+    await expect(operation).resolves.toMatchObject({ processed: 1 });
+    expect(mocks.markSynced).toHaveBeenCalledWith('financial-op', { success: true, receipt: 'confirmed' }, expect.anything());
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+    unregister();
+  });
+
+  it('does not block update on an unresolved periodic reconciliation read', async () => {
+    vi.useFakeTimers();
+    try {
+      await startDeferredBootstrap();
+      expect(posSyncOrchestrator.getStatus()).toMatchObject({ reconciliationPullScheduled: true });
+      expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+
+      let finishPull;
+      mocks.pullSyncEvents.mockImplementationOnce(() => new Promise(resolve => { finishPull = resolve; }));
+      await vi.advanceTimersByTimeAsync(POS_SYNC_HTTP_RECONCILE_INTERVAL_MS);
+      await vi.waitFor(() => expect(mocks.pullSyncEvents).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(finishPull).toEqual(expect.any(Function)));
+
+      // A read can be abandoned; the durable cursor will resume it next start.
+      expect(posSyncOrchestrator.getStatus()).toMatchObject({ pullInProgress: true });
+      expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+
+      finishPull({ success: true, events: [], latestChangeSeq: 0, hasMore: false });
+      await posSyncOrchestrator.stop({ preserveStatus: true });
+      expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not block update for a durably deferred read and its scheduled retry', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.deferredReadPending = true;
+      await startDeferredBootstrap();
+      expect(posSyncOrchestrator.getStatus()).toMatchObject({
+        deferredPullPending: true,
+        deferredPullScheduled: true
+      });
+      expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps update blocked while an entity start migration hook is active', async () => {
+    let finishMigration;
+    const unregister = posSyncOrchestrator.registerEntitySyncHandler('migration-fixture', {
+      onStart: () => new Promise(resolve => { finishMigration = resolve; })
+    });
+    const starting = posSyncOrchestrator.start({ licenseDetails, reason: 'manual' });
+    await vi.waitFor(() => expect(finishMigration).toEqual(expect.any(Function)));
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(true);
+    finishMigration({ success: true });
+    await starting;
+    expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);
+    unregister();
   });
 
   it('does not leave pull locked when stop invalidates its tenant assertion', async () => {

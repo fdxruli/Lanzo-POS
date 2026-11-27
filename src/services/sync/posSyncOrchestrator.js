@@ -77,6 +77,7 @@ export const isSyncHandlerHookLifecycleTracked = (handler, hook) => (
 const runtime = {
   started: false,
   startInProgress: false,
+  entityStartHooksInProgress: false,
   startAttempt: 0,
   generation: 0,
   licenseKey: null,
@@ -84,6 +85,7 @@ const runtime = {
   pullInProgress: false,
   pendingPull: false,
   outboxInProgress: false,
+  outboxOperationInProgress: false,
   realtimePullScheduled: false,
   realtimePullTimer: null,
   deferredPullTimer: null,
@@ -934,7 +936,11 @@ const shouldUseRealtimeDebounce = (reason = '') => String(reason || '').toLowerC
 
 export const posSyncOrchestrator = {
   getUpdateActivity() {
-    return runtime.startInProgress || runtime.pullInProgress || runtime.outboxInProgress;
+    // Reads and scheduled reconciliation resume from durable cursors. Local
+    // writes, database migrations, checkout, and backups have their own
+    // guards; keep activation blocked for entity migrations and Outbox sends
+    // until their durable results are recorded.
+    return runtime.entityStartHooksInProgress || runtime.outboxOperationInProgress;
   },
   subscribeUpdateActivity(listener) {
     activityListeners.add(listener);
@@ -1135,7 +1141,12 @@ export const posSyncOrchestrator = {
 
       await setRuntimeStatus(SYNC_STATUS.DEGRADED, { licenseKey, reason, generation: startGeneration });
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !canSchedule()) return { started: false, stale: true };
-      await runEntityStartHooks({ licenseDetails, licenseKey, reason });
+      setActivityFlag('entityStartHooksInProgress', true);
+      try {
+        await runEntityStartHooks({ licenseDetails, licenseKey, reason });
+      } finally {
+        setActivityFlag('entityStartHooksInProgress', false);
+      }
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
 
       if (shouldDeferPosBootstrapStartHook(reason)) {
@@ -1734,41 +1745,46 @@ export const posSyncOrchestrator = {
               return;
             }
 
-            let result;
+            setActivityFlag('outboxOperationInProgress', true);
             try {
-              unknownHandler(`push:${operation.entityType}`);
-              result = await handler.pushOperation(claimed, { actorHandle: actor });
-            } catch (error) {
-              if (isLocalTenantAccessError(error) || !isOutboxRuntimeCurrent()) throw error;
-              if (isActorRuntimeError(error) && !isCurrent()) {
-                await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
+              let result;
+              try {
+                unknownHandler(`push:${operation.entityType}`);
+                result = await handler.pushOperation(claimed, { actorHandle: actor });
+              } catch (error) {
+                if (isLocalTenantAccessError(error) || !isOutboxRuntimeCurrent()) throw error;
+                if (isActorRuntimeError(error) && !isCurrent()) {
+                  await syncOutboxService.releaseUnsentOperation(claimed, { licenseKey });
+                  return;
+                }
+                Logger.warn('[PosSync] Enviar pendientes falló:', error, { diagnosticOperation: 'sync.outbox' });
+                if (isCloudClientUpdateRequired(error) && (error.family || family)) {
+                  const blockedFamily = error.family || family;
+                  updateRequiredFamilies.add(blockedFamily);
+                  await syncOutboxService.pauseForUpdateRequiredFamily(blockedFamily, { licenseKey });
+                } else {
+                  const retryAt = await syncOutboxService.markFailed(operation.id, error, {
+                    retry: !classifyActorAuthorityError(error) && !isCloudClientUpdateRequired(error)
+                      && error?.retryable !== false && error?.response?.retryable !== false,
+                    onlyProcessing: true,
+                    licenseKey
+                  });
+                  if (retryAt) nextRetryAt = Math.min(nextRetryAt, Date.parse(retryAt));
+                }
                 return;
               }
-              Logger.warn('[PosSync] Enviar pendientes falló:', error, { diagnosticOperation: 'sync.outbox' });
-              if (isCloudClientUpdateRequired(error) && (error.family || family)) {
-                const blockedFamily = error.family || family;
-                updateRequiredFamilies.add(blockedFamily);
-                await syncOutboxService.pauseForUpdateRequiredFamily(blockedFamily, { licenseKey });
-              } else {
-                const retryAt = await syncOutboxService.markFailed(operation.id, error, {
-                  retry: !classifyActorAuthorityError(error) && !isCloudClientUpdateRequired(error)
-                    && error?.retryable !== false && error?.response?.retryable !== false,
-                  onlyProcessing: true,
-                  licenseKey
-                });
-                if (retryAt) nextRetryAt = Math.min(nextRetryAt, Date.parse(retryAt));
-              }
-              return;
-            }
 
-            // A quiesced runtime leaves an in-flight claim for recovery.
-            if (!isOutboxRuntimeCurrent()) return;
-            if (result?.conflict) {
-              await syncOutboxService.markConflict(operation.id, result.conflict, { licenseKey });
-            } else {
-              await syncOutboxService.markSynced(operation.id, result || null, { licenseKey });
+              // A quiesced runtime leaves an in-flight claim for recovery.
+              if (!isOutboxRuntimeCurrent()) return;
+              if (result?.conflict) {
+                await syncOutboxService.markConflict(operation.id, result.conflict, { licenseKey });
+              } else {
+                await syncOutboxService.markSynced(operation.id, result || null, { licenseKey });
+              }
+              processed += 1;
+            } finally {
+              setActivityFlag('outboxOperationInProgress', false);
             }
-            processed += 1;
           }
         );
       }
