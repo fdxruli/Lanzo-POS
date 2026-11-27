@@ -788,3 +788,5 @@ $function$;
 alter function public.pos_snapshot_sync_contract_v1(text,text,text,text,integer) owner to postgres;
 revoke all on function public.pos_snapshot_sync_contract_v1(text,text,text,text,integer) from public;
 grant execute on function public.pos_snapshot_sync_contract_v1(text,text,text,text,integer) to anon, authenticated;
+
+commit;

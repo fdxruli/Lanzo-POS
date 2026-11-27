@@ -9,6 +9,8 @@ const migration = await readFile(migrationPath, 'utf8');
 const source = async (path) => readFile(`${repositoryRoot}/${path}`, 'utf8');
 
 test('F01 adds a separate business-scoped active ingredient catalog with storage uniqueness', () => {
+  const transaction = migration.replace(/^(?:--[^\n]*\n)+/u, '').trim();
+  assert.match(transaction, /^begin;[\s\S]*commit;$/iu);
   assert.match(migration, /create table public\.pos_active_ingredients/u);
   assert.match(migration, /unique index pos_active_ingredients_license_name_key_uidx\s+on public\.pos_active_ingredients \(license_id, name_key\)/u);
   assert.match(migration, /alter table public\.pos_active_ingredients enable row level security/u);
