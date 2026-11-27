@@ -1,6 +1,7 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { toNumber, variantKey } from './productFormNormalization';
 import { SANITARY_FRACTIONS, hasChangedConfirmedClassification } from '../../../../utils/pharmacyClassification';
+import { normalizePharmacyComposition } from '../../../../services/pharmacy/pharmacyComposition';
 
 export function validateProductForm(values, { activeRubro, isEditing = false, productToEdit = null } = {}) {
   const fieldErrors = {};
@@ -38,6 +39,19 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
       fieldErrors.pharmacyKind = 'Selecciona si se trata de un medicamento u otro producto de farmacia.';
     }
     if (values.pharmacyKind === 'medicine') {
+      const compositionRows = Array.isArray(values.compositionIngredients) ? values.compositionIngredients : [];
+      if (!isEditing && compositionRows.length === 0) {
+        fieldErrors.compositionIngredients = 'Agrega al menos un principio activo y su concentración.';
+      }
+      if (compositionRows.length > 0) {
+        const normalizedComposition = normalizePharmacyComposition({ version: 1, activeIngredients: compositionRows });
+        const activeIngredientIds = compositionRows.map((row) => String(row?.activeIngredientId || '').trim()).filter(Boolean);
+        if (new Set(activeIngredientIds).size !== activeIngredientIds.length) {
+          fieldErrors.compositionIngredients = 'Cada principio activo solo puede aparecer una vez en la composición.';
+        } else if (!normalizedComposition) {
+          fieldErrors.compositionIngredients = 'Completa cantidades, unidades y base de concentración con valores mayores que cero.';
+        }
+      }
       if (values.sanitaryFraction && !fractions.includes(values.sanitaryFraction)) {
         fieldErrors.sanitaryFraction = 'Selecciona una fracción sanitaria válida.';
       }

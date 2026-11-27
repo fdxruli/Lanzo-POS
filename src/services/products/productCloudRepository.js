@@ -5,12 +5,20 @@ import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { assertProductInventoryMutationCurrent, captureProductInventoryMutation, hasInitialProductStock } from '../auth/productInventoryAuthority';
 import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
 import { SYNC_LIMITS } from '../sync/syncConstants';
-import { callCloudSnapshotRpc, negotiateCloudSnapshotContract, requireCloudSnapshotContract } from '../sync/cloudSyncProtocolV2';
+import {
+  callCloudSnapshotRpc,
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
+  negotiateCloudSnapshotContract,
+  requireCloudSnapshotContract
+} from '../sync/cloudSyncProtocolV2';
+import { normalizeNameKey } from './productMapper';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
   return data || {};
 };
+
+const nowIso = () => new Date().toISOString();
 
 const assertSupabase = () => {
   if (!supabaseClient) {
@@ -54,7 +62,8 @@ const callRpc = async (name, args) => {
 
 // IMPORTANTE: las mutaciones/migraciones de catálogo son críticas y NO deben pasar por CloudRequestManager.
 const getMutationRequirementsForRpc = (rpcName, args = {}) => {
-  if (rpcName === 'pos_upsert_category' || rpcName === 'pos_delete_category' || rpcName === 'pos_toggle_product_status') {
+  if (rpcName === 'pos_upsert_category' || rpcName === 'pos_delete_category' || rpcName === 'pos_toggle_product_status'
+    || rpcName === 'pos_upsert_active_ingredient_v1') {
     return { products: true };
   }
   if (rpcName === 'pos_upsert_product') {
@@ -108,6 +117,29 @@ const callCatalogMutationRpc = async (rpcName, licenseKey, args, actorHandle = n
 };
 
 export const productCloudRepository = {
+  async upsertActiveIngredient({ licenseKey, activeIngredient, expectedVersion = null, idempotencyKey, actorHandle = null }) {
+    const contract = await this.negotiateSnapshotProtocol({ licenseKey, actorHandle });
+    if (!contract?.capabilities?.includes(CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY)) {
+      return {
+        success: false,
+        code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED',
+        message: 'El catálogo farmacéutico aún no está instalado en Cloud.'
+      };
+    }
+    return callCatalogMutationRpc('pos_upsert_active_ingredient_v1', licenseKey, {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_active_ingredient: {
+        id: activeIngredient.id,
+        name: activeIngredient.name,
+        name_key: activeIngredient.nameKey || normalizeNameKey(activeIngredient.name),
+        is_active: activeIngredient.isActive !== false,
+        created_at: activeIngredient.createdAt || nowIso()
+      },
+      p_expected_version: expectedVersion,
+      p_idempotency_key: idempotencyKey
+    }, actorHandle);
+  },
+
   async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_upsert_category', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
@@ -233,9 +265,12 @@ export const productCloudRepository = {
     actorHandle.assertCurrent();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
+    const rpcName = protocol.capabilities?.includes(CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY)
+      ? 'pos_pull_product_catalog_snapshot_v3'
+      : 'pos_pull_product_catalog_snapshot_v2';
     return callCloudSnapshotRpc({
       client: supabaseClient,
-      rpcName: 'pos_pull_product_catalog_snapshot_v2',
+      rpcName,
       family: 'product_catalog',
       authArgs: baseArgs,
       params: {

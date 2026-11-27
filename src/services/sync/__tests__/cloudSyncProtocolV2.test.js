@@ -7,6 +7,7 @@ import {
   CLOUD_SNAPSHOT_CONTRACT_RPC,
   CLOUD_SNAPSHOT_CONTRACT_VERSION,
   CLOUD_FINANCIAL_RESULT_CAPABILITY,
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
   callCloudSyncRpc,
   callCloudSnapshotRpc,
   negotiateCloudSnapshotContract,
@@ -258,6 +259,48 @@ describe('cloud sync protocol v2', () => {
     expect(rpc.mock.calls[0][1].p_requested_contract).toBe(CLOUD_SNAPSHOT_CONTRACT_VERSION);
     expect(rpc.mock.calls[1][1]).not.toHaveProperty('p_sync_contract');
     expect(page).toMatchObject({ snapshot_reference_change_seq: 37, snapshot_complete: true });
+  });
+
+  it('negotiates the pharmacy snapshot endpoint additively while keeping v2 available', async () => {
+    const authArgs = { p_license_key: 'snapshot-pharmacy-license', p_device_fingerprint: 'device-1',
+      p_security_token: 'secret', p_staff_session_token: null };
+    const contractWithPharmacy = {
+      ...snapshotContract,
+      capabilities: [...snapshotContract.capabilities, CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY],
+      endpoints: [...snapshotContract.endpoints, 'pos_pull_product_catalog_snapshot_v3']
+    };
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: contractWithPharmacy, error: null })
+      .mockResolvedValueOnce({ data: { success: true, active_ingredients: [] }, error: null });
+    const client = { rpc };
+    const negotiated = await negotiateCloudSnapshotContract({ client, authArgs });
+    const page = await callCloudSnapshotRpc({
+      client, rpcName: 'pos_pull_product_catalog_snapshot_v3', family: 'product_catalog',
+      authArgs, params: { p_limit: 500 }, snapshotContract: negotiated
+    });
+
+    expect(negotiated.capabilities).toContain(CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      CLOUD_SNAPSHOT_CONTRACT_RPC, 'pos_pull_product_catalog_snapshot_v3'
+    ]);
+    expect(page.active_ingredients).toEqual([]);
+  });
+
+  it('does not let an unbacked optional capability break existing snapshot clients', async () => {
+    const authArgs = { p_license_key: 'snapshot-pharmacy-incomplete', p_device_fingerprint: 'device-1',
+      p_security_token: 'secret', p_staff_session_token: null };
+    const rpc = vi.fn().mockResolvedValueOnce({ data: {
+      ...snapshotContract,
+      capabilities: [...snapshotContract.capabilities, CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY]
+    }, error: null });
+    const negotiated = await negotiateCloudSnapshotContract({ client: { rpc }, authArgs });
+
+    expect(negotiated.supported).toBe(true);
+    expect(negotiated.capabilities).not.toContain(CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY);
+    await expect(callCloudSnapshotRpc({
+      client: { rpc }, rpcName: 'pos_pull_product_catalog_snapshot_v3', family: 'product_catalog',
+      authArgs, snapshotContract: negotiated
+    })).rejects.toThrow('CLOUD_SNAPSHOT_CONTRACT_NOT_NEGOTIATED');
   });
 
   it('fails closed when the read-only contract is present but incomplete', async () => {

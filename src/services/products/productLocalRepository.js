@@ -35,6 +35,12 @@ import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
 import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
 import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal } from '../restaurant/restaurantCloudTableGuards';
+import { activeIngredientRepository, cloudActiveIngredientToLocal } from '../pharmacy/activeIngredientRepository';
+import {
+  getCompositionRows,
+  normalizeActiveIngredientNameKey,
+  normalizePharmacyComposition
+} from '../pharmacy/pharmacyComposition';
 import { assertValidRecipeReferences, getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const nowIso = () => new Date().toISOString();
@@ -123,6 +129,38 @@ const validateCategoryNameUnique = async (category) => {
   if (existing && existing.id !== category.id) {
     throw new Error('Ya existe una categoria activa con este nombre.');
   }
+};
+
+const normalizeProductPharmacyComposition = async (productData) => {
+  const metadata = productData?.metadata || {};
+  const pharmacy = metadata.pharmacy || productData?.pharmacy || {};
+  if (!Object.hasOwn(pharmacy, 'composition') || pharmacy.composition === null) return productData;
+  const composition = normalizePharmacyComposition(pharmacy.composition);
+  if (!composition) throw new Error('PHARMACY_COMPOSITION_INVALID');
+
+  const existingProduct = productData?.id ? await db.table(STORES.MENU).get(productData.id) : null;
+  const existingIngredientIds = new Set(getCompositionRows(existingProduct).map((row) => row.activeIngredientId));
+
+  const activeIngredients = [];
+  for (const component of composition.activeIngredients) {
+    const record = await activeIngredientRepository.getById(component.activeIngredientId);
+    if (!record) throw new Error('PHARMACY_ACTIVE_INGREDIENT_REFERENCE_MISSING');
+    if (record.isActive === false && !existingIngredientIds.has(record.id)) {
+      throw new Error('PHARMACY_ACTIVE_INGREDIENT_ARCHIVED');
+    }
+    const nameKey = normalizeActiveIngredientNameKey(record.name);
+    if (nameKey !== normalizeActiveIngredientNameKey(component.name)) {
+      throw new Error('PHARMACY_ACTIVE_INGREDIENT_NAME_MISMATCH');
+    }
+    activeIngredients.push({ ...component, name: record.name });
+  }
+  const nextComposition = { version: composition.version, activeIngredients };
+  const nextPharmacy = { ...pharmacy, composition: nextComposition };
+  return {
+    ...productData,
+    metadata: { ...metadata, pharmacy: nextPharmacy },
+    ...(productData.pharmacy ? { pharmacy: nextPharmacy } : {})
+  };
 };
 
 const applySyncFields = async (storeName, id, sync = {}) => {
@@ -259,11 +297,14 @@ export const productLocalRepository = {
   async getCatalogRecordForSync(entityType, entityId) {
     if (!entityId) return null;
     await ensureOpen();
-    const activeStore = entityType === 'category'
-      ? STORES.CATEGORIES
-      : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU);
+    const activeStore = entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT
+      ? STORES.ACTIVE_INGREDIENTS
+      : (entityType === 'category'
+        ? STORES.CATEGORIES
+        : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU));
     const active = await db.table(activeStore).get(entityId);
     if (active) return active;
+    if (entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT) return null;
     return db.table(getDeletionStore(entityType)).get(entityId);
   },
 
@@ -319,6 +360,7 @@ export const productLocalRepository = {
   },
 
   async prepareProduct(productData, existingProduct = null) {
+    productData = await normalizeProductPharmacyComposition(productData);
     const classification = getPharmacyClassification(productData);
     if (classification.recorded && classification.status === 'confirmed') {
       productData = { ...productData, ...pharmacyLegacyIndicators(productData) };
@@ -660,8 +702,10 @@ export const productLocalRepository = {
   async applyCloudCatalog(response = {}, {
     legacyReceipt = null, requireInventoryProjection = false, protectLocalChanges = false, recovery = null, actorHandle = null
   } = {}) {
-    const applied = { categories: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
+    const applied = { categories: 0, activeIngredients: 0, products: 0, batches: 0, rejected: [], deferredInventory: 0 };
     const collections = [
+      ['active_ingredient', STORES.ACTIVE_INGREDIENTS,
+        [...(response.active_ingredients || []), ...(response.active_ingredient ? [response.active_ingredient] : [])], cloudActiveIngredientToLocal],
       ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
       ['product', STORES.MENU, [...(response.products || []), ...(response.product ? [response.product] : [])], cloudProductToLocal],
       ['product_batch', STORES.PRODUCT_BATCHES, [...(response.batches || []), ...(response.batch ? [response.batch] : [])], cloudBatchToLocal]
@@ -676,7 +720,7 @@ export const productLocalRepository = {
     await ensureOpen();
     actorHandle?.assertCurrent?.();
     try {
-      const stores = [STORES.CATEGORIES, STORES.MENU, STORES.PRODUCT_BATCHES, STORES.SALES,
+      const stores = [STORES.ACTIVE_INGREDIENTS, STORES.CATEGORIES, STORES.MENU, STORES.PRODUCT_BATCHES, STORES.SALES,
         STORES.INVENTORY_EVENTS, POS_SYNC_STORES.OUTBOX];
       if (recovery || protectLocalChanges) stores.push(STORES.DELETED_MENU, STORES.DELETED_CATEGORIES);
       await db.transaction('rw', stores, async () => {
@@ -718,13 +762,17 @@ export const productLocalRepository = {
               continue;
             }
             try {
-              const existing = await db.table(store).get(entityId);
+              const byId = await db.table(store).get(entityId);
+              const nameKey = record?.name_key || record?.nameKey;
+              const existing = byId || (entityType === 'active_ingredient' && nameKey
+                ? await activeIngredientRepository.getByNameKey(nameKey)
+                : null);
               if (protectLocalChanges) {
                 const productId = entityType === 'product' ? entityId : parentId;
                 const parent = parentId && await db.table(STORES.MENU).get(parentId);
                 const tombstone = entityType === 'category'
                   ? await db.table(STORES.DELETED_CATEGORIES).get(entityId)
-                  : productId && await db.table(STORES.DELETED_MENU).get(productId);
+                  : (productId && await db.table(STORES.DELETED_MENU).get(productId));
                 const incomingDeleted = isDeletedCatalogRecord(record);
                 const localDeleted = tombstone || isDeletedCatalogRecord(existing) || isDeletedCatalogRecord(parent);
                 if (isUnsyncedCatalogRecord(existing) || isUnsyncedCatalogRecord(parent)
@@ -786,6 +834,14 @@ export const productLocalRepository = {
                   }
                 }
               }
+              if (entityType === 'active_ingredient') {
+                await activeIngredientRepository.applyCloudRecord(record, {
+                  localId: existing?.id !== record.id ? existing?.id : null,
+                  actorHandle
+                });
+                applied.activeIngredients += 1;
+                continue;
+              }
               const local = mapper(record, existing);
               await db.table(store).put(local);
               if (entityType === 'category') applied.categories += 1;
@@ -824,9 +880,11 @@ export const productLocalRepository = {
 
   async markConflict({ entityType, entityId, reason, expected = null }) {
     await ensureOpen();
-    const storeName = entityType === 'category'
-      ? STORES.CATEGORIES
-      : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU);
+    const storeName = entityType === SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT
+      ? STORES.ACTIVE_INGREDIENTS
+      : (entityType === 'category'
+        ? STORES.CATEGORIES
+        : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU));
     const table = db.table(storeName);
     const mark = async () => {
       const current = await table.get(entityId);
@@ -868,17 +926,19 @@ export const productLocalRepository = {
 
   async getLocalCatalogForMigration({ includeInactive = false } = {}) {
     await ensureOpen();
-    const [categories, products, batches] = await Promise.all([
+    const [categories, products, batches, activeIngredients] = await Promise.all([
       db.table(STORES.CATEGORIES).toArray(),
       db.table(STORES.MENU).toArray(),
-      db.table(STORES.PRODUCT_BATCHES).toArray()
+      db.table(STORES.PRODUCT_BATCHES).toArray(),
+      activeIngredientRepository.list({ includeArchived: includeInactive })
     ]);
 
     const includeRecord = includeInactive ? (row) => row.id && !isDeletedCatalogRecord(row) : isActiveCatalogRecord;
     return {
       categories: categories.filter(includeRecord),
       products: products.filter(includeRecord),
-      batches: batches.filter(includeRecord)
+      batches: batches.filter(includeRecord),
+      activeIngredients: activeIngredients.filter(includeRecord)
     };
   },
 
@@ -914,18 +974,20 @@ export const productLocalRepository = {
 
   async listUnsyncedLocalCatalogForCloud() {
     await ensureOpen();
-    const [categories, products, batches, deletedCategories, deletedProducts] = await Promise.all([
+    const [categories, products, batches, deletedCategories, deletedProducts, activeIngredients] = await Promise.all([
       db.table(STORES.CATEGORIES).toArray(),
       db.table(STORES.MENU).toArray(),
       db.table(STORES.PRODUCT_BATCHES).toArray(),
       db.table(STORES.DELETED_CATEGORIES).toArray(),
-      db.table(STORES.DELETED_MENU).toArray()
+      db.table(STORES.DELETED_MENU).toArray(),
+      activeIngredientRepository.list({ includeArchived: true })
     ]);
 
     return {
       categories: categories.filter(isUnsyncedCatalogRecord),
       products: products.filter(isUnsyncedCatalogRecord),
       batches: batches.filter(isUnsyncedCatalogRecord),
+      activeIngredients: activeIngredients.filter(isUnsyncedCatalogRecord),
       deletes: {
         categories: deletedCategories.filter((record) => record?.id && record.deletionPending !== false),
         products: deletedProducts.filter((record) => record?.id && record.deletionPending !== false),

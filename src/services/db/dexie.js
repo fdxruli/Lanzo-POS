@@ -46,7 +46,8 @@ export const STORES = {
   INVENTORY_EVENTS: 'inventory_events',
   SEQUENCES: 'sequences',
   CORRUPTED_STATES: 'corrupted_states',
-  FINANCIAL_INTENTS: 'financial_intents'
+  FINANCIAL_INTENTS: 'financial_intents',
+  ACTIVE_INGREDIENTS: 'active_ingredients'
 };
 
 export class LanzoDatabase extends Dexie {

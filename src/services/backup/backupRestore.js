@@ -7,6 +7,7 @@ import {
   BACKUP_MONITORED_TABLE_NAMES,
   getBackupTableScope
 } from './backupScope';
+import { normalizePharmacyComposition } from '../pharmacy/pharmacyComposition';
 
 export const LEGACY_BACKUP_TABLE_NAMES = Object.freeze([
   'menu',
@@ -27,6 +28,30 @@ const isPendingRestoreOperation = (tableName, row) => {
   }
   return false;
 };
+
+const getStructuredComposition = (product) => product?.metadata?.pharmacy?.composition
+  ?? product?.pharmacy?.composition;
+
+const validateRestoredPharmacyReferences = (rowsByTable) => {
+  const products = rowsByTable.menu || [];
+  const ingredients = rowsByTable.active_ingredients || [];
+  const ingredientIds = new Set(ingredients.map((row) => row?.id).filter(Boolean));
+  for (const product of products) {
+    const raw = getStructuredComposition(product);
+    if (raw === undefined || raw === null) continue;
+    const composition = normalizePharmacyComposition(raw);
+    if (!composition) throw new Error('BACKUP_PHARMACY_COMPOSITION_INVALID');
+    const missing = composition.activeIngredients
+      .map((item) => item.activeIngredientId)
+      .filter((id) => !ingredientIds.has(id));
+    if (missing.length) throw new Error(`BACKUP_PHARMACY_ACTIVE_INGREDIENT_MISSING:${missing.join(',')}`);
+  }
+};
+
+const hasStructuredComposition = (products = []) => products.some((product) => {
+  const composition = getStructuredComposition(product);
+  return composition !== undefined && composition !== null;
+});
 
 export const countPendingRestoreOperations = (rowsByTable = {}) => Object.fromEntries(
   BACKUP_MONITORED_TABLE_NAMES.map((tableName) => [
@@ -64,7 +89,9 @@ const validateSourceTables = (metadata, formatVersion) => {
   if (safeSourceNames.length === 0) throw new Error('BACKUP_NO_RECOVERABLE_TABLES');
 
   if (formatVersion !== 1) {
-    const missingTableNames = BACKUP_TABLE_NAMES.filter((name) => !sourceTableNames.includes(name));
+    const missingTableNames = BACKUP_TABLE_NAMES.filter((name) => (
+      name !== 'active_ingredients' && !sourceTableNames.includes(name)
+    ));
     if (missingTableNames.length > 0) {
       throw new Error(`BACKUP_REQUIRED_TABLES_MISSING:${missingTableNames.join(',')}`);
     }
@@ -145,6 +172,10 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
         ? rows.filter((row) => row?.id === 'sale_folio')
         : rows;
     }
+    validateRestoredPharmacyReferences(restoredRows);
+    if (metadata?.data?.databaseName !== expectedDatabaseName && hasStructuredComposition(restoredRows.menu || [])) {
+      throw new Error('BACKUP_PHARMACY_COMPOSITION_PORTABLE_REMAP_REQUIRED');
+    }
   } finally {
     stagingDatabase.close();
     await Dexie.delete(stagingName);
@@ -167,6 +198,10 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
         await database.table(tableName).bulkPut(restoredRows[tableName]);
       }
     }
+    if (formatVersion === 2 && !safeSourceNames.includes('active_ingredients')
+      && includedTableNames.includes('active_ingredients')) {
+      await database.table('active_ingredients').clear();
+    }
     // Revocation while the transaction was writing must roll it back too.
     if (revalidateBeforeWrite) await Dexie.waitFor(revalidateBeforeWrite('after'));
   });
@@ -174,6 +209,6 @@ export async function restoreWhitelistedDatabase(database, exportedBlob, {
   return {
     ...metadata,
     restoredTables: [...safeSourceNames],
-    partial: formatVersion === 1 || safeSourceNames.length !== BACKUP_TABLE_NAMES.length
+    partial: formatVersion === 1 || safeSourceNames.length < BACKUP_TABLE_NAMES.length - 1
   };
 }

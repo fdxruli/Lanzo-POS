@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CURRENT_NATIVE_DATABASE_VERSION,
-  FINANCIAL_INTENT_DEXIE_VERSION,
+  PHARMACY_CATALOG_DEXIE_VERSION,
   FINANCIAL_INTENT_SCHEMA
 } from '../../db/databaseSchema';
 import { preflightAndRepairIndexedDb } from '../../db/indexedDbPreflightCoordinator';
@@ -120,7 +120,7 @@ describe('financial intent Dexie schema', () => {
 
     try {
       await database.open();
-      expect(database.verno).toBe(FINANCIAL_INTENT_DEXIE_VERSION);
+      expect(database.verno).toBe(PHARMACY_CATALOG_DEXIE_VERSION);
       expect(await nativeVersion(name)).toBe(CURRENT_NATIVE_DATABASE_VERSION);
       expect(database.tables.map((table) => table.name)).toContain(STORES.FINANCIAL_INTENTS);
       expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining([

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   cloud: {
     upsertProduct: vi.fn(),
+    upsertActiveIngredient: vi.fn(),
     pullCatalogChanges: vi.fn()
   },
   orchestrator: { registerEntitySyncHandler: vi.fn() }
@@ -186,6 +187,74 @@ describe('product sync read cursor safety', () => {
     expect(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey: TEST_LICENSE_KEY })).toBe(43);
   });
 
+  it('registers and ACKs active ingredient operations before remapping dependent product outbox data', async () => {
+    expect(mocks.orchestrator.registerEntitySyncHandler).toHaveBeenCalledWith(
+      SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, productSyncHandler
+    );
+    const activeIngredient = {
+      id: 'ai-client-id', businessKey: TEST_LICENSE_KEY, name: 'Paracetamol', nameKey: 'paracetamol',
+      isActive: true, syncStatus: 'pending', serverVersion: null,
+      pendingOperationId: 'ai-operation', localMutationId: 'ai-operation'
+    };
+    await db.table(STORES.ACTIVE_INGREDIENTS).put(activeIngredient);
+    const product = pendingProduct('product-with-composition');
+    product.metadata = { pharmacy: { composition: { version: 1, activeIngredients: [{
+      activeIngredientId: activeIngredient.id, name: activeIngredient.name, amount: 500,
+      unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+    }] } } };
+    await db.table(STORES.MENU).put(product);
+    const productOutbox = {
+      id: 'product-operation', entityType: SYNC_ENTITY_TYPES.PRODUCT, status: 'pending',
+      payload: { product }
+    };
+    await db.table('sync_outbox').put(productOutbox);
+    const operation = {
+      id: 'ai-operation', idempotencyKey: 'ai-operation', licenseKey: TEST_LICENSE_KEY,
+      entityType: SYNC_ENTITY_TYPES.ACTIVE_INGREDIENT, entityId: activeIngredient.id,
+      operation: SYNC_OPERATIONS.UPSERT,
+      payload: { activeIngredient, expectedVersion: null }
+    };
+    mocks.cloud.upsertActiveIngredient.mockResolvedValueOnce({
+      success: true, idempotency_key: operation.idempotencyKey,
+      active_ingredient: {
+        id: 'ai-canonical-id', client_id: activeIngredient.id, name: 'Paracetamol',
+        name_key: 'paracetamol', is_active: true, server_version: 1
+      }
+    });
+
+    await expect(productSyncHandler.pushOperation(operation)).resolves.toMatchObject({ success: true });
+
+    expect(mocks.cloud.upsertActiveIngredient).toHaveBeenCalledWith(expect.objectContaining({
+      activeIngredient: operation.payload.activeIngredient, idempotencyKey: operation.idempotencyKey
+    }));
+    expect(await db.table(STORES.ACTIVE_INGREDIENTS).get('ai-canonical-id')).toMatchObject({
+      nameKey: 'paracetamol', syncStatus: 'synced', serverVersion: 1
+    });
+    expect((await db.table(STORES.MENU).get(product.id)).metadata.pharmacy.composition.activeIngredients[0])
+      .toMatchObject({ activeIngredientId: 'ai-canonical-id', name: 'Paracetamol' });
+    expect((await db.table('sync_outbox').get(productOutbox.id)).payload.product.metadata.pharmacy.composition.activeIngredients[0])
+      .toMatchObject({ activeIngredientId: 'ai-canonical-id' });
+  });
+
+  it('keeps product pushes pending until each structured ingredient dependency is cloud-confirmed', async () => {
+    const activeIngredient = {
+      id: 'ai-pending', businessKey: TEST_LICENSE_KEY, name: 'Paracetamol', nameKey: 'paracetamol',
+      isActive: true, syncStatus: 'pending', serverVersion: null
+    };
+    await db.table(STORES.ACTIVE_INGREDIENTS).put(activeIngredient);
+    const operation = productOperation('product-awaits-active-ingredient');
+    operation.payload.product.metadata = { pharmacy: { composition: { version: 1, activeIngredients: [{
+      activeIngredientId: activeIngredient.id, name: activeIngredient.name, amount: 500,
+      unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+    }] } } };
+    await db.table(STORES.MENU).put({ ...pendingProduct(operation.entityId), metadata: operation.payload.product.metadata });
+
+    await expect(productSyncHandler.pushOperation(operation)).rejects.toMatchObject({
+      code: 'PRODUCT_ACTIVE_INGREDIENT_DEPENDENCY_PENDING', retryable: true
+    });
+    expect(mocks.cloud.upsertProduct).not.toHaveBeenCalled();
+  });
+
   it('keeps the pull cursor monotonic when older pull responses finish last', async () => {
     await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 40, { licenseKey: TEST_LICENSE_KEY });
     let resolveOlderPage;
@@ -220,7 +289,7 @@ describe('product sync read cursor safety', () => {
     const contextId = buildSnapshotContextId({
       licenseKey: TEST_LICENSE_KEY,
       streamKey: 'product_catalog',
-      scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+      scope: { entities: ['category', 'active_ingredient', 'product', 'product_batch'], includeDeleted: true },
       actorHandle
     });
     await durableSnapshotService.runConsistentSnapshot({
@@ -273,7 +342,7 @@ describe('product sync read cursor safety', () => {
     const contextId = buildSnapshotContextId({
       licenseKey: TEST_LICENSE_KEY,
       streamKey: 'product_catalog',
-      scope: { entities: ['category', 'product', 'product_batch'], includeDeleted: true },
+      scope: { entities: ['category', 'active_ingredient', 'product', 'product_batch'], includeDeleted: true },
       actorHandle
     });
     const failCursorWrite = vi.spyOn(syncMetaService, 'advanceMeta').mockResolvedValueOnce(false);

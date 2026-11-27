@@ -3,6 +3,7 @@ import {
   normalizeNameKey,
   normalizeSkuKey
 } from './productMapper';
+import { normalizePharmacyComposition } from '../pharmacy/pharmacyComposition';
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -32,11 +33,12 @@ const findDuplicateGroups = (records, keyFn) => {
     .map(([key, group]) => ({ key, ids: group.map((record) => record.id), names: group.map((record) => record.name || record.sku || record.id) }));
 };
 
-export const validateLocalCatalogForMigration = ({ categories = [], products = [], batches = [] } = {}) => {
+export const validateLocalCatalogForMigration = ({ categories = [], products = [], batches = [], activeIngredients = [] } = {}) => {
   const issues = [];
   const categoryIds = new Set(categories.map((category) => category.id));
   const productIds = new Set(products.map((product) => product.id));
   const productsById = new Map(products.map((product) => [product.id, product]));
+  const activeIngredientIds = new Set(activeIngredients.map((row) => row.id));
 
   for (const category of categories) {
     if (!category?.id) pushIssue(issues, 'CATEGORY_MISSING_ID', category, 'Categoria sin ID.');
@@ -57,6 +59,14 @@ export const validateLocalCatalogForMigration = ({ categories = [], products = [
       pushIssue(issues, 'PRODUCT_CATEGORY_MISSING', product, 'Producto apunta a una categoria local inexistente.', {
         categoryId: product.categoryId
       });
+    }
+    const pharmacy = product.metadata?.pharmacy || product.pharmacy || {};
+    if (pharmacy.composition !== undefined && pharmacy.composition !== null) {
+      const composition = normalizePharmacyComposition(pharmacy.composition);
+      if (!composition) pushIssue(issues, 'PHARMACY_COMPOSITION_INVALID', product, 'Composición farmacéutica inválida.');
+      else if (composition.activeIngredients.some((item) => !activeIngredientIds.has(item.activeIngredientId))) {
+        pushIssue(issues, 'PHARMACY_ACTIVE_INGREDIENT_MISSING', product, 'La composición apunta a un principio activo local ausente.');
+      }
     }
   }
 

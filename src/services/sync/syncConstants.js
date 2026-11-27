@@ -33,6 +33,7 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   CUSTOMER_CREDIT: 'customer_credit',
   CUSTOMER_PAYMENT: 'customer_payment',
   CATEGORY: 'category',
+  ACTIVE_INGREDIENT: 'active_ingredient',
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
   INVENTORY_ENTRY: 'inventory_entry',

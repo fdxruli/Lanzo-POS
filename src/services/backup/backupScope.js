@@ -2,6 +2,7 @@ export const BACKUP_TABLE_NAMES = Object.freeze([
   'menu',
   'categories',
   'ingredients',
+  'active_ingredients',
   'product_batches',
   'images',
   'customers',
@@ -30,7 +31,7 @@ export const BACKUP_MONITORED_TABLE_NAMES = Object.freeze([
 ]);
 
 export const BACKUP_DATA_CATEGORIES = Object.freeze({
-  catalog: Object.freeze(['menu', 'categories', 'ingredients', 'images']),
+  catalog: Object.freeze(['menu', 'categories', 'ingredients', 'active_ingredients', 'images']),
   inventory: Object.freeze(['product_batches', 'waste_logs', 'inventory_events']),
   customers: Object.freeze(['customers', 'customer_ledger']),
   sales: Object.freeze(['sales', 'deleted_sales']),

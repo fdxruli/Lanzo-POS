@@ -59,7 +59,8 @@ vi.mock('../../../store/useAppStore', () => ({
 }));
 
 vi.mock('../../db/tenantRuntimeRouter', () => ({
-  getTenantRuntimeReadiness: () => ({ ready: true, runtime: mocks.tenant })
+  getTenantRuntimeReadiness: () => ({ ready: true, runtime: mocks.tenant }),
+  configureTenantRuntimeDatabaseFactory: vi.fn()
 }));
 
 vi.mock('../../Logger', () => ({
@@ -126,6 +127,9 @@ vi.mock('../productMigrationService', () => ({
 }));
 
 vi.mock('../productSyncHandler', () => ({ pullCatalogChanges: vi.fn() }));
+vi.mock('../../pharmacy/activeIngredientRepository', () => ({
+  activeIngredientRepository: { ensureQueued: vi.fn(), hasPending: vi.fn(async () => false) }
+}));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: mocks.notify }));
 
 import { productRepository } from '../productRepository';
@@ -276,6 +280,37 @@ describe('productRepository FREE/local authority', () => {
     expect(mocks.cloud.upsertProduct).not.toHaveBeenCalled();
     expect(mocks.enqueue).not.toHaveBeenCalled();
     expect(mocks.actorCapture).not.toHaveBeenCalled();
+  });
+
+  it('saves a structured pharmacy composition locally while offline without queuing Cloud writes', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    const composition = { version: 1, activeIngredients: [{
+      activeIngredientId: 'ai-paracetamol', name: 'Paracetamol', amount: 500,
+      unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+    }] };
+    mocks.prepareProduct.mockResolvedValueOnce({
+      productId: 'product-paracetamol', editing: false, batches: [], inventoryValue: 0,
+      product: {
+        id: 'product-paracetamol', name: 'Paracetamol 500 mg', stock: 0, cost: 2, price: 5,
+        metadata: { pharmacy: { kind: 'medicine', composition } }
+      }
+    });
+    mocks.savePreparedProductLocal.mockResolvedValueOnce({ success: true, productId: 'product-paracetamol' });
+
+    try {
+      await expect(productRepository.saveProduct({ name: 'Paracetamol 500 mg' }))
+        .resolves.toMatchObject({ success: true, productId: 'product-paracetamol' });
+      expect(mocks.savePreparedProductLocal).toHaveBeenCalledWith(
+        expect.objectContaining({ product: expect.objectContaining({
+          metadata: { pharmacy: { kind: 'medicine', composition } }
+        }) }),
+        { syncStatus: 'local' }
+      );
+      expect(mocks.cloud.upsertProduct).not.toHaveBeenCalled();
+      expect(mocks.enqueue).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('preserves a selected category in FREE without reading or writing Cloud', async () => {

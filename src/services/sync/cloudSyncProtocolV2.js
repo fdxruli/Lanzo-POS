@@ -6,6 +6,7 @@ export const CLOUD_SNAPSHOT_CONTRACT_VERSION = 1;
 export const CLOUD_SNAPSHOT_CONTRACT_RPC = 'pos_snapshot_sync_contract_v1';
 export const CLOUD_FINANCIAL_RESULT_CAPABILITY = 'financial_operation_result_v1';
 export const CLOUD_SNAPSHOT_KEYSET_CAPABILITY = 'snapshot_keyset_reference_v1';
+export const CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY = 'pharmacy_active_ingredient_catalog_v1';
 export const CLOUD_SYNC_CAPABILITIES = Object.freeze([
   'historical_credit_preservation_v1',
   'customer_projection_safe_apply_v1'
@@ -17,6 +18,12 @@ const SNAPSHOT_ENDPOINTS = Object.freeze({
   pos_pull_customer_credit_snapshot_v3: 'customer_credit',
   pos_pull_sales_snapshot_v2: 'sales',
   pos_pull_cash_snapshot_v2: 'cash_register'
+});
+const OPTIONAL_SNAPSHOT_ENDPOINTS = Object.freeze({
+  pos_pull_product_catalog_snapshot_v3: {
+    family: 'product_catalog',
+    capability: CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY
+  }
 });
 const SNAPSHOT_CAPABILITY_TTL_MS = 60_000;
 const snapshotCapabilityCache = new Map();
@@ -735,6 +742,14 @@ export const negotiateCloudSnapshotContract = async ({
         reason: null,
         tenantId: contract.tenant_id,
         contractVersion: CLOUD_SNAPSHOT_CONTRACT_VERSION,
+        capabilities: capabilities.filter((capability) => {
+          const optionalEndpoint = Object.values(OPTIONAL_SNAPSHOT_ENDPOINTS)
+            .find((candidate) => candidate.capability === capability);
+          return !optionalEndpoint || endpoints.some((endpoint) => (
+            OPTIONAL_SNAPSHOT_ENDPOINTS[endpoint]?.capability === capability
+              && families.includes(optionalEndpoint.family)
+          ));
+        }),
         endpoints: [...endpoints],
         endpointFamilies: [...families],
         syncContract: {
@@ -761,8 +776,11 @@ export const callCloudSnapshotRpc = async ({
   usesV2Envelope = false,
   actorHandle = null
 } = {}) => {
+  const optionalEndpoint = OPTIONAL_SNAPSHOT_ENDPOINTS[rpcName];
+  const endpointWasNegotiated = snapshotContract?.endpoints?.includes(rpcName)
+    && (!optionalEndpoint || snapshotContract.capabilities?.includes(optionalEndpoint.capability));
   if (!client?.rpc || !isRecord(authArgs) || !snapshotContract?.supported
-    || !snapshotContract.endpoints?.includes(rpcName)
+    || !endpointWasNegotiated
     || !snapshotContract.endpointFamilies?.includes(family)) {
     throw new Error('CLOUD_SNAPSHOT_CONTRACT_NOT_NEGOTIATED');
   }

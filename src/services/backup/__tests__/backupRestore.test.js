@@ -21,11 +21,17 @@ const openLegacyArchive = async (databaseName) => {
   return archive;
 };
 
-const openCurrentArchive = async (databaseName) => {
+const openCurrentArchive = async (databaseName, {
+  includeActiveIngredients = true, products = [], activeIngredients = []
+} = {}) => {
   const source = new Dexie(databaseName);
-  source.version(1).stores(Object.fromEntries(BACKUP_TABLE_NAMES.map((name) => [name, 'id'])));
+  const tableNames = includeActiveIngredients
+    ? BACKUP_TABLE_NAMES : BACKUP_TABLE_NAMES.filter((name) => name !== 'active_ingredients');
+  source.version(1).stores(Object.fromEntries(tableNames.map((name) => [name, 'id'])));
   await source.open();
   await Promise.all([
+    source.table('menu').bulkPut(products),
+    ...(includeActiveIngredients ? [source.table('active_ingredients').bulkPut(activeIngredients)] : []),
     source.table('cajas').add({
       id: 'cash-open', estado: 'abierta', localStationKey: 'local:device:origin-station-secret',
       deviceId: 'RAW_DEVICE_ID_SECRET', deviceFingerprint: 'RAW_FINGERPRINT_SECRET'
@@ -179,6 +185,44 @@ describe('backupRestore', () => {
 
     expect(await destination.table('sequences').get('sale_folio')).toEqual({ id: 'sale_folio', value: 12 });
     expect(await destination.table('sequences').get('receipt_folio')).toEqual({ id: 'receipt_folio', value: 9 });
+    destination.close();
+  });
+
+  it('restores a structured composition with its active ingredient identity', async () => {
+    const databaseName = `backup-restore-pharmacy-${crypto.randomUUID()}`;
+    databases.add(databaseName);
+    const composition = { version: 1, activeIngredients: [{ activeIngredientId: 'ai-paracetamol',
+      name: 'Paracetamol', amount: 500, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }] };
+    const archive = await openCurrentArchive(databaseName, {
+      products: [{ id: 'product-paracetamol', name: 'Paracetamol 500 mg', metadata: { pharmacy: { composition } } }],
+      activeIngredients: [{ id: 'ai-paracetamol', businessKey: 'business-a', name: 'Paracetamol',
+        nameKey: 'paracetamol', isActive: true }]
+    });
+    const destination = await openDestination(databaseName);
+
+    await restoreWhitelistedDatabase(destination, archive, { expectedDatabaseName: databaseName, formatVersion: 2 });
+
+    expect(await destination.table('active_ingredients').get('ai-paracetamol')).toMatchObject({
+      businessKey: 'business-a', nameKey: 'paracetamol'
+    });
+    expect((await destination.table('menu').get('product-paracetamol')).metadata.pharmacy.composition)
+      .toEqual(composition);
+    destination.close();
+  });
+
+  it('accepts a previous V2 backup without active ingredients and clears destination residue', async () => {
+    const databaseName = `backup-restore-pharmacy-legacy-${crypto.randomUUID()}`;
+    databases.add(databaseName);
+    const archive = await openCurrentArchive(databaseName, { includeActiveIngredients: false });
+    const destination = await openDestination(databaseName);
+    await destination.table('active_ingredients').add({ id: 'stale-other-business', name: 'Residuo' });
+
+    const restored = await restoreWhitelistedDatabase(destination, archive, {
+      expectedDatabaseName: databaseName, formatVersion: 2
+    });
+
+    expect(restored.partial).toBe(false);
+    expect(await destination.table('active_ingredients').count()).toBe(0);
     destination.close();
   });
 
