@@ -57,6 +57,58 @@ const finiteNumber = (value) => {
 
 const safeBoolean = (value) => value === true;
 
+const EXCLUSION_REASON_CODES = new Set([
+  'cancellation_marker', 'cancelled_status', 'invalid_status', 'shadow_record',
+  'historical_source', 'ecommerce_not_converted', 'unsupported_source',
+  'invalid_record', 'ecommerce_duplicate'
+]);
+const EXCLUSION_STATUS_LABELS = new Set([
+  'Cancelada', 'Anulada', 'Revertida', 'Rechazada', 'Auxiliar de sincronización', 'Cerrada', 'No válida'
+]);
+const EXCLUSION_ORIGIN_LABELS = new Set([
+  'Origen no confirmado', 'Auxiliar de sincronización', 'Importación histórica', 'Nube', 'Local',
+  'Punto de venta', 'Ecommerce convertido a venta POS', 'Ecommerce', 'Otro origen'
+]);
+const INTERNAL_SALE_REFERENCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const PRIVATE_REFERENCE_PATTERN = /(?:\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|\+?\d(?:[\s().-]*\d){9,14}\b)/iu;
+
+const hasControlCharacter = (value) => {
+  const text = String(value);
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+};
+
+const safeExclusionDetails = (value) => (Array.isArray(value) ? value : [])
+  .slice(0, 5000)
+  .flatMap((row) => {
+    const source = asRecord(row);
+    if (!EXCLUSION_REASON_CODES.has(source.reasonCode)
+      || !['excluded', 'duplicate'].includes(source.kind)
+      || (source.kind === 'duplicate' && source.reasonCode !== 'ecommerce_duplicate')) return [];
+    const reference = typeof source.reference === 'string' ? source.reference.trim() : '';
+    const safeReference = reference.length > 0 && reference.length <= 80
+      && !INTERNAL_SALE_REFERENCE_PATTERN.test(reference)
+      && !PRIVATE_REFERENCE_PATTERN.test(reference)
+      && !hasControlCharacter(reference)
+      ? sanitizeText(reference, 80) || null
+      : null;
+    const date = source.date ? new Date(source.date) : null;
+    return [{
+      kind: source.kind,
+      reasonCode: source.reasonCode,
+      reference: safeReference,
+      date: date && !Number.isNaN(date.getTime()) ? date.toISOString() : null,
+      statusLabel: EXCLUSION_STATUS_LABELS.has(source.statusLabel) ? source.statusLabel : null,
+      originLabel: EXCLUSION_ORIGIN_LABELS.has(source.originLabel) ? source.originLabel : null,
+      amount: finiteNumber(source.amount) !== null && finiteNumber(source.amount) >= 0
+        ? finiteNumber(source.amount)
+        : null
+    }];
+  });
+
 const sanitizeText = (value, maxLength = 2000) => {
   if (typeof value !== 'string') return '';
   return value
@@ -137,10 +189,16 @@ const safeQueryRange = (queryRange) => {
 const safeCoverage = (coverage) => {
   const source = asRecord(coverage);
   return {
+    recordsEvaluated: finiteNumber(source.recordsEvaluated),
+    includedSales: finiteNumber(source.includedSales),
     validSales: finiteNumber(source.validSales),
     rawSales: finiteNumber(source.rawSales),
     excludedSales: finiteNumber(source.excludedSales),
     ecommerceDuplicatesExcluded: finiteNumber(source.ecommerceDuplicatesExcluded),
+    discardedRecords: finiteNumber(source.discardedRecords),
+    exclusionDetailsVersion: source.exclusionDetailsVersion === 1 ? 1 : null,
+    exclusionDetails: safeExclusionDetails(source.exclusionDetails),
+    confidenceFactors: Array.isArray(source.confidenceFactors) ? safeTextArray(source.confidenceFactors, 6, 240) : null,
     productsIncluded: finiteNumber(source.productsIncluded),
     productsMissingCost: finiteNumber(source.productsMissingCost),
     costCoverage: finiteNumber(source.costCoverage),
@@ -170,6 +228,7 @@ const safeCoverage = (coverage) => {
       excludedSources: finiteNumber(source.sourcePolicy?.excludedSources),
       excludedStatuses: finiteNumber(source.sourcePolicy?.excludedStatuses),
       cancelledMarkers: finiteNumber(source.sourcePolicy?.cancelledMarkers),
+      invalidRecords: finiteNumber(source.sourcePolicy?.invalidRecords),
       legacySources: finiteNumber(source.sourcePolicy?.legacySources),
       shadowSources: finiteNumber(source.sourcePolicy?.shadowSources),
       ecommerceSources: finiteNumber(source.sourcePolicy?.ecommerceSources),

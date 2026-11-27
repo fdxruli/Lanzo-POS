@@ -13,19 +13,16 @@ describe('approved response and Free boundaries', () => {
     expect(hash(page.slice(page.indexOf('const SUGGESTED_QUESTIONS'), page.indexOf('const EMPTY_ARRAY')))).toBe('6c60f9f98cf4569fae0ace17b8027fbac23eebbd9012d5f91206c6966baf2261');
   });
 
-  it('preserves every report component and the historical adapter byte for byte', () => {
+  it('locks the reviewed report components and historical adapter byte for byte', () => {
     const page = source('CommercialAIAgentsPage.jsx');
     const protectedReport = page.slice(page.indexOf('function Metric('), page.indexOf('function HistoryPanel('));
-    // Etapa 1.1 intentionally removes the writable-batch review action and
-    // serializes only opaque business/actor/session context for navigation.
-    // Deterministic report calculations and evidence selectors are unchanged.
-    expect(hash(protectedReport)).toBe('9e0b2bec33e27874f94adc0115ae0083bc3803efcd1bc8973410bbed62ff2d40');
+    // Etapa 2 adds record reconciliation and data-quality confidence evidence
+    // to the report; keep the reviewed rendering and historical adapter locked.
+    expect(hash(protectedReport)).toBe('3e5e80c7ae911171f8778479c2a3c882970020344b96f45c2ddc0930990f0970');
   });
 
-  it('preserves the entire original stylesheet including tables, metrics and report breakpoints', () => {
-    // Etapa 1 appends the contextual review button styles and its mobile layout;
-    // the pre-existing report styles are unchanged in the reviewed diff.
-    expect(hash(source('CommercialAIAgentsPage.css'))).toBe('f0dce8cf04cf5f8a4536c44231236d208fcd23d2d0656b6e36620ab5ce82cf70');
+  it('locks report styles including the new coverage disclosure layout', () => {
+    expect(hash(source('CommercialAIAgentsPage.css'))).toBe('df7550fca395475a2e07c471b448ead383943564d5be7c45a3cd437f0ace0125');
   });
 
   it('preserves the Free showcase while requiring the current authenticated actor', () => {

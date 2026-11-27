@@ -1187,15 +1187,101 @@ function TechnicalDetails({ response, usageStatus }) {
 function CoverageEvidence({ response }) {
   const coverage = response.coverage || {};
   const sourceLabel = ({ cloud: 'Nube', local: 'Local', mixed: 'Mixta' }[response.source] || 'Mixta');
+  const exclusions = asArray(coverage.exclusionDetails);
+  const hasExclusionDetails = coverage.exclusionDetailsVersion === 1 && Array.isArray(coverage.exclusionDetails);
+  const evaluated = coverage.recordsEvaluated ?? coverage.rawSales;
+  const included = coverage.includedSales ?? coverage.validSales;
+  const discarded = coverage.discardedRecords
+    ?? ((Number(coverage.excludedSales) || 0) + (Number(coverage.ecommerceDuplicatesExcluded) || 0));
+  const hasCounts = evaluated !== null && evaluated !== undefined && included !== null && included !== undefined;
+  const timeZone = response.queryRange?.current?.timezone;
+  const formatDate = (value) => {
+    if (typeof value !== 'string') return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    try {
+      return new Intl.DateTimeFormat('es-MX', {
+        dateStyle: 'medium', timeStyle: 'short', timeZone: timeZone || 'America/Mexico_City'
+      }).format(date);
+    } catch {
+      return date.toLocaleString('es-MX');
+    }
+  };
+  const reasonText = (record) => {
+    switch (record.reasonCode) {
+      case 'cancellation_marker': return 'Hay una señal de cancelación registrada; el registro se excluyó del cálculo.';
+      case 'cancelled_status': return 'El estado de la venta indica que fue cancelada.';
+      case 'invalid_status': return 'El estado del registro no representa una venta válida para el análisis.';
+      case 'shadow_record': return 'Es un registro auxiliar de sincronización, no una venta comercial adicional.';
+      case 'historical_source': return 'Proviene de una fuente histórica que no se incluye en el análisis actual.';
+      case 'ecommerce_not_converted': return 'Es un registro Ecommerce que todavía no se convirtió en una venta POS.';
+      case 'unsupported_source': return 'El origen del registro no está admitido por las reglas actuales del análisis.';
+      case 'invalid_record': return 'El registro no tiene un formato de venta válido.';
+      case 'ecommerce_duplicate': return 'Registro Ecommerce duplicado; se conservó una sola representación de esa venta.';
+      default: return 'Registro excluido por una regla vigente del análisis.';
+    }
+  };
+
   return (
-    <MetricGrid>
-      <Metric label="Ventas válidas" value={formatAnalysisValue.formatNumber(coverage.validSales, 0)} />
-      <Metric label="Productos incluidos" value={formatAnalysisValue.formatNumber(coverage.productsIncluded, 0)} />
-      {response.intent !== 'assortment_analysis' && <Metric label="Cobertura de costos" value={formatAnalysisValue.formatPercent(coverage.costCoverage)} />}
-      <Metric label="Detalle de artículos" value={coverage.itemsComplete === true ? 'Completo' : 'Incompleto'} />
-      <Metric label="Paginación" value={coverage.paginationComplete === true ? 'Completa' : 'Incompleta'} />
-      <Metric label="Fuente de datos" value={coverage.sourceComplete === true ? sourceLabel : `${sourceLabel} · revisar`} />
-    </MetricGrid>
+    <>
+      {hasCounts && (
+        <div className="commercial-ai-coverage-summary" aria-label="Resumen de cobertura">
+          <Metric label="Registros evaluados" value={formatAnalysisValue.formatNumber(evaluated, 0)} />
+          <Metric label="Ventas incluidas" value={formatAnalysisValue.formatNumber(included, 0)} />
+          <Metric label="Registros descartados" value={formatAnalysisValue.formatNumber(discarded, 0)} />
+        </div>
+      )}
+      {hasCounts && (
+        <p className="commercial-ai-coverage-note">
+          De {formatAnalysisValue.formatNumber(evaluated, 0)} registros: {formatAnalysisValue.formatNumber(included, 0)} ventas incluidas,{' '}
+          {formatAnalysisValue.formatNumber(coverage.excludedSales, 0)} excluidas por reglas y{' '}
+          {formatAnalysisValue.formatNumber(coverage.ecommerceDuplicatesExcluded, 0)} duplicados descartados. Los duplicados no son ventas adicionales;
+          {' '}los costos incompletos reducen la cobertura, pero no excluyen una venta válida.
+        </p>
+      )}
+      <MetricGrid>
+        <Metric label="Productos incluidos" value={formatAnalysisValue.formatNumber(coverage.productsIncluded, 0)} />
+        {response.intent !== 'assortment_analysis' && <Metric label="Cobertura de costos" value={formatAnalysisValue.formatPercent(coverage.costCoverage)} />}
+        <Metric label="Detalle de artículos" value={coverage.itemsComplete === true ? 'Completo' : 'Incompleto'} />
+        <Metric label="Paginación" value={coverage.paginationComplete === true ? 'Completa' : 'Incompleta'} />
+        <Metric label="Fuente de datos" value={coverage.sourceComplete === true ? sourceLabel : `${sourceLabel} · revisar`} />
+      </MetricGrid>
+      <details className="commercial-ai-exclusion-details">
+        <summary>{hasExclusionDetails ? `Ver registros descartados (${formatAnalysisValue.formatNumber(discarded, 0)})` : 'Ver detalle de registros descartados'}</summary>
+        {hasExclusionDetails ? (exclusions.length > 0 ? (
+          <ul>
+            {exclusions.map((record, index) => {
+              const dateLabel = formatDate(record.date);
+              const identityLabel = record.reference
+                ? `${record.kind === 'duplicate' ? 'Registro duplicado' : 'Registro'} · ${record.reference}`
+                : (record.kind === 'duplicate' ? 'Registro Ecommerce duplicado · sin folio visible' : 'Registro sin folio visible');
+              return (
+                <li key={`${record.reasonCode || 'record'}-${record.reference || 'no-reference'}-${record.date || 'no-date'}-${index}`}>
+                  <strong>{identityLabel}</strong>
+                  <span>{reasonText(record)}</span>
+                  <small>
+                    {dateLabel ? `Fecha: ${dateLabel}` : 'Fecha no disponible'}
+                    {record.statusLabel ? ` · Estado: ${record.statusLabel}` : ''}
+                    {record.originLabel ? ` · Origen: ${record.originLabel}` : ''}
+                    {Number.isFinite(record.amount) ? ` · Importe: ${formatAnalysisValue.formatMoney(record.amount)}` : ''}
+                  </small>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p>No hubo registros descartados en este análisis.</p>
+        )) : (
+          <p>Este análisis anterior no guardó el desglose individual. No se puede reconstruir con información actual del negocio.</p>
+        )}
+      </details>
+      {asArray(coverage.confidenceFactors).length > 0 && (
+        <details className="commercial-ai-confidence-explanation">
+          <summary>Cómo se determinó la confianza: resume cobertura y calidad de datos; no es una probabilidad ni garantiza una recomendación.</summary>
+          <ul>{coverage.confidenceFactors.map((factor, index) => <li key={`${factor}-${index}`}>{factor}</li>)}</ul>
+        </details>
+      )}
+    </>
   );
 }
 
@@ -1296,7 +1382,6 @@ function NarrativeEvidence({ response, result, onReviewRecommendation, canReview
           </div>
         )}
         {narrative.explanation && <p><strong>Por qué Lía llega a esta conclusión:</strong> {narrative.explanation}</p>}
-        {narrative.confidence && <small>Confianza de esta interpretación: {confidenceLabel(narrative.confidence)}.</small>}
       </div>
       {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
         <p className="commercial-ai-muted" role="status">
@@ -1318,6 +1403,22 @@ function hasVisibleNarrative(narrative) {
 function NarrativeStatusNotice({ result }) {
   const narrative = result?.response?.aiNarrative;
   if (hasVisibleNarrative(narrative)) return null;
+  if (
+    result?.providerCalled === false
+    && result?.quotaOutcome === 'not_consumed'
+    && ['completed', 'incomplete', 'insufficient_data'].includes(result?.response?.status)
+    && narrative?.status !== 'unavailable'
+  ) {
+    const insufficient = result.response.status === 'insufficient_data';
+    return (
+      <div className="commercial-ai-narrative-notice" role="status">
+        <strong>Análisis calculado por Lanzo.</strong>{' '}
+        {insufficient
+          ? 'La información disponible no fue suficiente para esta consulta. No se llamó al proveedor de IA y no se consumió cuota; ajusta el periodo o revisa los datos señalados.'
+          : 'La respuesta se resolvió con cálculos de Lanzo; no se llamó al proveedor de IA y no se consumió cuota.'}
+      </div>
+    );
+  }
   if (narrative?.status !== 'unavailable' && result?.providerCalled !== true && result?.quotaOutcome !== 'consumed') return null;
 
   const message = result.quotaOutcome === 'not_consumed'
@@ -1701,7 +1802,7 @@ function HistoryPanel({
                 ? (snapshot.isUnlimited
                   ? `Snapshot del contador: ${snapshot.used ?? '—'} usados · sin límite`
                   : `Snapshot del contador: ${snapshot.used ?? '—'} usados · límite ${snapshot.limit ?? '—'} · disponibles ${snapshot.remaining ?? '—'}`)
-                : 'Snapshot del contador: no disponible';
+                : 'Contador no guardado en esta consulta. Consulta «Usó cuota» para el estado de consumo; la ausencia del snapshot no significa que el análisis fuera gratuito.';
               return (
                 <li key={entry.id}>
                   <article className="commercial-ai-history__item">
@@ -2649,10 +2750,17 @@ export default function CommercialAIAgentsPage() {
                 </span>
               </label>
               {intent === 'explain_change' && (
-                <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => {
-                  analysisInputsRevisionRef.current += 1;
-                  setCompare(event.target.checked);
-                }} /> Comparar con el periodo anterior</label>
+                <>
+                  <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => {
+                    analysisInputsRevisionRef.current += 1;
+                    setCompare(event.target.checked);
+                  }} /> Comparar con el periodo anterior</label>
+                  <p className="commercial-ai-comparison-note" role="status">
+                    {compare
+                      ? 'Lía comparará periodos equivalentes. Si faltan ventas o costos comparables, te lo indicará sin llamar al proveedor ni consumir cuota.'
+                      : 'Esta pregunta necesita un periodo anterior comparable. Activa la comparación antes de analizar; si no hay evidencia suficiente, no se llamará al proveedor ni se consumirá cuota.'}
+                  </p>
+                </>
               )}
               {(['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent) || strategyRequested)
                 && <p className="commercial-ai-comparison-note">Se incluirá el periodo anterior de duración equivalente cuando haya datos disponibles.</p>}

@@ -703,9 +703,9 @@ describe('commercial AI center', () => {
 
     await openHistory();
     expect(await screen.findByRole('heading', { name: question })).toBeInTheDocument();
-    expect(screen.getByText('Análisis automático')).toBeInTheDocument();
+    expect(screen.getAllByText('Análisis calculado por Lanzo').length).toBeGreaterThan(0);
     expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
-    expect(screen.getByText('Snapshot del contador: no disponible')).toBeInTheDocument();
+    expect(screen.getByText(/Contador no guardado en esta consulta.*la ausencia del snapshot no significa que el análisis fuera gratuito/i)).toBeInTheDocument();
     expect(screen.getByText('Historial de consultas')).toBeInTheDocument();
     expect(runtime.getUsage).toHaveBeenCalledTimes(1);
 
@@ -1097,9 +1097,70 @@ describe('commercial AI center', () => {
     expect(screen.getByText('Por qué:')).toBeInTheDocument();
     expect(screen.getByText('Qué probar:')).toBeInTheDocument();
     expect(screen.getByText('Qué medir:')).toBeInTheDocument();
-    expect(screen.getByText(/Confianza de esta interpretación: Alta/)).toBeInTheDocument();
+    expect(screen.getByText('Nivel de confianza')).toBeInTheDocument();
+    expect(screen.getByText('Media', { exact: true })).toBeInTheDocument();
     expect(screen.getByText(/Requiere confirmación manual/)).toBeInTheDocument();
     expect(screen.queryByText('product:Producto A')).not.toBeInTheDocument();
+  });
+
+  it('shows reconciled records and exclusion reasons with deterministic no-quota messaging', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'profitability_summary',
+        executiveSummary: 'La cobertura de costos está incompleta.',
+        explanation: 'Los costos faltantes no se interpretaron como cero.',
+        confidence: 'low',
+        source: 'cloud',
+        coverage: {
+          validSales: 1,
+          recordsEvaluated: 3,
+          includedSales: 1,
+          excludedSales: 1,
+          ecommerceDuplicatesExcluded: 1,
+          discardedRecords: 2,
+          exclusionDetailsVersion: 1,
+          exclusionDetails: [
+            {
+              kind: 'excluded', reasonCode: 'cancelled_status', reference: 'POS-220',
+              date: '2026-09-06T10:00:00.000Z', statusLabel: 'Cancelada', originLabel: 'Nube', amount: 35
+            },
+            {
+              kind: 'duplicate', reasonCode: 'ecommerce_duplicate', reference: 'ECO-220',
+              date: '2026-09-06T11:00:00.000Z', statusLabel: 'Cerrada', originLabel: 'Nube', amount: 45
+            }
+          ],
+          productsIncluded: 1,
+          costCoverage: 0.5,
+          itemsComplete: true,
+          paginationComplete: true,
+          sourceComplete: true,
+          confidenceFactors: ['La cobertura de costos es 50%; los costos faltantes no se trataron como cero.']
+        },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: []
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Mi negocio es rentable?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByText(/De 3 registros: 1 ventas incluidas/)).toBeInTheDocument();
+    expect(screen.getByText(/No se llamó al proveedor de IA y no se consumió cuota/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Ver registros descartados (2)'));
+    expect(screen.getByText('Registro · POS-220')).toBeInTheDocument();
+    expect(screen.getByText(/El estado de la venta indica que fue cancelada/i)).toBeInTheDocument();
+    expect(screen.getByText('Registro duplicado · ECO-220')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Cómo se determinó la confianza/));
+    expect(screen.getByText(/costos faltantes no se trataron como cero/i)).toBeInTheDocument();
   });
 
   it('does not put errors or invalid response shapes in history', async () => {
@@ -1789,7 +1850,9 @@ describe('commercial AI center', () => {
     chooseSuggestedQuestion('¿Por qué cambió mi margen?');
     const comparison = screen.getByRole('checkbox', { name: /comparar/i });
     expect(comparison).toBeChecked();
+    expect(screen.getByText(/si faltan ventas o costos comparables, te lo indicará sin llamar al proveedor ni consumir cuota/i)).toBeInTheDocument();
     fireEvent.click(comparison);
+    expect(screen.getByText(/activa la comparación antes de analizar/i)).toBeInTheDocument();
     chooseSuggestedQuestion('¿Qué combos puedo formar?');
     expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
   });
