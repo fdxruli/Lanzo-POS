@@ -15,6 +15,7 @@ import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuth
 import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
+import StaffLogoutAction from './StaffLogoutAction';
 import {
   Store,
   Package,
@@ -65,6 +66,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const actorAccess = useActorAccess();
   const canAccess = actorAccess.canAccessPermission;
   const actorRuntime = actorAccess.runtimeSnapshot;
+  const isActiveStaff = actorRuntime?.status === 'granted' && actorRuntime?.actorType === 'staff';
   const postDowngradeCash = usePostDowngradeCashPending();
   const canReadReports = canReadSalesReports(actorRuntime || {});
   const commercialAIAgentAccess = getCommercialAIAgentAccessState({
@@ -611,6 +613,14 @@ function Navbar({ isSuppressed = false } = {}) {
               )}
             </section>
           )}
+
+          {isActiveStaff && (
+            <StaffLogoutAction
+              className="drawer-link staff-logout-action"
+              disabled={isBackupLoading}
+              onLogoutConfirmed={closeMenu}
+            />
+          )}
         </div>
       </div>
 
@@ -863,6 +873,13 @@ function Navbar({ isSuppressed = false } = {}) {
                 </button>
               )}
             </div>
+          )}
+
+          {isActiveStaff && (
+            <StaffLogoutAction
+              className="nav-link staff-logout-action"
+              disabled={isBackupLoading}
+            />
           )}
         </div>
       </nav>

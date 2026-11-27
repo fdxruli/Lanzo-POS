@@ -5,7 +5,11 @@ import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
-import { STAFF_DEVICE_AUTH_MESSAGE } from '../../store/slices/license/licenseConstants';
+import {
+  STAFF_DEVICE_AUTH_MESSAGE,
+  STAFF_ONLY_MODE_LOGIN_MESSAGE,
+  STAFF_SESSION_CLOSED_MESSAGE
+} from '../../store/slices/license/licenseConstants';
 import './StaffLoginModal.css';
 
 const SAFE_LOGIN_MESSAGES = Object.freeze({
@@ -34,6 +38,7 @@ export default function StaffLoginModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [errorMessage, setErrorMessage] = useState('');
+  const isLoggingOut = useAppStore((state) => state._isLoggingOut === true);
 
   const handleStaffLogin = useAppStore((state) => state.handleStaffLogin);
   const initializeApp = useAppStore((state) => state.initializeApp);
@@ -57,7 +62,13 @@ export default function StaffLoginModal() {
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
   const staffLoginNotice = !verificationUnavailable && !staffAlreadyInUse && !staffLoginError && !errorMessage
-    ? authorityRecoveryMessage || (staffLoginMessage === STAFF_DEVICE_AUTH_MESSAGE ? STAFF_DEVICE_AUTH_MESSAGE : '')
+    ? [
+      authorityRecoveryMessage,
+      staffLoginMessage === STAFF_SESSION_CLOSED_MESSAGE ? STAFF_SESSION_CLOSED_MESSAGE : '',
+      staffLoginMessage === STAFF_ONLY_MODE_LOGIN_MESSAGE || licenseDetails?.device_mode === 'staff_only'
+        ? STAFF_ONLY_MODE_LOGIN_MESSAGE : '',
+      staffLoginMessage === STAFF_DEVICE_AUTH_MESSAGE ? STAFF_DEVICE_AUTH_MESSAGE : ''
+    ].filter((message, index, messages) => message && messages.indexOf(message) === index).join(' ')
     : '';
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
@@ -130,7 +141,7 @@ export default function StaffLoginModal() {
                 type="button"
                 className="auth-page__footer-link"
                 onClick={returnToLicenseAccessChoice}
-                disabled={isLoading}
+                disabled={isLoading || isLoggingOut}
               >
                 <ArrowLeft size={15} aria-hidden="true" />
                 Cambiar perfil
@@ -138,7 +149,7 @@ export default function StaffLoginModal() {
               <span className="auth-page__footer-separator" aria-hidden="true">·</span>
             </>
           )}
-          <button type="button" className="auth-page__footer-link" onClick={logout} disabled={isLoading}>
+          <button type="button" className="auth-page__footer-link" onClick={logout} disabled={isLoading || isLoggingOut}>
             Cambiar licencia
           </button>
           <span className="auth-page__footer-separator" aria-hidden="true">·</span>
@@ -213,9 +224,11 @@ export default function StaffLoginModal() {
         )}
 
         {verificationUnavailable ? (
-          <div className="staff-login-form" aria-busy={isLoading}>
+          <div className="staff-login-form" aria-busy={isLoading || isLoggingOut}>
             <div className="staff-login-note ui-alert ui-alert--info" role="status" aria-live="polite">
-              {isLoading
+              {isLoggingOut
+                ? 'Cerrando la sesión Staff anterior.'
+                : isLoading
                 ? 'Estamos verificando la sesión staff guardada.'
                 : verificationStatusMessage}
             </div>
@@ -228,13 +241,13 @@ export default function StaffLoginModal() {
               type="button"
               className="ui-button ui-button--primary staff-login-submit"
               onClick={retrySessionVerification}
-              disabled={isLoading || !isOnline}
+              disabled={isLoading || isLoggingOut || !isOnline}
             >
               {isLoading ? 'Verificando sesión...' : 'Reintentar verificación'}
             </button>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading}>
+        <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading || isLoggingOut}>
           <div className="staff-login-field form-group">
             <label className="form-label" htmlFor="staff-username">Usuario</label>
             <input
@@ -243,7 +256,7 @@ export default function StaffLoginModal() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
-              disabled={isLoading || !isOnline}
+              disabled={isLoading || isLoggingOut || !isOnline}
               required
             />
           </div>
@@ -252,7 +265,7 @@ export default function StaffLoginModal() {
             id="staff-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            disabled={isLoading || !isOnline}
+            disabled={isLoading || isLoggingOut || !isOnline}
             fieldClassName="staff-login-field form-group"
             labelClassName="form-label"
           />
@@ -266,10 +279,10 @@ export default function StaffLoginModal() {
           <button
             type="submit"
             className="ui-button ui-button--primary staff-login-submit"
-            disabled={isLoading || !isOnline || !username.trim() || !password}
+            disabled={isLoading || isLoggingOut || !isOnline || !username.trim() || !password}
           >
             <LogIn size={18} aria-hidden="true" />
-            {isLoading ? 'Verificando...' : 'Entrar'}
+            {isLoggingOut ? 'Cerrando sesión...' : isLoading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
         )}

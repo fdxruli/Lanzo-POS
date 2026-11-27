@@ -143,6 +143,22 @@ beforeEach(() => {
 });
 
 describe('Navbar Settings shell access', () => {
+  it('exposes Staff logout in the desktop sidebar and mobile drawer', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: ['pos'] }
+    });
+    state.actorRuntime = grantTestActor({ actorType: 'staff', actorId: 'staff-a', permissions: ['pos'] });
+
+    renderNavbar();
+
+    const desktopAction = document.querySelector('.desktop-sidebar .staff-logout-action');
+    expect(desktopAction).toHaveTextContent('Cerrar sesión Staff');
+    const { drawer } = openMobileDrawer();
+    expect(within(drawer).getByRole('button', { name: 'Cerrar sesión Staff' })).toHaveClass('drawer-link');
+  });
+
   it('closes the mobile menu when applying a pending update', async () => {
     const runUpdate = vi.fn(async () => true);
     state.app = createAppState({ updateAvailable: true, runUpdate });

@@ -11,6 +11,7 @@ import {
 } from '../../services/deviceModePolicy';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
+import { assertActorSessionCanClose } from '../../services/auth/actorOperationalHandoff';
 import {
   useSettingsAccess,
   useSettingsActionGuard
@@ -18,6 +19,8 @@ import {
 
 export default function DeviceManager({ licenseKey }) {
   const logout = useAppStore((state) => state.logout);
+  const requireStaffLoginAfterDeviceModeChange = useAppStore((state) => state.requireStaffLoginAfterDeviceModeChange);
+  const isBackupLoading = useAppStore((state) => state.isBackupLoading === true);
   const settingsAccess = useSettingsAccess();
   const captureSettingsAction = useSettingsActionGuard();
   const [devices, setDevices] = useState([]);
@@ -111,6 +114,14 @@ export default function DeviceManager({ licenseKey }) {
       : '';
 
     try {
+      if (isCurrentDevice && (useAppStore.getState?.().isBackupLoading ?? isBackupLoading)) {
+        showMessageModal(
+          'Espera a que termine el respaldo o la restauración antes de cambiar el modo de este dispositivo.',
+          null,
+          { type: 'warning' }
+        );
+        return;
+      }
       if (!(await showConfirmModal(
       `Cambiar ${device.device_name || 'este dispositivo'} de ${currentLabel} a ${nextLabel}?${sessionWarning}`,
       {
@@ -121,6 +132,17 @@ export default function DeviceManager({ licenseKey }) {
     ))) return;
 
       actorHandle.assertCurrent('devices');
+      if (isCurrentDevice && nextMode === 'staff_only') {
+        try {
+          assertActorSessionCanClose({ tenant: actorHandle.tenant, actorKey: actorHandle.actorKey });
+        } catch (operationError) {
+          const message = operationError?.code === 'ACTOR_HANDOFF_CHECKOUT_OWNED'
+            ? 'Hay un cobro o cierre de venta en curso. Termina la operación antes de cambiar este dispositivo a Solo Staff.'
+            : 'Hay una operación de caja o guardado en curso. Espera a que termine antes de cambiar el modo del dispositivo.';
+          showMessageModal(message, null, { type: 'warning' });
+          return;
+        }
+      }
       setModeUpdatingDeviceId(device.device_id);
       const result = await setDeviceModeSmart(device.device_id, nextMode, licenseKey);
       actorHandle.assertCurrent('devices');
@@ -134,13 +156,24 @@ export default function DeviceManager({ licenseKey }) {
         return;
       }
 
-      showMessageModal(`Modo actualizado: ${getDeviceModeLabel(result.device_mode || nextMode)}.`);
-
       if (result.requester_session_revoked) {
+        const confirmedMode = result.device_mode || nextMode;
+        if (confirmedMode === 'staff_only') {
+          const transition = await requireStaffLoginAfterDeviceModeChange(confirmedMode);
+          if (!transition?.success) {
+            showMessageModal(
+              transition?.message || 'El modo cambió, pero no se pudo abrir el acceso Staff. Vuelve a iniciar la aplicación.',
+              null,
+              { type: 'error' }
+            );
+          }
+          return;
+        }
         await logout();
         return;
       }
 
+      showMessageModal(`Modo actualizado: ${getDeviceModeLabel(result.device_mode || nextMode)}.`);
       await fetchDevices(true);
     } catch (changeError) {
       try {

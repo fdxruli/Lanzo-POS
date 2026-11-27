@@ -7,9 +7,12 @@ const mocks = vi.hoisted(() => ({
   getLicenseDevicesSmart: vi.fn(),
   deactivateDeviceSmart: vi.fn(),
   setDeviceModeSmart: vi.fn(),
+  assertActorSessionCanClose: vi.fn(),
   showConfirmModal: vi.fn(),
   showMessageModal: vi.fn(),
   logout: vi.fn(),
+  requireStaffLoginAfterDeviceModeChange: vi.fn(),
+  isBackupLoading: false,
   captureSettingsAction: vi.fn(),
   assertCurrent: vi.fn(),
   access: null
@@ -24,13 +27,24 @@ vi.mock('../../../services/deviceModeService', () => ({
   setDeviceModeSmart: mocks.setDeviceModeSmart
 }));
 
+vi.mock('../../../services/auth/actorOperationalHandoff', () => ({
+  assertActorSessionCanClose: mocks.assertActorSessionCanClose
+}));
+
 vi.mock('../../../services/utils', () => ({
   showConfirmModal: mocks.showConfirmModal,
   showMessageModal: mocks.showMessageModal
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ logout: mocks.logout })
+  useAppStore: Object.assign(
+    (selector) => selector({
+      logout: mocks.logout,
+      requireStaffLoginAfterDeviceModeChange: mocks.requireStaffLoginAfterDeviceModeChange,
+      isBackupLoading: mocks.isBackupLoading
+    }),
+    { getState: () => ({ isBackupLoading: mocks.isBackupLoading }) }
+  )
 }));
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
@@ -102,6 +116,9 @@ describe('DeviceManager administrative controls', () => {
       requester_session_revoked: false
     });
     mocks.logout.mockResolvedValue(undefined);
+    mocks.requireStaffLoginAfterDeviceModeChange.mockResolvedValue({ success: true });
+    mocks.assertActorSessionCanClose.mockReturnValue(true);
+    mocks.isBackupLoading = false;
   });
 
   it('releases a remote device once, refreshes once, and keeps the requester logged in', async () => {
@@ -190,7 +207,7 @@ describe('DeviceManager administrative controls', () => {
     expect(mocks.logout).not.toHaveBeenCalled();
   });
 
-  it('logs out when the current device changes to staff_only and the server revokes the requester session', async () => {
+  it('routes directly to Staff login when the current device changes to staff_only and revokes Admin', async () => {
     mocks.setDeviceModeSmart.mockResolvedValue({
       success: true,
       device_mode: 'staff_only',
@@ -208,8 +225,46 @@ describe('DeviceManager administrative controls', () => {
       'staff_only',
       'LIC-1'
     ));
-    await waitFor(() => expect(mocks.logout).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.requireStaffLoginAfterDeviceModeChange).toHaveBeenCalledWith('staff_only'));
+    expect(mocks.logout).not.toHaveBeenCalled();
     expect(mocks.getLicenseDevicesSmart).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Admin session active when a checkout blocks the current-device mode change', async () => {
+    mocks.assertActorSessionCanClose.mockImplementation(() => {
+      throw Object.assign(new Error('active checkout'), { code: 'ACTOR_HANDOFF_CHECKOUT_OWNED' });
+    });
+    await renderManager([makeDevice('device-a', 'Device A', { is_current_device: true })]);
+
+    fireEvent.change(
+      within(rowFor('Device A')).getByRole('combobox'),
+      { target: { value: 'staff_only' } }
+    );
+
+    await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      expect.stringContaining('cobro o cierre de venta'),
+      null,
+      { type: 'warning' }
+    ));
+    expect(mocks.setDeviceModeSmart).not.toHaveBeenCalled();
+    expect(mocks.requireStaffLoginAfterDeviceModeChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current device mode unchanged during backup or restore', async () => {
+    mocks.isBackupLoading = true;
+    await renderManager([makeDevice('device-a', 'Device A', { is_current_device: true })]);
+
+    fireEvent.change(
+      within(rowFor('Device A')).getByRole('combobox'),
+      { target: { value: 'staff_only' } }
+    );
+
+    await waitFor(() => expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      expect.stringContaining('respaldo o la restauración'),
+      null,
+      { type: 'warning' }
+    ));
+    expect(mocks.setDeviceModeSmart).not.toHaveBeenCalled();
   });
 
   it.each(['admin_only', 'shared'])('does not logout for current-device mode %s without revocation', async (nextMode) => {

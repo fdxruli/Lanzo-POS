@@ -1215,30 +1215,48 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
 };
 
 export const staffLogoutSession = async function (licenseKey) {
-    try {
-        const staffSessionToken = await getStaffSessionToken();
-        const deviceFingerprint = await getStableDeviceId();
+    let staffSessionToken = null;
+    let deviceFingerprint = null;
 
-        if (navigator.onLine && staffSessionToken && licenseKey) {
-            const { error } = await supabaseClient.rpc('staff_logout_session', {
+    try {
+        staffSessionToken = await getStaffSessionToken();
+        deviceFingerprint = await getStableDeviceId();
+    } catch (error) {
+        Logger.warn('No se pudieron preparar las credenciales para cerrar sesion Staff remotamente:', error?.message || error);
+    }
+
+    // Remove the only persisted Staff credential before waiting on the network.
+    // Keep the captured token only in this closure so a slow or failed RPC cannot
+    // restore the local actor after a reload.
+    if (licenseKey) {
+        await runWithLocalTenantSyncLease(
+            { license_key: licenseKey },
+            { reason: 'staff_logout_credentials' },
+            () => clearStaffSessionCache()
+        );
+    }
+
+    if (navigator.onLine && staffSessionToken && licenseKey && deviceFingerprint) {
+        let timeoutId;
+        const remoteLogout = Promise.resolve()
+            .then(() => supabaseClient.rpc('staff_logout_session', {
                 p_license_key: licenseKey,
                 p_device_fingerprint: deviceFingerprint,
                 p_staff_session_token: staffSessionToken
+            }))
+            .then(({ error } = {}) => {
+                if (error) Logger.warn('Logout staff remoto fallo; la sesion local ya fue limpiada:', error.message);
+            })
+            .catch((error) => {
+                Logger.warn('No se pudo cerrar sesion staff remotamente:', error?.message || error);
             });
-
-            if (error) {
-                Logger.warn('Logout staff remoto fallo; se limpia sesion local:', error.message);
-            }
-        }
-    } catch (error) {
-        Logger.warn('No se pudo cerrar sesion staff remotamente:', error?.message || error);
-    } finally {
-        if (licenseKey) {
-            await runWithLocalTenantSyncLease(
-                { license_key: licenseKey },
-                { reason: 'staff_logout_credentials' },
-                () => clearStaffSessionCache()
-            );
+        const remoteLogoutTimeout = new Promise((resolve) => {
+            timeoutId = setTimeout(() => resolve('timeout'), 5_000);
+        });
+        const result = await Promise.race([remoteLogout.then(() => 'completed'), remoteLogoutTimeout]);
+        clearTimeout(timeoutId);
+        if (result === 'timeout') {
+            Logger.warn('Logout staff remoto excedio el tiempo de espera; la sesion local ya fue limpiada.');
         }
     }
 

@@ -60,6 +60,12 @@ export const STAFF_DEVICE_AUTH_REASONS = [
 export const STAFF_DEVICE_AUTH_MESSAGE =
   'Este dispositivo fue liberado o ya no está autorizado. Inicia sesión staff nuevamente o pide al administrador revisar los dispositivos.';
 
+export const STAFF_SESSION_CLOSED_MESSAGE =
+  'Sesión Staff cerrada. Ingresa con tu usuario asignado para continuar.';
+
+export const STAFF_ONLY_MODE_LOGIN_MESSAGE =
+  'Este dispositivo está en modo Solo Staff. Inicia sesión con el usuario asignado. Para habilitar acceso Admin, el propietario debe cambiar el modo desde otra sesión Admin autorizada.';
+
 export const LICENSE_PLAN_BLOCK_REASONS = [
   'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',
   'PLAN_DOWNGRADE_DEVICE_LIMIT'
