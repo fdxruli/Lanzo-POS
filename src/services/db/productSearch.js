@@ -2,6 +2,12 @@ import {
   buildSearchNgrams,
   normalizeProductSearchValue
 } from './productSearchIndex';
+import {
+  createPharmacySearchContext,
+  hasPharmacySearchFilters,
+  matchesPharmacySearchFilters,
+  matchesPharmacySearchQuery
+} from '../pharmacy/pharmacyProductSearch';
 
 const DEFAULT_SEARCH_LIMIT = 50;
 
@@ -75,21 +81,36 @@ export const searchProductsInTable = async (
   status = 'active',
   limit = DEFAULT_SEARCH_LIMIT,
   categoryFilter = null,
-  { eligible = () => true, filterBatch = null } = {}
+  {
+    eligible = () => true,
+    filterBatch = null,
+    pharmacySearch = false,
+    pharmacyFilters = null
+  } = {}
 ) => {
   const normalizedTerm = normalizeProductSearchValue(searchTerm);
-  if (!normalizedTerm || limit <= 0) return [];
+  const hasPharmacyFilters = pharmacySearch && hasPharmacySearchFilters(pharmacyFilters);
+  if ((!normalizedTerm && !hasPharmacyFilters) || limit <= 0) return [];
 
-  const matches = (product) => product
+  const matchesBase = (product) => product
     && matchesSearchFilters(product, status, categoryFilter)
     && eligible(product);
   const results = [];
   const visited = new Set();
-  const accept = async (products) => {
+  let pharmacySearchContext = { queryTokens: [], ingredientGroups: [] };
+  const matchesProductFilters = (product) => matchesBase(product)
+    && (!pharmacySearch || matchesPharmacySearchFilters(product, pharmacyFilters));
+  const matchesCandidate = (product, exactCode = false) => {
+    if (exactCode) return matchesBase(product);
+    if (!matchesProductFilters(product)) return false;
+    return !pharmacySearch || !normalizedTerm
+      || matchesPharmacySearchQuery(product, pharmacySearchContext);
+  };
+  const accept = async (products, { exactCode = false } = {}) => {
     const candidates = products.filter((product) => {
       if (!product || visited.has(product.id)) return false;
       visited.add(product.id);
-      return matches(product);
+      return matchesCandidate(product, exactCode);
     });
     if (!candidates.length) return;
     const accepted = filterBatch ? await filterBatch(candidates) : candidates;
@@ -98,42 +119,69 @@ export const searchProductsInTable = async (
 
   // Preserve scanner/exact-code priority, but an excluded exact match must
   // not hide other eligible matches in the remaining index routes.
-  for (const index of ['barcode_normalized', 'sku_normalized']) {
-    const exact = await productTable.where(index).equals(normalizedTerm).filter(matches).toArray();
-    for (let offset = 0; offset < exact.length; offset += DEFAULT_SEARCH_LIMIT) {
-      await accept(exact.slice(offset, offset + DEFAULT_SEARCH_LIMIT));
-      if (results.length) return results.slice(0, 1);
+  if (normalizedTerm) {
+    for (const index of ['barcode_normalized', 'sku_normalized']) {
+      const exact = await productTable.where(index).equals(normalizedTerm).filter(matchesBase).toArray();
+      for (let offset = 0; offset < exact.length; offset += DEFAULT_SEARCH_LIMIT) {
+        await accept(exact.slice(offset, offset + DEFAULT_SEARCH_LIMIT), { exactCode: true });
+        if (results.length) return results.slice(0, 1);
+      }
     }
+
+    if (pharmacySearch) pharmacySearchContext = await createPharmacySearchContext(searchTerm);
   }
 
   const consumeIds = async (ids, substring = false) => {
     const unseenIds = [...new Set(ids)].filter((id) => !visited.has(id));
     for (let offset = 0; offset < unseenIds.length && results.length < limit; offset += DEFAULT_SEARCH_LIMIT) {
       const products = await productTable.bulkGet(unseenIds.slice(offset, offset + DEFAULT_SEARCH_LIMIT));
-      await accept(substring
-        ? products.filter((product) => product && containsNormalizedTerm(product, normalizedTerm))
-        : products);
+      await accept(products.filter((product) => {
+        if (!product) return false;
+        if (substring) {
+          return pharmacySearch
+            ? matchesPharmacySearchQuery(product, pharmacySearchContext)
+            : containsNormalizedTerm(product, normalizedTerm);
+        }
+        return !pharmacySearch || !normalizedTerm
+          || matchesPharmacySearchQuery(product, pharmacySearchContext);
+      }));
     }
   };
 
-  for (const index of ['name_lower', 'search_tokens', 'barcode_normalized', 'sku_normalized']) {
-    const collection = productTable.where(index).startsWith(normalizedTerm);
-    if (filterBatch) {
-      // Key-only indexed traversal avoids materializing all matching rows while
-      // async eligibility is resolved in bounded, deduplicated batches below.
-      await consumeIds(await collection.primaryKeys());
-    } else {
-      await accept(await collection
-        .distinct()
-        .filter((product) => !visited.has(product.id) && matches(product))
-        .limit(limit - results.length)
-        .toArray());
+  if (normalizedTerm) {
+    for (const index of ['name_lower', 'search_tokens', 'barcode_normalized', 'sku_normalized']) {
+      const collection = productTable.where(index).startsWith(normalizedTerm);
+      if (filterBatch) {
+        // Key-only indexed traversal avoids materializing all matching rows while
+        // async eligibility is resolved in bounded, deduplicated batches below.
+        await consumeIds(await collection.primaryKeys());
+      } else {
+        await accept(await collection
+          .distinct()
+          .filter((product) => !visited.has(product.id) && matchesProductFilters(product)
+            && (!pharmacySearch || matchesPharmacySearchQuery(product, pharmacySearchContext)))
+          .limit(limit - results.length)
+          .toArray());
+      }
+      if (results.length >= limit) return results;
     }
-    if (results.length >= limit) return results;
+
+    if (normalizedTerm.length >= 3) {
+      await consumeIds(await findSubstringCandidateIds(productTable, normalizedTerm), true);
+    }
   }
 
-  if (normalizedTerm.length >= 3) {
-    await consumeIds(await findSubstringCandidateIds(productTable, normalizedTerm), true);
+  // F01/F02 metadata already lives in the tenant's product rows, while older
+  // Dexie rows have no pharmacy search terms in their derived index. Search the
+  // same authorized table in read-only mode; no schema change or data rewrite.
+  if (pharmacySearch && results.length < limit) {
+    const pharmacyMatches = await productTable.filter((product) => (
+      !visited.has(product?.id)
+      && matchesProductFilters(product)
+      && matchesPharmacySearchQuery(product, pharmacySearchContext)
+    )).toArray();
+    await accept(pharmacyMatches);
   }
+
   return results;
 };

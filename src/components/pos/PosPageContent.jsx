@@ -248,6 +248,10 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         selectedCategoryId={data.activeCategoryId}
                         onSelectCategory={ui.handleSelectCategory}
                         searchTerm={data.searchTerm}
+                        pharmacySearchEnabled={features.isPharmacyBusiness}
+                        pharmacyFilters={data.pharmacyFilters}
+                        isSearchActive={data.isPharmacySearchActive}
+                        onPharmacyFiltersChange={ui.setPharmacyFilters}
                         searchFailed={data.searchFailed}
                         onSearchChange={ui.setSearchTerm}
                         onOpenScanner={() => ui.openModal('scanner')}

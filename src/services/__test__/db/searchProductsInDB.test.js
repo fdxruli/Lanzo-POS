@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { searchProductsInTable } from '../../db/productSearch';
 import { buildProductSearchFields } from '../../db/productSearchIndex';
+import { activeIngredientRepository } from '../../pharmacy/activeIngredientRepository';
+import { cloudProductToLocal, productToCloudPayload } from '../../products/productMapper';
 
 const createMockCollection = (rows) => {
   let currentRows = [...rows];
@@ -61,7 +63,8 @@ const createMockTable = (rows) => ({
     };
   },
   filter() {
-    throw new Error('La busqueda no debe hacer full scan');
+    const predicate = arguments[0];
+    return createMockCollection(rows.filter(predicate));
   }
 });
 
@@ -160,6 +163,150 @@ describe('searchProductsInDB', () => {
 
     expect(byName.map((product) => product.id)).toEqual(['p1']);
     expect(bySku.map((product) => product.id)).toEqual(['p1']);
+  });
+});
+
+describe('búsqueda farmacéutica F03', () => {
+  const activeIngredients = [
+    { id: 'ai-paracetamol', name: 'Paracetamol', isActive: true },
+    { id: 'ai-tramadol', name: 'Tramadol', isActive: true },
+    { id: 'ai-ketorolaco', name: 'Ketorolaco', isActive: true }
+  ];
+  const item = (id, name, amount, unit = 'mg', basisAmount = 1, basisUnit = 'tableta') => ({
+    activeIngredientId: id, name, amount, unit, basisAmount, basisUnit
+  });
+  const medicine = (id, name, activeIngredientsForProduct, pharmacy = {}) => ({
+    id,
+    name,
+    isActive: true,
+    productType: 'sellable',
+    activeSubstance: activeIngredientsForProduct.map(({ name: ingredientName }) => ingredientName).join(', '),
+    presentation: 'Caja con 10 tabletas',
+    metadata: { pharmacy: {
+      kind: 'medicine',
+      dosageFormCode: 'tablet',
+      dosageForm: 'Tableta',
+      commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+      composition: { version: 1, activeIngredients: activeIngredientsForProduct },
+      ...pharmacy
+    } }
+  });
+  const searchPharmacy = (rows, query, filters = {}) => searchProductsInTable(
+    createMockTable(withSearchFields(rows)), query, 'active', 50, null,
+    { pharmacySearch: true, pharmacyFilters: filters }
+  );
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('busca por principio activo en marcas distintas con normalización de acentos y espacios', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
+    const rows = [
+      medicine('brand-a', 'Marca Uno 500 mg', [item('ai-paracetamol', 'Paracetamol', 500)]),
+      medicine('brand-b', 'Marca Dos 500 mg', [item('ai-paracetamol', 'Paracetamol', 500)])
+    ];
+
+    const results = await searchPharmacy(rows, '  PARACETAMÓL   ');
+
+    expect(results.map(({ id }) => id)).toEqual(['brand-a', 'brand-b']);
+  });
+
+  it('requiere todos los principios activos de una búsqueda combinada', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
+    const rows = [
+      medicine('tramadol-solo', 'Marca Tramadol', [item('ai-tramadol', 'Tramadol', 50)]),
+      medicine('combo', 'Marca combinada', [
+        item('ai-tramadol', 'Tramadol', 37.5),
+        item('ai-ketorolaco', 'Ketorolaco', 10)
+      ])
+    ];
+
+    const results = await searchPharmacy(rows, 'Tramadol + ketorolaco');
+
+    expect(results.map(({ id }) => id)).toEqual(['combo']);
+  });
+
+  it('aplica filtros exactos de forma y literales de concentración y presentación', async () => {
+    const rows = [
+      medicine('tablet-500', 'Paracetamol 500 mg', [item('ai-paracetamol', 'Paracetamol', 500)]),
+      medicine('tablet-750', 'Paracetamol 750 mg', [item('ai-paracetamol', 'Paracetamol', 750)], {
+        commercialPresentation: { version: 1, packageType: 'box', contentAmount: 20, contentUnit: 'tableta' }
+      }),
+      medicine('suspension', 'Paracetamol suspensión', [item('ai-paracetamol', 'Paracetamol', 250, 'mg', 5, 'mL')], {
+        dosageFormCode: 'suspension', dosageForm: 'Suspensión',
+        commercialPresentation: { version: 1, packageType: 'bottle', contentAmount: 120, contentUnit: 'mL' }
+      })
+    ];
+
+    const results = await searchPharmacy(rows, '', {
+      dosageFormCode: 'tablet', concentration: '500 mg', presentation: '10 tabletas'
+    });
+
+    expect(results.map(({ id }) => id)).toEqual(['tablet-500']);
+  });
+
+  it('busca concentraciones decimales literales sin convertir unidades', async () => {
+    const rows = [
+      medicine('decimal-mg', 'Marca decimal', [item('ai-paracetamol', 'Paracetamol', 0.5)]),
+      medicine('microgram', 'Marca microgramo', [item('ai-paracetamol', 'Paracetamol', 500, 'µg')])
+    ];
+
+    const results = await searchPharmacy(rows, '', { concentration: '0.5 mg' });
+
+    expect(results.map(({ id }) => id)).toEqual(['decimal-mg']);
+  });
+
+  it('mantiene localizables medicamentos históricos con texto libre y sin composición', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
+    const historical = {
+      id: 'legacy', name: 'Marca Histórica 500 mg', isActive: true, productType: 'sellable',
+      activeSubstance: 'Paracetamol', concentration: '500 mg', presentation: 'Caja con 10 tabletas',
+      metadata: { pharmacy: { dosageForm: 'Tableta' } }
+    };
+
+    const results = await searchPharmacy([historical], 'paracetamol');
+
+    expect(results.map(({ id }) => id)).toEqual(['legacy']);
+    expect(results[0].metadata.pharmacy).not.toHaveProperty('composition');
+  });
+
+  it('conserva prioridad por código de barras exacto y deduplica coincidencias múltiples', async () => {
+    const rows = [
+      medicine('barcode-hit', 'Paracetamol 500 mg', [item('ai-paracetamol', 'Paracetamol', 500)], {
+        concentration: '500 mg'
+      }),
+      medicine('other', 'Paracetamol 500 mg', [item('ai-paracetamol', 'Paracetamol', 500)])
+    ].map((product, index) => ({ ...product, barcode: index === 0 ? '7501234567893' : '7500000000002' }));
+
+    const exact = await searchPharmacy(rows, '7501234567893');
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
+    const repeated = await searchPharmacy(rows, 'paracetamol');
+
+    expect(exact.map(({ id }) => id)).toEqual(['barcode-hit']);
+    expect(repeated.map(({ id }) => id)).toEqual(['barcode-hit', 'other']);
+    expect(new Set(repeated.map(({ id }) => id)).size).toBe(repeated.length);
+  });
+
+  it('usa los mismos campos después de la proyección Cloud y respeta elegibilidad existente', async () => {
+    vi.spyOn(activeIngredientRepository, 'list').mockResolvedValue(activeIngredients);
+    const local = medicine('local-paracetamol', 'Paracetamol local', [item('ai-paracetamol', 'Paracetamol', 500)]);
+    const cloudProjected = cloudProductToLocal(productToCloudPayload(
+      medicine('cloud-paracetamol', 'Marca Cloud', [item('ai-paracetamol', 'Paracetamol', 750)])
+    ));
+    const blocked = {
+      ...medicine('inactive-paracetamol', 'Paracetamol inactivo', [item('ai-paracetamol', 'Paracetamol', 250)]),
+      isActive: false
+    };
+    const results = await searchProductsInTable(
+      createMockTable(withSearchFields([local, cloudProjected, blocked])),
+      'paracetamol', 'all', 50, null,
+      { pharmacySearch: true, eligible: (product) => product.isActive !== false }
+    );
+
+    expect(results.map(({ id }) => id)).toEqual(['local-paracetamol', 'cloud-paracetamol']);
+    expect(results[1].metadata.pharmacy.composition.activeIngredients[0].activeIngredientId)
+      .toBe('ai-paracetamol');
   });
 });
 

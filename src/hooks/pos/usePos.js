@@ -16,7 +16,8 @@ export function usePos() {
     const pos = usePosPage();
     const modals = usePosModals();
     const mobileCart = useMobileCartModal();
-    const search = usePosSearch({ debounceMs: 300 });
+    const isPharmacyBusiness = features.activeRubros.includes('farmacia');
+    const search = usePosSearch({ debounceMs: 300, pharmacySearchEnabled: isPharmacyBusiness });
     const tablesCount = useActiveTablesCount(features.hasTables);
     const prescription = usePrescriptionFlow(modals);
 
@@ -56,7 +57,8 @@ export function usePos() {
         features: {
             hasTables: features.hasTables,
             hasLabFields: features.hasLabFields,
-            hasLayaway: features.hasLayaway
+            hasLayaway: features.hasLayaway,
+            isPharmacyBusiness
         },
 
         data: {
@@ -74,6 +76,8 @@ export function usePos() {
             categories: search.categories,
             activeCategoryId: search.activeCategoryId,
             searchTerm: search.searchTerm,
+            pharmacyFilters: search.pharmacyFilters,
+            isPharmacySearchActive: search.isSearchActive,
             searchFailed: search.searchFailed,
             hasOutOfStockItems: search.hasOutOfStockItems,
             hasExpiredItems: search.hasExpiredItems,
@@ -98,6 +102,7 @@ export function usePos() {
             openMobileCart: mobileCart.openCart,
             closeMobileCart: mobileCart.closeCart,
             setSearchTerm: search.setSearchTerm,
+            setPharmacyFilters: search.setPharmacyFilters,
             handleSelectCategory: search.handleSelectCategory,
             loadNextCatalogPage: search.loadNextPage,
             saveCatalogScrollPosition: search.saveScrollPosition

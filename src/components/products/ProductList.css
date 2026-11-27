@@ -802,6 +802,10 @@
   flex: 1 1 220px;
 }
 
+.product-list-pharmacy-filters {
+  margin: 2px 0 10px;
+}
+
 .product-status-filter,
 .product-category-filter {
   min-width: min(100%, 140px);

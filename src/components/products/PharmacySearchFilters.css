@@ -1,0 +1,116 @@
+.pharmacy-search-filters {
+  min-width: 0;
+  color: var(--text-dark);
+}
+
+.pharmacy-search-filters > summary {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.pharmacy-search-filters > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pharmacy-search-filters > summary:focus-visible,
+.pharmacy-search-filters__actions button:focus-visible {
+  outline: 2px solid var(--ui-focus-color, var(--primary-color));
+  outline-offset: 2px;
+}
+
+.pharmacy-search-filters__count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  color: var(--ui-action-primary-text, #fff);
+  background: var(--ui-action-primary-bg, var(--primary-color));
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pharmacy-search-filters__panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px;
+  background: var(--light-background, var(--card-background-color));
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+}
+
+.pharmacy-search-filters__field {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  color: var(--text-light);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pharmacy-search-filters__field input,
+.pharmacy-search-filters__field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 9px;
+  color: var(--text-dark);
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.pharmacy-search-filters__actions {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+}
+
+.pharmacy-search-filters__actions button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.pharmacy-search-filters__apply {
+  color: var(--ui-action-primary-text, #fff);
+  background: var(--ui-action-primary-bg, var(--primary-color));
+  border-color: var(--ui-action-primary-bg, var(--primary-color)) !important;
+}
+
+.pharmacy-search-filters__clear {
+  color: var(--text-dark);
+  background: var(--card-background-color);
+}
+
+@media (max-width: 420px) {
+  .pharmacy-search-filters__panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pharmacy-search-filters__actions {
+    grid-column: 1 / -1;
+  }
+}

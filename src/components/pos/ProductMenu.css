@@ -85,6 +85,10 @@
   margin-bottom: 10px;
 }
 
+.pos-pharmacy-search-filters {
+  margin: -2px 0 9px;
+}
+
 .pos-search-field {
   display: flex;
   min-width: 0;
@@ -408,6 +412,26 @@
   font-size: 0.79rem;
   font-weight: 700;
   line-height: 1.28;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.product-card__pharmacy-summary {
+  display: grid;
+  gap: 2px;
+  margin: -1px 0 5px;
+  color: var(--text-light);
+  font-size: 0.61rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.product-card__pharmacy-summary span {
+  display: -webkit-box;
+  max-height: 2.4em;
+  overflow: hidden;
   overflow-wrap: anywhere;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;

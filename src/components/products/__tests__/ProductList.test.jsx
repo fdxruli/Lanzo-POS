@@ -177,7 +177,7 @@ describe('ProductList batch-backed grocery details', () => {
     ]);
     render(<ProductList products={[]} categories={[{ id: 'drinks', name: 'Bebidas' }]} isLoading={false} />);
 
-    fireEvent.change(screen.getByPlaceholderText(/Buscar: Nombre, Código/i), { target: { value: 'agua' } });
+    fireEvent.change(screen.getByPlaceholderText(/Buscar nombre, código/i), { target: { value: 'agua' } });
     fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 
     expect(await screen.findByText('Agua mineral')).toBeInTheDocument();
