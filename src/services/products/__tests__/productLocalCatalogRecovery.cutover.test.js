@@ -35,7 +35,15 @@ vi.mock('../../sync/syncConstants', async (loadActual) => {
   const actual = await loadActual();
   return { ...actual, POS_SYNC_STORES: { ...actual.POS_SYNC_STORES, OUTBOX: 'posSyncOutbox' } };
 });
-vi.mock('../../database', () => ({}));
+vi.mock('../../database', async () => {
+  const { db } = await import('../../db/dexie');
+  return {
+    loadData: async (storeName, key = null) => {
+      const table = db.table(storeName);
+      return key ? table.get(key) : table.toArray();
+    }
+  };
+});
 vi.mock('../../db/general', () => ({ categoriesRepository: {} }));
 vi.mock('../../utils', () => ({ generateID: vi.fn() }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({}) } }));
