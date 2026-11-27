@@ -37,6 +37,8 @@ const persistFixture = async records => {
   });
 };
 
+const legacySyncActivity = { startInProgress: false, pullInProgress: false, outboxInProgress: false };
+
 const readFixture = async () => Object.fromEntries(await Promise.all(fixtureStores.map(async store => (
   [store, await businessDatabase.table(store).toArray()]
 ))));
@@ -68,12 +70,19 @@ window.qa = {
     }
     heldWriteCompletion = null;
   },
-  hasTrackedWrite: hasAdminUpdateWrites
+  hasTrackedWrite: hasAdminUpdateWrites,
+  beginLegacyPendingRead: () => {
+    legacySyncActivity.pullInProgress = true;
+    void fetch('/qa-pending-read').catch(() => {});
+  }
 };
 
 worker.setAdminServiceWorkerReloadGuard(() => {
   if (window.qa.protected) return 'Termina el cobro de prueba antes de actualizar.';
   if (hasAdminUpdateWrites()) return 'Estamos guardando información. Intenta actualizar en unos momentos.';
+  if (import.meta.env.VITE_UPDATE_QA_LEGACY_SYNC_BLOCKER && (
+    legacySyncActivity.startInProgress || legacySyncActivity.pullInProgress || legacySyncActivity.outboxInProgress
+  )) return 'Espera a que termine la sincronización antes de actualizar.';
   return true;
 });
 await worker.startAdminServiceWorker();

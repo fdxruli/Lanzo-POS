@@ -23,6 +23,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -33,6 +36,8 @@ jobs:
           npx vitest run src/pwa/__tests__ src/store/slices/createPWASlice.test.js
           src/components/common/UpdatePrompt.test.jsx src/components/common/UpdateControls.test.jsx
           src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx
+          src/services/sync/__tests__/posSyncOrchestrator.lifecycle.test.js
+          src/services/customers/__tests__/customerRepository.indexeddb.integration.test.jsx
           src/architecture/__tests__/vercelPrebuiltDeployment.test.js
           src/services/financial/__tests__ src/services/db/__tests__/databaseSchemaRegistration.test.js
           --maxWorkers=3
@@ -47,11 +52,13 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/lanzo-update-qa" playwright@1.56.1
           "$RUNNER_TEMP/lanzo-update-qa/node_modules/.bin/playwright" install --with-deps chromium
-      - name: Two builds on one real browser origin
+      - name: PR #600 base to candidate builds on one real browser origin
         run: node scripts/qa/pwa-updates/browser.mjs
         env:
           UPDATE_QA_PLAYWRIGHT: ${{ runner.temp }}/lanzo-update-qa/node_modules/playwright/index.mjs
           UPDATE_QA_OUTPUT: ${{ runner.temp }}/lanzo-update-browser
+          UPDATE_QA_BASELINE_REF: ${{ github.event.pull_request.base.sha }}
+          UPDATE_QA_CANDIDATE_REF: ${{ github.event.pull_request.head.sha }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

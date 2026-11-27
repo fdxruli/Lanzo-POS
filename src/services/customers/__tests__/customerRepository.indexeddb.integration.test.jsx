@@ -39,6 +39,7 @@ import { db, STORES } from '../../db/dexie';
 import { openTenantRuntime } from '../../db/tenantRuntimeRouter';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 import { syncOutboxService } from '../../sync/syncOutboxService';
+import { syncConflictService } from '../../sync/syncConflictService';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { customerLocalRepository } from '../customerLocalRepository';
 import { localCustomerToLegacyMigrationPayload } from '../customerMapper';
@@ -296,45 +297,150 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
-  it('stages a Cloud phone identity collision without aborting the customer delta or changing financial relations', async () => {
+  it('durably stages both phone identities, preserves local finance and Outbox, and replays the cursor safely', async () => {
     setCloudMode();
     const local = {
       id: 'local-identity-collision', name: 'Local fixture', phone: '5557000001',
-      phoneKey: '5557000001', debt: '120', debtCents: 12000, creditLimit: 200,
-      syncStatus: 'local', financialSource: 'local'
+      phoneKey: '5557000001', debt: '100', debtCents: 10000, creditLimit: 200,
+      serverVersion: 4, syncStatus: 'pending', pendingOperationId: 'outbox-phone-collision-1',
+      financialSource: 'local'
     };
     await db.table(STORES.CUSTOMERS).put(local);
-    await db.table(STORES.SALES).put({ id: 'sale-collision-fixture', customerId: local.id, total: 120, status: 'paid' });
-    await db.table(STORES.CUSTOMER_LEDGER).put({ id: 'ledger-collision-fixture', customerId: local.id, type: 'INITIAL_BALANCE', amount: '120' });
+    const outbox = await syncOutboxService.enqueueOperation({
+      licenseKey: TEST_LICENSE_KEY,
+      entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+      operation: SYNC_OPERATIONS.UPSERT,
+      entityId: local.id,
+      idempotencyKey: local.pendingOperationId,
+      payload: { customer: { id: local.id, phone: local.phone, phone_key: local.phoneKey }, expectedVersion: 4 }
+    });
+    const sales = [
+      { id: 'sale-collision-fixture', customerId: local.id, total: 100, status: 'paid', paymentStatus: 'paid' }
+    ];
+    const ledger = [
+      { id: 'ledger-charge-collision-fixture', customerId: local.id, type: 'CHARGE', amount: '120', amountCents: 12000 },
+      { id: 'ledger-payment-collision-fixture', customerId: local.id, type: 'PAYMENT', amount: '-20', amountCents: -2000 }
+    ];
+    await db.table(STORES.SALES).bulkPut(sales);
+    await db.table(STORES.CUSTOMER_LEDGER).bulkPut(ledger);
     await syncMetaService.setMeta('customers_last_change_seq', 12, { licenseKey: TEST_LICENSE_KEY });
     const incoming = remoteCustomer('cloud-identity-collision', {
-      name: 'Cloud fixture', phone: '555-700-0001', phone_key: '5557000001', server_version: 1
+      name: 'Cloud fixture', phone: '555-700-0001', phone_key: '5557000001', server_version: 8
     });
     mocks.cloud.pullCustomerChanges.mockReset().mockResolvedValue({
       success: true, customers: [incoming], latest_change_seq: 13, has_more: false
     });
 
-    await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], {
-      licenseKey: TEST_LICENSE_KEY
-    })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 13, syncDeferred: false });
+    const cursorWrite = vi.spyOn(syncMetaService, 'advanceMeta').mockResolvedValueOnce(null);
+    try {
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], {
+        licenseKey: TEST_LICENSE_KEY
+      })).rejects.toThrow('POS_SYNC_CURSOR_PERSIST_FAILED');
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(12);
+      expect(await customerLocalRepository.getCustomerById(local.id)).toMatchObject({
+        id: local.id, debt: 100, debtCents: 10000, phoneKey: local.phoneKey,
+        serverVersion: 4, syncStatus: 'conflict', pendingOperationId: local.pendingOperationId,
+        conflictReason: 'DUPLICATE_PHONE', conflictCloudSnapshot: { id: incoming.id, serverVersion: 8 }
+      });
+      expect(await customerLocalRepository.getCustomerById(incoming.id)).toBeUndefined();
+      expect(await db.table(STORES.SALES).bulkGet(sales.map(row => row.id))).toEqual(sales);
+      expect(await db.table(STORES.CUSTOMER_LEDGER).bulkGet(ledger.map(row => row.id))).toEqual(ledger);
+      expect(await db.table(POS_SYNC_STORES.OUTBOX).get(outbox.id)).toEqual(outbox);
 
-    expect(await customerLocalRepository.getCustomerById(local.id)).toMatchObject({
-      debt: 120, debtCents: 12000, phoneKey: local.phoneKey,
-      syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE',
-      conflictCloudSnapshot: { id: incoming.id, phone: incoming.phone }
+      let conflicts = await syncConflictService.listConflictsForEntity({
+        licenseKey: TEST_LICENSE_KEY, entityType: SYNC_ENTITY_TYPES.CUSTOMER, entityId: local.id
+      });
+      expect(conflicts).toMatchObject([{
+        id: `customer-phone-identity:${incoming.id}:${local.id}`,
+        entityType: 'customer', entityId: local.id, conflictType: 'DUPLICATE_PHONE', status: 'pending',
+        localPayload: { id: local.id, phoneKey: local.phoneKey, debtCents: 10000, serverVersion: 4, pendingOperationId: local.pendingOperationId },
+        serverPayload: { id: incoming.id, phoneKey: local.phoneKey, serverVersion: 8 },
+        metadata: { incomingCustomerId: incoming.id, competingLocalCustomerId: local.id }
+      }]);
+
+      // A runtime restart preserves the conflict, both identities, financial
+      // references and pending Outbox row; reopening does not clear the DB.
+      await closeTestTenantRuntime();
+      await openTenantRuntime(TEST_TENANT_IDENTITY);
+      grantCustomerFixtureActor();
+      conflicts = await syncConflictService.listConflictsForEntity({
+        licenseKey: TEST_LICENSE_KEY, entityType: SYNC_ENTITY_TYPES.CUSTOMER, entityId: local.id
+      });
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].serverPayload).toMatchObject({ id: incoming.id, serverVersion: 8 });
+      expect(await db.table(POS_SYNC_STORES.OUTBOX).get(outbox.id)).toEqual(outbox);
+
+      // Cursor stayed at 12, so the exact delta is fetched again. The stable
+      // conflict key prevents duplication; duplicate delivery is also safe.
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], {
+        licenseKey: TEST_LICENSE_KEY
+      })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 13, syncDeferred: false });
+      expect(await syncConflictService.getPendingConflicts({ entityType: 'customer' })).toHaveLength(1);
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(13);
+
+      await customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], { licenseKey: TEST_LICENSE_KEY });
+      expect(await db.table(POS_SYNC_STORES.CONFLICTS).where('id').equals(`customer-phone-identity:${incoming.id}:${local.id}`).count()).toBe(1);
+
+      // A newer Cloud version replaces the conflict's remote snapshot without
+      // changing the older local OCC base or pending local operation.
+      const latestIncoming = { ...incoming, name: 'Cloud fixture recent', server_version: 9, updated_at: '2026-11-27T00:00:00.000Z' };
+      mocks.cloud.pullCustomerChanges.mockResolvedValueOnce({
+        success: true, customers: [latestIncoming], latest_change_seq: 14, has_more: false
+      });
+      await customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 14 }], { licenseKey: TEST_LICENSE_KEY });
+      conflicts = await syncConflictService.listConflictsForEntity({
+        licenseKey: TEST_LICENSE_KEY, entityType: SYNC_ENTITY_TYPES.CUSTOMER, entityId: local.id
+      });
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0].serverPayload).toMatchObject({ id: incoming.id, name: 'Cloud fixture recent', serverVersion: 9 });
+      expect(await customerLocalRepository.getCustomerById(local.id)).toMatchObject({
+        id: local.id, debt: 100, debtCents: 10000, serverVersion: 4,
+        pendingOperationId: local.pendingOperationId, latestCloudSnapshot: { id: incoming.id, serverVersion: 9 }
+      });
+      expect(await customerLocalRepository.getCustomerById(incoming.id)).toBeUndefined();
+      expect(await db.table(STORES.SALES).bulkGet(sales.map(row => row.id))).toEqual(sales);
+      expect(await db.table(STORES.CUSTOMER_LEDGER).bulkGet(ledger.map(row => row.id))).toEqual(ledger);
+      expect(await db.table(POS_SYNC_STORES.OUTBOX).get(outbox.id)).toEqual(outbox);
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(14);
+    } finally {
+      cursorWrite.mockRestore();
+    }
+  });
+
+  it('keeps the customer cursor and indexed identity unchanged when durable phone-conflict persistence fails', async () => {
+    setCloudMode();
+    const local = {
+      id: 'local-identity-collision-save-fails', name: 'Local fixture', phone: '5557000003',
+      phoneKey: '5557000003', debt: 25, debtCents: 2500, syncStatus: 'local', financialSource: 'local'
+    };
+    await db.table(STORES.CUSTOMERS).put(local);
+    await syncMetaService.setMeta('customers_last_change_seq', 20, { licenseKey: TEST_LICENSE_KEY });
+    const incoming = remoteCustomer('cloud-identity-collision-save-fails', {
+      phone: '555-700-0003', phone_key: local.phoneKey, server_version: 3
     });
-    expect(await customerLocalRepository.getCustomerById('cloud-identity-collision')).toBeUndefined();
-    expect(await db.table(STORES.SALES).get('sale-collision-fixture')).toMatchObject({ customerId: local.id });
-    expect(await db.table(STORES.CUSTOMER_LEDGER).get('ledger-collision-fixture')).toMatchObject({ customerId: local.id });
-    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(13);
-    expect(await db.table(POS_SYNC_STORES.CONFLICTS).toArray()).toMatchObject([{
-      id: 'customer-phone-identity:cloud-identity-collision:local-identity-collision',
-      entityType: 'customer', entityId: local.id, conflictType: 'DUPLICATE_PHONE',
-      serverPayload: { id: incoming.id, debt: 0, debtCents: 0 }
-    }]);
+    mocks.cloud.pullCustomerChanges.mockResolvedValue({
+      success: true, customers: [incoming], latest_change_seq: 21, has_more: false
+    });
+    const failure = new Error('DURABLE_CONFLICT_WRITE_FAILED');
+    const saveConflict = vi.spyOn(syncConflictService, 'saveConflict').mockRejectedValueOnce(failure);
+    try {
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 21 }], {
+        licenseKey: TEST_LICENSE_KEY
+      })).rejects.toBe(failure);
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(20);
+      expect(await customerLocalRepository.getCustomerById(local.id)).toEqual(local);
+      expect(await customerLocalRepository.getCustomerById(incoming.id)).toBeUndefined();
+      expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(0);
 
-    await customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], { licenseKey: TEST_LICENSE_KEY });
-    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+      saveConflict.mockRestore();
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 21 }], {
+        licenseKey: TEST_LICENSE_KEY
+      })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 21 });
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(21);
+      expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+    } finally {
+      saveConflict.mockRestore();
+    }
   });
 
   it('stages a Cloud phone identity collision while applying a customer snapshot batch', async () => {
