@@ -1,5 +1,4 @@
 import { normalizeProductSearchValue } from '../db/productSearchIndex';
-import { activeIngredientRepository } from './activeIngredientRepository';
 import {
   formatCompositionActiveSubstance,
   formatCompositionConcentration,
@@ -171,6 +170,9 @@ export const createPharmacySearchContext = async (searchTerm) => {
 
   let activeIngredients = [];
   try {
+    // Load the tenant-scoped repository on demand. Its cloud adapter reaches
+    // the database facade, so an eager import here creates a startup cycle.
+    const { activeIngredientRepository } = await import('./activeIngredientRepository');
     activeIngredients = await activeIngredientRepository.list();
   } catch {
     // Name and legacy-field search still work if the local ingredient catalogue
