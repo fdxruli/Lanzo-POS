@@ -296,6 +296,70 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('stages a Cloud phone identity collision without aborting the customer delta or changing financial relations', async () => {
+    setCloudMode();
+    const local = {
+      id: 'local-identity-collision', name: 'Local fixture', phone: '5557000001',
+      phoneKey: '5557000001', debt: '120', debtCents: 12000, creditLimit: 200,
+      syncStatus: 'local', financialSource: 'local'
+    };
+    await db.table(STORES.CUSTOMERS).put(local);
+    await db.table(STORES.SALES).put({ id: 'sale-collision-fixture', customerId: local.id, total: 120, status: 'paid' });
+    await db.table(STORES.CUSTOMER_LEDGER).put({ id: 'ledger-collision-fixture', customerId: local.id, type: 'INITIAL_BALANCE', amount: '120' });
+    await syncMetaService.setMeta('customers_last_change_seq', 12, { licenseKey: TEST_LICENSE_KEY });
+    const incoming = remoteCustomer('cloud-identity-collision', {
+      name: 'Cloud fixture', phone: '555-700-0001', phone_key: '5557000001', server_version: 1
+    });
+    mocks.cloud.pullCustomerChanges.mockReset().mockResolvedValue({
+      success: true, customers: [incoming], latest_change_seq: 13, has_more: false
+    });
+
+    await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], {
+      licenseKey: TEST_LICENSE_KEY
+    })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 13, syncDeferred: false });
+
+    expect(await customerLocalRepository.getCustomerById(local.id)).toMatchObject({
+      debt: 120, debtCents: 12000, phoneKey: local.phoneKey,
+      syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE',
+      conflictCloudSnapshot: { id: incoming.id, phone: incoming.phone }
+    });
+    expect(await customerLocalRepository.getCustomerById('cloud-identity-collision')).toBeUndefined();
+    expect(await db.table(STORES.SALES).get('sale-collision-fixture')).toMatchObject({ customerId: local.id });
+    expect(await db.table(STORES.CUSTOMER_LEDGER).get('ledger-collision-fixture')).toMatchObject({ customerId: local.id });
+    expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(13);
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).toArray()).toMatchObject([{
+      id: 'customer-phone-identity:cloud-identity-collision:local-identity-collision',
+      entityType: 'customer', entityId: local.id, conflictType: 'DUPLICATE_PHONE',
+      serverPayload: { id: incoming.id, debt: 0, debtCents: 0 }
+    }]);
+
+    await customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 13 }], { licenseKey: TEST_LICENSE_KEY });
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+  });
+
+  it('stages a Cloud phone identity collision while applying a customer snapshot batch', async () => {
+    setCloudMode();
+    const local = {
+      id: 'local-snapshot-identity', name: 'Local snapshot fixture', phone: '5557000002',
+      phoneKey: '5557000002', debt: 12, debtCents: 1200, syncStatus: 'local', financialSource: 'local'
+    };
+    await db.table(STORES.CUSTOMERS).put(local);
+    const incoming = remoteCustomer('cloud-snapshot-identity', {
+      name: 'Cloud snapshot fixture', phone: '(555) 700-0002', phone_key: '5557000002', server_version: 1
+    });
+
+    await expect(customerLocalRepository.applyCloudCustomers([incoming])).resolves.toMatchObject([{
+      id: 'cloud-snapshot-identity', syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE'
+    }]);
+
+    expect(await customerLocalRepository.getCustomerById(local.id)).toMatchObject({
+      id: local.id, debt: 12, debtCents: 1200, phoneKey: local.phoneKey,
+      syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE'
+    });
+    expect(await customerLocalRepository.getCustomerById(incoming.id)).toBeUndefined();
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+  });
+
   it('recovers an omitted version-conflict projection using a complete V3 identity read, without recreating a customer', async () => {
     setCloudMode();
     const id = 'v3-conflict-read';

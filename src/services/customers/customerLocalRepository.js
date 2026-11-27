@@ -58,6 +58,59 @@ const ensureOpen = async () => {
   }
 };
 
+const findCustomerPhoneIdentityCollision = async (phoneKey, currentCustomerId) => {
+  if (!phoneKey) return null;
+  const indexedCustomer = await db.table(STORES.CUSTOMERS).where('phoneKey').equals(phoneKey).first();
+  return indexedCustomer?.id && indexedCustomer.id !== currentCustomerId ? indexedCustomer : null;
+};
+
+const persistCustomerPhoneIdentityConflict = async ({
+  incoming, existing, collision, source, operationId, actorHandle, creditProjection, acknowledgedPendingOperation
+}) => {
+  const localIdentity = existing || collision;
+  const conflictId = `customer-phone-identity:${incoming.id}:${collision.id}`;
+  actorHandle?.assertCurrent?.();
+  await syncConflictService.saveConflict({
+    id: conflictId,
+    entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+    entityId: localIdentity.id,
+    conflictType: 'DUPLICATE_PHONE',
+    localPayload: localIdentity,
+    serverPayload: incoming,
+    metadata: {
+      source: 'customer_cloud_phone_identity_collision',
+      incomingCustomerId: incoming.id,
+      competingLocalCustomerId: collision.id,
+      operationId: operationId || null
+    }
+  });
+  actorHandle?.assertCurrent?.();
+
+  const conflictCustomer = normalizeCustomerForLocal({
+    ...localIdentity,
+    ...(existing && source === 'credit_projection' ? creditProjection : {}),
+    latestCloudSnapshot: incoming,
+    conflictCloudSnapshot: incoming,
+    conflictFields: ['phone'],
+    conflictReason: 'DUPLICATE_PHONE'
+  }, localIdentity, {
+    syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
+    pendingOperationId: acknowledgedPendingOperation ? null : localIdentity.pendingOperationId || null,
+    conflictReason: 'DUPLICATE_PHONE'
+  });
+  await db.table(STORES.CUSTOMERS).put(conflictCustomer);
+  actorHandle?.assertCurrent?.();
+
+  // The Cloud row is preserved in the durable conflict record. It cannot be
+  // inserted under its second phoneKey until a person resolves the identity.
+  return existing || {
+    id: incoming.id,
+    syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
+    conflictReason: 'DUPLICATE_PHONE',
+    phoneIdentityConflict: true
+  };
+};
+
 const normalizeSearchTerm = (query = '') => String(query || '').trim().toLowerCase();
 
 const matchesSearch = (customer, normalizedTerm) => {
@@ -305,6 +358,23 @@ export const customerLocalRepository = {
       localCustomer.isActive = false;
       localCustomer.phoneKey = null;
       delete localCustomer.phoneKey;
+    }
+
+    const localPhoneKey = toIndexedPhoneKey(localCustomer.phoneKey ?? localCustomer.phone);
+    const phoneIdentityCollision = localCustomer.deletedAt || localCustomer.deletedTimestamp
+      ? null
+      : await findCustomerPhoneIdentityCollision(localPhoneKey, localCustomer.id);
+    if (phoneIdentityCollision) {
+      return persistCustomerPhoneIdentityConflict({
+        incoming: localCustomer,
+        existing,
+        collision: phoneIdentityCollision,
+        source,
+        operationId,
+        actorHandle,
+        creditProjection,
+        acknowledgedPendingOperation
+      });
     }
 
     delete localCustomer.latestCloudSnapshot;
