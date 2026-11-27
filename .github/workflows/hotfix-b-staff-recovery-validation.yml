@@ -1,0 +1,71 @@
+name: HOTFIX B Staff Safe Exit and Admin Recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/components/common/StaffLoginModal.jsx'
+      - 'src/components/common/StaffLoginModal.css'
+      - 'src/components/common/__tests__/StaffLoginModal.adminRecovery.test.jsx'
+      - 'src/services/supabase.js'
+      - 'src/services/__tests__/supabase.indexedDbBootstrap.test.js'
+      - 'src/services/__tests__/supabase.staffLogout.test.js'
+      - 'src/store/slices/license/licenseAdminActions.js'
+      - 'src/store/slices/license/licenseAdminActions.test.js'
+      - 'src/store/slices/license/licenseConstants.js'
+      - 'src/store/slices/license/licenseStaffActions.js'
+      - 'src/store/slices/license/licenseStaffActions.logout.test.js'
+      - 'supabase/migrations/20261127010000_admin_device_staff_only_recovery_r1.sql'
+      - 'supabase/tests/admin_device_staff_only_recovery_r1_test.sql'
+      - 'supabase/tests/fixtures/admin-device-staff-only-recovery-r1.sql'
+      - 'scripts/supabase/admin-device-staff-only-recovery-r1.node-test.mjs'
+      - '.github/workflows/hotfix-b-staff-recovery-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-contract:
+    name: Isolated PostgreSQL / recovery UI / Staff logout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - name: Verify reviewed migration digest
+        run: echo 'a553e66bf943e7bd304f0d989cf90d4fb3ab4728a866494a2e0daba4dc39bbdd  supabase/migrations/20261127010000_admin_device_staff_only_recovery_r1.sql' | sha256sum --check
+      - name: Canonical SQL contract plus real PostgreSQL concurrency
+        run: node --test scripts/supabase/admin-device-staff-only-recovery-r1.node-test.mjs
+        env:
+          RECOVERY_TEST_PGURL: postgresql://postgres@127.0.0.1:55432/postgres
+      - name: Recovery UI, owner auth, transport loss and Staff logout tests
+        run: >-
+          npx vitest run --maxWorkers=2
+          src/components/common/__tests__/StaffLoginModal.adminRecovery.test.jsx
+          src/services/__tests__/supabase.indexedDbBootstrap.test.js
+          src/services/__tests__/supabase.staffLogout.test.js
+          src/store/slices/license/licenseAdminActions.test.js
+          src/store/slices/license/licenseStaffActions.logout.test.js
+      - name: Focal ESLint
+        run: >-
+          npx eslint
+          src/components/common/StaffLoginModal.jsx
+          src/services/supabase.js
+          src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseStaffActions.js
+          scripts/supabase/admin-device-staff-only-recovery-r1.node-test.mjs

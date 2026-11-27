@@ -37,6 +37,10 @@ on:
       - 'src/store/slices/license/licenseSessionTransitions.test.js'
       - 'scripts/supabase/admin-staff-product-inventory-authority-contract.node-test.mjs'
       - '.github/workflows/free-local-product-authority-validation.yml'
+      - 'src/components/common/StaffLoginModal.jsx'
+      - 'src/store/slices/license/licenseAdminActions.js'
+      - 'src/store/slices/license/licenseStaffActions.js'
+      - 'src/services/supabase.js'
   workflow_dispatch:
 
 permissions:
