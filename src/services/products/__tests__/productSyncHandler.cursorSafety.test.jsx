@@ -198,10 +198,14 @@ describe('product sync read cursor safety', () => {
     };
     await db.table(STORES.ACTIVE_INGREDIENTS).put(activeIngredient);
     const product = pendingProduct('product-with-composition');
-    product.metadata = { pharmacy: { composition: { version: 1, activeIngredients: [{
-      activeIngredientId: activeIngredient.id, name: activeIngredient.name, amount: 500,
-      unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
-    }] } } };
+    product.metadata = { pharmacy: {
+      dosageFormCode: 'tablet', dosageForm: 'Tableta',
+      commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+      composition: { version: 1, activeIngredients: [{
+        activeIngredientId: activeIngredient.id, name: activeIngredient.name, amount: 500,
+        unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+      }] }
+    } };
     await db.table(STORES.MENU).put(product);
     const productOutbox = {
       id: 'product-operation', entityType: SYNC_ENTITY_TYPES.PRODUCT, status: 'pending',
@@ -232,8 +236,14 @@ describe('product sync read cursor safety', () => {
     });
     expect((await db.table(STORES.MENU).get(product.id)).metadata.pharmacy.composition.activeIngredients[0])
       .toMatchObject({ activeIngredientId: 'ai-canonical-id', name: 'Paracetamol' });
+    expect((await db.table(STORES.MENU).get(product.id)).metadata.pharmacy).toMatchObject({
+      dosageFormCode: 'tablet',
+      commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' }
+    });
     expect((await db.table('sync_outbox').get(productOutbox.id)).payload.product.metadata.pharmacy.composition.activeIngredients[0])
       .toMatchObject({ activeIngredientId: 'ai-canonical-id' });
+    expect((await db.table('sync_outbox').get(productOutbox.id)).payload.product.metadata.pharmacy.commercialPresentation)
+      .toEqual({ version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' });
   });
 
   it('keeps product pushes pending until each structured ingredient dependency is cloud-confirmed', async () => {

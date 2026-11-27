@@ -88,6 +88,70 @@ describe('Product Form V2 validation', () => {
     expect(validateProductForm(base({ stock: 0, pharmacyKind: 'medicine', compositionIngredients: [...complete, ...complete] }), { activeRubro: 'farmacia' }).fieldErrors.compositionIngredients).toMatch(/una vez/);
   });
 
+  it('requires normalized units, an explicit compatible base, dosage form and package for new medicine', () => {
+    const compositionIngredients = [{
+      activeIngredientId: 'ai-1', name: 'Aspirina', amount: '125.5', unit: 'mg', basisAmount: '1', basisUnit: 'tableta'
+    }];
+    const incomplete = validateProductForm(base({
+      stock: 0, pharmacyKind: 'medicine', compositionIngredients
+    }), { activeRubro: 'farmacia' });
+    expect(incomplete.fieldErrors.dosageFormCode).toBeTruthy();
+    expect(incomplete.fieldErrors.commercialPresentation).toBeTruthy();
+
+    const complete = validateProductForm(base({
+      stock: 0, pharmacyKind: 'medicine', compositionIngredients,
+      dosageFormCode: 'tablet', packageType: 'box', packageContentAmount: '10', packageContentUnit: 'tableta'
+    }), { activeRubro: 'farmacia' });
+    expect(complete.fieldErrors).not.toHaveProperty('compositionIngredients');
+    expect(complete.fieldErrors).not.toHaveProperty('dosageFormCode');
+    expect(complete.fieldErrors).not.toHaveProperty('commercialPresentation');
+
+    const ambiguousBase = validateProductForm(base({
+      stock: 0, pharmacyKind: 'medicine', dosageFormCode: 'tablet', packageType: 'box',
+      packageContentAmount: 10, packageContentUnit: 'tableta',
+      compositionIngredients: [{ ...compositionIngredients[0], basisUnit: '' }]
+    }), { activeRubro: 'farmacia' });
+    expect(ambiguousBase.fieldErrors.compositionIngredients).toBeTruthy();
+
+    const incompatiblePercentage = validateProductForm(base({
+      stock: 0, pharmacyKind: 'medicine', dosageFormCode: 'cream', packageType: 'tube',
+      packageContentAmount: 30, packageContentUnit: 'g',
+      compositionIngredients: [{ ...compositionIngredients[0], unit: '% m/m', basisUnit: 'mL' }]
+    }), { activeRubro: 'farmacia' });
+    expect(incompatiblePercentage.fieldErrors.compositionIngredients).toMatch(/compatibles/);
+  });
+
+  it('keeps historical pharmacy text and unknown F01 composition units readable and editable', () => {
+    const productToEdit = {
+      id: 'legacy-pharmacy', rubroContext: 'farmacia', name: 'Medicamento histórico', price: 25, cost: 10,
+      stock: 4, presentation: 'Caja texto anterior',
+      metadata: { pharmacy: {
+        kind: 'medicine', dosageForm: 'Liberación prolongada (texto anterior)',
+        composition: { version: 1, activeIngredients: [{
+          activeIngredientId: 'ai-legacy', name: 'Principio anterior', amount: 2.5,
+          unit: 'unidad de concentración anterior', basisAmount: 1, basisUnit: 'envase anterior'
+        }] }
+      } }
+    };
+    const defaults = getProductFormDefaults({ activeRubro: 'farmacia', productToEdit });
+    expect(defaults).toMatchObject({
+      dosageFormCode: '', dosageForm: 'Liberación prolongada (texto anterior)',
+      dosageFormLegacy: 'Liberación prolongada (texto anterior)', presentationLegacy: 'Caja texto anterior'
+    });
+    expect(validateProductForm({ ...base(), ...defaults }, {
+      activeRubro: 'farmacia', isEditing: true, productToEdit
+    }).fieldErrors).toEqual({});
+
+    const payload = buildProductFormPayload({ ...base(), ...defaults }, { activeRubro: 'farmacia', productToEdit });
+    expect(payload.metadata.pharmacy).toMatchObject({
+      dosageForm: 'Liberación prolongada (texto anterior)',
+      composition: { activeIngredients: [{
+        unit: 'unidad de concentración anterior', basisUnit: 'envase anterior', amount: 2.5
+      }] }
+    });
+    expect(payload.presentation).toBe('Caja texto anterior');
+  });
+
   it('rejects incomplete and duplicate variants', () => {
     const result = validateProductForm(base({ hasVariants: true, quickVariants: [{ talla: 'M', color: 'Rojo' }, { talla: 'M', color: 'Rojo' }, { talla: 'L', color: '' }] }));
     expect(result.fieldErrors.quickVariants).toBeTruthy();
@@ -116,6 +180,31 @@ describe('Product Form V2 payload', () => {
     const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'kg' }), { activeRubro: 'abarrotes' });
     expect(payload).toMatchObject({ saleType: 'bulk', unit: 'kg', bulkData: { sale: { unit: 'kg' } } });
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+  });
+
+  it('stores normalized pharmacy form and package metadata without changing commercial or stock fields', () => {
+    const productToEdit = {
+      id: 'medicine-1', name: 'Medicamento', stock: 18, saleType: 'unit', unit: 'pza', cost: 32, price: 49,
+      sku: 'MED-1', barcode: '750000000001', presentation: 'Caja anterior',
+      metadata: { pharmacy: { kind: 'medicine', dosageForm: 'Forma histórica' } }
+    };
+    const values = getProductFormDefaults({ activeRubro: 'farmacia', productToEdit });
+    const payload = buildProductFormPayload({
+      ...base({ stock: 18, unit: 'pza', cost: 32, price: 49 }),
+      ...values,
+      dosageFormCode: 'tablet', packageType: 'box', packageContentAmount: '10.5', packageContentUnit: 'tableta'
+    }, { activeRubro: 'farmacia', productToEdit });
+    expect(payload).toMatchObject({
+      stock: 18, unit: 'pza', cost: 32, price: 49, sku: 'MED-1', barcode: '750000000001',
+      presentation: 'Caja con 10.5 tabletas',
+      metadata: { pharmacy: {
+        dosageFormCode: 'tablet', dosageForm: 'Tableta', dosageFormLegacy: 'Forma histórica',
+        commercialPresentation: {
+          version: 1, packageType: 'box', contentAmount: 10.5, contentUnit: 'tableta',
+          legacyDescription: 'Caja anterior'
+        }
+      } }
+    });
   });
 
   it('defensively serializes produce sale modes with coherent canonical units', () => {

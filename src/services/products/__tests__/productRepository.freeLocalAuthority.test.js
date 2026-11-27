@@ -288,11 +288,15 @@ describe('productRepository FREE/local authority', () => {
       activeIngredientId: 'ai-paracetamol', name: 'Paracetamol', amount: 500,
       unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
     }] };
+    const commercialPresentation = { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' };
     mocks.prepareProduct.mockResolvedValueOnce({
       productId: 'product-paracetamol', editing: false, batches: [], inventoryValue: 0,
       product: {
         id: 'product-paracetamol', name: 'Paracetamol 500 mg', stock: 0, cost: 2, price: 5,
-        metadata: { pharmacy: { kind: 'medicine', composition } }
+        metadata: { pharmacy: {
+          kind: 'medicine', dosageFormCode: 'tablet', dosageForm: 'Tableta',
+          commercialPresentation, composition
+        } }
       }
     });
     mocks.savePreparedProductLocal.mockResolvedValueOnce({ success: true, productId: 'product-paracetamol' });
@@ -302,7 +306,10 @@ describe('productRepository FREE/local authority', () => {
         .resolves.toMatchObject({ success: true, productId: 'product-paracetamol' });
       expect(mocks.savePreparedProductLocal).toHaveBeenCalledWith(
         expect.objectContaining({ product: expect.objectContaining({
-          metadata: { pharmacy: { kind: 'medicine', composition } }
+          metadata: { pharmacy: {
+            kind: 'medicine', dosageFormCode: 'tablet', dosageForm: 'Tableta',
+            commercialPresentation, composition
+          } }
         }) }),
         { syncStatus: 'local' }
       );
