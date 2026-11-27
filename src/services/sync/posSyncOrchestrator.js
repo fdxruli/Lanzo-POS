@@ -13,6 +13,7 @@ import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
   POS_SYNC_FOCUS_PULL_COOLDOWN_MS,
+  POS_SYNC_HTTP_RECONCILE_INTERVAL_MS,
   POS_SYNC_REALTIME_PULL_DEBOUNCE_MS,
   POS_SYNC_DEFERRED_PULL_RETRY,
   shouldDeferPosBootstrapStartHook,
@@ -86,12 +87,16 @@ const runtime = {
   realtimePullScheduled: false,
   realtimePullTimer: null,
   deferredPullTimer: null,
+  deferredPullTimerKind: null,
   deferredPullPending: false,
   deferredHandlerReads: new Set(),
   deferredHandlerBlocked: new Set(),
   permissionRefreshEntityTypes: new Set(),
   deferredPullRetryAttempt: 0,
   deferredPullRetryAfterMs: 0,
+  deferredPullNotBeforeAt: 0,
+  deferredPullRetryAfterAt: 0,
+  reconciliationPullPending: false,
   lastPullReason: null,
   lastPullStartedAt: 0,
   lastPullFinishedAt: 0,
@@ -113,6 +118,7 @@ const setActivityFlag = (name, value) => {
 };
 
 const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const isDocumentVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 
 const hasDeferredHandlerReadWork = () => runtime.deferredHandlerReads.size > 0;
 const hasDeferredReadWork = () => runtime.deferredPullPending || hasDeferredHandlerReadWork();
@@ -207,12 +213,15 @@ const startOutboxSources = () => {
     clearOutboxTimer();
     scheduleOutbox();
     clearDeferredPullTimer();
-    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED && runtime.started
-      && (hasDeferredReadWork() || newlyGrantedHandlers.size > 0)) {
-      runtime.deferredHandlerBlocked.clear();
-      posSyncOrchestrator.schedulePullIncremental('actor_context_changed').catch((error) => {
-        Logger.warn('[PosSync] Pull tras cambio de actor fallo:', error, { diagnosticOperation: 'sync.pull' });
-      });
+    if (actor.status === ACTOR_RUNTIME_STATUS.GRANTED && runtime.started) {
+      if (hasDeferredReadWork() || newlyGrantedHandlers.size > 0) {
+        runtime.deferredHandlerBlocked.clear();
+        posSyncOrchestrator.schedulePullIncremental('actor_context_changed').catch((error) => {
+          Logger.warn('[PosSync] Pull tras cambio de actor fallo:', error, { diagnosticOperation: 'sync.pull' });
+        });
+      } else {
+        scheduleHttpReconciliation();
+      }
     }
   });
   const tenantChanged = localTenantAccessController.subscribe((state) => {
@@ -237,6 +246,7 @@ const startOutboxSources = () => {
   };
   if (typeof window !== 'undefined') {
     runtime.offlineListener = () => {
+      if (runtime.deferredPullTimerKind === 'reconciliation') runtime.reconciliationPullPending = true;
       clearOutboxTimer();
       clearDeferredPullTimer();
     };
@@ -311,9 +321,9 @@ const clearDeferredPullTimer = () => {
   const timer = runtime.deferredPullTimer;
   if (!timer) return;
   if (timer?.cancel) timer.cancel();
-  else if (typeof window !== 'undefined') window.clearTimeout(timer);
   else clearTimeout(timer);
   runtime.deferredPullTimer = null;
+  runtime.deferredPullTimerKind = null;
 };
 
 const setDeferredReadPending = async (
@@ -335,6 +345,9 @@ const setDeferredReadPending = async (
     if (!hasDeferredReadWork()) {
       runtime.deferredPullRetryAttempt = 0;
       runtime.deferredPullRetryAfterMs = 0;
+      runtime.deferredPullNotBeforeAt = 0;
+      runtime.deferredPullRetryAfterAt = 0;
+      await syncMetaService.setDeferredPullRetryAfterAt?.(0, licenseKey);
     }
   }
   return true;
@@ -380,13 +393,74 @@ const persistDeferredHandlerRead = async (
   if (!hasDeferredReadWork()) {
     runtime.deferredPullRetryAttempt = 0;
     runtime.deferredPullRetryAfterMs = 0;
+    runtime.deferredPullNotBeforeAt = 0;
+    runtime.deferredPullRetryAfterAt = 0;
+    await syncMetaService.setDeferredPullRetryAfterAt?.(0, licenseKey);
   }
   return true;
 };
 
+const schedulePullRecoveryWake = ({ reason, delayMs, kind, actorHandle }) => {
+  const owner = executionScope;
+  const { generation, licenseKey } = runtime;
+  const capturedActorRevision = actorRevision;
+  const wake = () => {
+    runtime.deferredPullTimer = null;
+    runtime.deferredPullTimerKind = null;
+    if (!runtime.started || !licenseKey || !canSchedule(owner)
+      || !isRuntimeGenerationCurrent(generation, licenseKey)
+      || actorRevision !== capturedActorRevision) return null;
+    if (!isBrowserOnline() || !isDocumentVisible()) {
+      runtime.reconciliationPullPending = true;
+      return null;
+    }
+    try {
+      actorHandle.assertCurrent();
+    } catch {
+      return null;
+    }
+    if (kind === 'deferred') {
+      if (!hasSchedulableDeferredReadWork()) return null;
+      if (Date.now() < runtime.deferredPullRetryAfterAt) {
+        scheduleDeferredPullRecovery(reason);
+        return null;
+      }
+    } else {
+      if (hasDeferredReadWork()) {
+        scheduleDeferredPullRecovery('deferred_retry');
+        return null;
+      }
+      runtime.reconciliationPullPending = false;
+    }
+    return posSyncOrchestrator.pullIncremental(reason).catch((error) => {
+      if (!isLocalTenantAccessError(error)) {
+        Logger.warn('[PosSync] Pull autónomo programado fallo:', error, { diagnosticOperation: 'sync.pull' });
+      }
+      return null;
+    });
+  };
+
+  try {
+    runtime.deferredPullTimer = owner
+      ? owner.schedule(`pos:${kind === 'deferred' ? 'deferred_pull' : 'http_reconcile'}`, wake, delayMs)
+      : setTimeout(wake, delayMs);
+    runtime.deferredPullTimerKind = kind;
+    return true;
+  } catch (error) {
+    runtime.deferredPullTimer = null;
+    runtime.deferredPullTimerKind = null;
+    if (!isLocalTenantAccessError(error)) {
+      Logger.warn('[PosSync] No se pudo programar recuperación de lectura:', error);
+    }
+    return false;
+  }
+};
+
 const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
-  if (!hasSchedulableDeferredReadWork() || runtime.deferredPullTimer || !runtime.started
-    || !runtime.licenseKey || !isBrowserOnline() || !canSchedule()) return false;
+  if (!hasSchedulableDeferredReadWork() || !runtime.started || !runtime.licenseKey
+    || !isBrowserOnline() || !canSchedule()) return false;
+  if (runtime.deferredPullTimerKind === 'deferred') return false;
+  if (runtime.deferredPullTimerKind === 'reconciliation') clearDeferredPullTimer();
 
   let actorHandle;
   try {
@@ -395,59 +469,117 @@ const scheduleDeferredPullRecovery = (reason = 'deferred_retry') => {
     return false;
   }
 
-  const owner = executionScope;
-  const { generation, licenseKey } = runtime;
-  const capturedActorRevision = actorRevision;
   const retryIndex = Math.min(runtime.deferredPullRetryAttempt, 10);
   const exponentialDelayMs = Math.min(
     POS_SYNC_DEFERRED_PULL_RETRY.MAX_DELAY_MS,
     POS_SYNC_DEFERRED_PULL_RETRY.BASE_DELAY_MS * (2 ** retryIndex)
   );
-  const delayMs = Math.max(exponentialDelayMs, Number(runtime.deferredPullRetryAfterMs) || 0);
+  const notBeforeDelayMs = Math.max(0, runtime.deferredPullRetryAfterAt - Date.now());
+  const delayMs = Math.max(
+    exponentialDelayMs,
+    Number(runtime.deferredPullRetryAfterMs) || 0,
+    notBeforeDelayMs
+  );
   runtime.deferredPullRetryAfterMs = 0;
   runtime.deferredPullRetryAttempt = Math.min(runtime.deferredPullRetryAttempt + 1, Number.MAX_SAFE_INTEGER);
+  runtime.deferredPullNotBeforeAt = Math.max(runtime.deferredPullNotBeforeAt, Date.now() + delayMs);
 
-  const wake = () => {
-    runtime.deferredPullTimer = null;
-    if (!hasSchedulableDeferredReadWork() || !runtime.started || !isBrowserOnline()
-      || !canSchedule(owner) || !isRuntimeGenerationCurrent(generation, licenseKey)
-      || actorRevision !== capturedActorRevision) return null;
-    try {
-      actorHandle.assertCurrent();
-    } catch {
-      return null;
-    }
-    return posSyncOrchestrator.pullIncremental(reason);
-  };
+  const scheduled = schedulePullRecoveryWake({ reason, delayMs, kind: 'deferred', actorHandle });
+  if (scheduled) Logger.log('[POS Sync] Lectura aplazada; siguiente intento programado.', { delayMs });
+  return scheduled;
+};
 
-  try {
-    runtime.deferredPullTimer = owner
-      ? owner.schedule('pos:deferred_pull', wake, delayMs)
-      : setTimeout(wake, delayMs);
-    Logger.log('[POS Sync] Lectura aplazada; siguiente intento programado.', { delayMs });
-    return true;
-  } catch (error) {
-    runtime.deferredPullTimer = null;
-    if (!isLocalTenantAccessError(error)) {
-      Logger.warn('[PosSync] No se pudo programar recuperación de lectura:', error);
-    }
+const scheduleHttpReconciliation = () => {
+  if (!runtime.started || !runtime.licenseKey || !isBrowserOnline() || !canSchedule()) return false;
+  if (hasDeferredReadWork()) return scheduleDeferredPullRecovery('deferred_retry');
+  if (runtime.deferredPullTimer) return false;
+  if (!isDocumentVisible()) {
+    runtime.reconciliationPullPending = true;
     return false;
+  }
+
+  let actorHandle;
+  try {
+    actorHandle = actorRuntimeController.capture();
+  } catch {
+    return false;
+  }
+  return schedulePullRecoveryWake({
+    reason: 'periodic_reconcile',
+    delayMs: POS_SYNC_HTTP_RECONCILE_INTERVAL_MS,
+    kind: 'reconciliation',
+    actorHandle
+  });
+};
+
+const MAX_PULL_RETRY_AFTER_MS = 15 * 60 * 1000;
+const getPullRetryAfterMs = (error) => {
+  const headers = error?.headers || error?.response?.headers || error?.context?.headers
+    || error?.raw?.headers;
+  const headerValue = headers?.get?.('retry-after')
+    ?? headers?.get?.('Retry-After')
+    ?? headers?.['retry-after']
+    ?? headers?.['Retry-After'];
+  const value = error?.retryAfterSeconds
+    ?? error?.retry_after_seconds
+    ?? error?.response?.retry_after_seconds
+    ?? error?.response?.retryAfterSeconds
+    ?? error?.raw?.retry_after_seconds
+    ?? headerValue;
+  if (value === null || value === undefined || value === '') return 0;
+  const seconds = Number(value);
+  const delayMs = Number.isFinite(seconds) && seconds > 0
+    ? seconds * 1000
+    : Math.max(0, Date.parse(value) - Date.now());
+  return Number.isFinite(delayMs) && delayMs > 0
+    ? Math.min(delayMs, MAX_PULL_RETRY_AFTER_MS)
+    : 0;
+};
+
+const rememberPullRetryAfter = async (error, licenseKey = runtime.licenseKey) => {
+  const retryAfterMs = getPullRetryAfterMs(error);
+  runtime.deferredPullRetryAfterMs = Math.max(
+    runtime.deferredPullRetryAfterMs,
+    retryAfterMs
+  );
+  if (retryAfterMs <= 0) return;
+
+  runtime.deferredPullNotBeforeAt = Math.max(
+    runtime.deferredPullNotBeforeAt,
+    Date.now() + retryAfterMs
+  );
+  runtime.deferredPullRetryAfterAt = Math.max(
+    runtime.deferredPullRetryAfterAt,
+    Date.now() + retryAfterMs
+  );
+  const persisted = await syncMetaService.setDeferredPullRetryAfterAt?.(
+    runtime.deferredPullRetryAfterAt,
+    licenseKey
+  );
+  if (persisted === false) {
+    Logger.warn('[PosSync] Retry-After no pudo persistirse; se respetará en memoria.', {
+      diagnosticOperation: 'sync.pull'
+    });
   }
 };
 
 const isRecoverablePullFailure = (error) => {
   if (!error || isLocalTenantAccessError(error) || isActorRuntimeError(error)
     || classifyActorAuthorityError(error)) return false;
-  const code = String(error.code || error.response?.code || '').toUpperCase();
+  const code = String(error.code || error.response?.code || error.raw?.code || '').toUpperCase();
+  const status = Number(error.status ?? error.response?.status ?? error.context?.status ?? error.raw?.status);
   if (['401', '403', '42501', 'PGRST301', 'PGRST302'].includes(code)) return false;
+  if (status === 401 || status === 403) return false;
+  if (isCloudClientUpdateRequired(error) || isCloudClientUpdateRequired(error.raw)) return false;
+  if (status === 408 || status === 429 || status >= 500) {
+    if (error.retryable === false || error.response?.retryable === false
+      || error.catalogSyncContext?.retryable === false) return false;
+    return true;
+  }
   if (error.retryable === true || error.response?.retryable === true
     || error.catalogSyncContext?.retryable === true) return true;
   if (error.retryable === false || error.response?.retryable === false
     || error.catalogSyncContext?.retryable === false) return false;
-
-  const status = Number(error.status ?? error.response?.status);
-  if (status === 401 || status === 403) return false;
-  if (status === 408 || status === 429 || status >= 500) return true;
   return !error.code;
 };
 
@@ -482,15 +614,7 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
         }
       );
       if (result?.success === false && result.error && isRecoverablePullFailure(result.error)) {
-        const retryAfterSeconds = Number(result.error.retryAfterSeconds
-          ?? result.error.response?.retry_after_seconds
-          ?? result.error.response?.retryAfterSeconds);
-        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-          runtime.deferredPullRetryAfterMs = Math.max(
-            runtime.deferredPullRetryAfterMs,
-            Math.min(retryAfterSeconds * 1000, 15 * 60 * 1000)
-          );
-        }
+        await rememberPullRetryAfter(result.error, licenseKey);
         if (await persistDeferredHandlerRead(entityType, {
           state: 'deferred', handler, licenseKey, generation: runtime.generation, capturedActorRevision: actorRevision
         })) scheduleDeferredPullRecovery('snapshot_start_deferred');
@@ -607,14 +731,7 @@ const dispatchPulledEvents = async (
 
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
       if (isRecoverablePullFailure(error)) {
-        const retryAfterSeconds = Number(error.retryAfterSeconds ?? error.response?.retry_after_seconds
-          ?? error.response?.retryAfterSeconds);
-        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-          runtime.deferredPullRetryAfterMs = Math.max(
-            runtime.deferredPullRetryAfterMs,
-            Math.min(retryAfterSeconds * 1000, 15 * 60 * 1000)
-          );
-        }
+        await rememberPullRetryAfter(error, licenseKey);
         const persisted = await persistDeferredHandlerRead(entityType, {
           state: 'deferred', handler, licenseKey, generation, capturedActorRevision
         });
@@ -932,6 +1049,9 @@ export const posSyncOrchestrator = {
         runtime.permissionRefreshEntityTypes.clear();
         runtime.deferredPullRetryAttempt = 0;
         runtime.deferredPullRetryAfterMs = 0;
+        runtime.deferredPullNotBeforeAt = 0;
+        runtime.deferredPullRetryAfterAt = 0;
+        runtime.reconciliationPullPending = false;
       }
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
@@ -940,14 +1060,20 @@ export const posSyncOrchestrator = {
 
       runtime.started = true;
       runtime.licenseKey = licenseKey;
-      const [persistedDeferredReadPending, persistedDeferredHandlerReads] = await Promise.all([
+      const [persistedDeferredReadPending, persistedDeferredHandlerReads, persistedDeferredPullRetryAfterAt] = await Promise.all([
         syncMetaService.getDeferredReadPending(licenseKey),
-        syncMetaService.getDeferredHandlerReads(licenseKey)
+        syncMetaService.getDeferredHandlerReads(licenseKey),
+        syncMetaService.getDeferredPullRetryAfterAt?.(licenseKey) ?? 0
       ]);
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
         return { started: false, status: runtime.status, stale: true };
       }
       runtime.deferredPullPending = runtime.deferredPullPending || persistedDeferredReadPending === true;
+      const persistedRetryAt = Number(persistedDeferredPullRetryAfterAt);
+      if (Number.isFinite(persistedRetryAt) && persistedRetryAt > Date.now()) {
+        runtime.deferredPullNotBeforeAt = Math.max(runtime.deferredPullNotBeforeAt, persistedRetryAt);
+        runtime.deferredPullRetryAfterAt = Math.max(runtime.deferredPullRetryAfterAt, persistedRetryAt);
+      }
       runtime.deferredHandlerReads = new Set([
         ...runtime.deferredHandlerReads,
         ...(Array.isArray(persistedDeferredHandlerReads) ? persistedDeferredHandlerReads : [])
@@ -1043,6 +1169,7 @@ export const posSyncOrchestrator = {
       }
 
       if (hasSchedulableDeferredReadWork()) scheduleDeferredPullRecovery('deferred_startup');
+      else scheduleHttpReconciliation();
 
       return {
         started: true,
@@ -1088,6 +1215,9 @@ export const posSyncOrchestrator = {
     runtime.pendingPull = false;
     runtime.deferredPullRetryAttempt = 0;
     runtime.deferredPullRetryAfterMs = 0;
+    runtime.deferredPullNotBeforeAt = 0;
+    runtime.deferredPullRetryAfterAt = 0;
+    runtime.reconciliationPullPending = false;
     runtime.deferredHandlerBlocked.clear();
     runtime.permissionRefreshEntityTypes.clear();
     stopOutboxSources();
@@ -1172,6 +1302,7 @@ export const posSyncOrchestrator = {
     if (
       runtime.realtimeStatus === SYNC_STATUS.ONLINE &&
       !hasDeferredReadWork() &&
+      !runtime.reconciliationPullPending &&
       runtime.lastForegroundPullAt > 0 &&
       elapsedSinceLastForegroundPull < POS_SYNC_FOCUS_PULL_COOLDOWN_MS
     ) {
@@ -1212,6 +1343,15 @@ export const posSyncOrchestrator = {
       return null;
     }
 
+    if (hasDeferredReadWork() && Date.now() < runtime.deferredPullRetryAfterAt) {
+      if (hasSchedulableDeferredReadWork()) scheduleDeferredPullRecovery('deferred_retry_after');
+      return {
+        skipped: true,
+        reason: 'retry_after_pending',
+        retryAt: runtime.deferredPullRetryAfterAt
+      };
+    }
+
     if (runtime.pullInProgress) {
       clearDeferredPullTimer();
       runtime.pendingPull = true;
@@ -1226,6 +1366,7 @@ export const posSyncOrchestrator = {
 
     setActivityFlag('pullInProgress', true);
     clearDeferredPullTimer();
+    runtime.reconciliationPullPending = false;
     runtime.lastPullReason = reason;
     runtime.lastPullStartedAt = Date.now();
 
@@ -1288,9 +1429,16 @@ export const posSyncOrchestrator = {
               generation: operationGeneration,
               capturedActorRevision: operationActorRevision
             });
-          } else if (response.retryable && hasSchedulableDeferredReadWork()
-            && isRecoverablePullFailure(response)) {
-            scheduleDeferredPullRecovery('deferred_retryable_response');
+          } else if (isRecoverablePullFailure(response)) {
+            const persisted = await setDeferredReadPending(true, {
+              licenseKey: operationLicenseKey,
+              generation: operationGeneration,
+              capturedActorRevision: operationActorRevision
+            });
+            if (persisted && isPullContextCurrent()) {
+              await rememberPullRetryAfter(response, operationLicenseKey);
+              scheduleDeferredPullRecovery('deferred_retryable_response');
+            }
           } else {
             clearDeferredPullTimer();
           }
@@ -1335,6 +1483,13 @@ export const posSyncOrchestrator = {
               licenseKey: operationLicenseKey,
               generation: operationGeneration,
               reason: 'handler_read_retryable_failure'
+            });
+          }
+          if (!pageApplied?.error && isPullContextCurrent()) {
+            await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
+              licenseKey: operationLicenseKey,
+              generation: operationGeneration,
+              reason: 'handler_read_incomplete'
             });
           }
           return null;
@@ -1398,12 +1553,21 @@ export const posSyncOrchestrator = {
           if (recoveryResult?.retryable && hasSchedulableDeferredReadWork()) {
             scheduleDeferredPullRecovery('deferred_handler_retry');
           }
+          if (isPullContextCurrent()) {
+            await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
+              licenseKey: operationLicenseKey,
+              generation: operationGeneration,
+              reason: 'handler_read_incomplete'
+            });
+          }
           return null;
         }
       }
 
       if (hasSchedulableDeferredReadWork()) {
         scheduleDeferredPullRecovery(runtime.deferredPullPending ? 'deferred_retry' : 'deferred_handler_retry');
+      } else if (!hasDeferredReadWork()) {
+        scheduleHttpReconciliation();
       }
 
       await assertLocalTenantSyncAccess(
@@ -1415,9 +1579,12 @@ export const posSyncOrchestrator = {
       await syncMetaService.setLastPullError(null, operationLicenseKey);
 
       // A completed HTTP pull does not establish a live Realtime subscription.
-      await setRuntimeStatus(isBrowserOnline()
-        ? (runtime.realtimeStatus === SYNC_STATUS.ONLINE ? SYNC_STATUS.ONLINE : SYNC_STATUS.DEGRADED)
-        : SYNC_STATUS.OFFLINE, {
+      const hasPendingReadWork = hasDeferredReadWork();
+      await setRuntimeStatus(!isBrowserOnline()
+        ? SYNC_STATUS.OFFLINE
+        : (hasPendingReadWork || runtime.realtimeStatus !== SYNC_STATUS.ONLINE
+          ? SYNC_STATUS.DEGRADED
+          : SYNC_STATUS.ONLINE), {
         licenseKey: operationLicenseKey,
         generation: operationGeneration,
         reason: `pull_${reason}`
@@ -1436,13 +1603,21 @@ export const posSyncOrchestrator = {
       }
       if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) return null;
       Logger.warn('[PosSync] Pull incremental fallo:', error, { diagnosticOperation: 'sync.pull' });
-      if (hasSchedulableDeferredReadWork()) {
-        runtime.pendingPull = false;
-        if (isRecoverablePullFailure(error) && isPullContextCurrent() && isBrowserOnline()) {
-          scheduleDeferredPullRecovery(runtime.deferredPullPending ? 'deferred_retry' : 'deferred_handler_retry');
+      runtime.pendingPull = false;
+      if (isRecoverablePullFailure(error) && isPullContextCurrent() && isBrowserOnline()) {
+        const persisted = await setDeferredReadPending(true, {
+          licenseKey: operationLicenseKey,
+          generation: operationGeneration,
+          capturedActorRevision: operationActorRevision
+        });
+        if (persisted && isPullContextCurrent()) {
+          await rememberPullRetryAfter(error, operationLicenseKey);
+          scheduleDeferredPullRecovery('deferred_retryable_error');
         } else {
           clearDeferredPullTimer();
         }
+      } else if (hasDeferredReadWork()) {
+        clearDeferredPullTimer();
       }
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
@@ -1613,11 +1788,12 @@ export const posSyncOrchestrator = {
   },
 
   getStatus() {
-    const { realtimePullTimer, deferredPullTimer, ...safeRuntime } = runtime;
+    const { realtimePullTimer, deferredPullTimer, deferredPullTimerKind, ...safeRuntime } = runtime;
     return {
       ...safeRuntime,
       realtimePullScheduled: Boolean(realtimePullTimer) || runtime.realtimePullScheduled,
-      deferredPullScheduled: Boolean(deferredPullTimer),
+      deferredPullScheduled: Boolean(deferredPullTimer && deferredPullTimerKind === 'deferred'),
+      reconciliationPullScheduled: Boolean(deferredPullTimer && deferredPullTimerKind === 'reconciliation'),
       handlers: Array.from(entityHandlers.keys())
     };
   }

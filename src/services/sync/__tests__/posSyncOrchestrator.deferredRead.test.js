@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   cursor: 0,
   deferredReadPending: false,
   deferredByLicense: new Map(),
+  deferredRetryAfterByLicense: new Map(),
   deferredHandlersByLicense: new Map(),
   assertTenant: vi.fn(),
   actor: { status: 'granted', generation: 1, sessionId: 'session-a', actorKey: 'admin:a', permissions: [] },
@@ -69,6 +70,11 @@ vi.mock('../syncMetaService', () => ({
     setDeferredReadPending: vi.fn(async (value, licenseKey) => {
       mocks.deferredByLicense.set(licenseKey, Boolean(value));
       if (licenseKey === 'TENANT-A') mocks.deferredReadPending = Boolean(value);
+      return true;
+    }),
+    getDeferredPullRetryAfterAt: vi.fn(async licenseKey => mocks.deferredRetryAfterByLicense.get(licenseKey) || 0),
+    setDeferredPullRetryAfterAt: vi.fn(async (value, licenseKey) => {
+      mocks.deferredRetryAfterByLicense.set(licenseKey, Number(value) || 0);
       return true;
     }),
     getDeferredHandlerReads: vi.fn(async licenseKey => mocks.deferredHandlersByLicense.get(licenseKey) || []),
@@ -136,6 +142,7 @@ beforeEach(async () => {
   mocks.cursor = 0;
   mocks.deferredReadPending = false;
   mocks.deferredByLicense.clear();
+  mocks.deferredRetryAfterByLicense.clear();
   mocks.deferredHandlersByLicense.clear();
   mocks.actor = { status: 'granted', generation: 1, sessionId: 'session-a', actorKey: 'admin:a', permissions: [] };
   mocks.actorListeners.clear();
@@ -343,6 +350,96 @@ describe('POS incremental recovery from a deferred safe frontier', () => {
       expect(orchestrator.getStatus().deferredPullPending).toBe(true);
     }
     expect(orchestrator.getStatus().deferredPullScheduled).toBe(true);
+  });
+
+  it('SYNC-02: persists and retries a first HTTP 429 after Retry-After without another trigger', async () => {
+    mocks.cursor = 175;
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: Object.assign(new Error('rate limited'), {
+        code: 'HTTP_ERROR',
+        status: 429,
+        retryAfterSeconds: 60
+      })
+    });
+    replyWith({
+      events: [{ entity_type: 'customer', change_seq: 177, id: 'customer-177' }],
+      latest_change_seq: 177,
+      server_latest_change_seq: 177
+    });
+    const onEvents = vi.fn().mockResolvedValue({ applied: 1 });
+
+    await start();
+    orchestrator.registerEntitySyncHandler('customer', { onEvents });
+    await expect(orchestrator.pullIncremental('realtime_recovery')).resolves.toBeNull();
+
+    expect(mocks.cursor).toBe(175);
+    expect(mocks.deferredReadPending).toBe(true);
+    const retryAt = mocks.deferredRetryAfterByLicense.get('TENANT-A');
+    expect(retryAt).toBeGreaterThan(Date.now());
+    expect(orchestrator.getStatus()).toMatchObject({
+      status: 'degraded',
+      deferredPullPending: true,
+      deferredPullScheduled: true
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+
+    await orchestrator.stop({ preserveStatus: true });
+    await start();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(orchestrator.getStatus()).toMatchObject({ deferredPullPending: true, deferredPullScheduled: true });
+
+    await vi.advanceTimersByTimeAsync(retryAt - Date.now() - 1);
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(onEvents).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls.map(([, args]) => args.p_since_change_seq)).toEqual([175, 175]);
+    expect(onEvents).toHaveBeenCalledOnce();
+    expect(mocks.cursor).toBe(177);
+    expect(mocks.deferredReadPending).toBe(false);
+    expect(orchestrator.getStatus()).toMatchObject({
+      deferredPullPending: false,
+      deferredPullScheduled: false
+    });
+  });
+
+  it('does not let Realtime or online triggers bypass a stored Retry-After deadline', async () => {
+    mocks.cursor = 175;
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: Object.assign(new Error('rate limited'), {
+        code: 'HTTP_ERROR',
+        status: 429,
+        retryAfterSeconds: 60
+      })
+    });
+    replyWith({ latest_change_seq: 177, server_latest_change_seq: 177 });
+
+    await start();
+    await orchestrator.pullIncremental('first_failure');
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    orchestrator.schedulePullIncremental('realtime').catch(() => {});
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    await flush();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(orchestrator.getStatus()).toMatchObject({ deferredPullPending: true });
+    await vi.advanceTimersByTimeAsync(57_000);
+    await flush();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.cursor).toBe(177);
   });
 
   it('backs off after an explicit recoverable response while deferred work remains', async () => {
