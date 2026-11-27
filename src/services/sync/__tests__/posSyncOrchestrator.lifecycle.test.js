@@ -158,6 +158,7 @@ describe('posSyncOrchestrator lifecycle fencing', () => {
     await vi.waitFor(() => expect(posSyncOrchestrator.getUpdateActivity()).toBe(true));
     expect(listener).toHaveBeenCalled();
 
+    await vi.waitFor(() => expect(finishOutboxRead).toBeTypeOf('function'));
     finishOutboxRead([]);
     await expect(operation).resolves.toMatchObject({ processed: 0 });
     expect(posSyncOrchestrator.getUpdateActivity()).toBe(false);

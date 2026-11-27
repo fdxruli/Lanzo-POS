@@ -973,11 +973,18 @@ export const posSyncOrchestrator = {
 
       startOutboxSources();
       attachOnlineListener();
-      await syncOutboxService.resetStuckProcessing(
+      const recoveredStuckOperations = await syncOutboxService.resetStuckProcessing(
         SYNC_LIMITS.STUCK_PROCESSING_MS,
         { licenseKey }
       );
+      const nextStuckRecoveryAt = await syncOutboxService.getNextStuckProcessingAt?.({
+        thresholdMs: SYNC_LIMITS.STUCK_PROCESSING_MS,
+        licenseKey
+      });
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
+      if (Number(recoveredStuckOperations) > 0) scheduleOutbox();
+      else if (nextStuckRecoveryAt !== null && nextStuckRecoveryAt !== undefined
+        && Number.isFinite(Number(nextStuckRecoveryAt))) scheduleOutbox(Number(nextStuckRecoveryAt));
 
       runtime.realtimeStatus = SYNC_STATUS.DEGRADED;
       if (!isBrowserOnline()) {
@@ -1503,8 +1510,20 @@ export const posSyncOrchestrator = {
     setActivityFlag('outboxInProgress', true);
     let processed = 0;
     let nextRetryAt = Infinity;
+    let nextProcessingRecoveryAt = Infinity;
     try {
       await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: `pos_sync_outbox_${reason}` });
+      if (!isCurrent()) return { processed, skipped: true, reason: 'runtime_changed' };
+
+      await syncOutboxService.resetStuckProcessing(SYNC_LIMITS.STUCK_PROCESSING_MS, { licenseKey });
+      const nextStuckRecoveryAt = await syncOutboxService.getNextStuckProcessingAt?.({
+        thresholdMs: SYNC_LIMITS.STUCK_PROCESSING_MS,
+        licenseKey
+      });
+      if (nextStuckRecoveryAt !== null && nextStuckRecoveryAt !== undefined
+        && Number.isFinite(Number(nextStuckRecoveryAt))) {
+        nextProcessingRecoveryAt = Number(nextStuckRecoveryAt);
+      }
       if (!isCurrent()) return { processed, skipped: true, reason: 'runtime_changed' };
 
       unsubscribeOutboxChanges ??= syncOutboxService.observeChanges(() => {
@@ -1587,7 +1606,9 @@ export const posSyncOrchestrator = {
       outboxWakeRequested = false;
       setActivityFlag('outboxInProgress', false);
       if (wakeRequested || !isRuntimeGenerationCurrent(generation, licenseKey)) scheduleOutbox();
-      else if (Number.isFinite(nextRetryAt) && isCurrent()) scheduleOutbox(nextRetryAt);
+      else if (Number.isFinite(Math.min(nextRetryAt, nextProcessingRecoveryAt)) && isCurrent()) {
+        scheduleOutbox(Math.min(nextRetryAt, nextProcessingRecoveryAt));
+      }
     }
   },
 
