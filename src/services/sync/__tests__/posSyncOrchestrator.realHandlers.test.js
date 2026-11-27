@@ -73,10 +73,14 @@ vi.mock('../../tenant/localTenantGuard', () => ({
   isLocalTenantAccessError: (error) => String(error?.code || '').startsWith('LOCAL_TENANT_'),
   runWithLocalTenantSyncLease: async (_source, _options, operation) => operation()
 }));
-vi.mock('../../tenant/localTenantPolicy', () => ({
-  LOCAL_TENANT_STATUS: { GRANTED: 'granted' },
-  localTenantAccessController: { subscribe: () => () => {} }
-}));
+vi.mock('../../tenant/localTenantPolicy', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    LOCAL_TENANT_STATUS: { ...actual.LOCAL_TENANT_STATUS, GRANTED: 'granted' },
+    localTenantAccessController: { subscribe: () => () => {} }
+  };
+});
 vi.mock('../syncMetaService', () => ({
   syncMetaService: {
     getMeta: async (key, fallback = null, { licenseKey } = {}) => mocks.meta.get(metaKey(licenseKey, key)) ?? fallback,
