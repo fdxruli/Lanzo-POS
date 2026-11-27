@@ -180,6 +180,24 @@ export const assertActorOperationalHandoffClear = ({ tenant = null, actorKey = n
   return true;
 };
 
+export const assertActorSessionCanClose = ({ tenant = null, actorKey = null } = {}) => {
+  assertActorOperationalHandoffClear({ tenant, actorKey });
+  const activeCheckout = getActorCheckoutOwnerships().filter((ownership) => (
+    (!tenant?.opaqueId || ownership.tenantOpaqueId === tenant.opaqueId)
+    && (!ownership.actorKey || ownership.actorKey === actorKey)
+  ));
+  if (activeCheckout.length > 0) {
+    throw new ActorRuntimeError(ACTOR_HANDOFF_CHECKOUT_OWNED, {
+      checkout: activeCheckout.map(({ orderId, actorKey: ownerActorKey, actorGeneration }) => ({
+        orderId,
+        actorKey: ownerActorKey,
+        actorGeneration
+      }))
+    });
+  }
+  return true;
+};
+
 export const runTrackedActorOperationWithHandle = async (
   handle,
   label,

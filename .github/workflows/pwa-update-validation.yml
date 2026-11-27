@@ -15,6 +15,9 @@ on:
       - 'vite.config.js'
       - 'vercel.json'
       - '.github/workflows/pwa-update-validation.yml'
+      - 'src/components/common/StaffLoginModal.jsx'
+      - 'src/store/slices/license/licenseAdminActions.js'
+      - 'src/services/supabase.js'
 permissions:
   contents: read
 jobs:

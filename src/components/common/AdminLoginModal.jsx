@@ -20,7 +20,7 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   ADMIN_LOGIN_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
   LICENSE_NOT_ACTIVE: 'Esta licencia no está activa. Revisa su estado antes de continuar.',
   DEVICE_LIMIT_REACHED: 'Se alcanzó el límite de dispositivos de esta licencia.',
-  DEVICE_MODE_ADMIN_NOT_ALLOWED: 'Este dispositivo no está habilitado para el acceso del propietario.',
+  DEVICE_MODE_ADMIN_NOT_ALLOWED: 'Este dispositivo está en modo Solo Staff. El propietario debe cambiar el modo desde otra sesión Admin autorizada para volver a habilitar el acceso Admin.',
   FREE_DEVICE_TAKEOVER_NOT_ALLOWED: 'No se pudo recuperar este dispositivo con el cambio de plan actual. Inicia sesión nuevamente.',
   FREE_DEVICE_TAKEOVER_REQUIRED: 'Confirma el cambio para usar este dispositivo.',
   ADMIN_SESSION_REQUIRED: 'Inicia sesión nuevamente para continuar.',

@@ -33,7 +33,17 @@ import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
 
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import {
+  ACTOR_HANDOFF_CHECKOUT_OWNED,
+  assertActorSessionCanClose
+} from '../../../services/auth/actorOperationalHandoff';
 import { isAuthoritativeSessionDenial } from '../../../services/auth/sessionVerification';
+import {
+  STAFF_ONLY_MODE_LOGIN_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE
+} from './licenseConstants';
 import { captureLicenseValidationContext, assertLicenseValidationContextCurrent,
   persistWithinLicenseValidationContext } from './licenseValidationContext';
 import Logger from '../../../services/Logger';
@@ -137,7 +147,16 @@ export const createLicenseStaffActions = ({
     // Si un staff queda bloqueado/liberado/no autorizado, apagamos cualquier
     // sincronización activa para evitar revalidaciones de fondo o un canal
     // Realtime vivo mientras el usuario está en StaffLoginModal.
-    await get().stopLicenseSync();
+    try {
+      // stopLicenseSync clears timers and listeners before its first await.
+      // Realtime channel teardown can settle later; it must not trap the
+      // authorized Staff login route after the Admin session was revoked.
+      Promise.resolve(get().stopLicenseSync()).catch((error) => {
+        Logger.warn('[StaffAuth] No se pudo detener completamente la sincronización al solicitar acceso Staff:', error?.code || error?.message);
+      });
+    } catch (error) {
+      Logger.warn('[StaffAuth] No se pudo detener completamente la sincronización al solicitar acceso Staff:', error?.code || error?.message);
+    }
 
     if (!preserveSessionCredentials) {
       // The verifier already reconciled both role snapshots under the tenant
@@ -156,6 +175,9 @@ export const createLicenseStaffActions = ({
     set({
       appStatus: 'staff_login_required',
       ...(nextLicenseDetails ? { licenseDetails: nextLicenseDetails } : {}),
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
       currentDeviceRole: 'staff',
       currentStaffUser: null,
       staffLoginLicenseKey: licenseKey,
@@ -166,6 +188,9 @@ export const createLicenseStaffActions = ({
 
   handleStaffLogin: async ({ username, password }) => {
     const state = get();
+    if (state._isLoggingOut) {
+      return { success: false, code: 'STAFF_LOGOUT_IN_PROGRESS', message: 'Espera a que termine el cierre de sesión Staff.' };
+    }
     const licenseKey = state.staffLoginLicenseKey || state.licenseDetails?.license_key;
 
     if (!licenseKey) {
@@ -320,17 +345,76 @@ export const createLicenseStaffActions = ({
 
     return { success: true };
   },
+  requireStaffLoginAfterDeviceModeChange: async (deviceMode) => {
+    if (deviceMode !== 'staff_only') {
+      return { success: false, code: 'STAFF_DEVICE_MODE_CHANGE_INVALID' };
+    }
+    const state = get();
+    const licenseKey = state.licenseDetails?.license_key || state.adminLoginLicenseKey;
+    if (!licenseKey) return { success: false, code: 'STAFF_LOGIN_MISSING_LICENSE' };
+
+    const nextLicenseDetails = {
+      ...(state.licenseDetails || {}),
+      license_key: licenseKey,
+      device_mode: 'staff_only',
+      device_role: 'staff',
+      admin_user: null,
+      staff_user: null
+    };
+    await get()._requireStaffLogin(nextLicenseDetails, {
+      code: 'DEVICE_MODE_STAFF_LOGIN_REQUIRED',
+      message: STAFF_ONLY_MODE_LOGIN_MESSAGE
+    });
+    return { success: true };
+  },
   logoutStaff: async () => {
-    const licenseKey = get().licenseDetails?.license_key || get().staffLoginLicenseKey;
+    const state = get();
+    if (state._isLoggingOut) {
+      return { success: false, code: 'STAFF_LOGOUT_IN_PROGRESS', message: 'El cierre de sesión Staff ya está en curso.' };
+    }
+    if (state.isBackupLoading) {
+      return {
+        success: false,
+        code: 'BACKUP_OPERATION_ACTIVE',
+        message: 'Espera a que termine el respaldo o la restauración antes de cerrar sesión.'
+      };
+    }
+    const actor = actorRuntimeController.getState();
+    if (actor.status !== 'granted' || actor.actorType !== 'staff') {
+      return { success: false, code: 'STAFF_SESSION_NOT_ACTIVE', message: 'No hay una sesión Staff activa en este dispositivo.' };
+    }
+    const licenseKey = state.licenseDetails?.license_key || state.staffLoginLicenseKey;
+    if (!licenseKey) {
+      return { success: false, code: 'STAFF_LOGOUT_LICENSE_MISSING', message: 'No se pudo confirmar el negocio de la sesión Staff.' };
+    }
+
+    try {
+      assertActorSessionCanClose({ tenant: actor.tenant, actorKey: actor.actorKey });
+    } catch (error) {
+      const code = error?.code || 'ACTOR_HANDOFF_PENDING_OPERATIONS';
+      const message = code === ACTOR_HANDOFF_CHECKOUT_OWNED
+        ? 'Hay un cobro o cierre de venta en curso. Termina la operación antes de cerrar sesión; su estado local se conserva.'
+        : 'Hay una operación de caja o guardado en curso. Espera a que termine antes de cerrar sesión.';
+      return { success: false, code, message };
+    }
+
+    const nextLicenseDetails = state.licenseDetails?.license_key
+      ? { ...state.licenseDetails, device_role: 'staff', staff_user: null }
+      : state.licenseDetails;
     // Invalidate actor-sensitive async work before any remote/local logout I/O.
-    // Tenant teardown keeps its existing behavior in this phase.
+    // Durable local data and Outbox rows remain tenant-owned and untouched.
     lockActorRuntime('staff_actor_logged_out');
     get()._invalidateProfileLoads?.();
     get().resetEcommerceOrdersState?.();
     get().lockDriveSession?.();
+    get()._stopStaffPermissionRefresh?.();
     set({
       appStatus: 'staff_login_required',
       _isLoggingOut: true,
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
+      ...(nextLicenseDetails ? { licenseDetails: nextLicenseDetails } : {}),
       currentDeviceRole: 'staff',
       currentStaffUser: null,
       cashOpeningPolicy: 'manual',
@@ -339,23 +423,74 @@ export const createLicenseStaffActions = ({
       staffLoginError: null
     });
     notifyPosCatalogSessionReset();
+    let cleanupError = null;
+    let logoutOutcome = null;
     try {
-      await get().stopLicenseSync();
-      await staffLogoutSession(licenseKey);
+      // stopLicenseSync synchronously clears timers/listeners, then may await
+      // channel teardown. The actor fence is already closed, so teardown can
+      // settle in the background without trapping the login screen.
+      Promise.resolve(get().stopLicenseSync()).catch((error) => {
+        Logger.warn('[StaffAuth] No se pudo detener completamente la sincronización al cerrar sesión:', error?.code || error?.message);
+      });
+    } catch (error) {
+      // Actor authority was already invalidated. Keep the logout moving so a
+      // deferred Cloud read or channel teardown cannot trap the user.
+      Logger.warn('[StaffAuth] No se pudo detener completamente la sincronización al cerrar sesión:', error?.code || error?.message);
+    }
+    try {
+      logoutOutcome = await staffLogoutSession(licenseKey);
+    } catch (error) {
+      cleanupError = error;
+      Logger.warn('[StaffAuth] No se pudo limpiar la sesión Staff:', error?.code || error?.message);
+    }
+    try {
+      if (nextLicenseDetails?.license_key) await saveLicenseToStorage(nextLicenseDetails);
+    } catch (error) {
+      cleanupError ||= error;
+      Logger.warn('[StaffAuth] No se pudo persistir el rol local después del cierre Staff:', error?.code || error?.message);
     } finally {
       lockLocalTenantAccess('staff_actor_logged_out');
       get().lockDriveSession?.();
     }
+    const localCredentialsCleared = logoutOutcome?.localCredentialsCleared === true;
+    const remoteRevocationStatus = logoutOutcome?.remoteRevocationStatus || 'not_confirmed';
+    const closedMessage = remoteRevocationStatus === 'confirmed'
+      ? STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE
+      : remoteRevocationStatus === 'not_attempted'
+        ? STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE
+        : STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE;
     set({
       appStatus: 'staff_login_required',
-      _isLoggingOut: true,
       currentDeviceRole: 'staff',
       currentStaffUser: null,
       cashOpeningPolicy: 'manual',
       staffLoginLicenseKey: licenseKey || null,
-      staffLoginMessage: 'Sesion staff cerrada.',
-      staffLoginError: null
+      staffLoginMessage: closedMessage,
+      staffLoginError: cleanupError ? {
+        code: 'STAFF_LOGOUT_CLEANUP_FAILED',
+        message: localCredentialsCleared
+          ? 'La sesión local se invalidó, pero no se pudo actualizar todo el estado local del negocio.'
+          : 'No se pudo confirmar la invalidación local de las credenciales Staff.'
+      } : null,
+      _isLoggingOut: false
     });
+    if (cleanupError) {
+      return {
+        success: false,
+        code: 'STAFF_LOGOUT_CLEANUP_FAILED',
+        localCredentialsCleared,
+        remoteRevocationStatus,
+        message: localCredentialsCleared
+          ? 'La sesión local se invalidó. No se confirmó la revocación remota y hubo un problema al actualizar el estado local.'
+          : 'No se pudo confirmar la invalidación local de credenciales Staff. No recargues y vuelve a intentarlo.'
+      };
+    }
+    return {
+      success: true,
+      localCredentialsCleared,
+      remoteRevocationStatus,
+      message: closedMessage
+    };
   }
 });
 };

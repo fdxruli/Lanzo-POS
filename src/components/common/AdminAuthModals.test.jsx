@@ -7,6 +7,7 @@ import LicenseAccessChooser from './LicenseAccessChooser';
 import AdminLoginModal from './AdminLoginModal';
 import AdminEnrollmentModal from './AdminEnrollmentModal';
 import StaffLoginModal from './StaffLoginModal';
+import { STAFF_SESSION_CLOSED_MESSAGE } from '../../store/slices/license/licenseConstants';
 
 describe('admin access UI', () => {
   afterEach(() => cleanup());
@@ -76,6 +77,23 @@ describe('admin access UI', () => {
     expect(screen.queryByText(/Paso 2 de 2/)).not.toBeInTheDocument();
   });
 
+  it('explains Staff logout and authorized Admin recovery in Solo Staff mode', () => {
+    useAppStore.setState({
+      licenseDetails: {
+        ...useAppStore.getState().licenseDetails,
+        device_mode: 'staff_only'
+      },
+      staffLoginMessage: STAFF_SESSION_CLOSED_MESSAGE
+    });
+
+    const { container } = render(<StaffLoginModal />);
+    const notice = container.querySelector('.staff-login-note[role="status"]');
+
+    expect(notice).toHaveTextContent(STAFF_SESSION_CLOSED_MESSAGE);
+    expect(notice).toHaveTextContent('modo Solo Staff');
+    expect(notice).toHaveTextContent('otra sesión Admin autorizada');
+  });
+
   it.each([
     ['profile selection', LicenseAccessChooser],
     ['administrator access', AdminLoginModal],
@@ -121,6 +139,25 @@ describe('admin access UI', () => {
     expect(alert).toHaveTextContent('Usuario o contraseña incorrectos.');
     expect(alert).not.toHaveTextContent('Credenciales incorrectas.');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('explains why Admin login is denied on a Solo Staff device', async () => {
+    useAppStore.setState({
+      handleAdminLogin: vi.fn().mockResolvedValue({
+        success: false,
+        code: 'DEVICE_MODE_ADMIN_NOT_ALLOWED',
+        message: 'Raw backend text.'
+      })
+    });
+    render(<AdminLoginModal />);
+    fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'owner_test' } });
+    fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'fixture-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('modo Solo Staff');
+    expect(alert).toHaveTextContent('otra sesión Admin autorizada');
+    expect(alert).not.toHaveTextContent('Raw backend text.');
   });
 
   it('returns to profile selection from both login modals', () => {

@@ -141,6 +141,75 @@ describe('activation storage boundary', () => {
     expect(mocks.loadData).toHaveBeenCalledWith('sync_cache', 'device_security_token');
   });
 
+  it('clears the local Staff token before waiting for remote logout', async () => {
+    const credentials = new Map([
+      ['staff_session_token', { value: 'staff-token-fixture' }],
+      ['staff_session_id', { value: 'staff-session-fixture' }]
+    ]);
+    mocks.loadData.mockImplementation(async (_store, key) => credentials.get(key) || null);
+    mocks.saveData.mockImplementation(async (_store, record) => credentials.set(record.key, record));
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+
+    const { staffLogoutSession } = await import('../supabase');
+    await expect(staffLogoutSession('QA-STAFF-LOGOUT')).resolves.toEqual({
+      success: true,
+      localCredentialsCleared: true,
+      remoteRevocationStatus: 'confirmed'
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('staff_logout_session', {
+      p_license_key: 'QA-STAFF-LOGOUT',
+      p_device_fingerprint: 'fixture-device',
+      p_staff_session_token: 'staff-token-fixture'
+    });
+    expect(credentials.get('staff_session_token')).toEqual({ key: 'staff_session_token', value: null });
+    expect(credentials.get('staff_session_id')).toEqual({ key: 'staff_session_id', value: null });
+  });
+
+  it('does not hold local Staff logout open when the remote RPC hangs', async () => {
+    const credentials = new Map([
+      ['staff_session_token', { value: 'staff-token-fixture' }],
+      ['staff_session_id', { value: 'staff-session-fixture' }]
+    ]);
+    mocks.loadData.mockImplementation(async (_store, key) => credentials.get(key) || null);
+    mocks.saveData.mockImplementation(async (_store, record) => credentials.set(record.key, record));
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    let markRpcStarted;
+    const rpcStarted = new Promise((resolve) => { markRpcStarted = resolve; });
+    mocks.rpc.mockImplementation(() => {
+      markRpcStarted();
+      expect(credentials.get('staff_session_token')).toEqual({ value: null });
+      return new Promise(() => {});
+    });
+
+    const { staffLogoutSession } = await import('../supabase');
+    const originalSetTimeout = globalThis.setTimeout;
+    let triggerTimeout;
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+      if (delay === 5_000) {
+        triggerTimeout = callback;
+        return 0;
+      }
+      return originalSetTimeout(callback, delay, ...args);
+    });
+    try {
+      const logout = staffLogoutSession('QA-STAFF-LOGOUT');
+      await rpcStarted;
+      expect(triggerTimeout).toEqual(expect.any(Function));
+      triggerTimeout();
+      await expect(logout).resolves.toEqual({
+        success: true,
+        localCredentialsCleared: true,
+        remoteRevocationStatus: 'not_confirmed'
+      });
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
   it('does not return a token read across a tenant runtime closure', async () => {
     const supabase = await import('../supabase');
     mocks.loadData.mockImplementationOnce(async () => {

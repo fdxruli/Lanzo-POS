@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   activateLicense: vi.fn(),
   adminLoginOnDevice: vi.fn(),
+  adminRecoverStaffOnlyDevice: vi.fn(),
   adminLogoutSession: vi.fn(),
   adminTakeoverFreeDevice: vi.fn(),
   clearAdminSessionCache: vi.fn(),
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../services/supabase', () => ({
   activateLicense: mocks.activateLicense,
   adminLoginOnDevice: mocks.adminLoginOnDevice,
+  adminRecoverStaffOnlyDevice: mocks.adminRecoverStaffOnlyDevice,
   adminLogoutSession: mocks.adminLogoutSession,
   adminTakeoverFreeDevice: mocks.adminTakeoverFreeDevice,
   clearAdminSessionCache: mocks.clearAdminSessionCache,
@@ -158,6 +160,54 @@ describe('license admin actions', () => {
     expect(state.pendingAdminSessionResult).toBeNull();
     expect(mocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
     expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
+  });
+
+  it('uses the atomic recovery RPC before granting Admin on a Solo Staff device', async () => {
+    const state = setup();
+    state.licenseDetails.device_mode = 'staff_only';
+    state.licenseDetails.plan_code = 'pro';
+    state.currentDeviceRole = 'staff';
+    mocks.adminRecoverStaffOnlyDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      admin_session_token: 'server-issued-session',
+      details: { license_key: 'LANZO-ADMIN-TEST', device_mode: 'admin_only', device_role: 'admin' }
+    });
+
+    await expect(state.handleAdminLogin({
+      username: 'owner', password: 'fresh-owner-password', recoverFromStaffOnlyDevice: true
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(mocks.adminRecoverStaffOnlyDevice).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'LANZO-ADMIN-TEST', username: 'owner', password: 'fresh-owner-password',
+      beforeLocalPersistence: expect.any(Function)
+    }));
+    expect(mocks.adminLoginOnDevice).not.toHaveBeenCalled();
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
+    expect(state.currentStaffUser).toBeNull();
+  });
+
+  it('reconciles a lost recovery response through the unchanged Admin login contract', async () => {
+    const state = setup();
+    state.licenseDetails.device_mode = 'staff_only';
+    state.licenseDetails.plan_code = 'pro';
+    state.currentDeviceRole = 'staff';
+    mocks.adminRecoverStaffOnlyDevice.mockResolvedValue({
+      success: false, code: 'ADMIN_RECOVERY_OUTCOME_UNKNOWN', outcomeUnknown: true
+    });
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      admin_session_token: 'recovered-session',
+      details: { license_key: 'LANZO-ADMIN-TEST', device_mode: 'admin_only', device_role: 'admin' }
+    });
+
+    await expect(state.handleAdminLogin({
+      username: 'owner', password: 'fresh-owner-password', recoverFromStaffOnlyDevice: true
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(mocks.adminLoginOnDevice).toHaveBeenCalledOnce();
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
   });
 
   it('keeps a valid owner at the explicit Free takeover confirmation boundary', async () => {

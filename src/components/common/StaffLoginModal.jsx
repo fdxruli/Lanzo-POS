@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, LockKeyhole, LogIn, WifiOff } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, KeyRound, LockKeyhole, LogIn, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import AuthPageLayout, { AuthPageFooter } from './AuthPageLayout';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
-import { STAFF_DEVICE_AUTH_MESSAGE } from '../../store/slices/license/licenseConstants';
+import { isProLicense } from '../../store/slices/license/licenseGuards';
+import {
+  STAFF_DEVICE_AUTH_MESSAGE,
+  STAFF_ONLY_MODE_LOGIN_MESSAGE,
+  STAFF_SESSION_CLOSED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE,
+  STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE
+} from '../../store/slices/license/licenseConstants';
 import './StaffLoginModal.css';
 
 const SAFE_LOGIN_MESSAGES = Object.freeze({
@@ -34,8 +42,14 @@ export default function StaffLoginModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
+  const [recoveryUsername, setRecoveryUsername] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const isLoggingOut = useAppStore((state) => state._isLoggingOut === true);
 
   const handleStaffLogin = useAppStore((state) => state.handleStaffLogin);
+  const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const initializeApp = useAppStore((state) => state.initializeApp);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
@@ -48,6 +62,8 @@ export default function StaffLoginModal() {
     'ACTOR_RUNTIME_RESTORE_FAILED'
   ].includes(staffLoginError?.code);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const canRecoverAdmin = licenseDetails?.device_mode === 'staff_only'
+    && isProLicense(licenseDetails) && !verificationUnavailable && !isLoggingOut;
   const licenseAuthority = classifyActorAuthorityError(licenseDetails);
   const authorityRecoveryMessage = actorAuthorityRecovery?.actorType === 'staff'
     ? actorAuthorityRecovery.message
@@ -57,7 +73,18 @@ export default function StaffLoginModal() {
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
   const staffLoginNotice = !verificationUnavailable && !staffAlreadyInUse && !staffLoginError && !errorMessage
-    ? authorityRecoveryMessage || (staffLoginMessage === STAFF_DEVICE_AUTH_MESSAGE ? STAFF_DEVICE_AUTH_MESSAGE : '')
+    ? [
+      authorityRecoveryMessage,
+      [
+        STAFF_SESSION_CLOSED_MESSAGE,
+        STAFF_SESSION_CLOSED_REMOTE_CONFIRMED_MESSAGE,
+        STAFF_SESSION_CLOSED_REMOTE_NOT_ATTEMPTED_MESSAGE,
+        STAFF_SESSION_CLOSED_REMOTE_UNCONFIRMED_MESSAGE
+      ].includes(staffLoginMessage) ? staffLoginMessage : '',
+      staffLoginMessage === STAFF_ONLY_MODE_LOGIN_MESSAGE || licenseDetails?.device_mode === 'staff_only'
+        ? STAFF_ONLY_MODE_LOGIN_MESSAGE : '',
+      staffLoginMessage === STAFF_DEVICE_AUTH_MESSAGE ? STAFF_DEVICE_AUTH_MESSAGE : ''
+    ].filter((message, index, messages) => message && messages.indexOf(message) === index).join(' ')
     : '';
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
@@ -120,6 +147,41 @@ export default function StaffLoginModal() {
     }
   };
 
+  const handleAdminRecovery = async (event) => {
+    event.preventDefault();
+    if (!isOnline) {
+      setRecoveryError('La recuperación administrativa requiere conexión al servidor.');
+      return;
+    }
+
+    setIsLoading(true);
+    setRecoveryError('');
+    try {
+      const result = await handleAdminLogin({
+        username: recoveryUsername.trim(),
+        password: recoveryPassword,
+        recoverFromStaffOnlyDevice: true
+      });
+      if (result?.success) {
+        setRecoveryPassword('');
+        setRecoveryUsername('');
+        return;
+      }
+      setRecoveryError(result?.message || 'No se pudo recuperar el acceso administrativo. Comprueba la conexión e inténtalo de nuevo.');
+    } catch {
+      setRecoveryError('No se pudo confirmar la recuperación. Comprueba la conexión e inténtalo de nuevo con las credenciales del propietario.');
+    } finally {
+      setRecoveryPassword('');
+      setIsLoading(false);
+    }
+  };
+
+  const cancelAdminRecovery = () => {
+    setIsRecoveryOpen(false);
+    setRecoveryPassword('');
+    setRecoveryError('');
+  };
+
   return (
     <AuthPageLayout
       footer={(
@@ -130,7 +192,7 @@ export default function StaffLoginModal() {
                 type="button"
                 className="auth-page__footer-link"
                 onClick={returnToLicenseAccessChoice}
-                disabled={isLoading}
+                disabled={isLoading || isLoggingOut}
               >
                 <ArrowLeft size={15} aria-hidden="true" />
                 Cambiar perfil
@@ -138,7 +200,7 @@ export default function StaffLoginModal() {
               <span className="auth-page__footer-separator" aria-hidden="true">·</span>
             </>
           )}
-          <button type="button" className="auth-page__footer-link" onClick={logout} disabled={isLoading}>
+          <button type="button" className="auth-page__footer-link" onClick={logout} disabled={isLoading || isLoggingOut}>
             Cambiar licencia
           </button>
           <span className="auth-page__footer-separator" aria-hidden="true">·</span>
@@ -213,9 +275,11 @@ export default function StaffLoginModal() {
         )}
 
         {verificationUnavailable ? (
-          <div className="staff-login-form" aria-busy={isLoading}>
+          <div className="staff-login-form" aria-busy={isLoading || isLoggingOut}>
             <div className="staff-login-note ui-alert ui-alert--info" role="status" aria-live="polite">
-              {isLoading
+              {isLoggingOut
+                ? 'Cerrando la sesión Staff anterior.'
+                : isLoading
                 ? 'Estamos verificando la sesión staff guardada.'
                 : verificationStatusMessage}
             </div>
@@ -228,13 +292,13 @@ export default function StaffLoginModal() {
               type="button"
               className="ui-button ui-button--primary staff-login-submit"
               onClick={retrySessionVerification}
-              disabled={isLoading || !isOnline}
+              disabled={isLoading || isLoggingOut || !isOnline}
             >
               {isLoading ? 'Verificando sesión...' : 'Reintentar verificación'}
             </button>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading}>
+        <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading || isLoggingOut}>
           <div className="staff-login-field form-group">
             <label className="form-label" htmlFor="staff-username">Usuario</label>
             <input
@@ -243,7 +307,7 @@ export default function StaffLoginModal() {
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
-              disabled={isLoading || !isOnline}
+              disabled={isLoading || isLoggingOut || !isOnline}
               required
             />
           </div>
@@ -252,7 +316,7 @@ export default function StaffLoginModal() {
             id="staff-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            disabled={isLoading || !isOnline}
+            disabled={isLoading || isLoggingOut || !isOnline}
             fieldClassName="staff-login-field form-group"
             labelClassName="form-label"
           />
@@ -266,12 +330,91 @@ export default function StaffLoginModal() {
           <button
             type="submit"
             className="ui-button ui-button--primary staff-login-submit"
-            disabled={isLoading || !isOnline || !username.trim() || !password}
+            disabled={isLoading || isLoggingOut || !isOnline || !username.trim() || !password}
           >
             <LogIn size={18} aria-hidden="true" />
-            {isLoading ? 'Verificando...' : 'Entrar'}
+            {isLoggingOut ? 'Cerrando sesión...' : isLoading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
+        )}
+
+        {canRecoverAdmin && (
+          <section className="staff-admin-recovery" aria-labelledby="staff-admin-recovery-title">
+            {!isRecoveryOpen ? (
+              <button
+                type="button"
+                className="staff-admin-recovery__trigger"
+                onClick={() => {
+                  setRecoveryError('');
+                  setIsRecoveryOpen(true);
+                }}
+                disabled={isLoading || isLoggingOut}
+              >
+                <KeyRound size={17} aria-hidden="true" />
+                Recuperar acceso administrativo
+              </button>
+            ) : (
+              <form onSubmit={handleAdminRecovery} className="staff-admin-recovery__form" aria-busy={isLoading || isLoggingOut}>
+                <div>
+                  <h2 id="staff-admin-recovery-title">Recuperar acceso administrativo</h2>
+                  <p>
+                    Esta acción requiere el usuario y la contraseña del propietario. Si el servidor los valida,
+                    este dispositivo cambiará a Solo Admin y cerrará las sesiones Staff de este dispositivo.
+                    Requiere conexión y conserva los datos locales pendientes.
+                  </p>
+                </div>
+                {!isOnline && (
+                  <div className="ui-alert ui-alert--danger" role="status">
+                    <WifiOff size={17} aria-hidden="true" />
+                    La recuperación administrativa requiere conexión al servidor.
+                  </div>
+                )}
+                <div className="staff-login-field form-group">
+                  <label className="form-label" htmlFor="admin-recovery-username">Usuario del propietario</label>
+                  <input
+                    id="admin-recovery-username"
+                    className="form-input"
+                    value={recoveryUsername}
+                    onChange={(event) => setRecoveryUsername(event.target.value)}
+                    autoComplete="username"
+                    disabled={isLoading || isLoggingOut || !isOnline}
+                    required
+                  />
+                </div>
+                <PasswordField
+                  id="admin-recovery-password"
+                  value={recoveryPassword}
+                  onChange={(event) => setRecoveryPassword(event.target.value)}
+                  disabled={isLoading || isLoggingOut || !isOnline}
+                  fieldClassName="staff-login-field form-group"
+                  labelClassName="form-label"
+                  label="Contraseña del propietario"
+                />
+                {recoveryError && (
+                  <div className="staff-login-error ui-alert ui-alert--danger" role="alert">
+                    {recoveryError}
+                  </div>
+                )}
+                <div className="staff-admin-recovery__actions">
+                  <button
+                    type="button"
+                    className="ui-button ui-button--secondary"
+                    onClick={cancelAdminRecovery}
+                    disabled={isLoading || isLoggingOut}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="ui-button ui-button--primary"
+                    disabled={isLoading || isLoggingOut || !isOnline || !recoveryUsername.trim() || !recoveryPassword}
+                  >
+                    {isLoading ? 'Verificando propietario...' : 'Cambiar a Solo Admin'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
         )}
 
       </section>

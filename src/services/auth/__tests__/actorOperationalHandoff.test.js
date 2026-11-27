@@ -60,6 +60,7 @@ import {
   ACTOR_HANDOFF_CHECKOUT_OWNED,
   ACTOR_HANDOFF_PENDING_OPERATIONS,
   assertActorOperationalHandoffClear,
+  assertActorSessionCanClose,
   configureActorOperationalPersistence,
   getActorCheckoutOwnerships,
   getPendingActorOperations,
@@ -255,6 +256,10 @@ describe('actor operational handoff barrier', () => {
       tenant: TENANT,
       actorKey: 'admin:admin-a'
     })).toBe(true);
+    expect(() => assertActorSessionCanClose({
+      tenant: TENANT,
+      actorKey: 'admin:admin-a'
+    })).toThrowError(expect.objectContaining({ code: ACTOR_HANDOFF_CHECKOUT_OWNED }));
   });
 
   it('fails closed for a legacy locked checkout with no actor proof', async () => {
