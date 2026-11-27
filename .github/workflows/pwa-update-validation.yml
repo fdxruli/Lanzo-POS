@@ -47,7 +47,6 @@ jobs:
           VITE_SUPABASE_URL: https://update-qa.invalid
           VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-update-qa-public-key
       - run: npm run build:store
-      - run: npx vitest run src/architecture/__tests__/adminPwaArchitecture.test.js src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js --maxWorkers=2
       - name: Install isolated browser runner
         run: |
           npm install --prefix "$RUNNER_TEMP/lanzo-update-qa" playwright@1.56.1
@@ -67,3 +66,5 @@ jobs:
             ${{ runner.temp }}/lanzo-update-browser/evidence.json
             ${{ runner.temp }}/lanzo-update-browser/*.png
           if-no-files-found: ignore
+      - name: PWA architecture and offline budget regression
+        run: npx vitest run src/architecture/__tests__/adminPwaArchitecture.test.js src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js --maxWorkers=2
