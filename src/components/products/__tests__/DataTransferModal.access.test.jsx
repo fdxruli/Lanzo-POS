@@ -65,6 +65,16 @@ describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () 
     expect(mocks.download.mock.calls[0][1]).toMatch(/^dispensaciones_farmacia_local_\d{4}-\d{2}-\d{2}\.csv$/);
   });
 
+  it('omits unavailable incident counts without printing undefined', async () => {
+    mocks.buildReport.mockReturnValue({ csv: 'archivo,seguro', count: 1 });
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalled());
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(mocks.showMessage.mock.calls[0][0]).not.toMatch(/undefined/);
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/1 registros/);
+  });
+
   it('staff sin permisos: el guard deniega la acción y no lee ventas', async () => {
     mocks.capture.mockImplementation(() => { throw new Error('ACTOR_PERMISSION_DENIED'); });
     mount();
