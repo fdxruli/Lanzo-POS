@@ -72,6 +72,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const fetchPage = useInventoryCatalogStore((state) => state.fetchPage);
   const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const hasMore = useInventoryCatalogStore((state) => state.hasMore);
+  const nextCursor = useInventoryCatalogStore((state) => state.nextCursor);
   const isGlobalLoading = useInventoryCatalogStore((state) => state.isLoading);
   const loadFirstPage = useInventoryCatalogStore((state) => state.loadFirstPage);
   const filters = useInventoryCatalogStore((state) => state.filters);
@@ -688,7 +689,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {!reviewOnly && !catalogBlocked && !isCatalogSearchActive && hasMore && (
+      {!reviewOnly && !catalogBlocked && !isCatalogSearchActive && hasMore && nextCursor != null && (
         <div className="pagination-container">
           <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading} aria-busy={isGlobalLoading}>
             {isGlobalLoading ? 'Cargando...' : 'Cargar más productos'}
