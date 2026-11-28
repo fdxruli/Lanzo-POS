@@ -630,6 +630,11 @@ describe('F06: commercial margin in the shared product form', () => {
     const onSave = vi.fn(() => true);
     renderForm({ productToEdit: { ...editProduct, cost: 0 }, onSave });
     expect(margin()).toHaveValue(null);
+    change('Margen', '25');
+    expect(price()).toHaveValue(30);
+    expect(margin()).toHaveAttribute('aria-invalid', 'true');
+    save();
+    expect(onSave).not.toHaveBeenCalled();
     change('Margen', '100');
     save();
     expect(onSave).not.toHaveBeenCalled();
