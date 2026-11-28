@@ -7,7 +7,7 @@ const Error = ({ children }) => children ? <small className="product-form-v2__er
 export default function ProductCoreFields({ values, errors, onFieldChange, onCostChange, onPriceChange, onMarginChange, onScan, barcodeMatches = [], barcodeLookupFailed = false, cloudBarcodeConflict = false, onEditExisting, isIngredient = false, saleSetup = null }) {
   const isFractioned = values.saleMode === 'fractioned' || values.conversionFactor?.enabled === true;
   const unitName = getProductUnitName(values.unit);
-  const marginError = getProductMarginError(values.margin);
+  const marginError = getProductMarginError(values.margin, values.cost ?? '');
   const costLabel = `Costo por ${unitName}`;
   const priceLabel = `Precio de venta por ${unitName}`;
   return <section className="product-form-v2__core" aria-label="Datos principales">
