@@ -81,6 +81,8 @@ import { db } from '../../db/dexie';
 import { productLocalCatalogRecovery } from '../productLocalCatalogRecovery';
 import { productLocalRepository } from '../productLocalRepository';
 import { productMigrationService } from '../productMigrationService';
+import { normalizeNameKey } from '../productMapper';
+import { normalizeActiveIngredientNameKey } from '../../pharmacy/pharmacyComposition';
 
 const licenseKey = 'CUTOVER';
 const createdAt = '2026-08-01T00:00:00.000Z';
@@ -226,10 +228,16 @@ describe('atomic catalog recovery and local confirmation', () => {
     expect(mocks.recover).not.toHaveBeenCalled();
   });
 
-  it('accepts a canonical cloud key while recovering an equivalent legacy local ingredient', async () => {
+  it('reproduces the legacy key mismatch and reconciles the canonical F04 response', async () => {
     const localId = 'ai-local-paracetamol-accent';
+    const legacyLocalNameKey = normalizeNameKey('Paracetamól');
+    const canonicalResponseNameKey = normalizeActiveIngredientNameKey('Paracetamol');
+    expect(legacyLocalNameKey).toBe('paracetamól');
+    expect(canonicalResponseNameKey).toBe('paracetamol');
+    expect(canonicalResponseNameKey !== legacyLocalNameKey).toBe(true);
+
     await db.table('active_ingredients').put({
-      id: localId, businessKey: db.name, name: 'Paracetamól', nameKey: 'paracetamól',
+      id: localId, businessKey: db.name, name: 'Paracetamól', nameKey: legacyLocalNameKey,
       isActive: true, createdAt, syncStatus: 'local'
     });
     mocks.activeIngredient.mockImplementation(async ({ activeIngredient, idempotencyKey }) => ({
@@ -237,7 +245,7 @@ describe('atomic catalog recovery and local confirmation', () => {
       idempotency_key: idempotencyKey,
       active_ingredient: {
         id: 'ai-cloud-paracetamol', client_id: activeIngredient.id,
-        name: 'Paracetamol', name_key: 'paracetamol', is_active: true, server_version: 1
+        name: 'Paracetamol', name_key: canonicalResponseNameKey, is_active: true, server_version: 1
       }
     }));
 

@@ -8,6 +8,7 @@ const source = async (path) => readFile(`${repositoryRoot}/${path}`, 'utf8');
 const migration = await source('supabase/migrations/20261128003702_pharmacy_catalog_f04_active_ingredient_identity.sql');
 const f01 = await source('supabase/migrations/20261127054627_pharmacy_catalog_f01_active_ingredients.sql');
 const rpc = migration.match(/create or replace function public\.pos_upsert_active_ingredient_v1\([\s\S]*?\$function\$;/u)?.[0] || '';
+const contractRpc = migration.match(/create or replace function public\.pos_snapshot_sync_contract_v1\([\s\S]*?\$function\$;/u)?.[0] || '';
 
 test('F04 migration is a focused transactional change to the installed F01 authority', () => {
   assert.match(migration, /^-- LANZO\.FARMACIA\.CATALOG\.F04[\s\S]*?begin;[\s\S]*commit;\s*$/u);
@@ -41,4 +42,15 @@ test('the production write surface keeps F01 security and client grants', () => 
   assert.match(migration, /revoke all on function public\.pos_upsert_active_ingredient_v1\(text,text,text,text,jsonb,integer,text\) from public/u);
   assert.match(migration, /grant execute on function public\.pos_upsert_active_ingredient_v1\(text,text,text,text,jsonb,integer,text\) to anon, authenticated, service_role/u);
   assert.match(migration, /revoke all on function private\.pos_active_ingredient_name_key_f04\(text\) from public, anon, authenticated, service_role/u);
+});
+
+test('the existing sync contract advertises canonical identity only when the F04 authority exists', () => {
+  assert.match(contractRpc, /private\.validate_pos_sync_context\(/u);
+  assert.match(contractRpc, /private\.pos_fin01_rate_limit_v2\(/u);
+  assert.match(contractRpc, /pharmacy_active_ingredient_catalog_v1/u);
+  assert.match(contractRpc, /to_regprocedure\('private\.pos_active_ingredient_name_key_f04\(text\)'\)/u);
+  assert.match(contractRpc, /pharmacy_active_ingredient_identity_v1/u);
+  assert.match(migration, /alter function public\.pos_snapshot_sync_contract_v1\(text,text,text,text,integer\) owner to postgres/u);
+  assert.match(migration, /revoke all on function public\.pos_snapshot_sync_contract_v1\(text,text,text,text,integer\) from public/u);
+  assert.match(migration, /grant execute on function public\.pos_snapshot_sync_contract_v1\(text,text,text,text,integer\) to anon, authenticated/u);
 });

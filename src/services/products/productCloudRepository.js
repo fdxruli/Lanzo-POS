@@ -8,6 +8,7 @@ import { SYNC_LIMITS } from '../sync/syncConstants';
 import {
   callCloudSnapshotRpc,
   CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY,
   negotiateCloudSnapshotContract,
   requireCloudSnapshotContract
 } from '../sync/cloudSyncProtocolV2';
@@ -124,6 +125,13 @@ export const productCloudRepository = {
         success: false,
         code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED',
         message: 'El catálogo farmacéutico aún no está instalado en Cloud.'
+      };
+    }
+    if (!contract.capabilities.includes(CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY)) {
+      return {
+        success: false,
+        code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED',
+        message: 'El servidor aún no garantiza la identidad normalizada de principios activos.'
       };
     }
     return callCatalogMutationRpc('pos_upsert_active_ingredient_v1', licenseKey, {

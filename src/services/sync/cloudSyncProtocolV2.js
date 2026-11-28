@@ -7,6 +7,7 @@ export const CLOUD_SNAPSHOT_CONTRACT_RPC = 'pos_snapshot_sync_contract_v1';
 export const CLOUD_FINANCIAL_RESULT_CAPABILITY = 'financial_operation_result_v1';
 export const CLOUD_SNAPSHOT_KEYSET_CAPABILITY = 'snapshot_keyset_reference_v1';
 export const CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY = 'pharmacy_active_ingredient_catalog_v1';
+export const CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY = 'pharmacy_active_ingredient_identity_v1';
 export const CLOUD_SYNC_CAPABILITIES = Object.freeze([
   'historical_credit_preservation_v1',
   'customer_projection_safe_apply_v1'

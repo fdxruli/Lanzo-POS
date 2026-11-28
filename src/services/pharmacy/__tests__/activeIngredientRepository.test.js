@@ -1,7 +1,10 @@
 import 'fake-indexeddb/auto';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const harness = vi.hoisted(() => ({ currentLicenseKey: null, cloudEnabled: false, db: null }));
+const harness = vi.hoisted(() => ({
+  currentLicenseKey: null, cloudEnabled: false, db: null,
+  cloudUpsert: vi.fn(), enqueueOperation: vi.fn()
+}));
 
 vi.mock('../../db/dexie', async () => {
   const { default: Dexie } = await import('dexie');
@@ -26,8 +29,12 @@ vi.mock('../../auth/productInventoryAuthority', () => ({
   assertProductInventoryMutationCurrent: () => {},
   actorOriginFromHandle: () => ({ actorKey: 'admin:test' })
 }));
-vi.mock('../../products/productCloudRepository', () => ({ productCloudRepository: {} }));
-vi.mock('../../sync/syncOutboxService', () => ({ syncOutboxService: { enqueueOperation: vi.fn() } }));
+vi.mock('../../products/productCloudRepository', () => ({
+  productCloudRepository: { upsertActiveIngredient: harness.cloudUpsert }
+}));
+vi.mock('../../sync/syncOutboxService', () => ({
+  syncOutboxService: { enqueueOperation: harness.enqueueOperation }
+}));
 
 import { activeIngredientRepository } from '../activeIngredientRepository';
 
@@ -35,6 +42,8 @@ describe('activeIngredientRepository local persistence', () => {
   beforeEach(async () => {
     harness.currentLicenseKey = null;
     harness.cloudEnabled = false;
+    harness.cloudUpsert.mockReset();
+    harness.enqueueOperation.mockReset();
     if (harness.db.isOpen()) harness.db.close();
     await harness.db.delete();
     await harness.db.open();
@@ -149,6 +158,26 @@ describe('activeIngredientRepository local persistence', () => {
       .toMatchObject({ activeIngredientId: cloudId, name: 'Paracetamol' });
     expect((await harness.db.table('sync_outbox').get('completed-product')).payload.product.metadata.pharmacy.composition.activeIngredients[0])
       .toMatchObject({ activeIngredientId: localId, name: 'Paracetamól' });
+  });
+
+  it('keeps a new canonical identity local while the F01 server lacks the F04 capability', async () => {
+    harness.currentLicenseKey = 'license-cloud-a';
+    harness.cloudEnabled = true;
+    harness.cloudUpsert.mockResolvedValue({
+      success: false, code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED'
+    });
+
+    const ingredient = await activeIngredientRepository.create('Paracetamól');
+
+    expect(ingredient).toMatchObject({
+      name: 'Paracetamól', nameKey: 'paracetamol', businessKey: 'license-cloud-a', syncStatus: 'pending'
+    });
+    expect(await activeIngredientRepository.getById(ingredient.id)).toMatchObject({
+      id: ingredient.id, syncStatus: 'pending', nameKey: 'paracetamol'
+    });
+    expect(harness.enqueueOperation).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'active_ingredient', entityId: ingredient.id
+    }));
   });
 
   it('scopes matching names to the active business', async () => {

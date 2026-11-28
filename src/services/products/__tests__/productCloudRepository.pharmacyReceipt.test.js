@@ -25,6 +25,10 @@ vi.mock('../../cloud', () => ({
 }));
 
 import { productCloudRepository } from '../productCloudRepository';
+import {
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
+  CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY
+} from '../../sync/cloudSyncProtocolV2';
 
 describe('documented Cloud pharmacy receipt RPC', () => {
   beforeEach(() => {
@@ -110,5 +114,51 @@ describe('documented Cloud pharmacy receipt RPC', () => {
 
     expect(mocks.rpc).toHaveBeenCalledOnce();
     expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('active ingredient identity rollout compatibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.rpc.mockResolvedValue({ data: { success: true, idempotency_key: 'ingredient-upsert-1' }, error: null });
+  });
+
+  it('does not call the F01 upsert while the server lacks the F04 identity capability', async () => {
+    const negotiation = vi.spyOn(productCloudRepository, 'negotiateSnapshotProtocol').mockResolvedValue({
+      capabilities: [CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY]
+    });
+    const response = await productCloudRepository.upsertActiveIngredient({
+      licenseKey: 'CLOUD-LICENSE',
+      activeIngredient: { id: 'ai-local-accent', name: 'Paracetamól', nameKey: 'paracetamol' },
+      idempotencyKey: 'ingredient-upsert-1'
+    });
+
+    expect(response).toMatchObject({
+      success: false, code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED'
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    negotiation.mockRestore();
+  });
+
+  it('calls the existing upsert once the contract advertises F04 identity support', async () => {
+    const negotiation = vi.spyOn(productCloudRepository, 'negotiateSnapshotProtocol').mockResolvedValue({
+      capabilities: [
+        CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
+        CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY
+      ]
+    });
+    await productCloudRepository.upsertActiveIngredient({
+      licenseKey: 'CLOUD-LICENSE',
+      activeIngredient: { id: 'ai-local-accent', name: 'Paracetamól', nameKey: 'paracetamol' },
+      idempotencyKey: 'ingredient-upsert-1'
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_upsert_active_ingredient_v1', expect.objectContaining({
+      p_active_ingredient: expect.objectContaining({
+        id: 'ai-local-accent', name: 'Paracetamól', name_key: 'paracetamol'
+      }),
+      p_idempotency_key: 'ingredient-upsert-1'
+    }));
+    negotiation.mockRestore();
   });
 });
