@@ -604,3 +604,27 @@ it('ignores an older submitted response and restores pagination when cleared', a
   fireEvent.click(screen.getByRole('button', { name: 'Limpiar búsqueda' }));
   expect(await screen.findByText('Paged catalog')).toBeInTheDocument();
 });
+
+describe('F06: visible catalog count and page exhaustion', () => {
+  it('counts only displayed products and hides the control when pages are exhausted', () => {
+    const products = [
+      { id: 'a', name: 'Producto A', price: 10, cost: 5, stock: 1 },
+      { id: 'b', name: 'Producto B', price: 20, cost: 10, stock: 1 }
+    ];
+    const { rerender } = render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    expect(screen.getByText('0 productos mostrados')).toBeInTheDocument();
+    mocks.catalogState.hasMore = true;
+    rerender(<ProductList products={products.slice(0, 1)} categories={[]} isLoading={false} />);
+    expect(screen.getByText('1 producto mostrado')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más productos' }));
+    expect(mocks.catalogState.fetchPage).toHaveBeenCalledWith('next');
+    mocks.catalogState.isLoading = true;
+    rerender(<ProductList products={products.slice(0, 1)} categories={[]} isLoading={false} />);
+    expect(screen.getByRole('button', { name: 'Cargando...' })).toBeDisabled();
+    mocks.catalogState.isLoading = false;
+    mocks.catalogState.hasMore = false;
+    rerender(<ProductList products={products} categories={[]} isLoading={false} />);
+    expect(screen.getByText('2 productos mostrados')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+  });
+});
