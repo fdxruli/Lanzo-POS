@@ -12,7 +12,7 @@ const snapshotPage = (rows = {}) => ({
 
 const mocks = vi.hoisted(() => ({
   recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), negotiateSnapshotProtocol: vi.fn(),
-  activeIngredient: vi.fn(), getMeta: vi.fn(), setMeta: vi.fn(), advanceMeta: vi.fn(),
+  getMeta: vi.fn(), setMeta: vi.fn(), advanceMeta: vi.fn(),
   tenantLease: vi.fn(), readInventory: vi.fn(), saveConflict: vi.fn()
 }));
 
@@ -73,7 +73,7 @@ vi.mock('../../auth/actorRuntimeController', () => ({
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract,
   negotiateSnapshotProtocol: mocks.negotiateSnapshotProtocol, pullCatalogSnapshot: mocks.snapshot,
-  upsertCategory: mocks.category, upsertActiveIngredient: mocks.activeIngredient
+  upsertCategory: mocks.category
 } }));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
