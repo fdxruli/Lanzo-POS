@@ -75,6 +75,7 @@
   
   pointer-events: none;
   position: relative;
+  inset: auto;
   z-index: 1;
   
   /* 🔧 CLAVE: Alinear verticalmente con el texto */

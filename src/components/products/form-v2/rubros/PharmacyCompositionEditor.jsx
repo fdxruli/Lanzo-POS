@@ -183,7 +183,7 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
             <div className="product-form-v2__field pharmacy-composition__amount">
               <label className="sr-only" htmlFor={`product-v2-composition-amount-${index}`}>Cantidad de {row.name}</label>
               <input id={`product-v2-composition-amount-${index}`} type="number" min="0" step="any"
-                inputMode="decimal" placeholder="500"
+                inputMode="decimal" placeholder="Ej. 500"
                 value={row.amount} onChange={(event) => updateRow(row.activeIngredientId, 'amount', event.target.value)} />
             </div>
             <UnitSelect id={`product-v2-composition-unit-${index}`} label={`Unidad de concentración de ${row.name}`}
