@@ -230,6 +230,46 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     expect(screen.getByText('Dato anterior: Paracetamol · 500 mg por 1')).toBeInTheDocument();
     expect(screen.queryByText(/500 mg por tableta/i)).not.toBeInTheDocument();
   });
+
+  it('mantiene visible la concentración histórica al reemplazarla y guarda el valor nuevo', async () => {
+    const onSave = vi.fn(() => true);
+    show({ onSave, productToEdit: {
+      id: 'legacy-replace-concentration', rubroContext: 'farmacia', name: 'Medicamento anterior',
+      activeSubstance: 'Paracetamol', price: 30, stock: 2,
+      metadata: { pharmacy: { kind: 'medicine', concentration: '500 mg por 1' } }
+    } });
+    fireEvent.click(screen.getByText('Datos anteriores del medicamento'));
+
+    fireEvent.change(screen.getByLabelText('Concentración anterior'), { target: { value: '' } });
+    expect(screen.getByLabelText('Concentración anterior')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Concentración anterior'), { target: { value: '250 mg por 5 mL' } });
+    expect(screen.getByLabelText('Concentración anterior')).toHaveValue('250 mg por 5 mL');
+
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].metadata.pharmacy.concentration).toBe('250 mg por 5 mL');
+  });
+
+  it('conserva los datos históricos al editar un campo ajeno', async () => {
+    const onSave = vi.fn(() => true);
+    show({ onSave, productToEdit: {
+      id: 'legacy-preserve-fields', rubroContext: 'farmacia', name: 'Medicamento anterior',
+      activeSubstance: 'Paracetamol', laboratory: 'Laboratorio anterior', presentation: 'Caja histórica',
+      price: 30, cost: 10, stock: 2,
+      metadata: { pharmacy: { kind: 'medicine', concentration: '500 mg por 1' } }
+    } });
+    fireEvent.change(screen.getByLabelText('Laboratorio'), { target: { value: 'Laboratorio actualizado' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      activeSubstance: 'Paracetamol',
+      presentation: 'Caja histórica',
+      laboratory: 'Laboratorio actualizado',
+      metadata: { pharmacy: { concentration: '500 mg por 1' } }
+    });
+  });
+
   it('crea la fracción II inactiva y explica que no puede dispensarse', async () => {
     const onSave = vi.fn(() => true);
     show({ onSave });

@@ -125,7 +125,7 @@ describe('ProductCard pharmacist information', () => {
     render(<ProductCard
       features={pharmacyFeatures}
       product={{
-        id: 'combined-medicine', name: 'Combinado', price: 45, stock: 8, trackStock: true,
+        id: 'combined-medicine', name: 'Paracetamol Cafeína', price: 45, stock: 8, trackStock: true,
         metadata: { pharmacy: {
           kind: 'medicine', dosageFormCode: 'tablet',
           commercialPresentation: { version: 1, packageType: 'box', contentAmount: 20, contentUnit: 'tableta' },

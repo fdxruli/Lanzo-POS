@@ -124,8 +124,8 @@ const normalizeDisplayName = (value) => normalizeActiveIngredientEquivalenceKey(
 const getPharmacyCompositionLabel = (product, summary) => {
   const compositionRows = getCompositionRows(product);
   if (compositionRows.length) {
-    const sameAsProductName = normalizeDisplayName(product?.name)
-      === normalizeDisplayName(compositionRows.map(({ name }) => name).join(' '));
+    const sameAsProductName = compositionRows.length === 1
+      && normalizeDisplayName(product?.name) === normalizeDisplayName(compositionRows[0].name);
     return compositionRows.map((row) => {
       const concentration = formatCompositionConcentration({ version: 1, activeIngredients: [row] });
       if (!concentration) return `${row.name} · concentración incompleta`;

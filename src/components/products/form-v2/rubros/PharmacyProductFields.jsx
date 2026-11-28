@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import ProductExpirationFields from '../components/ProductExpirationFields';
 import ProductBatchSummary from '../components/ProductBatchSummary';
 import { SANITARY_FRACTIONS } from '../../../../utils/pharmacyClassification';
@@ -29,6 +30,13 @@ export default function PharmacyProductFields({
 }) {
   const rows = Array.isArray(values.compositionIngredients) ? values.compositionIngredients : [];
   const hasStructuredComposition = rows.length > 0;
+  const [legacyFieldVisibility] = useState(() => ({
+    activeSubstance: isEditing && !hasStructuredComposition && hasValue(values.activeSubstance),
+    concentration: isEditing && !hasStructuredComposition && hasValue(values.concentration),
+    dosageFormLegacy: isEditing && Boolean(values.dosageFormCode) && hasValue(values.dosageFormLegacy),
+    dosageForm: isEditing && !values.dosageFormCode && hasValue(values.dosageForm),
+    presentationLegacy: isEditing && hasValue(values.presentationLegacy)
+  }));
   const field = (name, label, placeholder = '') => (
     <div className="product-form-v2__field" key={name}>
       <label htmlFor={`product-v2-${name}`}>{label}</label>
@@ -39,16 +47,14 @@ export default function PharmacyProductFields({
   );
 
   const legacyFields = [];
-  if (isEditing && !hasStructuredComposition) {
-    if (hasValue(values.activeSubstance)) legacyFields.push(field('activeSubstance', 'Sustancia activa anterior'));
-    if (hasValue(values.concentration)) legacyFields.push(field('concentration', 'Concentración anterior'));
-  }
-  if (isEditing && values.dosageFormCode && hasValue(values.dosageFormLegacy)) {
+  if (legacyFieldVisibility.activeSubstance) legacyFields.push(field('activeSubstance', 'Sustancia activa anterior'));
+  if (legacyFieldVisibility.concentration) legacyFields.push(field('concentration', 'Concentración anterior'));
+  if (legacyFieldVisibility.dosageFormLegacy) {
     legacyFields.push(field('dosageFormLegacy', 'Forma farmacéutica anterior'));
-  } else if (isEditing && !values.dosageFormCode && hasValue(values.dosageForm)) {
+  } else if (legacyFieldVisibility.dosageForm) {
     legacyFields.push(field('dosageForm', 'Forma farmacéutica anterior (texto libre)'));
   }
-  if (isEditing && hasValue(values.presentationLegacy)) {
+  if (legacyFieldVisibility.presentationLegacy) {
     legacyFields.push(field('presentationLegacy', 'Presentación anterior (texto libre)', 'Descripción histórica'));
   }
 
