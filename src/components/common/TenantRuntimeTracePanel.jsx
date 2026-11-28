@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
+import { Activity } from 'lucide-react';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { isActorSnapshotCurrent } from '../../services/auth/actorAccessPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
@@ -54,8 +55,14 @@ export default function TenantRuntimeTracePanel() {
   };
 
   return (
-    <details className="tenant-runtime-trace">
-      <summary>{active ? 'Diagnóstico de conexión · Capturando' : 'Diagnóstico de conexión'}</summary>
+    <details className={`tenant-runtime-trace${active ? ' is-active' : ''}`}>
+      <summary
+        aria-label={active ? 'Diagnóstico de conexión. Captura activa.' : 'Diagnóstico de conexión'}
+        title={active ? 'Diagnóstico de conexión · Captura activa' : 'Diagnóstico de conexión'}
+      >
+        <Activity size={17} aria-hidden="true" />
+        <span className="tenant-runtime-trace__summary-text">{active ? 'Capturando' : 'Diagnóstico'}</span>
+      </summary>
       {active ? <ActiveTraceControls /> : (
         <>
           <p>La captura dura hasta 10 minutos.</p>

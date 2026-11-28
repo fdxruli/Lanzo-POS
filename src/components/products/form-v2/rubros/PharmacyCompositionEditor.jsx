@@ -48,8 +48,8 @@ const uniqueIngredientOptions = (rows) => {
 function UnitSelect({ id, label, value, options, normalize, onChange }) {
   const normalizedValue = choiceValue(value, normalize);
   const isLegacy = normalizedValue.startsWith('legacy:');
-  return <div className="product-form-v2__field">
-    <label htmlFor={id}>{label}</label>
+  return <div className="product-form-v2__field pharmacy-composition__unit">
+    <label htmlFor={id} className="sr-only">{label}</label>
     <select id={id} value={normalizedValue} onChange={(event) => {
       const selected = event.target.value;
       onChange(selected.startsWith('legacy:') ? value : selected);
@@ -66,6 +66,7 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   const [selectedId, setSelectedId] = useState('');
   const [newName, setNewName] = useState('');
   const [error, setError] = useState('');
+  const [savedStatus, setSavedStatus] = useState('');
   const [creatingIngredient, setCreatingIngredient] = useState(false);
   const creatingIngredientRef = useRef(false);
   const mounted = useRef(false);
@@ -93,22 +94,27 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
       || normalizeActiveIngredientEquivalenceKey(row.name) === nameKey
     ))) {
       setError(ingredient?.id ? 'Este principio activo ya está en la composición.' : 'Selecciona un principio activo.');
-      return;
+      return false;
     }
     onCompositionChange([...rows, newCompositionRow(ingredient, values.dosageFormCode)]);
     setSelectedId('');
     setNewName('');
     setError('');
+    return true;
   };
 
   const createIngredient = async () => {
     if (creatingIngredientRef.current) return;
     creatingIngredientRef.current = true;
     setCreatingIngredient(true);
+    setError('');
+    setSavedStatus('');
     try {
       const ingredient = await activeIngredientRepository.create(newName);
       await refreshIngredients();
-      addIngredient(ingredient);
+      if (addIngredient(ingredient) && mounted.current) {
+        setSavedStatus(`${ingredient.name} se guardó y agregó a la composición.`);
+      }
     } catch (cause) {
       const messages = {
         PHARMACY_ACTIVE_INGREDIENT_NAME_REQUIRED: 'Escribe el nombre del principio activo.',
@@ -129,61 +135,73 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   };
 
   return <div className="product-form-v2__subsection pharmacy-composition">
-    <h4>Composición farmacéutica</h4>
-    <p className="product-form-v2__hint">Las unidades se registran con símbolos normalizados. La base indica a qué cantidad corresponde cada principio activo.</p>
-    <div className="product-form-v2__field-grid">
+    <h4>Principios activos y concentraciones</h4>
+    <p className="product-form-v2__hint">Agrega las sustancias activas que contiene este medicamento y la concentración de cada una. Puedes incluir varios principios activos.</p>
+    <div className="pharmacy-composition__controls">
       <div className="product-form-v2__field">
-        <label htmlFor="product-v2-active-ingredient">Principio activo registrado</label>
+        <label htmlFor="product-v2-active-ingredient">Principio activo</label>
         <select id="product-v2-active-ingredient" value={selectedId}
-          onChange={(event) => setSelectedId(event.target.value)}>
+          onChange={(event) => { setSelectedId(event.target.value); setError(''); setSavedStatus(''); }}>
           <option value="">Selecciona un principio activo</option>
           {ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.id}>{ingredient.name}</option>)}
         </select>
       </div>
-      <div className="product-form-v2__field pharmacy-composition__add-action">
-        <button id="product-v2-add-active-ingredient" type="button" disabled={!selectedId}
-          onClick={() => addIngredient(ingredients.find((ingredient) => ingredient.id === selectedId))}>
-          Agregar a la composición
-        </button>
-      </div>
-      <div className="product-form-v2__field">
-        <label htmlFor="product-v2-new-active-ingredient">Crear principio activo</label>
-        <input id="product-v2-new-active-ingredient" value={newName}
-          placeholder="Escribe cualquier nombre válido"
-          disabled={creatingIngredient}
-          onChange={(event) => setNewName(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void createIngredient(); } }} />
-      </div>
-      <div className="product-form-v2__field pharmacy-composition__add-action">
-        <label className="sr-only" htmlFor="product-v2-create-active-ingredient">Crear y agregar</label>
+      <button type="button" className="pharmacy-composition__add"
+        disabled={!selectedId}
+        onClick={() => addIngredient(ingredients.find((ingredient) => ingredient.id === selectedId))}>
+        Agregar al medicamento
+      </button>
+    </div>
+
+    <details className="pharmacy-composition__create">
+      <summary>Crear un principio activo</summary>
+      <div className="pharmacy-composition__create-fields">
+        <div className="product-form-v2__field">
+          <label htmlFor="product-v2-new-active-ingredient">Nombre del nuevo principio activo</label>
+          <input id="product-v2-new-active-ingredient" value={newName}
+            placeholder="Escribe el nombre"
+            disabled={creatingIngredient}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void createIngredient(); } }} />
+        </div>
         <button id="product-v2-create-active-ingredient" type="button"
           disabled={!newName.trim() || creatingIngredient} aria-busy={creatingIngredient}
           onClick={() => void createIngredient()}>
           {creatingIngredient ? 'Guardando…' : 'Crear y agregar'}
         </button>
       </div>
-    </div>
+    </details>
+
     {(error || validationError) && <small className="product-form-v2__error" role="alert">{error || validationError}</small>}
+    {savedStatus && <small className="pharmacy-composition__saved" role="status" aria-live="polite">{savedStatus}</small>}
+
     {rows.length > 0 && <div className="pharmacy-composition__rows">
       {rows.map((row, index) => <fieldset className="pharmacy-composition__row" key={row.activeIngredientId}>
         <legend>{row.name}</legend>
-        <div className="product-form-v2__field-grid">
-          <div className="product-form-v2__field">
-            <label htmlFor={`product-v2-composition-amount-${index}`}>Cantidad</label>
-            <input id={`product-v2-composition-amount-${index}`} type="number" min="0" step="any"
-              value={row.amount} onChange={(event) => updateRow(row.activeIngredientId, 'amount', event.target.value)} />
+        <div className="pharmacy-composition__sentence" role="group" aria-label={`Concentración de ${row.name}`}>
+          <div className="pharmacy-composition__quantity">
+            <div className="product-form-v2__field pharmacy-composition__amount">
+              <label className="sr-only" htmlFor={`product-v2-composition-amount-${index}`}>Cantidad de {row.name}</label>
+              <input id={`product-v2-composition-amount-${index}`} type="number" min="0" step="any"
+                inputMode="decimal" placeholder="500"
+                value={row.amount} onChange={(event) => updateRow(row.activeIngredientId, 'amount', event.target.value)} />
+            </div>
+            <UnitSelect id={`product-v2-composition-unit-${index}`} label={`Unidad de concentración de ${row.name}`}
+              value={row.unit} options={PHARMACY_MEASURE_UNITS} normalize={normalizePharmacyMeasureUnit}
+              onChange={(value) => updateRow(row.activeIngredientId, 'unit', value)} />
           </div>
-          <UnitSelect id={`product-v2-composition-unit-${index}`} label="Unidad de medida"
-            value={row.unit} options={PHARMACY_MEASURE_UNITS} normalize={normalizePharmacyMeasureUnit}
-            onChange={(value) => updateRow(row.activeIngredientId, 'unit', value)} />
-          <div className="product-form-v2__field">
-            <label htmlFor={`product-v2-composition-basis-amount-${index}`}>Por cantidad base</label>
-            <input id={`product-v2-composition-basis-amount-${index}`} type="number" min="0" step="any"
-              value={row.basisAmount} onChange={(event) => updateRow(row.activeIngredientId, 'basisAmount', event.target.value)} />
+          <span className="pharmacy-composition__connector" aria-hidden="true">por</span>
+          <div className="pharmacy-composition__quantity">
+            <div className="product-form-v2__field pharmacy-composition__amount">
+              <label className="sr-only" htmlFor={`product-v2-composition-basis-amount-${index}`}>Cantidad base de {row.name}</label>
+              <input id={`product-v2-composition-basis-amount-${index}`} type="number" min="0" step="any"
+                inputMode="decimal" placeholder="1"
+                value={row.basisAmount} onChange={(event) => updateRow(row.activeIngredientId, 'basisAmount', event.target.value)} />
+            </div>
+            <UnitSelect id={`product-v2-composition-basis-unit-${index}`} label={`Unidad base de ${row.name}`}
+              value={row.basisUnit} options={PHARMACY_BASE_UNITS} normalize={normalizePharmacyBaseUnit}
+              onChange={(value) => updateRow(row.activeIngredientId, 'basisUnit', value)} />
           </div>
-          <UnitSelect id={`product-v2-composition-basis-unit-${index}`} label="Unidad base"
-            value={row.basisUnit} options={PHARMACY_BASE_UNITS} normalize={normalizePharmacyBaseUnit}
-            onChange={(value) => updateRow(row.activeIngredientId, 'basisUnit', value)} />
         </div>
         <button type="button" className="pharmacy-composition__remove"
           aria-label={`Quitar ${row.name} de la composición`}

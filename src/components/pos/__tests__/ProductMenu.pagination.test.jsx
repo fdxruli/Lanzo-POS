@@ -29,8 +29,8 @@ vi.mock('../../../hooks/useInventoryMovement', () => ({
   useInventoryMovement: () => ({ loadBatchesForProduct: mocks.loadBatchesForProduct })
 }));
 vi.mock('../ProductCard', () => ({
-  default: ({ product, onCardClick }) => (
-    <button type="button" data-testid="product-card" onClick={() => onCardClick(product)}>
+  default: ({ product, onCardClick, showPharmacySummary }) => (
+    <button type="button" data-testid="product-card" data-pharmacy-summary={String(showPharmacySummary)} onClick={() => onCardClick(product)}>
       {product.name}
     </button>
   )
@@ -99,6 +99,12 @@ describe('ProductMenu stable real pagination', () => {
   const emitIntersection = async (isIntersecting) => {
     await act(async () => mocks.observerCallback([{ isIntersecting }]));
   };
+
+  it('keeps pharmacy summaries visible before a search is active', () => {
+    render(<ProductMenu {...defaultProps} pharmacySearchEnabled />);
+    expect(screen.getByRole('searchbox', { name: /principio activo/i })).toHaveValue('');
+    expect(screen.getAllByTestId('product-card')[0]).toHaveAttribute('data-pharmacy-summary', 'true');
+  });
 
   it('renders category color indicators with a neutral fallback and accessible selection state', () => {
     const onSelectCategory = vi.fn();

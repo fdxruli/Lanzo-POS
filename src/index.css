@@ -509,11 +509,13 @@ input:disabled {
 
 .tenant-runtime-trace {
   position: fixed;
-  inset-inline-start: 0.75rem;
+  inset-inline-start: auto;
+  inset-inline-end: 0.75rem;
   bottom: max(4.5rem, env(safe-area-inset-bottom));
   z-index: 40;
+  width: fit-content;
   max-width: min(26rem, calc(100vw - 1.5rem));
-  max-height: 60vh;
+  max-height: min(60vh, 30rem);
   overflow: auto;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border-color);
@@ -523,11 +525,52 @@ input:disabled {
 }
 
 .tenant-runtime-trace summary {
-  min-height: 2rem;
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
   cursor: pointer;
+  list-style: none;
+}
+
+.tenant-runtime-trace summary::-webkit-details-marker {
+  display: none;
+}
+
+.tenant-runtime-trace summary::marker {
+  content: '';
+}
+
+.tenant-runtime-trace.is-active:not([open]) {
+  border-color: var(--primary-color);
+}
+
+.tenant-runtime-trace.is-active:not([open]) summary svg {
+  color: var(--primary-color);
 }
 
 .tenant-runtime-trace textarea {
   width: 100%;
   resize: vertical;
+}
+
+@media (max-width: 1024px) {
+  .tenant-runtime-trace:not([open]) {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+
+  .tenant-runtime-trace:not([open]) summary {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .tenant-runtime-trace:not([open]) .tenant-runtime-trace__summary-text {
+    display: none;
+  }
 }

@@ -93,6 +93,57 @@ describe('ProductCard product image placeholder', () => {
   });
 });
 
+describe('ProductCard pharmacist information', () => {
+  const pharmacyFeatures = { activeRubros: ['farmacia'] };
+
+  it('shows one active ingredient, concentration, commercial pack, price and stock without a search prop', () => {
+    render(<ProductCard
+      features={pharmacyFeatures}
+      product={{
+        id: 'paracetamol-500', name: 'Paracetamol', price: 30, stock: 10, trackStock: true,
+        activeSubstance: 'Paracetamol',
+        metadata: { pharmacy: {
+          kind: 'medicine', dosageFormCode: 'tablet',
+          commercialPresentation: { version: 1, packageType: 'box', contentAmount: 10, contentUnit: 'tableta' },
+          composition: { version: 1, activeIngredients: [{
+            activeIngredientId: 'ai-paracetamol', name: 'Paracetamol', amount: 500, unit: 'mg', basisAmount: 1, basisUnit: 'tableta'
+          }] }
+        } }
+      }}
+      showPharmacySummary
+      onCardClick={vi.fn()}
+    />);
+
+    expect(screen.getByText('500 mg por tableta')).toBeInTheDocument();
+    expect(screen.getByText('Tableta · Caja con 10 tabletas')).toBeInTheDocument();
+    expect(screen.getByText('$30.00')).toBeInTheDocument();
+    expect(screen.getByText('10 disponibles')).toBeInTheDocument();
+    expect(screen.getByLabelText('Información farmacéutica del producto')).not.toHaveTextContent('Paracetamol');
+  });
+
+  it('keeps multi-ingredient names paired with each concentration', () => {
+    render(<ProductCard
+      features={pharmacyFeatures}
+      product={{
+        id: 'combined-medicine', name: 'Paracetamol Cafeína', price: 45, stock: 8, trackStock: true,
+        metadata: { pharmacy: {
+          kind: 'medicine', dosageFormCode: 'tablet',
+          commercialPresentation: { version: 1, packageType: 'box', contentAmount: 20, contentUnit: 'tableta' },
+          composition: { version: 1, activeIngredients: [
+            { activeIngredientId: 'ai-paracetamol', name: 'Paracetamol', amount: 500, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' },
+            { activeIngredientId: 'ai-caffeine', name: 'Cafeína', amount: 65, unit: 'mg', basisAmount: 1, basisUnit: 'tableta' }
+          ] }
+        } }
+      }}
+      showPharmacySummary
+      onCardClick={vi.fn()}
+    />);
+
+    expect(screen.getByText('Paracetamol 500 mg por tableta + Cafeína 65 mg por tableta')).toBeInTheDocument();
+    expect(screen.getByText('Tableta · Caja con 20 tabletas')).toBeInTheDocument();
+  });
+});
+
 describe('ProductCard: mercancía comprometida en POS', () => {
   const base = { id: 'shirt', name: 'Playera negra', price: 100, stock: 2, committedStock: 2, trackStock: true };
   it('distingue dos unidades comprometidas del agotamiento físico y permite consultar con toque y teclado', () => {

@@ -8,6 +8,7 @@ import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
 import { usePhysicalBarcodeScanner } from '../../../hooks/scanner/usePhysicalBarcodeScanner';
 import { getProductRubroConfig, normalizeProductRubro } from './config/productRubroConfig';
 import { useProductFormV2 } from './hooks/useProductFormV2';
+import { normalizePharmacyComposition } from '../../../services/pharmacy/pharmacyComposition';
 import ProductCoreFields from './components/ProductCoreFields';
 import ProductTypeSelector from './components/ProductTypeSelector';
 import GrocerySaleSetupFields from './components/GrocerySaleSetupFields';
@@ -29,13 +30,38 @@ import './ProductFormV2.css';
 const RUBRO_FIELDS = { abarrotes: GroceryProductFields, hardware: HardwareProductFields, 'verduleria/fruteria': ProduceProductFields, apparel: ApparelProductFields, farmacia: PharmacyProductFields, food_service: RestaurantProductFields, otro: GeneralProductFields };
 const ERROR_ACCORDIONS = { sanitaryFraction: 'specific', pharmacyKind: 'specific', compositionIngredients: 'specific', maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific', purchaseCost: 'specific' };
 
+const pharmacyAccordionSummary = (values) => {
+  const rows = Array.isArray(values.compositionIngredients) ? values.compositionIngredients : [];
+  if (rows.length) {
+    const composition = normalizePharmacyComposition({ version: 1, activeIngredients: rows });
+    if (!composition) return 'Composición incompleta';
+    return values.sanitaryFraction
+      ? `Composición capturada · fracción ${values.sanitaryFraction} capturada`
+      : 'Composición capturada · clasificación sanitaria pendiente';
+  }
+  if (values.pharmacyKind === 'medicine') {
+    return values.sanitaryFraction
+      ? `Fracción ${values.sanitaryFraction} capturada`
+      : 'Medicamento · clasificación sanitaria pendiente';
+  }
+  if (values.pharmacyKind === 'other') return 'Otro producto de farmacia';
+  const hasPharmacyData = Boolean(
+    values.dosageFormCode || values.packageType || values.packageContentAmount
+    || values.packageContentUnit || values.sanitaryFraction || values.sanitaryRegistration
+    || values.activeSubstance || values.concentration || values.presentationLegacy
+  );
+  return hasPharmacyData ? 'Datos farmacéuticos capturados' : 'Opcional';
+};
+
 export default function ProductFormV2({ onSave, onCancel, onDirtyChange, productToEdit, initialDraftValues = null, categories = [], activeRubroContext, businessTypes, features: suppliedFeatures, onOpenCategoryManager, onOpenBatches, onOpenExisting }) {
   const rubros = useMemo(() => normalizeBusinessTypes(businessTypes || activeRubroContext || productToEdit?.rubroContext), [activeRubroContext, businessTypes, productToEdit?.rubroContext]);
   const [activeRubro, setActiveRubro] = useState(() => normalizeProductRubro(productToEdit?.rubroContext || activeRubroContext || rubros[0]));
   const storeFeatures = useFeatureConfig(activeRubro);
   const features = suppliedFeatures || storeFeatures;
   const form = useProductFormV2({ activeRubro, capabilities: features, productToEdit, initialDraftValues, onSave });
-  const [openAccordion, setOpenAccordion] = useState('details');
+  const [openAccordion, setOpenAccordion] = useState(() => (
+    activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA ? 'specific' : 'details'
+  ));
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
   const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
@@ -71,8 +97,15 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     if (isEditing) return;
     const normalized = normalizeProductRubro(rubro);
     setActiveRubro(normalized);
+    setOpenAccordion(normalized === CANONICAL_BUSINESS_TYPES.FARMACIA ? 'specific' : 'details');
     form.changeRubro(normalized);
   };
+
+  useEffect(() => {
+    if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA && form.values.pharmacyKind === 'medicine') {
+      setOpenAccordion('specific');
+    }
+  }, [activeRubro, form.values.pharmacyKind]);
 
   useEffect(() => {
     if (!isEditing && isPharmacyMedicine && Number(stockValue || 0) > 0) {
@@ -110,7 +143,9 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
       if (savedCategory?.id) form.setField('categoryId', savedCategory.id);
     })} /></ProductFormAccordion>
     {form.values.trackStock && config.supports.alerts && <ProductFormAccordion id="product-v2-alerts" title="Alertas y almacenamiento" description="Existencias máximas, ubicación y proveedor." summary={form.values.location || form.values.maxStock !== '' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'alerts'} onToggle={() => setOpenAccordion(openAccordion === 'alerts' ? null : 'alerts')}><div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-max-stock">Stock máximo</label><input id="product-v2-max-stock" type="number" min="0" value={form.values.maxStock} onChange={(event) => form.setField('maxStock', event.target.value)} aria-invalid={Boolean(form.errors.fieldErrors.maxStock)} />{form.errors.fieldErrors.maxStock && <small className="product-form-v2__error">{form.errors.fieldErrors.maxStock}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-location">Ubicación</label><input id="product-v2-location" value={form.values.location} onChange={(event) => form.setField('location', event.target.value)} /></div></div></ProductFormAccordion>}
-    <ProductFormAccordion id="product-v2-specific" title={config.detailTitle} description={`Configuración específica para ${config.label.toLowerCase()}.`} summary={form.values.hasVariants ? 'Variantes' : form.values.expirationMode !== 'NONE' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'specific'} onToggle={() => setOpenAccordion(openAccordion === 'specific' ? null : 'specific')}><RubroFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} onCompositionChange={form.setComposition} onSaleMode={form.setSaleMode} onTrackStock={form.setTrackStock} onExpirationMode={form.setExpirationMode} onManageRecipe={() => setIsRecipeModalOpen(true)} isEditing={isEditing} productId={productToEdit?.id} onOpenBatches={() => onOpenBatches?.(productToEdit)} onBatchSummary={form.setBatchSummary} features={features} onOpenWholesale={() => setIsWholesaleModalOpen(true)} /></ProductFormAccordion>
+    <ProductFormAccordion id="product-v2-specific" title={config.detailTitle} description={`Configuración específica para ${config.label.toLowerCase()}.`} summary={activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA
+      ? pharmacyAccordionSummary(form.values)
+      : (form.values.hasVariants ? 'Variantes' : form.values.expirationMode !== 'NONE' ? 'Configurado' : 'Opcional')} isOpen={openAccordion === 'specific'} onToggle={() => setOpenAccordion(openAccordion === 'specific' ? null : 'specific')}><RubroFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} onCompositionChange={form.setComposition} onSaleMode={form.setSaleMode} onTrackStock={form.setTrackStock} onExpirationMode={form.setExpirationMode} onManageRecipe={() => setIsRecipeModalOpen(true)} isEditing={isEditing} productId={productToEdit?.id} onOpenBatches={() => onOpenBatches?.(productToEdit)} onBatchSummary={form.setBatchSummary} features={features} onOpenWholesale={() => setIsWholesaleModalOpen(true)} /></ProductFormAccordion>
     <ProductFormActions isSaving={form.isSaving} onCancel={onCancel} onSave={() => form.submit()} onSaveAndAddAnother={saveAndAddAnother} />
     <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={(scanEvent) => { form.setField('barcode', scanEvent.code); setIsScannerOpen(false); }} />
     <RecipeBuilderModal show={isRecipeModalOpen} onClose={() => setIsRecipeModalOpen(false)} existingRecipe={form.values.recipe} onSave={(recipe) => form.setField('recipe', recipe)} productName={form.values.name} categories={categories} />

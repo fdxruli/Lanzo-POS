@@ -438,6 +438,20 @@
   -webkit-line-clamp: 2;
 }
 
+.product-card--pharmacy {
+  min-height: 232px;
+}
+
+.product-card__pharmacy-composition {
+  color: var(--text-dark);
+  font-weight: 700;
+}
+
+.product-card__pharmacy-details {
+  color: var(--text-light);
+  font-weight: 600;
+}
+
 .product-card__price-row {
   display: flex;
   align-items: baseline;
@@ -680,6 +694,10 @@
     min-height: 218px;
   }
 
+  .product-card--pharmacy {
+    min-height: 244px;
+  }
+
   .product-card__image-zone {
     height: 104px;
   }
@@ -753,6 +771,10 @@
     min-height: 212px;
   }
 
+  .product-card--pharmacy {
+    min-height: 232px;
+  }
+
   .product-card__image-zone {
     height: 96px;
   }
@@ -771,6 +793,10 @@
 
   .product-card {
     min-height: 220px;
+  }
+
+  .product-card--pharmacy {
+    min-height: 244px;
   }
 
   .product-card__image-zone {

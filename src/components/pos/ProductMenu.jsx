@@ -812,7 +812,7 @@ export default function ProductMenu({
                     isLoadingVariant={loadingVariantId === item.id}
                     hasAvailableVariants={variantStatusByProductId[item.id] === true}
                     strictExpiryBlocked={strictExpiryStatus?.blocked === true}
-                    showPharmacySummary={pharmacySearchEnabled && isSearchActive}
+                    showPharmacySummary={pharmacySearchEnabled}
                     selectionDisabled={readOnly}
                   />
                 </div>
