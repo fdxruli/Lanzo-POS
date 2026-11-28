@@ -7,8 +7,18 @@ import {
 } from '../pharmacyComposition';
 
 describe('pharmacy composition', () => {
-  it('normalizes case and repeated whitespace for a business-local identity key', () => {
+  it('normalizes case, edge and repeated whitespace, accents, and canonical Unicode forms', () => {
+    const variants = [
+      'Paracetamol',
+      'paracetamol',
+      'PARACETAMOL',
+      '  Paracetamol  ',
+      'Paracetamól',
+      'Paracetamo\u0301l'
+    ];
+    expect(new Set(variants.map(normalizeActiveIngredientNameKey))).toEqual(new Set(['paracetamol']));
     expect(normalizeActiveIngredientNameKey('  PARACETAMOL   500  ')).toBe('paracetamol 500');
+    expect(normalizeActiveIngredientNameKey('Paracetamol XR')).not.toBe('paracetamol');
   });
 
   it('preserves decimal amounts, units and concentration bases in the canonical v1 shape', () => {

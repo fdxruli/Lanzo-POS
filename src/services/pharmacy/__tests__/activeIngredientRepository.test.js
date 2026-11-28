@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const harness = vi.hoisted(() => ({ currentLicenseKey: null, db: null }));
+const harness = vi.hoisted(() => ({ currentLicenseKey: null, cloudEnabled: false, db: null }));
 
 vi.mock('../../db/dexie', async () => {
   const { default: Dexie } = await import('dexie');
@@ -16,7 +16,10 @@ vi.mock('../../db/dexie', async () => {
 });
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: {
   getState: () => ({ licenseDetails: harness.currentLicenseKey
-    ? { license_key: harness.currentLicenseKey } : null })
+    ? {
+      license_key: harness.currentLicenseKey,
+      features: harness.cloudEnabled ? { cloud_pos_sync: true, cloud_products_sync: true } : {}
+    } : null })
 } }));
 vi.mock('../../auth/productInventoryAuthority', () => ({
   captureProductInventoryMutation: () => ({ assertCurrent: () => {} }),
@@ -31,6 +34,7 @@ import { activeIngredientRepository } from '../activeIngredientRepository';
 describe('activeIngredientRepository local persistence', () => {
   beforeEach(async () => {
     harness.currentLicenseKey = null;
+    harness.cloudEnabled = false;
     if (harness.db.isOpen()) harness.db.close();
     await harness.db.delete();
     await harness.db.open();
@@ -40,18 +44,28 @@ describe('activeIngredientRepository local persistence', () => {
     await harness.db?.delete();
   });
 
-  it('resolves simultaneous case and whitespace variants to one stable local identity', async () => {
-    const [first, second] = await Promise.all([
-      activeIngredientRepository.create('Paracetamol'),
-      activeIngredientRepository.create('  PARACETAMOL  ')
-    ]);
+  it('resolves simultaneous case, whitespace, accent, and Unicode variants to one local identity', async () => {
+    const variants = [
+      'Paracetamol',
+      'paracetamol',
+      'PARACETAMOL',
+      '  Paracetamol  ',
+      'Paracetamól',
+      'Paracetamo\u0301l'
+    ];
+    const created = await Promise.all(variants.map((name) => activeIngredientRepository.create(name)));
+    const first = created[0];
 
-    expect(first.id).toBe(second.id);
+    expect(new Set(created.map(({ id }) => id)).size).toBe(1);
     expect(await harness.db.table('active_ingredients').count()).toBe(1);
     expect(await activeIngredientRepository.list()).toHaveLength(1);
     expect(await activeIngredientRepository.getByNameKey('paracetamol')).toMatchObject({
       id: first.id, nameKey: 'paracetamol', businessKey: harness.db.name
     });
+
+    const differentIngredient = await activeIngredientRepository.create('Paracetamol XR');
+    expect(differentIngredient.id).not.toBe(first.id);
+    expect(await harness.db.table('active_ingredients').count()).toBe(2);
 
     const product = { id: 'product-paracetamol', metadata: { pharmacy: { composition: {
       version: 1, activeIngredients: [{ activeIngredientId: first.id, name: first.name,
@@ -60,9 +74,81 @@ describe('activeIngredientRepository local persistence', () => {
     await harness.db.table('menu').put(product);
     harness.db.close();
     await harness.db.open();
-    expect(await harness.db.table('active_ingredients').get(first.id)).toMatchObject({ name: 'Paracetamol' });
+    const persisted = await harness.db.table('active_ingredients').get(first.id);
+    expect(persisted).toMatchObject({ id: first.id, nameKey: 'paracetamol' });
+    expect(variants.some((name) => name.trim() === persisted.name)).toBe(true);
     expect((await harness.db.table('menu').get(product.id)).metadata.pharmacy.composition.activeIngredients[0])
       .toMatchObject({ activeIngredientId: first.id, amount: 500 });
+  });
+
+  it('reuses the preferred existing identity without deleting a legacy equivalent row', async () => {
+    await harness.db.table('active_ingredients').bulkPut([
+      {
+        id: 'ai-canonical', businessKey: harness.db.name, name: 'Paracetamol',
+        nameKey: 'paracetamol', isActive: true, createdAt: '2026-11-27T18:40:00.000Z'
+      },
+      {
+        id: 'ai-legacy-accent', businessKey: harness.db.name, name: 'Paracetamól',
+        nameKey: 'paracetamól', isActive: true, createdAt: '2026-11-27T23:19:00.000Z'
+      }
+    ]);
+
+    await expect(activeIngredientRepository.create('Paracetamo\u0301l')).resolves.toMatchObject({
+      id: 'ai-canonical', name: 'Paracetamol'
+    });
+    await expect(activeIngredientRepository.getByNameKey('paracetamól')).resolves.toMatchObject({
+      id: 'ai-legacy-accent', name: 'Paracetamól'
+    });
+    expect(await harness.db.table('active_ingredients').count()).toBe(2);
+  });
+
+  it('reconciles a local identity to the cloud ID in products and pending sync payloads', async () => {
+    harness.currentLicenseKey = 'license-cloud-a';
+    harness.cloudEnabled = true;
+    const localId = 'ai-local-paracetamol';
+    const cloudId = 'ai-cloud-paracetamol';
+    const product = {
+      id: 'product-local-combination',
+      metadata: { pharmacy: { composition: { version: 1, activeIngredients: [
+        { activeIngredientId: localId, name: 'Paracetamól' },
+        { activeIngredientId: 'ai-other', name: 'Clavulanato' }
+      ] } } }
+    };
+    const otherProduct = {
+      id: 'product-other-ingredient',
+      metadata: { pharmacy: { composition: { version: 1, activeIngredients: [
+        { activeIngredientId: 'ai-other', name: 'Clavulanato' }
+      ] } } }
+    };
+    await harness.db.table('active_ingredients').put({
+      id: localId, businessKey: harness.db.name, name: 'Paracetamól',
+      nameKey: 'paracetamól', isActive: true, syncStatus: 'pending'
+    });
+    await harness.db.table('menu').bulkPut([product, otherProduct]);
+    await harness.db.table('sync_outbox').bulkPut([
+      { id: 'pending-product', entityType: 'product', status: 'pending', payload: { product } },
+      { id: 'completed-product', entityType: 'product', status: 'completed', payload: { product } }
+    ]);
+
+    await activeIngredientRepository.applyCloudRecord({
+      id: cloudId, client_id: localId, name: 'Paracetamol', name_key: 'paracetamol',
+      is_active: true, server_version: 1
+    }, { localId });
+
+    expect(await harness.db.table('active_ingredients').get(localId)).toBeUndefined();
+    expect(await harness.db.table('active_ingredients').get(cloudId)).toMatchObject({
+      id: cloudId, businessKey: 'license-cloud-a', clientIds: [localId]
+    });
+    expect((await harness.db.table('menu').get(product.id)).metadata.pharmacy.composition.activeIngredients)
+      .toEqual([
+        { activeIngredientId: cloudId, name: 'Paracetamol' },
+        { activeIngredientId: 'ai-other', name: 'Clavulanato' }
+      ]);
+    expect(await harness.db.table('menu').get(otherProduct.id)).toEqual(otherProduct);
+    expect((await harness.db.table('sync_outbox').get('pending-product')).payload.product.metadata.pharmacy.composition.activeIngredients[0])
+      .toMatchObject({ activeIngredientId: cloudId, name: 'Paracetamol' });
+    expect((await harness.db.table('sync_outbox').get('completed-product')).payload.product.metadata.pharmacy.composition.activeIngredients[0])
+      .toMatchObject({ activeIngredientId: localId, name: 'Paracetamól' });
   });
 
   it('scopes matching names to the active business', async () => {

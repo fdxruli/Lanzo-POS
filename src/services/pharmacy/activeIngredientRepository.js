@@ -51,6 +51,31 @@ const stableIngredientId = async (businessKey, nameKey) => {
   return generateID('ai');
 };
 
+const compareIdentityCandidates = (left, right, nameKey) => {
+  const leftKeyMatch = left.nameKey === nameKey ? 1 : 0;
+  const rightKeyMatch = right.nameKey === nameKey ? 1 : 0;
+  if (leftKeyMatch !== rightKeyMatch) return rightKeyMatch - leftKeyMatch;
+
+  const leftActive = left.isActive !== false && !left.deletedAt ? 1 : 0;
+  const rightActive = right.isActive !== false && !right.deletedAt ? 1 : 0;
+  if (leftActive !== rightActive) return rightActive - leftActive;
+
+  const leftSynced = left.syncStatus === PRODUCT_SYNC_STATUS.SYNCED && left.serverVersion ? 1 : 0;
+  const rightSynced = right.syncStatus === PRODUCT_SYNC_STATUS.SYNCED && right.serverVersion ? 1 : 0;
+  if (leftSynced !== rightSynced) return rightSynced - leftSynced;
+
+  return String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+    || String(left.id).localeCompare(String(right.id));
+};
+
+const bestIdentityCandidate = (rows, nameKey) => {
+  const normalizedNameKey = normalizeActiveIngredientNameKey(nameKey);
+  if (!normalizedNameKey) return null;
+  return rows
+    .filter((row) => normalizeActiveIngredientNameKey(row.name) === normalizedNameKey)
+    .sort((left, right) => compareIdentityCandidates(left, right, nameKey))[0] || null;
+};
+
 export const cloudActiveIngredientToLocal = (row, existing = null, overrides = {}) => {
   const name = String(row?.name ?? existing?.name ?? '').trim();
   return {
@@ -148,11 +173,17 @@ export const activeIngredientRepository = {
     if (!nameKey) return null;
     await ensureOpen();
     const mode = getMode();
-    const table = db.table(STORES.ACTIVE_INGREDIENTS);
-    const scoped = await table.where('[businessKey+nameKey]').equals([mode.businessKey, nameKey]).first();
+    const rows = await db.table(STORES.ACTIVE_INGREDIENTS).toArray();
+    const scoped = bestIdentityCandidate(
+      rows.filter((row) => row.businessKey === mode.businessKey),
+      nameKey
+    );
     if (scoped || !mode.cloudEnabled) return scoped;
-    const local = await table.where('[businessKey+nameKey]').equals([db.name, nameKey]).first();
-    return local?.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ? local : null;
+    return bestIdentityCandidate(
+      rows.filter((row) => row.businessKey === db.name
+        && row.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED),
+      nameKey
+    );
   },
 
   async hasPending(ids = []) {

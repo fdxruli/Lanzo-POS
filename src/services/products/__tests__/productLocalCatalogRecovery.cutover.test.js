@@ -12,7 +12,7 @@ const snapshotPage = (rows = {}) => ({
 
 const mocks = vi.hoisted(() => ({
   recover: vi.fn(), contract: vi.fn(), snapshot: vi.fn(), category: vi.fn(), negotiateSnapshotProtocol: vi.fn(),
-  getMeta: vi.fn(), setMeta: vi.fn(), advanceMeta: vi.fn(),
+  activeIngredient: vi.fn(), getMeta: vi.fn(), setMeta: vi.fn(), advanceMeta: vi.fn(),
   tenantLease: vi.fn(), readInventory: vi.fn(), saveConflict: vi.fn()
 }));
 
@@ -73,7 +73,7 @@ vi.mock('../../auth/actorRuntimeController', () => ({
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   recoverLocalProductGroup: mocks.recover, getLocalCatalogRecoveryContract: mocks.contract,
   negotiateSnapshotProtocol: mocks.negotiateSnapshotProtocol, pullCatalogSnapshot: mocks.snapshot,
-  upsertCategory: mocks.category
+  upsertCategory: mocks.category, upsertActiveIngredient: mocks.activeIngredient
 } }));
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
@@ -224,6 +224,29 @@ describe('atomic catalog recovery and local confirmation', () => {
     });
     expect(mocks.category).not.toHaveBeenCalled();
     expect(mocks.recover).not.toHaveBeenCalled();
+  });
+
+  it('accepts a canonical cloud key while recovering an equivalent legacy local ingredient', async () => {
+    const localId = 'ai-local-paracetamol-accent';
+    await db.table('active_ingredients').put({
+      id: localId, businessKey: db.name, name: 'Paracetamól', nameKey: 'paracetamól',
+      isActive: true, createdAt, syncStatus: 'local'
+    });
+    mocks.activeIngredient.mockImplementation(async ({ activeIngredient, idempotencyKey }) => ({
+      success: true,
+      idempotency_key: idempotencyKey,
+      active_ingredient: {
+        id: 'ai-cloud-paracetamol', client_id: activeIngredient.id,
+        name: 'Paracetamol', name_key: 'paracetamol', is_active: true, server_version: 1
+      }
+    }));
+
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey }))
+      .resolves.toMatchObject({ success: true, recovered: 1, issues: [] });
+    expect(await db.table('active_ingredients').get(localId)).toBeUndefined();
+    expect(await db.table('active_ingredients').get('ai-cloud-paracetamol')).toMatchObject({
+      name: 'Paracetamol', nameKey: 'paracetamol', syncStatus: 'synced'
+    });
   });
 
   it('does not send cross-tenant or unauthorized local data', async () => {
