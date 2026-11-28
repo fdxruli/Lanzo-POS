@@ -51,9 +51,10 @@ export default function DataTransferModal({
       actorHandle = captureSettingsAction('inventory');
       setIsLoading(true);
       // Ya no cargamos datos aquí, la función 'smart' se encarga internamente
-      await downloadInventorySmart(rubro);
+      const completed = await downloadInventorySmart(rubro);
       actorHandle.assertCurrent('inventory');
-      showMessageModal('✅ Archivo de inventario generado correctamente.');
+      if (completed !== true) throw new Error('INVENTORY_EXPORT_INCOMPLETE');
+      showMessageModal('Exportación de inventario completada.');
     } catch (error) {
       try {
         actorHandle?.assertCurrent('inventory');
@@ -89,7 +90,7 @@ export default function DataTransferModal({
       showMessageModal('Plantilla descargada. Úsala para rellenar tus productos.');
     } catch (error) {
       Logger.error('Error descargando plantilla:', error);
-      showMessageModal(`⚠️ ${error.message}`);
+      showMessageModal('No se pudo descargar la plantilla de exportación.');
     }
   }
 
@@ -116,7 +117,14 @@ export default function DataTransferModal({
       } else {
         const date = new Date().toISOString().split('T')[0];
         downloadFile(report.csv, 'dispensaciones_farmacia_local_' + date + '.csv');
-        showMessageModal('Reporte auxiliar generado: ' + report.count + ' registros; ' + report.issueRows + ' con incidencias. No equivale a un libro sanitario autorizado.');
+        const counts = Number.isSafeInteger(report.count) && report.count >= 0
+          ? ': ' + report.count + ' registros'
+          : '';
+        const issues = Number.isSafeInteger(report.issueRows) && report.issueRows >= 0
+          && Number.isSafeInteger(report.count) && report.issueRows <= report.count
+          ? '; ' + report.issueRows + ' con incidencias'
+          : '';
+        showMessageModal('Reporte auxiliar generado' + counts + issues + '. No equivale a un libro sanitario autorizado.');
       }
     } catch (error) {
       try {

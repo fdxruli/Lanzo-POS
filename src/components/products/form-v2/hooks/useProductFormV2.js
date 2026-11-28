@@ -4,7 +4,7 @@ import { normalizeProductRubro } from '../config/productRubroConfig';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
 import { buildApparelVariantDelta, rebaseApparelVariantSnapshot } from '../domain/buildApparelVariantDelta';
 import { normalizeProduceSaleConfiguration, toNumber } from '../domain/productFormNormalization';
-import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
+import { calculateFractionedUnitCost, formatProductSaleMargin, getProductMarginError } from '../domain/fractionedPricing';
 import { validateProductForm } from '../domain/validateProductForm';
 import { findLocalBarcodeConflicts } from '../../../../services/db/products';
 import { normalizeBarcodeKey } from '../../../../services/products/productMapper';
@@ -188,8 +188,9 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
     const unitCost = calculateFractionedUnitCost({ purchaseCost, factor });
     if (unitCost <= 0) return;
     setValues((previous) => {
-      const margin = calculateSaleMargin({ cost: unitCost, price: previous.price });
-      const nextMargin = margin > 0 ? margin.toFixed(1) : '';
+      const nextMargin = getProductMarginError(previous.margin)
+        ? previous.margin
+        : formatProductSaleMargin(unitCost, previous.price);
       if (toNumber(previous.cost) === unitCost && previous.margin === nextMargin) return previous;
       return { ...previous, cost: unitCost, margin: nextMargin };
     });
@@ -208,9 +209,20 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, ini
       trackStock: productToEdit ? previous.trackStock : defaults.trackStock
     }));
   }, [capabilities, productToEdit]);
-  const changeCost = useCallback((cost) => setValues((previous) => { const price = toNumber(previous.price); const parsedCost = toNumber(cost); return { ...previous, cost, margin: parsedCost > 0 && price > 0 ? (((price - parsedCost) / price) * 100).toFixed(1) : '' }; }), []);
-  const changePrice = useCallback((price) => setValues((previous) => { const parsedPrice = toNumber(price); const cost = toNumber(previous.cost); return { ...previous, price, margin: cost > 0 && parsedPrice > 0 ? (((parsedPrice - cost) / parsedPrice) * 100).toFixed(1) : '' }; }), []);
-  const changeMargin = useCallback((margin) => setValues((previous) => { const safeMargin = Math.min(toNumber(margin), 99.9); const cost = toNumber(previous.cost); return { ...previous, margin, price: cost > 0 ? (cost / (1 - safeMargin / 100)).toFixed(2) : previous.price }; }), []);
+  const changeCost = useCallback((cost) => setValues((previous) => ({
+    ...previous, cost,
+    margin: getProductMarginError(previous.margin) ? previous.margin : formatProductSaleMargin(cost, previous.price)
+  })), []);
+  const changePrice = useCallback((price) => setValues((previous) => ({
+    ...previous, price, margin: formatProductSaleMargin(previous.cost, price)
+  })), []);
+  const changeMargin = useCallback((margin) => setValues((previous) => {
+    if (String(margin ?? '').trim() === '' || getProductMarginError(margin)) return { ...previous, margin };
+    const cost = toNumber(previous.cost);
+    if (cost <= 0) return { ...previous, margin };
+    const price = cost / (1 - Number(margin) / 100);
+    return { ...previous, margin, price: Number.isFinite(price) ? price.toFixed(2) : '' };
+  }), []);
   const setImage = useCallback(async (file) => {
     if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     if (!file) {

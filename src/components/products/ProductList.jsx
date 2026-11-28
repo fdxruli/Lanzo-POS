@@ -72,6 +72,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
   const fetchPage = useInventoryCatalogStore((state) => state.fetchPage);
   const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const hasMore = useInventoryCatalogStore((state) => state.hasMore);
+  const nextCursor = useInventoryCatalogStore((state) => state.nextCursor);
   const isGlobalLoading = useInventoryCatalogStore((state) => state.isLoading);
   const loadFirstPage = useInventoryCatalogStore((state) => state.loadFirstPage);
   const filters = useInventoryCatalogStore((state) => state.filters);
@@ -295,7 +296,7 @@ export default function ProductList({ products, categories = [], isLoading, onEd
       <div className="list-header">
         <div className="title-group">
           <h3 className="subtitle">Inventario</h3>
-          <span className="product-count">{displayProducts.length} items mostrados</span>
+          <span className="product-count">{displayProducts.length} {displayProducts.length === 1 ? 'producto mostrado' : 'productos mostrados'}</span>
         </div>
 
         {!reviewOnly && <div className="product-list-actions">
@@ -688,9 +689,9 @@ export default function ProductList({ products, categories = [], isLoading, onEd
         </div>
       )}
 
-      {!reviewOnly && !catalogBlocked && !isSearchMode && hasMore && (
+      {!reviewOnly && !catalogBlocked && !isCatalogSearchActive && hasMore && nextCursor != null && (
         <div className="pagination-container">
-          <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading}>
+          <button className="ui-button ui-button--secondary btn-load-more" onClick={() => fetchPage('next')} disabled={isGlobalLoading} aria-busy={isGlobalLoading}>
             {isGlobalLoading ? 'Cargando...' : 'Cargar más productos'}
           </button>
         </div>

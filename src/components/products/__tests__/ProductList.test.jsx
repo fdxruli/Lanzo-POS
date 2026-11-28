@@ -10,6 +10,7 @@ import { searchProductsInTable } from '../../../services/db/productSearch';
 import { buildProductSearchFields } from '../../../services/db/productSearchIndex';
 
 const mocks = vi.hoisted(() => ({
+  activeRubros: [],
   queryBatchesByProductIdsAndActive: vi.fn(async () => []),
   searchProductsInDB: vi.fn(async () => []),
   catalogState: {
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     loadInitialProducts: vi.fn(),
     loadFirstPage: vi.fn(),
     hasMore: false,
+    nextCursor: 'mock-next-cursor',
     isLoading: false
   }
 }));
@@ -34,7 +36,7 @@ vi.mock('../../../services/db/databaseRuntime', async (importOriginal) => ({
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
-  useFeatureConfig: () => ({ hasBulk: true, hasExpiry: true, hasMinMax: false, hasLabFields: false, hasSKU: false, hasWholesale: false, hasWaste: false, hasDailyPricing: false })
+  useFeatureConfig: () => ({ activeRubros: mocks.activeRubros, hasBulk: true, hasExpiry: true, hasMinMax: false, hasLabFields: false, hasSKU: false, hasWholesale: false, hasWaste: false, hasDailyPricing: false })
 }));
 vi.mock('../../../store/useInventoryCatalogStore', () => ({
   useInventoryCatalogStore: (selector) => selector(mocks.catalogState)
@@ -87,6 +89,8 @@ beforeEach(() => {
   mocks.catalogState.loadFirstPage.mockReset();
   mocks.catalogState.filters = { status: 'all', categoryId: null };
   mocks.catalogState.hasMore = false;
+  mocks.catalogState.nextCursor = 'mock-next-cursor';
+  mocks.activeRubros = [];
   mocks.catalogState.isLoading = false;
   mocks.catalogState.setFilters.mockReset();
   mocks.catalogState.fetchPage.mockReset();
@@ -603,4 +607,53 @@ it('ignores an older submitted response and restores pagination when cleared', a
   expect(screen.queryByText('Old result')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Limpiar búsqueda' }));
   expect(await screen.findByText('Paged catalog')).toBeInTheDocument();
+});
+
+describe('F06: visible catalog count and page exhaustion', () => {
+  it('counts only displayed products and hides the control when pages are exhausted', () => {
+    const products = [
+      { id: 'a', name: 'Producto A', price: 10, cost: 5, stock: 1 },
+      { id: 'b', name: 'Producto B', price: 20, cost: 10, stock: 1 }
+    ];
+    const { rerender } = render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    expect(screen.getByText('0 productos mostrados')).toBeInTheDocument();
+    mocks.catalogState.hasMore = true;
+    rerender(<ProductList products={products.slice(0, 1)} categories={[]} isLoading={false} />);
+    expect(screen.getByText('1 producto mostrado')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más productos' }));
+    expect(mocks.catalogState.fetchPage).toHaveBeenCalledWith('next');
+    mocks.catalogState.isLoading = true;
+    rerender(<ProductList products={products.slice(0, 1)} categories={[]} isLoading={false} />);
+    expect(screen.getByRole('button', { name: 'Cargando...' })).toBeDisabled();
+    mocks.catalogState.isLoading = false;
+    mocks.catalogState.hasMore = false;
+    rerender(<ProductList products={products} categories={[]} isLoading={false} />);
+    expect(screen.getByText('2 productos mostrados')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+  });
+});
+
+describe('F06: pharmacy filter pagination', () => {
+  it('does not paginate the unfiltered catalog during a pharmacy-only search', async () => {
+    mocks.activeRubros = ['farmacia'];
+    mocks.catalogState.hasMore = true;
+    mocks.searchProductsInDB.mockResolvedValueOnce([]);
+    render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    expect(screen.getByRole('button', { name: 'Cargar más productos' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Filtros de farmacia'));
+    fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'tablet' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
+    await waitFor(() => expect(mocks.searchProductsInDB).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar', exact: true }));
+    expect(screen.getByRole('button', { name: 'Cargar más productos' })).toBeInTheDocument();
+    expect(mocks.catalogState.fetchPage).not.toHaveBeenCalled();
+  });
+
+  it('does not expose next-page loading without a cursor even when the store is optimistic', () => {
+    mocks.catalogState.hasMore = true;
+    mocks.catalogState.nextCursor = null;
+    render(<ProductList products={[]} categories={[]} isLoading={false} />);
+    expect(screen.queryByRole('button', { name: 'Cargar más productos' })).not.toBeInTheDocument();
+  });
 });

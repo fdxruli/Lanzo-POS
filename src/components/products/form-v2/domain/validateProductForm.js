@@ -1,4 +1,5 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
+import { getProductMarginError } from './fractionedPricing';
 import { toNumber, variantKey } from './productFormNormalization';
 import { SANITARY_FRACTIONS, hasChangedConfirmedClassification } from '../../../../utils/pharmacyClassification';
 import { normalizePharmacyComposition } from '../../../../services/pharmacy/pharmacyComposition';
@@ -22,6 +23,8 @@ export function validateProductForm(values, { activeRubro, isEditing = false, pr
 
   if (!String(values.name || '').trim()) fieldErrors.name = 'El nombre es obligatorio.';
   if (!isIngredient && price <= 0) fieldErrors.price = 'El precio de venta debe ser mayor que cero.';
+  const marginError = getProductMarginError(values.margin, values.cost ?? '');
+  if (!isIngredient && marginError) fieldErrors.margin = marginError;
   if (cost < 0) fieldErrors.cost = 'El costo no puede ser negativo.';
   if (values.trackStock && stock < 0) fieldErrors.stock = 'La existencia inicial no puede ser negativa.';
   if (values.trackStock && minStock < 0) fieldErrors.minStock = 'El stock mínimo no puede ser negativo.';

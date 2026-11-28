@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   capture: vi.fn(), assertCurrent: vi.fn(), loadData: vi.fn(),
-  buildReport: vi.fn(), download: vi.fn(), showMessage: vi.fn()
+  buildReport: vi.fn(), download: vi.fn(), showMessage: vi.fn(), downloadInventory: vi.fn()
 }));
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
@@ -21,7 +21,7 @@ vi.mock('../../../hooks/useDismissibleHistoryLayer', () => ({
   useDismissibleHistoryLayer: () => vi.fn()
 }));
 vi.mock('../../../services/dataTransfer', () => ({
-  downloadInventorySmart: vi.fn(), processImport: vi.fn(), previewProductCsvImport: vi.fn(),
+  downloadInventorySmart: mocks.downloadInventory, processImport: vi.fn(), previewProductCsvImport: vi.fn(),
   downloadFile: mocks.download, buildPharmacyReport: mocks.buildReport, downloadTemplate: vi.fn()
 }));
 vi.mock('../../../services/database', () => ({
@@ -63,6 +63,16 @@ describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () 
     expect(mocks.assertCurrent).toHaveBeenCalledWith('reports');
     expect(mocks.download.mock.calls[0][0]).toBe('archivo,seguro');
     expect(mocks.download.mock.calls[0][1]).toMatch(/^dispensaciones_farmacia_local_\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it('omits unavailable incident counts without printing undefined', async () => {
+    mocks.buildReport.mockReturnValue({ csv: 'archivo,seguro', count: 1 });
+    mount();
+    clickReport();
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalled());
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(mocks.showMessage.mock.calls[0][0]).not.toMatch(/undefined/);
+    expect(mocks.showMessage.mock.calls[0][0]).toMatch(/1 registros/);
   });
 
   it('staff sin permisos: el guard deniega la acción y no lee ventas', async () => {
@@ -131,5 +141,37 @@ describe('DataTransferModal: visibilidad y descarga autorizada de farmacia', () 
     await waitFor(() => expect(mocks.showMessage).toHaveBeenCalled());
     expect(mocks.download).not.toHaveBeenCalled();
     expect(mocks.showMessage.mock.calls[0][0]).toMatch(/registros locales de este dispositivo/i);
+  });
+});
+
+describe('F06: inventory export feedback', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.capture.mockReturnValue({ assertCurrent: mocks.assertCurrent });
+  });
+  afterEach(cleanup);
+
+  it('announces a successful inventory export only after confirmed completion', async () => {
+    mocks.downloadInventory.mockResolvedValue(true);
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Descargar Inventario Completo/i }));
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledWith('Exportación de inventario completada.'));
+    expect(mocks.downloadInventory).toHaveBeenCalledWith('farmacia');
+  });
+
+  it.each([false, undefined])('does not announce success when export returns %s', async (result) => {
+    mocks.downloadInventory.mockResolvedValue(result);
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Descargar Inventario Completo/i }));
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledWith('Error al generar la exportación.'));
+    expect(mocks.showMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles a rejected export without exposing undefined', async () => {
+    mocks.downloadInventory.mockRejectedValue(new Error('failed'));
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Descargar Inventario Completo/i }));
+    await waitFor(() => expect(mocks.showMessage).toHaveBeenCalledWith('Error al generar la exportación.'));
+    expect(mocks.showMessage).toHaveBeenCalledTimes(1);
   });
 });
