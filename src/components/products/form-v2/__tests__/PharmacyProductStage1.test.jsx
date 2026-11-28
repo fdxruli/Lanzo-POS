@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import ProductFormV2 from '../ProductFormV2';
 import PharmacyCompositionEditor from '../rubros/PharmacyCompositionEditor';
 import { activeIngredientRepository } from '../../../../services/pharmacy/activeIngredientRepository';
@@ -46,6 +47,57 @@ const addIngredient = async (id, amount) => {
 };
 
 describe('Farmacia - recorrido visual de Etapa 1', () => {
+  const acceptanceMedication = {
+    id: 'acceptance-medication', rubroContext: 'farmacia', name: 'Paracetamol QA',
+    activeSubstance: 'Paracetamol', price: 30, cost: 15, stock: 2, minStock: 0,
+    trackStock: true, metadata: { pharmacy: { kind: 'medicine', concentration: '500 mg por 1' } }
+  };
+
+  it('F06 acceptance: rejects keyboard-entered 100% then submits the restored 50% price', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(() => true);
+    show({ productToEdit: acceptanceMedication, onSave });
+    const margin = screen.getByLabelText('Margen');
+    const price = screen.getByLabelText(/Precio de venta/i);
+    const save = screen.getByRole('button', { name: 'Guardar producto' });
+    expect(margin).toHaveValue(50);
+    expect(price).toHaveValue(30);
+    await user.clear(margin);
+    await user.keyboard('1');
+    expect(margin).toHaveValue(1);
+    await user.keyboard('0');
+    expect(margin).toHaveValue(10);
+    await user.keyboard('0');
+    expect(margin).toHaveValue(100);
+    expect(margin).toHaveAttribute('aria-invalid', 'true');
+    await user.click(save);
+    expect(onSave).not.toHaveBeenCalled();
+    await user.clear(margin);
+    await user.keyboard('5');
+    expect(margin).toHaveValue(5);
+    await user.keyboard('0');
+    expect(margin).toHaveValue(50);
+    expect(price).toHaveValue(30);
+    expect(margin).toHaveAttribute('aria-invalid', 'false');
+    await user.click(save);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ id: acceptanceMedication.id, cost: 15, price: 30 });
+  });
+
+  it('F06 acceptance: sends the edited low stock threshold without changing stock or price', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(() => true);
+    show({ productToEdit: acceptanceMedication, onSave });
+    const minimum = screen.getByLabelText(/Alerta de stock bajo/i);
+    expect(minimum).toHaveValue(0);
+    await user.clear(minimum);
+    await user.keyboard('2');
+    expect(minimum).toHaveValue(2);
+    await user.click(screen.getByRole('button', { name: 'Guardar producto' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ id: acceptanceMedication.id, minStock: 2, stock: 2, cost: 15, price: 30 });
+  });
+
   it('abre Datos farmacéuticos y no muestra un estado configurado en un formulario vacío', () => {
     show();
     const toggle = screen.getByRole('button', { name: /Datos farmacéuticos/i });
