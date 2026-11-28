@@ -120,7 +120,9 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
 
   const exportCsv = () => runGuarded('settings_data', (assertAuthorized) => (
     downloadPortableTableCsv(csvTable, { assertAuthorized })
-  ), TABLE_LABELS[csvTable] ? `${TABLE_LABELS[csvTable]} descargados en CSV.` : 'Tabla descargada en CSV.');
+  ), csvTable === 'active_ingredients'
+    ? `${TABLE_LABELS[csvTable]} descargados en CSV.`
+    : (TABLE_LABELS[csvTable] ? `${TABLE_LABELS[csvTable]} descargado en CSV.` : 'Tabla descargada en CSV.'));
 
   const selectTransferFile = async (event) => {
     const file = event.target.files?.[0] || null;
