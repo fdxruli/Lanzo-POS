@@ -23,24 +23,42 @@ const show = (props = {}) => render(<ProductFormV2
   activeRubroContext="farmacia" categories={[]} features={{ hasExpiry: true }}
   onSave={() => true} onCancel={() => {}} {...props}
 />);
-const openSanitary = () => fireEvent.click(screen.getByRole('button', { name: /Datos farmacéuticos/i }));
+const openSanitary = () => {
+  const toggle = screen.getByRole('button', { name: /Datos farmacéuticos/i });
+  if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+};
 const selectStandardPresentation = () => {
   fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'tablet' } });
   fireEvent.change(screen.getByLabelText('Tipo de envase'), { target: { value: 'box' } });
   fireEvent.change(screen.getByLabelText('Contenido'), { target: { value: '10' } });
   fireEvent.change(screen.getByLabelText('Unidad del contenido'), { target: { value: 'tableta' } });
 };
-const addIngredient = async (id, amount, index) => {
-  await waitFor(() => expect(screen.getByLabelText('Principio activo registrado').querySelectorAll('option')).toHaveLength(3));
-  fireEvent.change(screen.getByLabelText('Principio activo registrado'), { target: { value: id } });
-  fireEvent.click(screen.getByRole('button', { name: 'Agregar a la composición' }));
-  fireEvent.change(screen.getAllByLabelText('Cantidad')[index], { target: { value: String(amount) } });
-  fireEvent.change(screen.getAllByLabelText('Unidad de medida')[index], { target: { value: 'mg' } });
-  fireEvent.change(screen.getAllByLabelText('Por cantidad base')[index], { target: { value: '1' } });
-  fireEvent.change(screen.getAllByLabelText('Unidad base')[index], { target: { value: 'tableta' } });
+const ingredientNames = { 'ai-amoxicilina': 'Amoxicilina', 'ai-clavulanato': 'Ácido clavulánico' };
+const addIngredient = async (id, amount) => {
+  await waitFor(() => expect(screen.getByLabelText('Principio activo').querySelectorAll('option')).toHaveLength(3));
+  fireEvent.change(screen.getByLabelText('Principio activo'), { target: { value: id } });
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar al medicamento' }));
+  const name = ingredientNames[id];
+  fireEvent.change(screen.getByLabelText(`Cantidad de ${name}`), { target: { value: String(amount) } });
+  fireEvent.change(screen.getByLabelText(`Unidad de concentración de ${name}`), { target: { value: 'mg' } });
+  fireEvent.change(screen.getByLabelText(`Cantidad base de ${name}`), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText(`Unidad base de ${name}`), { target: { value: 'tableta' } });
 };
 
 describe('Farmacia - recorrido visual de Etapa 1', () => {
+  it('abre Datos farmacéuticos y no muestra un estado configurado en un formulario vacío', () => {
+    show();
+    const toggle = screen.getByRole('button', { name: /Datos farmacéuticos/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle.closest('.product-form-v2__accordion')).toHaveTextContent('Opcional');
+    expect(screen.queryByText('Configurado')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Medicamento · clasificación sanitaria pendiente')).toBeInTheDocument();
+    expect(screen.getByText('Agrega los principios activos y sus concentraciones.')).toBeInTheDocument();
+  });
+
   it('selects the canonical stable ID when legacy accent-equivalent rows are present', async () => {
     activeIngredientRepository.list.mockResolvedValueOnce([
       {
@@ -58,14 +76,14 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
       onCompositionChange={onCompositionChange}
     />);
 
-    const select = screen.getByLabelText('Principio activo registrado');
+    const select = screen.getByLabelText('Principio activo');
     await waitFor(() => expect(select.querySelectorAll('option')).toHaveLength(2));
     const option = screen.getByRole('option', { name: 'Paracetamol' });
     expect(option).toHaveValue('ai-paracetamol');
     expect(screen.queryByRole('option', { name: 'Paracetamól' })).not.toBeInTheDocument();
 
     fireEvent.change(select, { target: { value: 'ai-paracetamol' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Agregar a la composición' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar al medicamento' }));
     expect(onCompositionChange).toHaveBeenCalledWith([
       expect.objectContaining({ activeIngredientId: 'ai-paracetamol', name: 'Paracetamol' })
     ]);
@@ -81,15 +99,15 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
       values={{ compositionIngredients: [], dosageFormCode: 'tablet' }}
       onCompositionChange={onCompositionChange}
     />);
-    fireEvent.change(screen.getByLabelText('Crear principio activo'), { target: { value: 'Paracetamol' } });
+    fireEvent.click(screen.getByText('Crear un principio activo'));
+    fireEvent.change(screen.getByLabelText('Nombre del nuevo principio activo'), { target: { value: 'Paracetamol' } });
 
     const createButton = screen.getByRole('button', { name: 'Crear y agregar' });
     fireEvent.click(createButton);
     fireEvent.click(createButton);
     expect(activeIngredientRepository.create).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      expect(screen.getByLabelText('Crear y agregar')).toBeDisabled();
-      expect(screen.getByLabelText('Crear y agregar')).toHaveTextContent('Guardando');
+      expect(screen.getByRole('button', { name: /Guardando/i })).toBeDisabled();
     });
 
     resolveCreate({ id: 'ai-paracetamol', name: 'Paracetamol', isActive: true });
@@ -105,8 +123,8 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     openSanitary();
     fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
     selectStandardPresentation();
-    await addIngredient('ai-amoxicilina', '500.5', 0);
-    await addIngredient('ai-clavulanato', '125.25', 1);
+    await addIngredient('ai-amoxicilina', '500.5');
+    await addIngredient('ai-clavulanato', '125.25');
     fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'IV' } });
     fireEvent.click(screen.getByLabelText(/Antibiótico sujeto/i));
     expect(screen.getByText(/Requiere receta médica y controles adicionales/i)).toBeInTheDocument();
@@ -134,9 +152,12 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     show({ productToEdit: saved, onSave: onEditSave });
     openSanitary();
     expect(screen.getByLabelText(/Fracción sanitaria/)).toHaveValue('IV');
-    expect(screen.getAllByLabelText('Cantidad').map((input) => input.value)).toEqual(['500.5', '125.25']);
-    expect(screen.getAllByLabelText('Unidad de medida').map((input) => input.value)).toEqual(['mg', 'mg']);
-    expect(screen.getAllByLabelText('Unidad base').map((input) => input.value)).toEqual(['tableta', 'tableta']);
+    expect(screen.getByLabelText('Cantidad de Amoxicilina')).toHaveValue(500.5);
+    expect(screen.getByLabelText('Cantidad de Ácido clavulánico')).toHaveValue(125.25);
+    expect(screen.getByLabelText('Unidad de concentración de Amoxicilina')).toHaveValue('mg');
+    expect(screen.getByLabelText('Unidad de concentración de Ácido clavulánico')).toHaveValue('mg');
+    expect(screen.getByLabelText('Unidad base de Amoxicilina')).toHaveValue('tableta');
+    expect(screen.getByLabelText('Unidad base de Ácido clavulánico')).toHaveValue('tableta');
     expect(screen.getByLabelText('Forma farmacéutica')).toHaveValue('tablet');
     expect(screen.getByLabelText('Tipo de envase')).toHaveValue('box');
     expect(screen.getByLabelText('Contenido')).toHaveValue(10);
@@ -146,6 +167,69 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     expect(onEditSave.mock.calls[0][0].metadata.pharmacy).toMatchObject(saved.metadata.pharmacy);
     expect(onEditSave.mock.calls[0][0]).toMatchObject({ unit: 'pza', stock: 0, cost: 25.5, price: 40 });
   });
+
+  it('usa la forma como unidad base inicial y no cambia una concentración ya capturada', async () => {
+    show();
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
+    fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'suspension' } });
+    await waitFor(() => expect(screen.getByLabelText('Principio activo').querySelectorAll('option')).toHaveLength(3));
+    fireEvent.change(screen.getByLabelText('Principio activo'), { target: { value: 'ai-amoxicilina' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar al medicamento' }));
+    expect(screen.getByLabelText('Unidad base de Amoxicilina')).toHaveValue('mL');
+
+    fireEvent.change(screen.getByLabelText('Cantidad de Amoxicilina'), { target: { value: '250.5' } });
+    fireEvent.change(screen.getByLabelText('Unidad de concentración de Amoxicilina'), { target: { value: 'mg' } });
+    fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'tablet' } });
+    expect(screen.getByLabelText('Unidad base de Amoxicilina')).toHaveValue('mL');
+    expect(screen.getByText('Amoxicilina 250.5 mg por mL')).toBeInTheDocument();
+  });
+
+  it('guarda una concentración líquida simple con decimales y resumen comprensible', async () => {
+    const onSave = vi.fn(() => true);
+    show({ onSave });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Amoxicilina suspensión QA' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta/i), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
+    fireEvent.change(screen.getByLabelText('Forma farmacéutica'), { target: { value: 'suspension' } });
+    fireEvent.change(screen.getByLabelText('Tipo de envase'), { target: { value: 'bottle' } });
+    fireEvent.change(screen.getByLabelText('Contenido'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('Unidad del contenido'), { target: { value: 'mL' } });
+    await waitFor(() => expect(screen.getByLabelText('Principio activo').querySelectorAll('option')).toHaveLength(3));
+    fireEvent.change(screen.getByLabelText('Principio activo'), { target: { value: 'ai-amoxicilina' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar al medicamento' }));
+    fireEvent.change(screen.getByLabelText('Cantidad de Amoxicilina'), { target: { value: '250.5' } });
+    fireEvent.change(screen.getByLabelText('Unidad de concentración de Amoxicilina'), { target: { value: 'mg' } });
+    fireEvent.change(screen.getByLabelText('Cantidad base de Amoxicilina'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'IV' } });
+
+    expect(screen.getByText('Amoxicilina 250.5 mg por 5 mL')).toBeInTheDocument();
+    expect(screen.getByText('Suspensión · Frasco con 120 mL')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].metadata.pharmacy).toMatchObject({
+      concentration: '250.5 mg por 5 mL',
+      commercialPresentation: { version: 1, packageType: 'bottle', contentAmount: 120, contentUnit: 'mL' },
+      composition: { version: 1, activeIngredients: [{
+        activeIngredientId: 'ai-amoxicilina', name: 'Amoxicilina', amount: 250.5, unit: 'mg', basisAmount: 5, basisUnit: 'mL'
+      }] }
+    });
+  });
+
+  it('mantiene los datos históricos plegados, editables y sin asumir una unidad base', () => {
+    show({ productToEdit: {
+      id: 'legacy-concentration', rubroContext: 'farmacia', name: 'Medicamento anterior',
+      activeSubstance: 'Paracetamol', price: 30, stock: 2,
+      metadata: { pharmacy: { kind: 'medicine', concentration: '500 mg por 1' } }
+    } });
+    expect(screen.getByText('Datos anteriores del medicamento')).toBeInTheDocument();
+    const legacyDetails = screen.getByText('Datos anteriores del medicamento').closest('details');
+    expect(legacyDetails).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('Datos anteriores del medicamento'));
+    expect(screen.getByLabelText('Sustancia activa anterior')).toHaveValue('Paracetamol');
+    expect(screen.getByLabelText('Concentración anterior')).toHaveValue('500 mg por 1');
+    expect(screen.getByText('Dato anterior: Paracetamol · 500 mg por 1')).toBeInTheDocument();
+    expect(screen.queryByText(/500 mg por tableta/i)).not.toBeInTheDocument();
+  });
   it('crea la fracción II inactiva y explica que no puede dispensarse', async () => {
     const onSave = vi.fn(() => true);
     show({ onSave });
@@ -154,7 +238,7 @@ describe('Farmacia - recorrido visual de Etapa 1', () => {
     openSanitary();
     fireEvent.change(screen.getByLabelText('Tipo de artículo'), { target: { value: 'medicine' } });
     selectStandardPresentation();
-    await addIngredient('ai-amoxicilina', '500', 0);
+    await addIngredient('ai-amoxicilina', '500');
     fireEvent.change(screen.getByLabelText(/Fracción sanitaria/), { target: { value: 'II' } });
     expect(screen.getByText(/No habilita dispensación/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));

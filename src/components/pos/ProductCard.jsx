@@ -17,6 +17,11 @@ import { getPosStockState } from '../../services/inventoryStock';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
 import { resolveProductSaleUnitLabel } from '../../utils/productUnitConfiguration';
 import { getPharmacyProductSearchSummary } from '../../services/pharmacy/pharmacyProductSearch';
+import {
+  formatCompositionConcentration,
+  getCompositionRows,
+  normalizeActiveIngredientEquivalenceKey
+} from '../../services/pharmacy/pharmacyComposition';
 import './ProductCardStrictExpiry.css';
 
 /**
@@ -110,6 +115,29 @@ const EXPIRY_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 });
 
 const formatStock = (value) => STOCK_FORMATTER.format(Number(value) || 0);
+
+const normalizeDisplayName = (value) => normalizeActiveIngredientEquivalenceKey(value)
+  .replace(/[\p{P}\p{S}]+/gu, ' ')
+  .replace(/\s+/gu, ' ')
+  .trim();
+
+const getPharmacyCompositionLabel = (product, summary) => {
+  const compositionRows = getCompositionRows(product);
+  if (compositionRows.length) {
+    const sameAsProductName = normalizeDisplayName(product?.name)
+      === normalizeDisplayName(compositionRows.map(({ name }) => name).join(' '));
+    return compositionRows.map((row) => {
+      const concentration = formatCompositionConcentration({ version: 1, activeIngredients: [row] });
+      if (!concentration) return `${row.name} · concentración incompleta`;
+      return sameAsProductName ? concentration : `${row.name} ${concentration}`;
+    }).join(' + ');
+  }
+
+  const activeSubstance = String(summary.activeSubstance || '').trim();
+  const showActiveSubstance = activeSubstance
+    && normalizeDisplayName(product?.name) !== normalizeDisplayName(activeSubstance);
+  return [showActiveSubstance ? activeSubstance : '', summary.concentration].filter(Boolean).join(' ');
+};
 
 const formatExpiryDate = (value) => {
   if (!value) return null;
@@ -266,17 +294,14 @@ const ProductCard = memo(function ProductCard({
     ? getPharmacyProductSearchSummary(product)
     : { activeSubstance: '', concentration: '', dosageForm: '', presentation: '' }),
   [isPharmacyBusiness, product, showPharmacySummary]);
-  const hasPharmacySummary = showPharmacySummary && isPharmacyBusiness && Boolean(
-    pharmacySummary.activeSubstance
-    || pharmacySummary.concentration
-    || pharmacySummary.dosageForm
-    || pharmacySummary.presentation
-  );
-  const pharmacySummaryLabel = hasPharmacySummary
-    ? [pharmacySummary.activeSubstance, pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation]
-      .filter(Boolean)
-      .join('. ')
-    : '';
+  const pharmacyCompositionLabel = useMemo(() => (
+    showPharmacySummary && isPharmacyBusiness
+      ? getPharmacyCompositionLabel(product, pharmacySummary)
+      : ''
+  ), [isPharmacyBusiness, pharmacySummary, product, showPharmacySummary]);
+  const pharmacyDetailsLabel = [pharmacySummary.dosageForm, pharmacySummary.presentation].filter(Boolean).join(' · ');
+  const hasPharmacySummary = Boolean(pharmacyCompositionLabel || pharmacyDetailsLabel);
+  const pharmacySummaryLabel = [pharmacyCompositionLabel, pharmacyDetailsLabel].filter(Boolean).join('. ');
 
   const unit = product?.saleType === 'bulk'
     ? ` ${resolveProductSaleUnitLabel(product)}`
@@ -351,11 +376,12 @@ const ProductCard = memo(function ProductCard({
   // ── Clases dinámicas ───────────────────────────────────────────────────────────────────
   const cardClasses = useMemo(() => [
     'product-card',
+    hasPharmacySummary ? 'product-card--pharmacy' : '',
     (isOutOfStock || stockState.kind === 'committed' || stockState.kind === 'unknown') ? 'product-card--out-of-stock' : '',
     strictExpiryBlocked ? 'product-card--strict-expiry-blocked' : '',
     selectionDisabled ? 'product-card--read-only' : '',
     isLoadingVariant ? 'product-card--loading-variant' : '',
-  ].filter(Boolean).join(' '), [isOutOfStock, stockState.kind, strictExpiryBlocked, selectionDisabled, isLoadingVariant]);
+  ].filter(Boolean).join(' '), [hasPharmacySummary, isOutOfStock, stockState.kind, strictExpiryBlocked, selectionDisabled, isLoadingVariant]);
 
   const footerClasses = useMemo(() => [
     'product-card__footer',
@@ -431,15 +457,8 @@ const ProductCard = memo(function ProductCard({
 
         {hasPharmacySummary && (
           <div className="product-card__pharmacy-summary" aria-label="Información farmacéutica del producto">
-            {pharmacySummary.activeSubstance && (
-              <span title={pharmacySummary.activeSubstance}>{pharmacySummary.activeSubstance}</span>
-            )}
-            {[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation]
-              .filter(Boolean).length > 0 && (
-              <span title={[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation].filter(Boolean).join(' · ')}>
-                {[pharmacySummary.concentration, pharmacySummary.dosageForm, pharmacySummary.presentation].filter(Boolean).join(' · ')}
-              </span>
-            )}
+            {pharmacyCompositionLabel && <span className="product-card__pharmacy-composition" title={pharmacyCompositionLabel}>{pharmacyCompositionLabel}</span>}
+            {pharmacyDetailsLabel && <span className="product-card__pharmacy-details" title={pharmacyDetailsLabel}>{pharmacyDetailsLabel}</span>}
           </div>
         )}
 

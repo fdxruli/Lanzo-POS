@@ -503,7 +503,8 @@ describe('ProductFormV2', () => {
     };
     renderForm({ activeRubroContext: 'farmacia', productToEdit: product, onOpenBatches });
 
-    fireEvent.click(screen.getByRole('button', { name: /Datos farmac/i }));
+    const pharmacyToggle = screen.getByRole('button', { name: /Datos farmac/i });
+    if (pharmacyToggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(pharmacyToggle);
 
     expect(screen.getByLabelText(/Inventario por lotes/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Fecha de caducidad inicial/i)).not.toBeInTheDocument();
