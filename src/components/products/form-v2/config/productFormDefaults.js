@@ -2,6 +2,7 @@ import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { normalizeProductUnit, normalizePurchaseUnit, resolveProductSaleUnit } from '../../../../utils/productUnitConfiguration';
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
+import { formatProductSaleMargin } from '../domain/fractionedPricing';
 import { normalizeProduceSaleConfiguration } from '../domain/productFormNormalization';
 import { getPharmacyClassification } from '../../../../utils/pharmacyClassification';
 import { getCompositionRows } from '../../../../services/pharmacy/pharmacyComposition';
@@ -41,7 +42,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     id: source.id,
     name: source.name || '', barcode: source.barcode || '', categoryId: source.categoryId || source.category_id || '', description: source.description || '',
     image: source.image || null, imagePreview: source.imageUrl || source.image || null, imageUploadSource: null, imageRemoved: false,
-    cost: source.cost ?? '', price: source.price ?? '', margin: '',
+    cost: source.cost ?? '', price: source.price ?? '', margin: isIngredient ? '' : formatProductSaleMargin(source.cost, source.price),
     trackStock: source.trackStock ?? defaultTrackStock,
     stock: productToEdit ? (source.stock ?? 0) : 0,
     minStock: source.minStock ?? '', maxStock: source.maxStock ?? '', supplier: source.metadata?.primary_supplier ?? source.supplier ?? '', location: source.location || '',
