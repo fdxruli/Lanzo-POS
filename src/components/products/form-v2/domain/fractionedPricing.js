@@ -26,10 +26,10 @@ export const formatProductSaleMargin = (cost, price) => {
   return Number(rounded) >= 100 ? String(margin) : rounded;
 };
 
-export const getProductMarginError = (margin) => {
+export const getProductMarginError = (margin, cost) => {
   if (String(margin ?? '').trim() === '') return '';
   const value = Number(margin);
-  return !Number.isFinite(value) || value >= 100
-    ? 'El margen sobre el precio de venta debe ser menor que 100 %.'
-    : '';
+  if (!Number.isFinite(value) || value >= 100) return 'El margen sobre el precio de venta debe ser menor que 100 %.';
+  if (cost !== undefined && !(toNumber(cost) > 0)) return 'Para calcular el precio por margen, introduce un costo mayor que cero o escribe el precio manualmente.';
+  return '';
 };
