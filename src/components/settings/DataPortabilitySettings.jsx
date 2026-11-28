@@ -27,7 +27,7 @@ const CATEGORY_LABELS = {
 };
 
 const TABLE_LABELS = {
-  menu: 'Productos', categories: 'Categorías', ingredients: 'Ingredientes', images: 'Imágenes',
+  menu: 'Productos', categories: 'Categorías', ingredients: 'Ingredientes', active_ingredients: 'Principios activos', images: 'Imágenes',
   product_batches: 'Lotes', customers: 'Clientes', sales: 'Ventas', customer_ledger: 'Fiados y abonos',
   layaways: 'Apartados', cajas: 'Sesiones de caja', movimientos_caja: 'Movimientos de caja',
   waste_logs: 'Mermas', inventory_events: 'Movimientos de inventario', deleted_menu: 'Productos eliminados',
@@ -120,7 +120,7 @@ export default function DataPortabilitySettings({ isAdmin, captureSettingsAction
 
   const exportCsv = () => runGuarded('settings_data', (assertAuthorized) => (
     downloadPortableTableCsv(csvTable, { assertAuthorized })
-  ), `${TABLE_LABELS[csvTable]} descargado en CSV.`);
+  ), TABLE_LABELS[csvTable] ? `${TABLE_LABELS[csvTable]} descargados en CSV.` : 'Tabla descargada en CSV.');
 
   const selectTransferFile = async (event) => {
     const file = event.target.files?.[0] || null;
