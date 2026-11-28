@@ -25,6 +25,7 @@ vi.mock('../../cloud', () => ({
 }));
 
 import { productCloudRepository } from '../productCloudRepository';
+import { CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY } from '../../sync/cloudSyncProtocolV2';
 
 describe('documented Cloud pharmacy receipt RPC', () => {
   beforeEach(() => {
@@ -110,5 +111,31 @@ describe('documented Cloud pharmacy receipt RPC', () => {
 
     expect(mocks.rpc).toHaveBeenCalledOnce();
     expect(mocks.invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('active ingredient F01 identity compatibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.rpc.mockResolvedValue({ data: { success: true, idempotency_key: 'ingredient-upsert-1' }, error: null });
+  });
+
+  it('uses the existing F01 catalog capability and derives an accented persistent key from the name', async () => {
+    const negotiation = vi.spyOn(productCloudRepository, 'negotiateSnapshotProtocol').mockResolvedValue({
+      capabilities: [CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY]
+    });
+    await productCloudRepository.upsertActiveIngredient({
+      licenseKey: 'CLOUD-LICENSE',
+      activeIngredient: { id: 'ai-cafeina', name: 'Cafeína', nameKey: 'cafeina' },
+      idempotencyKey: 'ingredient-upsert-1'
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pos_upsert_active_ingredient_v1', expect.objectContaining({
+      p_active_ingredient: expect.objectContaining({
+        id: 'ai-cafeina', name: 'Cafeína', name_key: 'cafeína'
+      }),
+      p_idempotency_key: 'ingredient-upsert-1'
+    }));
+    negotiation.mockRestore();
   });
 });

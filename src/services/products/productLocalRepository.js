@@ -38,7 +38,7 @@ import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal } from '..
 import { activeIngredientRepository, cloudActiveIngredientToLocal } from '../pharmacy/activeIngredientRepository';
 import {
   getCompositionRows,
-  normalizeActiveIngredientNameKey,
+  normalizeActiveIngredientEquivalenceKey,
   normalizePharmacyComposition
 } from '../pharmacy/pharmacyComposition';
 import { assertValidRecipeReferences, getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
@@ -148,8 +148,8 @@ const normalizeProductPharmacyComposition = async (productData) => {
     if (record.isActive === false && !existingIngredientIds.has(record.id)) {
       throw new Error('PHARMACY_ACTIVE_INGREDIENT_ARCHIVED');
     }
-    const nameKey = normalizeActiveIngredientNameKey(record.name);
-    if (nameKey !== normalizeActiveIngredientNameKey(component.name)) {
+    const nameKey = normalizeActiveIngredientEquivalenceKey(record.name);
+    if (nameKey !== normalizeActiveIngredientEquivalenceKey(component.name)) {
       throw new Error('PHARMACY_ACTIVE_INGREDIENT_NAME_MISMATCH');
     }
     activeIngredients.push({ ...component, name: record.name });

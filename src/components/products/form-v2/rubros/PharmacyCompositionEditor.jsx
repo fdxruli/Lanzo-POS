@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { activeIngredientRepository } from '../../../../services/pharmacy/activeIngredientRepository';
+import { normalizeActiveIngredientEquivalenceKey } from '../../../../services/pharmacy/pharmacyComposition';
 import {
   getDefaultPharmacyBaseUnit,
   normalizePharmacyBaseUnit,
@@ -19,6 +20,30 @@ const newCompositionRow = (ingredient, dosageFormCode = '') => ({
 
 const legacyChoice = (value) => `legacy:${value}`;
 const choiceValue = (value, normalize) => normalize(value) || (value ? legacyChoice(value) : '');
+
+const compareIdentityCandidates = (left, right, nameKey) => {
+  const leftKeyMatch = left.nameKey === nameKey ? 1 : 0;
+  const rightKeyMatch = right.nameKey === nameKey ? 1 : 0;
+  if (leftKeyMatch !== rightKeyMatch) return rightKeyMatch - leftKeyMatch;
+  return String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+    || String(left.id).localeCompare(String(right.id));
+};
+
+const uniqueIngredientOptions = (rows) => {
+  const byIdentity = new Map();
+  for (const ingredient of rows) {
+    if (!ingredient?.id) continue;
+    const nameKey = normalizeActiveIngredientEquivalenceKey(ingredient.name);
+    if (!nameKey) continue;
+    const existing = byIdentity.get(nameKey);
+    if (!existing || compareIdentityCandidates(ingredient, existing, nameKey) < 0) {
+      byIdentity.set(nameKey, ingredient);
+    }
+  }
+  return [...byIdentity.values()].sort((left, right) => (
+    String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
+  ));
+};
 
 function UnitSelect({ id, label, value, options, normalize, onChange }) {
   const normalizedValue = choiceValue(value, normalize);
@@ -41,13 +66,15 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   const [selectedId, setSelectedId] = useState('');
   const [newName, setNewName] = useState('');
   const [error, setError] = useState('');
+  const [creatingIngredient, setCreatingIngredient] = useState(false);
+  const creatingIngredientRef = useRef(false);
   const mounted = useRef(false);
   const rows = Array.isArray(values.compositionIngredients) ? values.compositionIngredients : [];
 
   const refreshIngredients = useCallback(async () => {
     try {
       const rows = await activeIngredientRepository.list();
-      if (mounted.current) setIngredients(rows);
+      if (mounted.current) setIngredients(uniqueIngredientOptions(rows));
     } catch {
       if (mounted.current) setIngredients([]);
     }
@@ -60,7 +87,11 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   }, [refreshIngredients]);
 
   const addIngredient = (ingredient) => {
-    if (!ingredient?.id || rows.some((row) => row.activeIngredientId === ingredient.id)) {
+    const nameKey = normalizeActiveIngredientEquivalenceKey(ingredient?.name);
+    if (!ingredient?.id || rows.some((row) => (
+      row.activeIngredientId === ingredient.id
+      || normalizeActiveIngredientEquivalenceKey(row.name) === nameKey
+    ))) {
       setError(ingredient?.id ? 'Este principio activo ya está en la composición.' : 'Selecciona un principio activo.');
       return;
     }
@@ -71,6 +102,9 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   };
 
   const createIngredient = async () => {
+    if (creatingIngredientRef.current) return;
+    creatingIngredientRef.current = true;
+    setCreatingIngredient(true);
     try {
       const ingredient = await activeIngredientRepository.create(newName);
       await refreshIngredients();
@@ -81,11 +115,14 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
         PHARMACY_ACTIVE_INGREDIENT_NAME_TOO_LONG: 'El nombre no puede superar 160 caracteres.'
       };
       setError(messages[cause?.code] || 'No se pudo guardar el principio activo.');
+    } finally {
+      creatingIngredientRef.current = false;
+      if (mounted.current) setCreatingIngredient(false);
     }
   };
 
-  const updateRow = (index, field, value) => {
-    const next = rows.map((row, rowIndex) => rowIndex === index
+  const updateRow = (activeIngredientId, field, value) => {
+    const next = rows.map((row) => row.activeIngredientId === activeIngredientId
       ? { ...row, [field]: value }
       : row);
     onCompositionChange(next);
@@ -113,14 +150,16 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
         <label htmlFor="product-v2-new-active-ingredient">Crear principio activo</label>
         <input id="product-v2-new-active-ingredient" value={newName}
           placeholder="Escribe cualquier nombre válido"
+          disabled={creatingIngredient}
           onChange={(event) => setNewName(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void createIngredient(); } }} />
       </div>
       <div className="product-form-v2__field pharmacy-composition__add-action">
         <label className="sr-only" htmlFor="product-v2-create-active-ingredient">Crear y agregar</label>
-        <button id="product-v2-create-active-ingredient" type="button" disabled={!newName.trim()}
+        <button id="product-v2-create-active-ingredient" type="button"
+          disabled={!newName.trim() || creatingIngredient} aria-busy={creatingIngredient}
           onClick={() => void createIngredient()}>
-          Crear y agregar
+          {creatingIngredient ? 'Guardando…' : 'Crear y agregar'}
         </button>
       </div>
     </div>
@@ -132,23 +171,23 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
           <div className="product-form-v2__field">
             <label htmlFor={`product-v2-composition-amount-${index}`}>Cantidad</label>
             <input id={`product-v2-composition-amount-${index}`} type="number" min="0" step="any"
-              value={row.amount} onChange={(event) => updateRow(index, 'amount', event.target.value)} />
+              value={row.amount} onChange={(event) => updateRow(row.activeIngredientId, 'amount', event.target.value)} />
           </div>
           <UnitSelect id={`product-v2-composition-unit-${index}`} label="Unidad de medida"
             value={row.unit} options={PHARMACY_MEASURE_UNITS} normalize={normalizePharmacyMeasureUnit}
-            onChange={(value) => updateRow(index, 'unit', value)} />
+            onChange={(value) => updateRow(row.activeIngredientId, 'unit', value)} />
           <div className="product-form-v2__field">
             <label htmlFor={`product-v2-composition-basis-amount-${index}`}>Por cantidad base</label>
             <input id={`product-v2-composition-basis-amount-${index}`} type="number" min="0" step="any"
-              value={row.basisAmount} onChange={(event) => updateRow(index, 'basisAmount', event.target.value)} />
+              value={row.basisAmount} onChange={(event) => updateRow(row.activeIngredientId, 'basisAmount', event.target.value)} />
           </div>
           <UnitSelect id={`product-v2-composition-basis-unit-${index}`} label="Unidad base"
             value={row.basisUnit} options={PHARMACY_BASE_UNITS} normalize={normalizePharmacyBaseUnit}
-            onChange={(value) => updateRow(index, 'basisUnit', value)} />
+            onChange={(value) => updateRow(row.activeIngredientId, 'basisUnit', value)} />
         </div>
         <button type="button" className="pharmacy-composition__remove"
           aria-label={`Quitar ${row.name} de la composición`}
-          onClick={() => onCompositionChange(rows.filter((_, rowIndex) => rowIndex !== index))}>
+          onClick={() => onCompositionChange(rows.filter((item) => item.activeIngredientId !== row.activeIngredientId))}>
           Quitar
         </button>
       </fieldset>)}

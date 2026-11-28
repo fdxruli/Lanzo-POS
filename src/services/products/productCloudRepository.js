@@ -131,7 +131,7 @@ export const productCloudRepository = {
       p_active_ingredient: {
         id: activeIngredient.id,
         name: activeIngredient.name,
-        name_key: activeIngredient.nameKey || normalizeNameKey(activeIngredient.name),
+        name_key: normalizeNameKey(activeIngredient.name),
         is_active: activeIngredient.isActive !== false,
         created_at: activeIngredient.createdAt || nowIso()
       },

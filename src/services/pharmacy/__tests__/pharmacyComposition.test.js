@@ -2,13 +2,26 @@ import { describe, expect, it } from 'vitest';
 import {
   formatCompositionActiveSubstance,
   formatCompositionConcentration,
-  normalizeActiveIngredientNameKey,
+  normalizeActiveIngredientEquivalenceKey,
+  normalizeActiveIngredientIdentityKey,
   normalizePharmacyComposition
 } from '../pharmacyComposition';
 
 describe('pharmacy composition', () => {
-  it('normalizes case and repeated whitespace for a business-local identity key', () => {
-    expect(normalizeActiveIngredientNameKey('  PARACETAMOL   500  ')).toBe('paracetamol 500');
+  it('normalizes case, edge and repeated whitespace, accents, and canonical Unicode forms', () => {
+    const variants = [
+      'Paracetamol',
+      'paracetamol',
+      'PARACETAMOL',
+      '  Paracetamol  ',
+      'Paracetamól',
+      'Paracetamo\u0301l'
+    ];
+    expect(new Set(variants.map(normalizeActiveIngredientEquivalenceKey))).toEqual(new Set(['paracetamol']));
+    expect(normalizeActiveIngredientEquivalenceKey('  PARACETAMOL   500  ')).toBe('paracetamol 500');
+    expect(normalizeActiveIngredientEquivalenceKey('Paracetamol XR')).not.toBe('paracetamol');
+    expect(normalizeActiveIngredientIdentityKey('  PARACETAMÓL   ')).toBe('paracetamól');
+    expect(normalizeActiveIngredientIdentityKey('Paracetamol')).not.toBe('paracetamól');
   });
 
   it('preserves decimal amounts, units and concentration bases in the canonical v1 shape', () => {

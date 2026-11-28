@@ -1,4 +1,5 @@
 import { normalizePharmacyBaseUnit, normalizePharmacyMeasureUnit } from './pharmacyCatalog';
+import { normalizeNameKey } from '../products/productMapper';
 
 export const PHARMACY_COMPOSITION_VERSION = 1;
 
@@ -8,7 +9,16 @@ const positiveDecimal = (value) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-export const normalizeActiveIngredientNameKey = (name) => text(name).toLowerCase().replace(/\s+/g, ' ');
+// Persistent active_ingredients.name_key must match F01's server normalizer.
+export const normalizeActiveIngredientIdentityKey = (name) => normalizeNameKey(name);
+
+// This key is only for local equivalence search and composition validation.
+export const normalizeActiveIngredientEquivalenceKey = (name) => text(name)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/gu, '')
+  .toLowerCase()
+  .replace(/\s+/gu, ' ')
+  .trim();
 
 export const normalizePharmacyComposition = (composition) => {
   if (!composition || typeof composition !== 'object' || Array.isArray(composition)) return null;

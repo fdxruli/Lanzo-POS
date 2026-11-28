@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProductFormV2 from '../ProductFormV2';
+import PharmacyCompositionEditor from '../rubros/PharmacyCompositionEditor';
+import { activeIngredientRepository } from '../../../../services/pharmacy/activeIngredientRepository';
 
 vi.mock('../../../../services/pharmacy/activeIngredientRepository', () => ({
   activeIngredientRepository: {
@@ -39,6 +41,61 @@ const addIngredient = async (id, amount, index) => {
 };
 
 describe('Farmacia - recorrido visual de Etapa 1', () => {
+  it('selects the canonical stable ID when legacy accent-equivalent rows are present', async () => {
+    activeIngredientRepository.list.mockResolvedValueOnce([
+      {
+        id: 'ai-accent-legacy', name: 'Paracetamól', nameKey: 'paracetamól',
+        createdAt: '2026-11-27T23:19:00.000Z'
+      },
+      {
+        id: 'ai-paracetamol', name: 'Paracetamol', nameKey: 'paracetamol',
+        createdAt: '2026-11-27T18:40:00.000Z'
+      }
+    ]);
+    const onCompositionChange = vi.fn();
+    render(<PharmacyCompositionEditor
+      values={{ compositionIngredients: [], dosageFormCode: 'tablet' }}
+      onCompositionChange={onCompositionChange}
+    />);
+
+    const select = screen.getByLabelText('Principio activo registrado');
+    await waitFor(() => expect(select.querySelectorAll('option')).toHaveLength(2));
+    const option = screen.getByRole('option', { name: 'Paracetamol' });
+    expect(option).toHaveValue('ai-paracetamol');
+    expect(screen.queryByRole('option', { name: 'Paracetamól' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: 'ai-paracetamol' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a la composición' }));
+    expect(onCompositionChange).toHaveBeenCalledWith([
+      expect.objectContaining({ activeIngredientId: 'ai-paracetamol', name: 'Paracetamol' })
+    ]);
+  });
+
+  it('blocks duplicate submission while a new identity is being saved', async () => {
+    let resolveCreate;
+    activeIngredientRepository.create.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+    const onCompositionChange = vi.fn();
+    render(<PharmacyCompositionEditor
+      values={{ compositionIngredients: [], dosageFormCode: 'tablet' }}
+      onCompositionChange={onCompositionChange}
+    />);
+    fireEvent.change(screen.getByLabelText('Crear principio activo'), { target: { value: 'Paracetamol' } });
+
+    const createButton = screen.getByRole('button', { name: 'Crear y agregar' });
+    fireEvent.click(createButton);
+    fireEvent.click(createButton);
+    expect(activeIngredientRepository.create).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Crear y agregar')).toBeDisabled();
+      expect(screen.getByLabelText('Crear y agregar')).toHaveTextContent('Guardando');
+    });
+
+    resolveCreate({ id: 'ai-paracetamol', name: 'Paracetamol', isActive: true });
+    await waitFor(() => expect(onCompositionChange).toHaveBeenCalledTimes(1));
+  });
+
   it('crea un medicamento combinado normalizado y recupera los mismos datos al editar', async () => {
     const onSave = vi.fn(() => true);
     const view = show({ onSave });
