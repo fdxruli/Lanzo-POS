@@ -13,7 +13,10 @@ import { PRODUCT_SYNC_STATUS } from '../products/productConstants';
 import { useAppStore } from '../../store/useAppStore';
 import { captureProductInventoryMutation, actorOriginFromHandle, assertProductInventoryMutationCurrent } from '../auth/productInventoryAuthority';
 import { productCloudRepository } from '../products/productCloudRepository';
-import { normalizeActiveIngredientNameKey } from './pharmacyComposition';
+import {
+  normalizeActiveIngredientEquivalenceKey,
+  normalizeActiveIngredientIdentityKey
+} from './pharmacyComposition';
 
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -68,12 +71,12 @@ const compareIdentityCandidates = (left, right, nameKey) => {
     || String(left.id).localeCompare(String(right.id));
 };
 
-const bestIdentityCandidate = (rows, nameKey) => {
-  const normalizedNameKey = normalizeActiveIngredientNameKey(nameKey);
-  if (!normalizedNameKey) return null;
+const bestIdentityCandidate = (rows, equivalenceKey) => {
+  const normalizedKey = normalizeActiveIngredientEquivalenceKey(equivalenceKey);
+  if (!normalizedKey) return null;
   return rows
-    .filter((row) => normalizeActiveIngredientNameKey(row.name) === normalizedNameKey)
-    .sort((left, right) => compareIdentityCandidates(left, right, nameKey))[0] || null;
+    .filter((row) => normalizeActiveIngredientEquivalenceKey(row.name) === normalizedKey)
+    .sort((left, right) => compareIdentityCandidates(left, right, normalizedKey))[0] || null;
 };
 
 export const cloudActiveIngredientToLocal = (row, existing = null, overrides = {}) => {
@@ -83,7 +86,7 @@ export const cloudActiveIngredientToLocal = (row, existing = null, overrides = {
     id: row?.id || existing?.id,
     businessKey: overrides.businessKey || existing?.businessKey || getMode().businessKey,
     name,
-    nameKey: row?.name_key || row?.nameKey || normalizeActiveIngredientNameKey(name),
+    nameKey: row?.name_key || row?.nameKey || normalizeActiveIngredientIdentityKey(name),
     isActive: row?.deleted_at ? false : (row?.is_active ?? row?.isActive ?? true),
     createdAt: row?.created_at || row?.createdAt || existing?.createdAt || nowIso(),
     updatedAt: row?.updated_at || row?.updatedAt || nowIso(),
@@ -173,16 +176,27 @@ export const activeIngredientRepository = {
     if (!nameKey) return null;
     await ensureOpen();
     const mode = getMode();
+    const table = db.table(STORES.ACTIVE_INGREDIENTS);
+    const scoped = await table.where('[businessKey+nameKey]').equals([mode.businessKey, nameKey]).first();
+    if (scoped || !mode.cloudEnabled) return scoped;
+    const local = await table.where('[businessKey+nameKey]').equals([db.name, nameKey]).first();
+    return local?.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ? local : null;
+  },
+
+  async getByNameEquivalenceKey(equivalenceKey) {
+    if (!equivalenceKey) return null;
+    await ensureOpen();
+    const mode = getMode();
     const rows = await db.table(STORES.ACTIVE_INGREDIENTS).toArray();
     const scoped = bestIdentityCandidate(
       rows.filter((row) => row.businessKey === mode.businessKey),
-      nameKey
+      equivalenceKey
     );
     if (scoped || !mode.cloudEnabled) return scoped;
     return bestIdentityCandidate(
       rows.filter((row) => row.businessKey === db.name
         && row.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED),
-      nameKey
+      equivalenceKey
     );
   },
 
@@ -258,14 +272,15 @@ export const activeIngredientRepository = {
 
   async create(nameValue) {
     const name = String(nameValue ?? '').trim();
-    const nameKey = normalizeActiveIngredientNameKey(name);
-    if (!nameKey) throw new Error('PHARMACY_ACTIVE_INGREDIENT_NAME_REQUIRED');
+    const nameKey = normalizeActiveIngredientIdentityKey(name);
+    const equivalenceKey = normalizeActiveIngredientEquivalenceKey(name);
+    if (!nameKey || !equivalenceKey) throw new Error('PHARMACY_ACTIVE_INGREDIENT_NAME_REQUIRED');
     if (name.length > 160) throw new Error('PHARMACY_ACTIVE_INGREDIENT_NAME_TOO_LONG');
 
     const mode = getMode();
     const actorHandle = captureProductInventoryMutation({ products: true });
     assertProductInventoryMutationCurrent(actorHandle, { products: true });
-    const existing = await this.getByNameKey(nameKey);
+    const existing = await this.getByNameEquivalenceKey(equivalenceKey);
     if (existing) {
       if (existing.isActive !== false && !existing.deletedAt) {
         if (mode.cloudEnabled && (existing.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED || !existing.serverVersion)) {
@@ -273,7 +288,7 @@ export const activeIngredientRepository = {
         }
         return existing;
       }
-      const reactivated = { ...existing, isActive: true, deletedAt: null, name, updatedAt: nowIso() };
+      const reactivated = { ...existing, isActive: true, deletedAt: null, updatedAt: nowIso() };
       if (!mode.cloudEnabled) {
         await db.table(STORES.ACTIVE_INGREDIENTS).put({ ...reactivated, syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
         return reactivated;
@@ -285,8 +300,8 @@ export const activeIngredientRepository = {
       ...(existing || {}),
       id,
       businessKey: mode.businessKey,
-      name,
-      nameKey,
+      name: existing?.name || name,
+      nameKey: existing?.nameKey || nameKey,
       isActive: true,
       createdAt: existing?.createdAt || nowIso(),
       updatedAt: nowIso(),
@@ -295,13 +310,25 @@ export const activeIngredientRepository = {
 
     if (!mode.cloudEnabled) {
       await ensureOpen();
+      let localIdentity = null;
       await db.transaction('rw', STORES.ACTIVE_INGREDIENTS, async () => {
-        const duplicate = await db.table(STORES.ACTIVE_INGREDIENTS)
+        const table = db.table(STORES.ACTIVE_INGREDIENTS);
+        const localRows = await table.where('businessKey').equals(mode.businessKey).toArray();
+        const equivalent = bestIdentityCandidate(localRows, equivalenceKey);
+        if (equivalent) {
+          localIdentity = equivalent;
+          return;
+        }
+        const duplicate = await table
           .where('[businessKey+nameKey]').equals([mode.businessKey, nameKey]).first();
-        if (duplicate) return;
+        if (duplicate) {
+          localIdentity = duplicate;
+          return;
+        }
         await db.table(STORES.ACTIVE_INGREDIENTS).put({ ...ingredient, syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
+        localIdentity = ingredient;
       });
-      return (await this.getByNameKey(nameKey)) || ingredient;
+      return localIdentity || (await this.getByNameEquivalenceKey(equivalenceKey)) || ingredient;
     }
 
     const idempotencyKey = generateIdempotencyKey({

@@ -108,6 +108,9 @@ describe('activeIngredientRepository local persistence', () => {
     await expect(activeIngredientRepository.getByNameKey('paracetamól')).resolves.toMatchObject({
       id: 'ai-legacy-accent', name: 'Paracetamól'
     });
+    await expect(activeIngredientRepository.getByNameEquivalenceKey('Paracetamól')).resolves.toMatchObject({
+      id: 'ai-canonical', name: 'Paracetamol'
+    });
     expect(await harness.db.table('active_ingredients').count()).toBe(2);
   });
 
@@ -140,7 +143,7 @@ describe('activeIngredientRepository local persistence', () => {
     ]);
 
     await activeIngredientRepository.applyCloudRecord({
-      id: cloudId, client_id: localId, name: 'Paracetamol', name_key: 'paracetamol',
+      id: cloudId, client_id: localId, name: 'Paracetamól', name_key: 'paracetamól',
       is_active: true, server_version: 1
     }, { localId });
 
@@ -150,33 +153,34 @@ describe('activeIngredientRepository local persistence', () => {
     });
     expect((await harness.db.table('menu').get(product.id)).metadata.pharmacy.composition.activeIngredients)
       .toEqual([
-        { activeIngredientId: cloudId, name: 'Paracetamol' },
+        { activeIngredientId: cloudId, name: 'Paracetamól' },
         { activeIngredientId: 'ai-other', name: 'Clavulanato' }
       ]);
     expect(await harness.db.table('menu').get(otherProduct.id)).toEqual(otherProduct);
     expect((await harness.db.table('sync_outbox').get('pending-product')).payload.product.metadata.pharmacy.composition.activeIngredients[0])
-      .toMatchObject({ activeIngredientId: cloudId, name: 'Paracetamol' });
+      .toMatchObject({ activeIngredientId: cloudId, name: 'Paracetamól' });
     expect((await harness.db.table('sync_outbox').get('completed-product')).payload.product.metadata.pharmacy.composition.activeIngredients[0])
       .toMatchObject({ activeIngredientId: localId, name: 'Paracetamól' });
   });
 
-  it('keeps a new canonical identity local while the F01 server lacks the F04 capability', async () => {
+  it('creates a new accented cloud identity with the F01 persistent name key', async () => {
     harness.currentLicenseKey = 'license-cloud-a';
     harness.cloudEnabled = true;
-    harness.cloudUpsert.mockResolvedValue({
-      success: false, code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED'
-    });
 
-    const ingredient = await activeIngredientRepository.create('Paracetamól');
+    const ingredient = await activeIngredientRepository.create('Cafeína');
 
     expect(ingredient).toMatchObject({
-      name: 'Paracetamól', nameKey: 'paracetamol', businessKey: 'license-cloud-a', syncStatus: 'pending'
+      name: 'Cafeína', nameKey: 'cafeína', businessKey: 'license-cloud-a', syncStatus: 'pending'
     });
     expect(await activeIngredientRepository.getById(ingredient.id)).toMatchObject({
-      id: ingredient.id, syncStatus: 'pending', nameKey: 'paracetamol'
+      id: ingredient.id, syncStatus: 'pending', nameKey: 'cafeína'
     });
+    expect(harness.cloudUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      activeIngredient: expect.objectContaining({ id: ingredient.id, name: 'Cafeína', nameKey: 'cafeína' })
+    }));
     expect(harness.enqueueOperation).toHaveBeenCalledWith(expect.objectContaining({
-      entityType: 'active_ingredient', entityId: ingredient.id
+      entityType: 'active_ingredient', entityId: ingredient.id,
+      payload: { activeIngredient: expect.objectContaining({ nameKey: 'cafeína' }), expectedVersion: null }
     }));
   });
 

@@ -13,7 +13,6 @@ import { readProductCatalog } from './productCatalogReader';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { productLocalRepository } from './productLocalRepository';
 import { activeIngredientRepository } from '../pharmacy/activeIngredientRepository';
-import { normalizeActiveIngredientNameKey } from '../pharmacy/pharmacyComposition';
 import { validateLocalCatalogForMigration } from './productMigrationValidation';
 import {
   buildIndividualRecoveryIdempotencyKey,
@@ -302,8 +301,7 @@ export const productLocalCatalogRecovery = {
         });
         if (response?.success !== true || response.idempotency_key !== idempotencyKey
           || !response.active_ingredient?.id || versionOf(response.active_ingredient) < 1
-          || normalizeActiveIngredientNameKey(response.active_ingredient.name_key)
-            !== normalizeActiveIngredientNameKey(activeIngredient.name)) {
+          || response.active_ingredient.name_key !== activeIngredient.nameKey) {
           throw errorWithCode(response?.code || 'PHARMACY_ACTIVE_INGREDIENT_RECOVERY_CONFIRMATION_INVALID');
         }
         actorHandle.assertCurrent('products');

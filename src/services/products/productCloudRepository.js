@@ -8,7 +8,6 @@ import { SYNC_LIMITS } from '../sync/syncConstants';
 import {
   callCloudSnapshotRpc,
   CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY,
-  CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY,
   negotiateCloudSnapshotContract,
   requireCloudSnapshotContract
 } from '../sync/cloudSyncProtocolV2';
@@ -127,19 +126,12 @@ export const productCloudRepository = {
         message: 'El catálogo farmacéutico aún no está instalado en Cloud.'
       };
     }
-    if (!contract.capabilities.includes(CLOUD_PHARMACY_ACTIVE_INGREDIENT_IDENTITY_CAPABILITY)) {
-      return {
-        success: false,
-        code: 'CLOUD_PHARMACY_ACTIVE_INGREDIENT_CAPABILITY_REQUIRED',
-        message: 'El servidor aún no garantiza la identidad normalizada de principios activos.'
-      };
-    }
     return callCatalogMutationRpc('pos_upsert_active_ingredient_v1', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_active_ingredient: {
         id: activeIngredient.id,
         name: activeIngredient.name,
-        name_key: activeIngredient.nameKey || normalizeNameKey(activeIngredient.name),
+        name_key: normalizeNameKey(activeIngredient.name),
         is_active: activeIngredient.isActive !== false,
         created_at: activeIngredient.createdAt || nowIso()
       },

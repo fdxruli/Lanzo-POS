@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { activeIngredientRepository } from '../../../../services/pharmacy/activeIngredientRepository';
-import { normalizeActiveIngredientNameKey } from '../../../../services/pharmacy/pharmacyComposition';
+import { normalizeActiveIngredientEquivalenceKey } from '../../../../services/pharmacy/pharmacyComposition';
 import {
   getDefaultPharmacyBaseUnit,
   normalizePharmacyBaseUnit,
@@ -33,7 +33,7 @@ const uniqueIngredientOptions = (rows) => {
   const byIdentity = new Map();
   for (const ingredient of rows) {
     if (!ingredient?.id) continue;
-    const nameKey = normalizeActiveIngredientNameKey(ingredient.name);
+    const nameKey = normalizeActiveIngredientEquivalenceKey(ingredient.name);
     if (!nameKey) continue;
     const existing = byIdentity.get(nameKey);
     if (!existing || compareIdentityCandidates(ingredient, existing, nameKey) < 0) {
@@ -87,10 +87,10 @@ export default function PharmacyCompositionEditor({ values, onCompositionChange,
   }, [refreshIngredients]);
 
   const addIngredient = (ingredient) => {
-    const nameKey = normalizeActiveIngredientNameKey(ingredient?.name);
+    const nameKey = normalizeActiveIngredientEquivalenceKey(ingredient?.name);
     if (!ingredient?.id || rows.some((row) => (
       row.activeIngredientId === ingredient.id
-      || normalizeActiveIngredientNameKey(row.name) === nameKey
+      || normalizeActiveIngredientEquivalenceKey(row.name) === nameKey
     ))) {
       setError(ingredient?.id ? 'Este principio activo ya está en la composición.' : 'Selecciona un principio activo.');
       return;
