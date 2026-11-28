@@ -581,3 +581,62 @@ describe('ProductFormV2 duplicate barcode protection', () => {
     expect(screen.queryByText(/Producto guardado\./i)).not.toBeInTheDocument();
   });
 });
+
+describe('F06: commercial margin in the shared product form', () => {
+  const editProduct = { id: 'margin-product', name: 'Producto de prueba', cost: 15, price: 30, trackStock: false };
+  const save = () => fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+  const change = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const price = () => screen.getByLabelText(/Precio de venta/i);
+  const margin = () => screen.getByLabelText('Margen');
+
+  it('recovers the effective margin without modifying saved cost and price', async () => {
+    const onSave = vi.fn(() => true);
+    renderForm({ productToEdit: { ...editProduct, cost: 15.13, price: 30.17 }, onSave });
+    expect(margin()).toHaveValue(49.9);
+    expect(price()).toHaveValue(30.17);
+    save();
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ cost: 15.13, price: 30.17 });
+  });
+
+  it.each(['100', '101.5'])('rejects an impossible margin of %s without changing price and permits correction', async (invalid) => {
+    const onSave = vi.fn(() => true);
+    renderForm({ productToEdit: editProduct, onSave });
+    expect(margin()).toHaveValue(50);
+    change('Margen', invalid);
+    expect(price()).toHaveValue(30);
+    expect(margin()).toHaveAttribute('aria-invalid', 'true');
+    save();
+    expect(onSave).not.toHaveBeenCalled();
+    change('Margen', '25');
+    expect(price()).toHaveValue(20);
+    expect(margin()).toHaveAttribute('aria-invalid', 'false');
+    save();
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ cost: 15, price: 20 });
+  });
+
+  it('uses a decimal margin without clamping and clears a draft margin without recalculating price', () => {
+    renderForm({ productToEdit: editProduct });
+    change('Margen', '99.95');
+    expect(price()).toHaveValue(30000);
+    change('Margen', '');
+    expect(price()).toHaveValue(30000);
+    change(/Precio de venta/i, '12');
+    expect(margin()).toHaveValue(-25);
+  });
+
+  it('permits manual prices with zero cost and rejects an explicit impossible margin', async () => {
+    const onSave = vi.fn(() => true);
+    renderForm({ productToEdit: { ...editProduct, cost: 0 }, onSave });
+    expect(margin()).toHaveValue(null);
+    change('Margen', '100');
+    save();
+    expect(onSave).not.toHaveBeenCalled();
+    change(/Precio de venta/i, '35');
+    expect(margin()).toHaveValue(null);
+    save();
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ cost: 0, price: 35 });
+  });
+});
