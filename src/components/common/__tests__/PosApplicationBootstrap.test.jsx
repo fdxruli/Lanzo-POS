@@ -181,7 +181,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     try {
       renderBootstrap({ prepareLocalDatabase: vi.fn().mockResolvedValue({ ready: true }), loadReadyRuntime, reloadPage });
       await screen.findByTestId('admin-app');
-      expect(screen.queryByText('Diagnóstico de conexión')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Diagnóstico de conexión')).not.toBeInTheDocument();
 
       vi.useFakeTimers();
       act(() => {
@@ -189,7 +189,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
         actorRuntimeController.beginAuthentication({ actorType: 'staff' });
         actorRuntimeController.grant({ actorType: 'staff', actorId: 'private-staff', sessionId: 'private-session' });
       });
-      expect(screen.queryByText('Diagnóstico de conexión')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Diagnóstico de conexión')).not.toBeInTheDocument();
       act(() => {
         actorRuntimeController.lock('test_switch');
         actorRuntimeController.beginAuthentication({ actorType: 'admin' });
@@ -200,7 +200,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       });
 
       const actorGeneration = actorRuntimeController.getState().generation;
-      fireEvent.click(screen.getByText('Diagnóstico de conexión'));
+      fireEvent.click(screen.getByLabelText('Diagnóstico de conexión'));
       fireEvent.click(screen.getByRole('button', { name: 'Iniciar captura' }));
       fireEvent.click(screen.getByRole('button', { name: 'Detener captura' }));
       expect(readTenantRuntimeTrace()).toEqual([]);
